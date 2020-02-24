@@ -1482,13 +1482,13 @@ skia_static_library("pathkit") {
 }
 
 group("modules") {
-  deps = [
-    "modules/particles",
-    "modules/skottie",
-    "modules/skparagraph",
-    "modules/skshaper",
-    "modules/svg",
-  ]
+  # rust-skia: HACK: only add modules/skparagraph if we do use icu for now, 
+  # this prevents a linker error on macOS
+  if (skia_use_icu) {
+    deps = [ "modules/skparagraph" ]
+  } else {
+    deps = []
+  }
 }
 
 group("experimental") {
