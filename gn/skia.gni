@@ -96,6 +96,8 @@ declare_args() {
 
   skia_build_fuzzers = is_clang && is_linux && target_cpu == "x64"
   skia_use_libfuzzer_defaults = true
+  # rust-skia args
+  skia_enable_skottie = false
 }
 
 declare_args() {
