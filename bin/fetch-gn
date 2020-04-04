@@ -30,7 +30,7 @@ with open(gnzip, 'wb') as f:
           OS,cpu,rev)
   f.write(urlopen(url).read())
 
-gn = 'gn.exe' if 'win32' in sys.platform else 'gn'
+gn = 'gn.exe' if 'win32' in sys.platform or 'msys' in sys.platform else 'gn'
 with zipfile.ZipFile(gnzip, 'r') as f:
   f.extract(gn, 'bin')
 
