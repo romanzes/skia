@@ -603,7 +603,7 @@ bool OneLineShaper::shape() {
                 bool fakeItalic =
                     block.fStyle.getFontStyle().slant() == SkFontStyle::kItalic_Slant &&
                     font.getTypeface()->fontStyle().slant() != SkFontStyle::kItalic_Slant;
-                font.setEmbolden(adsfasdfas);
+                font.setEmbolden(fakeBold);
                 font.setSkewX(fakeItalic ? -SK_Scalar1 / 4 : 0);
 
                 // Walk through all the currently unresolved blocks
