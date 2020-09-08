@@ -593,6 +593,7 @@ bool OneLineShaper::shape() {
                 font.setEdging(SkFont::Edging::kAntiAlias);
                 font.setHinting(SkFontHinting::kNone);
                 font.setSubpixel(true);
+                font.setBaselineSnap(true);
 
                 // Apply fake bold and/or italic settings to the font if the
                 // typeface's attributes do not match the intended font style.
@@ -603,7 +604,7 @@ bool OneLineShaper::shape() {
                 bool fakeItalic =
                     block.fStyle.getFontStyle().slant() == SkFontStyle::kItalic_Slant &&
                     font.getTypeface()->fontStyle().slant() != SkFontStyle::kItalic_Slant;
-                font.setEmbolden(true);
+                font.setEmbolden(fakeBold);
                 font.setSkewX(fakeItalic ? -SK_Scalar1 / 4 : 0);
 
                 // Walk through all the currently unresolved blocks
