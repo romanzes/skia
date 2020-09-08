@@ -592,7 +592,7 @@ bool OneLineShaper::shape() {
                 SkFont font(std::move(typeface), block.fStyle.getFontSize());
                 font.setEdging(SkFont::Edging::kAntiAlias);
                 font.setHinting(SkFontHinting::kNone);
-                font.setSubpixel(true);
+                font.setSubpixel(false);
 
                 // Apply fake bold and/or italic settings to the font if the
                 // typeface's attributes do not match the intended font style.
