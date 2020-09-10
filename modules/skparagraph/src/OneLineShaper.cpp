@@ -590,7 +590,7 @@ bool OneLineShaper::shape() {
 
                 // Create one more font to try
                 SkFont font(std::move(typeface), block.fStyle.getFontSize());
-                font.setEdging(SkFont::Edging::kSubpixelAntiAlias);
+                font.setEdging(SkFont::Edging::kAlias);
                 font.setHinting(SkFontHinting::kNone);
                 font.setSubpixel(true);
 
