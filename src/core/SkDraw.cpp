@@ -1080,7 +1080,9 @@ void SkDraw::drawBitmap(const SkBitmap& bitmap, const SkMatrix& prematrix,
     SkDraw draw(*this);
     draw.fMatrixProvider = &matrixProvider;
 
-    draw.drawBitmapAsMask(bitmap, *paint);
+    SkPaint paintWithShader = make_paint_with_image(*paint, bitmap);
+    const SkRect srcBounds = SkRect::MakeIWH(bitmap.width(), bitmap.height());
+    this->drawRect(srcBounds, paintWithShader, &prematrix, dstBounds);
 }
 
 void SkDraw::drawSprite(const SkBitmap& bitmap, int x, int y, const SkPaint& origPaint) const {
