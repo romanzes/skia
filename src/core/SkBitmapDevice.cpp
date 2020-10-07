@@ -404,6 +404,7 @@ void SkBitmapDevice::drawPath(const SkPath& path,
 
 void SkBitmapDevice::drawBitmap(const SkBitmap& bitmap, const SkMatrix& matrix,
                                 const SkRect* dstOrNull, const SkPaint& paint) {
+    const SkRect* bounds = dstOrNull;
     LOOP_TILER(drawBitmap(bitmap, matrix, dstOrNull, paint), bounds)
 }
 
