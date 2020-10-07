@@ -1066,14 +1066,6 @@ static bool clipHandlesSprite(const SkRasterClip& clip, int x, int y, const SkPi
 
 void SkDraw::drawBitmap(const SkBitmap& bitmap, const SkMatrix& prematrix,
                         const SkRect* dstBounds, const SkPaint& origPaint) const {
-    SkDEBUGCODE(this->validate();)
-
-    // nothing to draw
-    if (fRC->isEmpty() ||
-            bitmap.width() == 0 || bitmap.height() == 0 ||
-            bitmap.colorType() == kUnknown_SkColorType) {
-        return;
-    }
 
     SkTCopyOnFirstWrite<SkPaint> paint(origPaint);
     if (origPaint.getStyle() != SkPaint::kFill_Style) {
@@ -1083,52 +1075,12 @@ void SkDraw::drawBitmap(const SkBitmap& bitmap, const SkMatrix& prematrix,
     SkPreConcatMatrixProvider matrixProvider(*fMatrixProvider, prematrix);
     SkMatrix matrix = matrixProvider.localToDevice();
 
-    if (clipped_out(matrix, *fRC, bitmap.width(), bitmap.height())) {
-        return;
-    }
-
-    if (bitmap.colorType() != kAlpha_8_SkColorType
-        && SkTreatAsSprite(matrix, bitmap.dimensions(), *paint)) {
-        //
-        // It is safe to call lock pixels now, since we know the matrix is
-        // (more or less) identity.
-        //
-        SkPixmap pmap;
-        if (!bitmap.peekPixels(&pmap)) {
-            return;
-        }
-        int ix = SkScalarRoundToInt(matrix.getTranslateX());
-        int iy = SkScalarRoundToInt(matrix.getTranslateY());
-        if (clipHandlesSprite(*fRC, ix, iy, pmap)) {
-            SkSTArenaAlloc<kSkBlitterContextSize> allocator;
-            // blitter will be owned by the allocator.
-            SkBlitter* blitter = SkBlitter::ChooseSprite(fDst, *paint, pmap, ix, iy, &allocator,
-                                                         fRC->clipShader());
-            if (blitter) {
-                SkScan::FillIRect(SkIRect::MakeXYWH(ix, iy, pmap.width(), pmap.height()),
-                                  *fRC, blitter);
-                return;
-            }
-            // if !blitter, then we fall-through to the slower case
-        }
-    }
-
     // now make a temp draw on the stack, and use it
     //
     SkDraw draw(*this);
     draw.fMatrixProvider = &matrixProvider;
 
-    if (bitmap.colorType() == kAlpha_8_SkColorType && !paint->getColorFilter()) {
-        draw.drawBitmapAsMask(bitmap, *paint);
-    } else {
-        SkPaint paintWithShader = make_paint_with_image(*paint, bitmap);
-        const SkRect srcBounds = SkRect::MakeIWH(bitmap.width(), bitmap.height());
-        if (dstBounds) {
-            this->drawRect(srcBounds, paintWithShader, &prematrix, dstBounds);
-        } else {
-            draw.drawRect(srcBounds, paintWithShader);
-        }
-    }
+    draw.drawBitmapAsMask(bitmap, *paint);
 }
 
 void SkDraw::drawSprite(const SkBitmap& bitmap, int x, int y, const SkPaint& origPaint) const {
