@@ -456,7 +456,7 @@ void SkBitmapDevice::drawImageRect(const SkImage* image,
     const SkRect* dstPtr = &dst;
     const SkBitmap* bitmapPtr = &bitmap;
 
-    this->drawBitmap(*bitmapPtr, matrix, dstPtr, paint);
+    //this->drawBitmap(*bitmapPtr, matrix, dstPtr, paint);
 }
 
 void SkBitmapDevice::drawGlyphRunList(const SkGlyphRunList& glyphRunList) {
