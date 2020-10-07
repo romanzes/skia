@@ -404,16 +404,6 @@ void SkBitmapDevice::drawPath(const SkPath& path,
 
 void SkBitmapDevice::drawBitmap(const SkBitmap& bitmap, const SkMatrix& matrix,
                                 const SkRect* dstOrNull, const SkPaint& paint) {
-    const SkRect* bounds = dstOrNull;
-    SkRect storage;
-    if (!bounds && SkDrawTiler::NeedsTiling(this)) {
-        matrix.mapRect(&storage, SkRect::MakeIWH(bitmap.width(), bitmap.height()));
-        Bounder b(storage, paint);
-        if (b.hasBounds()) {
-            storage = *b.bounds();
-            bounds = &storage;
-        }
-    }
     LOOP_TILER(drawBitmap(bitmap, matrix, dstOrNull, paint), bounds)
 }
 
@@ -456,7 +446,7 @@ void SkBitmapDevice::drawImageRect(const SkImage* image,
     const SkRect* dstPtr = &dst;
     const SkBitmap* bitmapPtr = &bitmap;
 
-    //this->drawBitmap(*bitmapPtr, matrix, dstPtr, paint);
+    this->drawBitmap(*bitmapPtr, matrix, dstPtr, paint);
 }
 
 void SkBitmapDevice::drawGlyphRunList(const SkGlyphRunList& glyphRunList) {
