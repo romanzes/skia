@@ -225,6 +225,7 @@ SkRect TextLine::calculateBoundaries() {
 }
 
 void TextLine::paint(SkCanvas* textCanvas) {
+    SkDebugf("TextLine::paint");
     if (this->empty()) {
         return;
     }
