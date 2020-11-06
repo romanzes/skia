@@ -382,7 +382,7 @@ void TextLine::paintText(SkCanvas* canvas, TextRange textRange, const TextStyle&
     SkDebugf("additional offset: %f, %f\n", this->offset().fX + context.fTextShift, this->offset().fY + correctedBaseline);
     SkASSERT(false);
     canvas->drawTextBlob(builder.make(),
-        this->offset().fX + context.fTextShift, this->offset().fY + correctedBaseline, paint);
+        this->offset().fX + context.fTextShift, this->offset().fY + correctedBaseline - 1, paint);
 
     if (context.clippingNeeded) {
         canvas->restore();
