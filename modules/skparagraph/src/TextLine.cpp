@@ -225,8 +225,6 @@ SkRect TextLine::calculateBoundaries() {
 }
 
 void TextLine::paint(SkCanvas* textCanvas) {
-    SkDebugf("TextLine::paint");
-    SkASSERT(false);
     if (this->empty()) {
         return;
     }
@@ -380,7 +378,6 @@ void TextLine::paintText(SkCanvas* canvas, TextRange textRange, const TextStyle&
     SkScalar correctedBaseline = SkScalarFloorToScalar(this->baseline() + 0.5);
     SkDebugf("drawTextBlob translate: %f, %f\n", canvas->getTotalMatrix().getTranslateX(), canvas->getTotalMatrix().getTranslateY());
     SkDebugf("additional offset: %f, %f\n", this->offset().fX + context.fTextShift, this->offset().fY + correctedBaseline);
-    SkASSERT(false);
     canvas->drawTextBlob(builder.make(),
         this->offset().fX + context.fTextShift, this->offset().fY + correctedBaseline - 1, paint);
 
