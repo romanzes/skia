@@ -99,7 +99,7 @@ ParagraphImpl::ParagraphImpl(const SkString& text,
         , fOldWidth(0)
         , fOldHeight(0)
         , fOrigin(SkRect::MakeEmpty()) {
-    SkDebugf("ParagraphImpl::ParagraphImpl: %f", fOrigin.fTop);
+    SkDebugf("ParagraphImpl::ParagraphImpl: %f\n", fOrigin.fTop);
 }
 
 ParagraphImpl::ParagraphImpl(const std::u16string& utf16text,
@@ -229,8 +229,8 @@ void ParagraphImpl::paint(SkCanvas* canvas, SkScalar x, SkScalar y) {
         fState = kDrawn;
     }
 
-    SkDebugf("ParagraphImpl::paint existing translate: %f\n", canvas->getTotalMatrix().getTranslateY());
-    SkDebugf("ParagraphImpl::paint translate by: %f\n", y + fOrigin.fTop);
+    SkDebugf("ParagraphImpl::paint y: %f\n", y);
+    SkDebugf("ParagraphImpl::paint fOrigin.fTop: %f\n", fOrigin.fTop);
     SkMatrix matrix = SkMatrix::Translate(x + fOrigin.fLeft, y + fOrigin.fTop);
     canvas->drawPicture(fPicture, &matrix, nullptr);
 }
