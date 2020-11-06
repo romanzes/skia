@@ -376,10 +376,11 @@ void TextLine::paintText(SkCanvas* canvas, TextRange textRange, const TextStyle&
     }
 
     SkScalar correctedBaseline = SkScalarFloorToScalar(this->baseline() + 0.5);
-    SkDebugf("drawTextBlob translate: %f, %f\n", canvas->getTotalMatrix().getTranslateX(), canvas->getTotalMatrix().getTranslateY());
-    SkDebugf("additional offset: %f, %f\n", this->offset().fX + context.fTextShift, this->offset().fY + correctedBaseline);
+    SkDebugf("drawTextBlob translate: %f\n", canvas->getTotalMatrix().getTranslateY());
+    SkDebugf("drawTextBlob offset: %f\n", this->offset().fY);
+    SkDebugf("drawTextBlob correctedBaseline: %f\n", correctedBaseline);
     canvas->drawTextBlob(builder.make(),
-        this->offset().fX + context.fTextShift, this->offset().fY + correctedBaseline - 1, paint);
+        this->offset().fX + context.fTextShift, this->offset().fY + correctedBaseline, paint);
 
     if (context.clippingNeeded) {
         canvas->restore();
