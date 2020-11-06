@@ -228,8 +228,8 @@ void ParagraphImpl::paint(SkCanvas* canvas, SkScalar x, SkScalar y) {
         fState = kDrawn;
     }
 
-    SkDebugf("ParagraphImpl::paint existing translate: \n", canvas->getTotalMatrix().getTranslateY());
-    SkDebugf("ParagraphImpl::paint translate by: \n", y + fOrigin.fTop);
+    SkDebugf("ParagraphImpl::paint existing translate: %f\n", canvas->getTotalMatrix().getTranslateY());
+    SkDebugf("ParagraphImpl::paint translate by: %f\n", y + fOrigin.fTop);
     SkMatrix matrix = SkMatrix::Translate(x + fOrigin.fLeft, y + fOrigin.fTop);
     canvas->drawPicture(fPicture, &matrix, nullptr);
 }
