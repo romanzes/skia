@@ -99,6 +99,7 @@ ParagraphImpl::ParagraphImpl(const SkString& text,
         , fOldWidth(0)
         , fOldHeight(0)
         , fOrigin(SkRect::MakeEmpty()) {
+    SkDebugf("ParagraphImpl::ParagraphImpl: %f", fOrigin.fTop);
 }
 
 ParagraphImpl::ParagraphImpl(const std::u16string& utf16text,
@@ -629,9 +630,7 @@ void ParagraphImpl::breakShapedTextIntoLines(SkScalar maxWidth) {
                         auto size = line.ellipsis()->advance();
                         auto offset = line.ellipsis()->offset();
                         SkRect boundaries = SkRect::MakeXYWH(offset.fX, offset.fY, size.fX, size.fY);
-                        SkDebugf("fOrigin before 1: %f", fOrigin.fTop);
                         fOrigin.joinPossiblyEmptyRect(boundaries);
-                        SkDebugf("fOrigin after 1: %f", fOrigin.fTop);
                     }
                 }
 
@@ -749,11 +748,9 @@ BlockRange ParagraphImpl::findAllBlocks(TextRange textRange) {
 }
 
 void ParagraphImpl::calculateBoundaries() {
-    SkDebugf("fOrigin before 2: %f", fOrigin.fTop);
     for (auto& line : fLines) {
         fOrigin.joinPossiblyEmptyRect(line.calculateBoundaries());
     }
-    SkDebugf("fOrigin after 2: %f", fOrigin.fTop);
 }
 
 TextLine& ParagraphImpl::addLine(SkVector offset,
