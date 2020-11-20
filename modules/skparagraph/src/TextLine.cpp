@@ -377,7 +377,7 @@ void TextLine::paintText(SkCanvas* canvas, TextRange textRange, const TextStyle&
 
     SkScalar correctedBaseline = SkScalarFloorToScalar(this->baseline() + 0.5);
     SkDebugf("TextLine::paintText: fShift: %g\n", fShift);
-    SkDebugf("TextLine::paintText: fOffset.x: %g\n", fOffset.x);
+    SkDebugf("TextLine::paintText: fOffset.x: %g\n", fOffset.x());
     //return fOffset + SkVector::Make(fShift, 0);
     SkDebugf("TextLine::paintText: offset().fX: %g\n", this->offset().fX);
     SkDebugf("TextLine::paintText: fTextShift: %g\n", context.fTextShift);
