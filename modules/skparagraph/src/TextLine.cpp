@@ -154,6 +154,7 @@ TextLine::TextLine(ParagraphImpl* master,
     // TODO: This is the fix for flutter. Must be removed...
     for (auto cluster = &start; cluster != &end; ++cluster) {
         if (!cluster->run()->isPlaceholder()) {
+            SkDebugf("adding half letter spacing: %g", cluster->getHalfLetterSpacing());
             fShift += cluster->getHalfLetterSpacing();
             break;
         }
@@ -296,11 +297,14 @@ void TextLine::format(TextAlign align, SkScalar maxWidth) {
             this->justify(maxWidth);
         } else if (fMaster->paragraphStyle().getTextDirection() == TextDirection::kRtl) {
             // Justify -> Right align
+            SkDebugf("Justify -> Right align: %g", delta);
             fShift = delta;
         }
     } else if (align == TextAlign::kRight) {
+        SkDebugf("TextAlign::kRight: %g", delta);
         fShift = delta;
     } else if (align == TextAlign::kCenter) {
+        SkDebugf("TextAlign::kCenter: %g", delta / 2);
         fShift = delta / 2;
     }
 }
