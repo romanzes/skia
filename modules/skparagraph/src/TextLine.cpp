@@ -152,13 +152,13 @@ TextLine::TextLine(ParagraphImpl* master,
     }
 
     // TODO: This is the fix for flutter. Must be removed...
-    for (auto cluster = &start; cluster != &end; ++cluster) {
-        if (!cluster->run()->isPlaceholder()) {
-            SkDebugf("adding half letter spacing: %g", cluster->getHalfLetterSpacing());
-            fShift += cluster->getHalfLetterSpacing();
-            break;
-        }
-    }
+//    for (auto cluster = &start; cluster != &end; ++cluster) {
+//        if (!cluster->run()->isPlaceholder()) {
+//            SkDebugf("adding half letter spacing: %g", cluster->getHalfLetterSpacing());
+//            fShift += cluster->getHalfLetterSpacing();
+//            break;
+//        }
+//    }
 }
 
 SkRect TextLine::calculateBoundaries() {
