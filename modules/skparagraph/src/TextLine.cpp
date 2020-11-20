@@ -376,6 +376,7 @@ void TextLine::paintText(SkCanvas* canvas, TextRange textRange, const TextStyle&
     }
 
     SkScalar correctedBaseline = SkScalarFloorToScalar(this->baseline() + 0.5);
+    SkDebugf("TextLine::paintText: offset().fX: %g\n", this->offset().fX);
     SkDebugf("TextLine::paintText: fTextShift: %g\n", context.fTextShift);
     canvas->drawTextBlob(builder.make(),
         this->offset().fX + context.fTextShift, this->offset().fY + correctedBaseline, paint);
