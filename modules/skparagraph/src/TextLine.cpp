@@ -161,6 +161,7 @@ TextLine::TextLine(ParagraphImpl* master,
             break;
         }
     }
+    SkDebugf("subtracting lastHalfLetterSpacing: %g\n", lastHalfLetterSpacing);
     fShift -= lastHalfLetterSpacing;
 }
 
