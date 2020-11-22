@@ -381,7 +381,7 @@ void TextLine::paintText(SkCanvas* canvas, TextRange textRange, const TextStyle&
 
     SkScalar correctedBaseline = SkScalarFloorToScalar(this->baseline() + 0.5);
     canvas->drawTextBlob(builder.make(),
-        this->offset().fX + context.fTextShift, this->offset().fY + correctedBaseline, paint);
+        fOffset.fX + context.fTextShift, fOffset.fY + correctedBaseline, paint);
 
     if (context.clippingNeeded) {
         canvas->restore();
@@ -873,7 +873,7 @@ void TextLine::iterateThroughVisualRuns(bool includingGhostSpaces, const RunVisi
 }
 
 SkVector TextLine::offset() const {
-    return fOffset/* + SkVector::Make(fShift, 0)*/;
+    return fOffset + SkVector::Make(fShift, 0);
 }
 
 LineMetrics TextLine::getMetrics() const {
