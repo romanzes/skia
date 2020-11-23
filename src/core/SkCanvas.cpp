@@ -2583,7 +2583,7 @@ void SkCanvas::onDrawImageLattice(const SkImage* image, const Lattice& lattice, 
 
 void SkCanvas::onDrawTextBlob(const SkTextBlob* blob, SkScalar x, SkScalar y,
                               const SkPaint& paint) {
-    SkDebugf("SkCanvas::onDrawTextBlob: %g, %g\n", x, y);
+    SkDebugf("SkCanvas::onDrawTextBlob: translate: %g, %g, position: %g, %g", matrix.getTranslateX(), matrix.getTranslateY(), x, y);
     SkRect storage;
     const SkRect* bounds = nullptr;
     if (paint.canComputeFastBounds()) {
