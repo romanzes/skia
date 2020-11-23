@@ -221,7 +221,7 @@ void ParagraphImpl::layout(SkScalar rawWidth) {
 }
 
 void ParagraphImpl::paint(SkCanvas* canvas, SkScalar x, SkScalar y) {
-    SkMatrix debug_matrix = this->getTotalMatrix();
+    SkMatrix debug_matrix = canvas->getTotalMatrix();
     SkDebugf("ParagraphImpl::paint: translate: %g, %g, position: %g, %g\n", debug_matrix.getTranslateX(), debug_matrix.getTranslateY(), x, y);
     if (fState < kDrawn) {
         // Record the picture anyway (but if we have some pieces in the cache they will be used)
