@@ -381,7 +381,7 @@ void TextLine::paintText(SkCanvas* canvas, TextRange textRange, const TextStyle&
 
     SkScalar correctedBaseline = SkScalarFloorToScalar(this->baseline() + 0.5);
     canvas->drawTextBlob(builder.make(),
-        fOffset.fX + context.fTextShift, fOffset.fY + correctedBaseline, paint);
+        this->offset().fX + context.fTextShift, this->offset().fY + correctedBaseline, paint);
 
     if (context.clippingNeeded) {
         canvas->restore();
