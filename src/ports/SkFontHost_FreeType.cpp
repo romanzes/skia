@@ -1438,10 +1438,11 @@ void SkScalerContext_FreeType::generateFontMetrics(SkFontMetrics* metrics) {
             descent = -SkIntToScalar(os2->sTypoDescender) / upem;
             leading = SkIntToScalar(os2->sTypoLineGap) / upem;
         } else {
-            SkDebugf("SkScalerContext_FreeType::generateFontMetrics face->ascender: %g\n", face->ascender);
-            SkDebugf("SkScalerContext_FreeType::generateFontMetrics upem: %g\n", upem);
             ascent = -SkIntToScalar(face->ascender) / upem;
             descent = -SkIntToScalar(face->descender) / upem;
+            SkDebugf("SkScalerContext_FreeType::generateFontMetrics face->ascender: %g\n", face->ascender);
+            SkDebugf("SkScalerContext_FreeType::generateFontMetrics upem: %g\n", upem);
+            SkDebugf("SkScalerContext_FreeType::generateFontMetrics ascent: %g\n", ascent);
             leading = SkIntToScalar(face->height + (face->descender - face->ascender)) / upem;
         }
         xmin = SkIntToScalar(face->bbox.xMin) / upem;
