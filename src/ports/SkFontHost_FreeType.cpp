@@ -1390,7 +1390,6 @@ bool SkScalerContext_FreeType::generatePath(SkGlyphID glyphID, SkPath* path) {
 }
 
 void SkScalerContext_FreeType::generateFontMetrics(SkFontMetrics* metrics) {
-    SkDebugf("SkScalerContext_FreeType::generateFontMetrics");
     if (nullptr == metrics) {
         return;
     }
@@ -1403,6 +1402,7 @@ void SkScalerContext_FreeType::generateFontMetrics(SkFontMetrics* metrics) {
     }
 
     FT_Face face = fFace;
+    SkDebugf("SkScalerContext_FreeType::generateFontMetrics face->ascender: %g\n", face->ascender);
     metrics->fFlags = 0;
 
     SkScalar upem = SkIntToScalar(SkTypeface_FreeType::GetUnitsPerEm(face));
