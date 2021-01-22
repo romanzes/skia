@@ -1434,10 +1434,12 @@ void SkScalerContext_FreeType::generateFontMetrics(SkFontMetrics* metrics) {
         // (and override everything else when they apply).
         static const int kUseTypoMetricsMask = (1 << 7);
         if (os2 && os2->version != 0xFFFF && (os2->fsSelection & kUseTypoMetricsMask)) {
+            SkDebugf("SkScalerContext_FreeType::generateFontMetrics pathway 1\n");
             ascent = -SkIntToScalar(os2->sTypoAscender) / upem;
             descent = -SkIntToScalar(os2->sTypoDescender) / upem;
             leading = SkIntToScalar(os2->sTypoLineGap) / upem;
         } else {
+            SkDebugf("SkScalerContext_FreeType::generateFontMetrics pathway 2\n");
             ascent = -SkIntToScalar(face->ascender) / upem;
             descent = -SkIntToScalar(face->descender) / upem;
             leading = SkIntToScalar(face->height + (face->descender - face->ascender)) / upem;
@@ -1467,6 +1469,7 @@ void SkScalerContext_FreeType::generateFontMetrics(SkFontMetrics* metrics) {
             }
         }
     } else if (fStrikeIndex != -1) { // bitmap strike metrics
+        SkDebugf("SkScalerContext_FreeType::generateFontMetrics pathway 3\n");
         SkScalar xppem = SkIntToScalar(face->size->metrics.x_ppem);
         SkScalar yppem = SkIntToScalar(face->size->metrics.y_ppem);
         ascent = -SkIntToScalar(face->size->metrics.ascender) / (yppem * 64.0f);
