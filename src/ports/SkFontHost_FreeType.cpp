@@ -1525,7 +1525,7 @@ void SkScalerContext_FreeType::generateFontMetrics(SkFontMetrics* metrics) {
     metrics->fStrikeoutThickness = strikeoutThickness * fScale.y();
     metrics->fStrikeoutPosition = strikeoutPosition * fScale.y();
 
-    SkDebugf("SkScalerContext_FreeType::generateFontMetrics metrics->fAscent: %g\n", metrics->fAscent);
+    SkDebugf("SkScalerContext_FreeType::generateFontMetrics ascent: %g\n", ascent);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
