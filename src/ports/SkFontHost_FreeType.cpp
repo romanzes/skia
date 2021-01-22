@@ -1440,7 +1440,7 @@ void SkScalerContext_FreeType::generateFontMetrics(SkFontMetrics* metrics) {
         } else {
             ascent = -SkIntToScalar(face->ascender) / upem;
             descent = -SkIntToScalar(face->descender) / upem;
-            SkDebugf("SkScalerContext_FreeType::generateFontMetrics face->ascender: %g\n", face->ascender);
+            SkDebugf("SkScalerContext_FreeType::generateFontMetrics face->ascender: %g\n", SkIntToScalar(face->ascender));
             SkDebugf("SkScalerContext_FreeType::generateFontMetrics upem: %g\n", upem);
             SkDebugf("SkScalerContext_FreeType::generateFontMetrics ascent: %g\n", ascent);
             leading = SkIntToScalar(face->height + (face->descender - face->ascender)) / upem;
