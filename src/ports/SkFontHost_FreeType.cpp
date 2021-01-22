@@ -1402,7 +1402,6 @@ void SkScalerContext_FreeType::generateFontMetrics(SkFontMetrics* metrics) {
     }
 
     FT_Face face = fFace;
-    SkDebugf("SkScalerContext_FreeType::generateFontMetrics face->ascender: %g\n", face->ascender);
     metrics->fFlags = 0;
 
     SkScalar upem = SkIntToScalar(SkTypeface_FreeType::GetUnitsPerEm(face));
@@ -1525,6 +1524,8 @@ void SkScalerContext_FreeType::generateFontMetrics(SkFontMetrics* metrics) {
     metrics->fUnderlinePosition = underlinePosition * fScale.y();
     metrics->fStrikeoutThickness = strikeoutThickness * fScale.y();
     metrics->fStrikeoutPosition = strikeoutPosition * fScale.y();
+
+    SkDebugf("SkScalerContext_FreeType::generateFontMetrics metrics->fAscent: %g\n", metrics->fAscent);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
