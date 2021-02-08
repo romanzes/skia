@@ -432,6 +432,7 @@ void TextLine::paintShadow(SkCanvas* canvas, TextRange textRange, const TextStyl
 void TextLine::paintDecorations(SkCanvas* canvas, TextRange textRange, const TextStyle& style, const ClipContext& context) const {
 
     SkAutoCanvasRestore acr(canvas, true);
+    SkDebugf("TextLine::paintDecorations: %g, %g\n", this->offset().fX, this->offset().fY);
     canvas->translate(this->offset().fX, this->offset().fY);
     Decorations decorations;
     SkScalar correctedBaseline = SkScalarFloorToScalar(this->baseline() + 0.5);
