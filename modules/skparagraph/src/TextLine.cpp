@@ -376,6 +376,8 @@ void TextLine::paintText(SkCanvas* canvas, TextRange textRange, const TextStyle&
     }
 
     SkScalar correctedBaseline = SkScalarFloorToScalar(this->baseline() + 0.5);
+    SkMatrix debug_matrix = canvas->getTotalMatrix();
+    SkDebugf("TextLine::paintText: translate: %g, %g\n", debug_matrix.getTranslateX(), debug_matrix.getTranslateY());
     SkDebugf("TextLine::paintText: this->baseline(): %g\n", this->baseline());
     canvas->drawTextBlob(builder.make(),
         this->offset().fX + context.fTextShift, this->offset().fY + correctedBaseline, paint);
