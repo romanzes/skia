@@ -2618,7 +2618,7 @@ void SkCanvas::drawSimpleText(const void* text, size_t byteLength, SkTextEncodin
 void SkCanvas::drawTextBlob(const SkTextBlob* blob, SkScalar x, SkScalar y,
                             const SkPaint& paint) {
     SkMatrix debug_matrix = this->getTotalMatrix();
-    SkDebugf("SkCanvas::drawTextBlob: translate: %g, %g, position: %g, %g, total: %g, %g\n", debug_matrix.getTranslateX(), debug_matrix.getTranslateY());
+    SkDebugf("SkCanvas::drawTextBlob: translate: %g, %g\n", debug_matrix.getTranslateX(), debug_matrix.getTranslateY());
     TRACE_EVENT0("skia", TRACE_FUNC);
     RETURN_ON_NULL(blob);
     RETURN_ON_FALSE(blob->bounds().makeOffset(x, y).isFinite());
