@@ -1434,7 +1434,7 @@ void SkCanvas::internalDrawDevice(SkBaseDevice* srcDev, const SkPaint* paint) {
 /////////////////////////////////////////////////////////////////////////////
 
 void SkCanvas::translate(SkScalar dx, SkScalar dy) {
-//    SkDebugf("SkCanvas::translate: %g, %g\n", dx, dy);
+    SkDebugf("SkCanvas::translate: %g, %g\n", dx, dy);
     if (dx || dy) {
         this->checkForDeferredSave();
         fMCRec->fMatrix.preTranslate(dx, dy);
