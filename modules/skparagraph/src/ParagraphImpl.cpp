@@ -682,7 +682,7 @@ void ParagraphImpl::formatLines(SkScalar maxWidth) {
 void ParagraphImpl::paintLinesIntoPicture() {
     SkPictureRecorder recorder;
     SkCanvas* textCanvas = recorder.beginRecording(fOrigin.width(), fOrigin.height(), nullptr, 0);
-    SkDebugf("ParagraphImpl::paintLinesIntoPicture: %g, %g\n", fOrigin.fLeft, fOrigin.fTop);
+//    SkDebugf("ParagraphImpl::paintLinesIntoPicture: %g, %g\n", fOrigin.fLeft, fOrigin.fTop);
     textCanvas->translate(-fOrigin.fLeft, -fOrigin.fTop);
 
     for (auto& line : fLines) {

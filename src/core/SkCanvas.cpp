@@ -1434,7 +1434,7 @@ void SkCanvas::internalDrawDevice(SkBaseDevice* srcDev, const SkPaint* paint) {
 /////////////////////////////////////////////////////////////////////////////
 
 void SkCanvas::translate(SkScalar dx, SkScalar dy) {
-    SkDebugf("SkCanvas::translate: %g, %g\n", dx, dy);
+//    SkDebugf("SkCanvas::translate: %g, %g\n", dx, dy);
     if (dx || dy) {
         this->checkForDeferredSave();
         fMCRec->fMatrix.preTranslate(dx, dy);
@@ -1484,7 +1484,7 @@ void SkCanvas::skew(SkScalar sx, SkScalar sy) {
 }
 
 void SkCanvas::concat(const SkMatrix& matrix) {
-    SkDebugf("SkCanvas::translate: %g, %g\n", matrix.getTranslateX(), matrix.getTranslateY());
+//    SkDebugf("SkCanvas::translate: %g, %g\n", matrix.getTranslateX(), matrix.getTranslateY());
     if (matrix.isIdentity()) {
         return;
     }
