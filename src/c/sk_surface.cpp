@@ -248,6 +248,7 @@ void sk_canvas_restore(sk_canvas_t* ccanvas) {
 }
 
 void sk_canvas_translate(sk_canvas_t* ccanvas, float dx, float dy) {
+    SkDebugf("sk_canvas_translate: %g, %g\n", dX, dY);
     AsCanvas(ccanvas)->translate(dx, dy);
 }
 
