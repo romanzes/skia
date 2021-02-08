@@ -1434,6 +1434,7 @@ void SkCanvas::internalDrawDevice(SkBaseDevice* srcDev, const SkPaint* paint) {
 /////////////////////////////////////////////////////////////////////////////
 
 void SkCanvas::translate(SkScalar dx, SkScalar dy) {
+    SkDebugf("SkCanvas::translate: %g, %g\n", dx, dy);
     if (dx || dy) {
         this->checkForDeferredSave();
         fMCRec->fMatrix.preTranslate(dx, dy);
@@ -1483,6 +1484,7 @@ void SkCanvas::skew(SkScalar sx, SkScalar sy) {
 }
 
 void SkCanvas::concat(const SkMatrix& matrix) {
+    SkDebugf("SkCanvas::translate: %g, %g\n", matrix.getTranslateX(), matrix.getTranslateY());
     if (matrix.isIdentity()) {
         return;
     }
@@ -2617,8 +2619,8 @@ void SkCanvas::drawSimpleText(const void* text, size_t byteLength, SkTextEncodin
 
 void SkCanvas::drawTextBlob(const SkTextBlob* blob, SkScalar x, SkScalar y,
                             const SkPaint& paint) {
-    SkMatrix debug_matrix = this->getTotalMatrix();
-    SkDebugf("SkCanvas::drawTextBlob: translate: %g, %g\n", debug_matrix.getTranslateX(), debug_matrix.getTranslateY());
+//    SkMatrix debug_matrix = this->getTotalMatrix();
+//    SkDebugf("SkCanvas::drawTextBlob: translate: %g, %g\n", debug_matrix.getTranslateX(), debug_matrix.getTranslateY());
     TRACE_EVENT0("skia", TRACE_FUNC);
     RETURN_ON_NULL(blob);
     RETURN_ON_FALSE(blob->bounds().makeOffset(x, y).isFinite());
