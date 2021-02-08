@@ -1451,6 +1451,7 @@ void SkCanvas::translate(SkScalar dx, SkScalar dy) {
 }
 
 void SkCanvas::scale(SkScalar sx, SkScalar sy) {
+    SkDebugf("SkCanvas::scale: %g, %g\n", sx, sy);
     if (sx != 1 || sy != 1) {
         this->checkForDeferredSave();
         fMCRec->fMatrix.preScale(sx, sy);
@@ -1484,7 +1485,7 @@ void SkCanvas::skew(SkScalar sx, SkScalar sy) {
 }
 
 void SkCanvas::concat(const SkMatrix& matrix) {
-//    SkDebugf("SkCanvas::translate: %g, %g\n", matrix.getTranslateX(), matrix.getTranslateY());
+    SkDebugf("SkCanvas::concat: %g, %g\n", matrix.getTranslateX(), matrix.getTranslateY());
     if (matrix.isIdentity()) {
         return;
     }
@@ -1500,6 +1501,7 @@ void SkCanvas::concat(const SkMatrix& matrix) {
 }
 
 void SkCanvas::internalConcat44(const SkM44& m) {
+    SkDebugf("SkCanvas::internalConcat44: %g, %g\n", m.rc(0, 3), m.rc(1, 3));
     this->checkForDeferredSave();
 
     fMCRec->fMatrix.preConcat(m);
@@ -1516,6 +1518,7 @@ void SkCanvas::concat(const SkM44& m) {
 }
 
 void SkCanvas::internalSetMatrix(const SkMatrix& matrix) {
+    SkDebugf("SkCanvas::internalSetMatrix: %g, %g\n", matrix.getTranslateX(), matrix.getTranslateY());
     fMCRec->fMatrix = SkM44(matrix);
     fIsScaleTranslate = matrix.isScaleTranslate();
 
