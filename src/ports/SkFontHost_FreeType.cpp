@@ -1482,6 +1482,7 @@ void SkScalerContext_FreeType::generateFontMetrics(SkFontMetrics* metrics) {
         if (os2->version != 0xFFFF) {
             SkDebugf("SkScalerContext_FreeType: os2->version != 0xFFFF == true\n");
         }
+        SkDebugf("SkScalerContext_FreeType: os2->fsSelection = %i\n", os2->fsSelection);
         if (os2->fsSelection & kUseTypoMetricsMask) {
             SkDebugf("SkScalerContext_FreeType: os2->fsSelection & kUseTypoMetricsMask == true\n");
         }
