@@ -1477,13 +1477,13 @@ void SkScalerContext_FreeType::generateFontMetrics(SkFontMetrics* metrics) {
         // (and override everything else when they apply).
         static const int kUseTypoMetricsMask = (1 << 7);
         if (os2) {
-            SkDebugf("SkScalerContext_FreeType: os2 == true");
+            SkDebugf("SkScalerContext_FreeType: os2 == true\n");
         }
         if (os2->version != 0xFFFF) {
-            SkDebugf("SkScalerContext_FreeType: os2->version != 0xFFFF == true");
+            SkDebugf("SkScalerContext_FreeType: os2->version != 0xFFFF == true\n");
         }
         if (os2->fsSelection & kUseTypoMetricsMask) {
-            SkDebugf("SkScalerContext_FreeType: os2->fsSelection & kUseTypoMetricsMask == true");
+            SkDebugf("SkScalerContext_FreeType: os2->fsSelection & kUseTypoMetricsMask == true\n");
         }
         if (os2 && os2->version != 0xFFFF && (os2->fsSelection & kUseTypoMetricsMask)) {
             SkDebugf("getting ascent from os2->sTypoAscender: %i\n", os2->sTypoAscender);
