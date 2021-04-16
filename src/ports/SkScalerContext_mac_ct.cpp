@@ -663,7 +663,7 @@ bool SkScalerContext_Mac::generatePath(SkGlyphID glyph, SkPath* path) {
 }
 
 void SkScalerContext_Mac::generateFontMetrics(SkFontMetrics* metrics) {
-    SkDebugf("SkScalerContext_mac_ct.cpp");
+    SkDebugf("SkScalerContext_mac_ct.cpp\n");
     if (nullptr == metrics) {
         return;
     }

@@ -1432,7 +1432,7 @@ bool SkScalerContext_FreeType::generatePath(SkGlyphID glyphID, SkPath* path) {
 }
 
 void SkScalerContext_FreeType::generateFontMetrics(SkFontMetrics* metrics) {
-    SkDebugf("SkFontHost_FreeType.cpp");
+    SkDebugf("SkFontHost_FreeType.cpp\n");
     if (nullptr == metrics) {
         return;
     }

@@ -739,7 +739,7 @@ void SkScalerContext_DW::generateMetrics(SkGlyph* glyph) {
 }
 
 void SkScalerContext_DW::generateFontMetrics(SkFontMetrics* metrics) {
-    SkDebugf("SkScalerContext_win_dw.cpp");
+    SkDebugf("SkScalerContext_win_dw.cpp\n");
     if (nullptr == metrics) {
         return;
     }

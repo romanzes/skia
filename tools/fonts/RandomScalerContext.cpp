@@ -130,7 +130,7 @@ bool RandomScalerContext::generatePath(SkGlyphID glyph, SkPath* path) {
 }
 
 void RandomScalerContext::generateFontMetrics(SkFontMetrics* metrics) {
-    SkDebugf("RandomScalerContext.cpp");
+    SkDebugf("RandomScalerContext.cpp\n");
     fProxy->getFontMetrics(metrics);
 }
 

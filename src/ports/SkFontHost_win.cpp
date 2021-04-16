@@ -913,7 +913,7 @@ void SkScalerContext_GDI::generateMetrics(SkGlyph* glyph) {
 
 static const MAT2 gMat2Identity = {{0, 1}, {0, 0}, {0, 0}, {0, 1}};
 void SkScalerContext_GDI::generateFontMetrics(SkFontMetrics* metrics) {
-    SkDebugf("SkFontHost_win.cpp");
+    SkDebugf("SkFontHost_win.cpp\n");
     if (nullptr == metrics) {
         return;
     }

@@ -224,7 +224,7 @@ protected:
     }
 
     void generateFontMetrics(SkFontMetrics* metrics) override {
-        SkDebugf("SkCustomTypeface.cpp");
+        SkDebugf("SkCustomTypeface.cpp\n");
         auto [sx, sy] = fMatrix.mapXY(1, 1);
         *metrics = scale_fontmetrics(this->userTF()->fMetrics, sx, sy);
     }

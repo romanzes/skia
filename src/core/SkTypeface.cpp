@@ -149,7 +149,7 @@ sk_sp<SkTypeface> SkTypeface::MakeFromStream(std::unique_ptr<SkStreamAsset> stre
 }
 
 sk_sp<SkTypeface> SkTypeface::MakeFromData(sk_sp<SkData> data, int index) {
-    SkDebugf("Does it ever print anything?");
+    SkDebugf("Does it ever print anything?\n");
     if (!data) {
         return nullptr;
     }
