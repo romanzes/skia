@@ -1476,13 +1476,22 @@ void SkScalerContext_FreeType::generateFontMetrics(SkFontMetrics* metrics) {
         // It also ignores the VDMX tables, which are also of interest here
         // (and override everything else when they apply).
         static const int kUseTypoMetricsMask = (1 << 7);
+        if (os2) {
+            SkDebugf("SkScalerContext_FreeType: os2 == true");
+        }
+        if (os2->version != 0xFFFF) {
+            SkDebugf("SkScalerContext_FreeType: os2->version != 0xFFFF == true");
+        }
+        if (os2->fsSelection & kUseTypoMetricsMask) {
+            SkDebugf("SkScalerContext_FreeType: os2->fsSelection & kUseTypoMetricsMask == true");
+        }
         if (os2 && os2->version != 0xFFFF && (os2->fsSelection & kUseTypoMetricsMask)) {
-            SkDebugf("getting ascent from os2->sTypoAscender: %i", os2->sTypoAscender);
+            SkDebugf("getting ascent from os2->sTypoAscender: %i\n", os2->sTypoAscender);
             ascent = -SkIntToScalar(os2->sTypoAscender) / upem;
             descent = -SkIntToScalar(os2->sTypoDescender) / upem;
             leading = SkIntToScalar(os2->sTypoLineGap) / upem;
         } else {
-            SkDebugf("getting ascent from face->ascender: %i", face->ascender);
+            SkDebugf("getting ascent from face->ascender: %i\n", face->ascender);
             ascent = -SkIntToScalar(face->ascender) / upem;
             descent = -SkIntToScalar(face->descender) / upem;
             leading = SkIntToScalar(face->height + (face->descender - face->ascender)) / upem;
@@ -1514,7 +1523,7 @@ void SkScalerContext_FreeType::generateFontMetrics(SkFontMetrics* metrics) {
     } else if (fStrikeIndex != -1) { // bitmap strike metrics
         SkScalar xppem = SkIntToScalar(face->size->metrics.x_ppem);
         SkScalar yppem = SkIntToScalar(face->size->metrics.y_ppem);
-        SkDebugf("getting ascent from face->size->metrics.ascender: %i", face->size->metrics.ascender);
+        SkDebugf("getting ascent from face->size->metrics.ascender: %i\n", face->size->metrics.ascender);
         ascent = -SkIntToScalar(face->size->metrics.ascender) / (yppem * 64.0f);
         descent = -SkIntToScalar(face->size->metrics.descender) / (yppem * 64.0f);
         leading = (SkIntToScalar(face->size->metrics.height) / (yppem * 64.0f)) + ascent - descent;
