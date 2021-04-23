@@ -136,30 +136,6 @@ sk_sp<SkFlattenable> SkTwoPointConicalGradient::CreateProc(SkReadBuffer& buffer)
     SkScalar r1 = buffer.readScalar();
     SkScalar r2 = buffer.readScalar();
 
-    if (buffer.isVersionLT(SkPicturePriv::k2PtConicalNoFlip_Version) && buffer.readBool()) {
-        using std::swap;
-        // legacy flipped gradient
-        swap(c1, c2);
-        swap(r1, r2);
-
-        SkColor4f* colors = desc.mutableColors();
-        SkScalar* pos = desc.mutablePos();
-        const int last = desc.fCount - 1;
-        const int half = desc.fCount >> 1;
-        for (int i = 0; i < half; ++i) {
-            swap(colors[i], colors[last - i]);
-            if (pos) {
-                SkScalar tmp = pos[i];
-                pos[i] = SK_Scalar1 - pos[last - i];
-                pos[last - i] = SK_Scalar1 - tmp;
-            }
-        }
-        if (pos) {
-            if (desc.fCount & 1) {
-                pos[half] = SK_Scalar1 - pos[half];
-            }
-        }
-    }
     if (!buffer.isValid()) {
         return nullptr;
     }
@@ -235,6 +211,8 @@ void SkTwoPointConicalGradient::appendGradientStages(SkArenaAlloc* alloc, SkRast
 
 skvm::F32 SkTwoPointConicalGradient::transformT(skvm::Builder* p, skvm::Uniforms* uniforms,
                                                 skvm::Coord coord, skvm::I32* mask) const {
+    auto mag = [](skvm::F32 x, skvm::F32 y) { return sqrt(x*x + y*y); };
+
     // See https://skia.org/dev/design/conical, and onAppendStages() above.
     // There's a lot going on here, and I'm not really sure what's independent
     // or disjoint, what can be reordered, simplified, etc.  Tweak carefully.
@@ -245,8 +223,8 @@ skvm::F32 SkTwoPointConicalGradient::transformT(skvm::Builder* p, skvm::Uniforms
         float denom = 1.0f / (fRadius2 - fRadius1),
               scale = std::max(fRadius1, fRadius2) * denom,
                bias =                  -fRadius1 * denom;
-        return norm(x,y) * p->uniformF(uniforms->pushF(scale))
-                         + p->uniformF(uniforms->pushF(bias ));
+        return mag(x,y) * p->uniformF(uniforms->pushF(scale))
+                        + p->uniformF(uniforms->pushF(bias ));
     }
 
     if (fType == Type::kStrip) {
@@ -263,7 +241,7 @@ skvm::F32 SkTwoPointConicalGradient::transformT(skvm::Builder* p, skvm::Uniforms
     if (fFocalData.isFocalOnCircle()) {
         t = (y/x) * y + x;       // (x^2 + y^2) / x  ~~>  x + y^2/x  ~~>  y/x * y + x
     } else if (fFocalData.isWellBehaved()) {
-        t = norm(x,y) - x*invR1;
+        t = mag(x,y) - x*invR1;
     } else {
         skvm::F32 k = sqrt(x*x - y*y);
         if (fFocalData.isSwapped() || 1 - fFocalData.fFocalX < 0) {

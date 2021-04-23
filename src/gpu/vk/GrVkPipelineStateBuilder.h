@@ -25,19 +25,22 @@ class GrVkPipelineStateBuilder : public GrGLSLProgramBuilder {
 public:
     /** Generates a pipeline state.
      *
-     * The GrVkPipelineState implements what is specified in the GrPipeline and GrPrimitiveProcessor
-     * as input. After successful generation, the builder result objects are available to be used.
+     * The return GrVkPipelineState implements the supplied GrProgramInfo.
+     *
      * @return the created pipeline if generation was successful; nullptr otherwise
      */
     static GrVkPipelineState* CreatePipelineState(GrVkGpu*,
                                                   GrRenderTarget*,
                                                   const GrProgramDesc&,
                                                   const GrProgramInfo&,
-                                                  VkRenderPass compatibleRenderPass);
+                                                  VkRenderPass compatibleRenderPass,
+                                                  bool overrideSubpassForResolveLoad);
 
     const GrCaps* caps() const override;
 
     GrVkGpu* gpu() const { return fGpu; }
+
+    SkSL::Compiler* shaderCompiler() const override;
 
     void finalizeFragmentOutputColor(GrShaderVar& outputColor) override;
     void finalizeFragmentSecondaryColor(GrShaderVar& outputColor) override;
@@ -45,7 +48,8 @@ public:
 private:
     GrVkPipelineStateBuilder(GrVkGpu*, GrRenderTarget*, const GrProgramDesc&, const GrProgramInfo&);
 
-    GrVkPipelineState* finalize(const GrProgramDesc&, VkRenderPass compatibleRenderPass);
+    GrVkPipelineState* finalize(const GrProgramDesc&, VkRenderPass compatibleRenderPass,
+                                bool overrideSupbassForResolveLoad);
 
     // returns number of shader stages
     int loadShadersFromCache(SkReadBuffer* cached, VkShaderModule outShaderModules[],
@@ -77,7 +81,7 @@ private:
     GrVkVaryingHandler fVaryingHandler;
     GrVkUniformHandler fUniformHandler;
 
-    typedef GrGLSLProgramBuilder INHERITED;
+    using INHERITED = GrGLSLProgramBuilder;
 };
 
 #endif

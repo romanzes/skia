@@ -14,13 +14,13 @@
 namespace skia {
 namespace textlayout {
 
-Run::Run(ParagraphImpl* master,
+Run::Run(ParagraphImpl* owner,
          const SkShaper::RunHandler::RunInfo& info,
          size_t firstChar,
          SkScalar heightMultiplier,
          size_t index,
          SkScalar offsetX)
-    : fMaster(master)
+    : fOwner(owner)
     , fTextRange(firstChar + info.utf8Range.begin(), firstChar + info.utf8Range.end())
     , fClusterRange(EMPTY_CLUSTERS)
     , fFont(info.fFont)
@@ -68,21 +68,6 @@ SkShaper::RunHandler::Buffer Run::newRunBuffer() {
 void Run::commit() {
     fFont.getBounds(fGlyphs.data(), fGlyphs.size(), fBounds.data(), nullptr);
 }
-SkScalar Run::calculateWidth(size_t start, size_t end, bool clip) const {
-    SkASSERT(start <= end);
-    // clip |= end == size();  // Clip at the end of the run?
-    SkScalar shift = 0;
-    if (fSpaced && end > start) {
-        shift = fShifts[clip ? end - 1 : end] - fShifts[start];
-    }
-    auto correction = 0.0f;
-    if (end > start && !fJustificationShifts.empty()) {
-        // This is not a typo: we are using Point as a pair of SkScalars
-        correction = fJustificationShifts[end - 1].fX -
-                     fJustificationShifts[start].fY;
-    }
-    return posX(end) - posX(start) + shift + correction;
-}
 
 void Run::copyTo(SkTextBlobBuilder& builder, size_t pos, size_t size) const {
     SkASSERT(pos + size <= this->size());
@@ -112,71 +97,34 @@ std::tuple<bool, ClusterIndex, ClusterIndex> Run::findLimitingClusters(TextRange
     if (text.width() == 0) {
         // Special Flutter case for "\n" and "...\n"
         if (text.end > this->fTextRange.start) {
-            ClusterIndex index = fMaster->clusterIndex(text.end - 1);
+            ClusterIndex index = fOwner->clusterIndex(text.end - 1);
             return std::make_tuple(true, index, index);
         } else {
             return std::make_tuple(false, 0, 0);
         }
     }
 
-    ClusterIndex startIndex = fMaster->clusterIndex(text.start);
-    ClusterIndex endIndex = fMaster->clusterIndex(text.end - 1);
+    ClusterIndex startIndex = fOwner->clusterIndex(text.start);
+    ClusterIndex endIndex = fOwner->clusterIndex(text.end - 1);
     if (!leftToRight()) {
         std::swap(startIndex, endIndex);
     }
     return std::make_tuple(startIndex != fClusterRange.end && endIndex != fClusterRange.end, startIndex, endIndex);
 }
 
-void Run::iterateThroughClustersInTextOrder(const ClusterTextVisitor& visitor) {
-    // Can't figure out how to do it with one code for both cases without 100 ifs
-    // Can't go through clusters because there are no cluster table yet
-    if (leftToRight()) {
-        size_t start = 0;
-        size_t cluster = this->clusterIndex(start);
-        for (size_t glyph = 1; glyph <= this->size(); ++glyph) {
-            auto nextCluster = this->clusterIndex(glyph);
-            if (nextCluster <= cluster) {
-                continue;
-            }
-
-            visitor(start,
-                    glyph,
-                    fClusterStart + cluster,
-                    fClusterStart + nextCluster,
-                    this->calculateWidth(start, glyph, glyph == size()),
-                    this->calculateHeight(LineMetricStyle::CSS, LineMetricStyle::CSS));
-
-            start = glyph;
-            cluster = nextCluster;
-        }
-    } else {
-        size_t glyph = this->size();
-        size_t cluster = this->fUtf8Range.begin();
-        for (int32_t start = this->size() - 1; start >= 0; --start) {
-            size_t nextCluster =
-                    start == 0 ? this->fUtf8Range.end() : this->clusterIndex(start - 1);
-            if (nextCluster <= cluster) {
-                continue;
-            }
-
-            visitor(start,
-                    glyph,
-                    fClusterStart + cluster,
-                    fClusterStart + nextCluster,
-                    this->calculateWidth(start, glyph, glyph == 0),
-                    this->calculateHeight(LineMetricStyle::CSS, LineMetricStyle::CSS));
-
-            glyph = start;
-            cluster = nextCluster;
-        }
-    }
+// Adjust the text to grapheme edges so the first grapheme start is in the text and the last grapheme start is in the text
+// It actually means that the first grapheme is entirely in the text and the last grapheme does not have to be
+std::tuple<bool, TextIndex, TextIndex> Run::findLimitingGraphemes(TextRange text) const {
+    TextIndex start = fOwner->findNextGraphemeBoundary(text.start);
+    TextIndex end = fOwner->findNextGraphemeBoundary(text.end);
+    return std::make_tuple(true, start, end);
 }
 
 void Run::iterateThroughClusters(const ClusterVisitor& visitor) {
 
     for (size_t index = 0; index < fClusterRange.width(); ++index) {
         auto correctIndex = leftToRight() ? fClusterRange.start + index : fClusterRange.end - index - 1;
-        auto cluster = &fMaster->cluster(correctIndex);
+        auto cluster = &fOwner->cluster(correctIndex);
         visitor(cluster);
     }
 }
@@ -316,7 +264,7 @@ size_t Cluster::roundPos(SkScalar s) const {
 SkScalar Cluster::trimmedWidth(size_t pos) const {
     // Find the width until the pos and return the min between trimmedWidth and the width(pos)
     // We don't have to take in account cluster shift since it's the same for 0 and for pos
-    auto& run = fMaster->run(fRunIndex);
+    auto& run = fOwner->run(fRunIndex);
     return std::min(run.positionX(pos) - run.positionX(fStart), fWidth);
 }
 
@@ -327,55 +275,35 @@ SkScalar Run::positionX(size_t pos) const {
 
 PlaceholderStyle* Run::placeholderStyle() const {
     if (isPlaceholder()) {
-        return &fMaster->placeholders()[fPlaceholderIndex].fStyle;
+        return &fOwner->placeholders()[fPlaceholderIndex].fStyle;
     } else {
         return nullptr;
     }
 }
 
-Run* Cluster::run() const {
-    if (fRunIndex >= fMaster->runs().size()) {
+Run* Cluster::runOrNull() const {
+    if (fRunIndex >= fOwner->runs().size()) {
         return nullptr;
     }
-    return &fMaster->run(fRunIndex);
+    return &fOwner->run(fRunIndex);
+}
+
+Run& Cluster::run() const {
+    SkASSERT(fRunIndex < fOwner->runs().size());
+    return fOwner->run(fRunIndex);
 }
 
 SkFont Cluster::font() const {
-    return fMaster->run(fRunIndex).font();
-}
-
-bool Cluster::isHardBreak() const {
-    return fMaster->codeUnitHasProperty(fTextRange.end,CodeUnitFlags::kHardLineBreakBefore);
+    SkASSERT(fRunIndex < fOwner->runs().size());
+    return fOwner->run(fRunIndex).font();
 }
 
 bool Cluster::isSoftBreak() const {
-    return fMaster->codeUnitHasProperty(fTextRange.end,CodeUnitFlags::kSoftLineBreakBefore);
+    return fOwner->codeUnitHasProperty(fTextRange.end, CodeUnitFlags::kSoftLineBreakBefore);
 }
 
 bool Cluster::isGraphemeBreak() const {
-    return fMaster->codeUnitHasProperty(fTextRange.end,CodeUnitFlags::kGraphemeStart);
+    return fOwner->codeUnitHasProperty(fTextRange.end, CodeUnitFlags::kGraphemeStart);
 }
-
-Cluster::Cluster(ParagraphImpl* master,
-        RunIndex runIndex,
-        size_t start,
-        size_t end,
-        SkSpan<const char> text,
-        SkScalar width,
-        SkScalar height)
-        : fMaster(master)
-        , fRunIndex(runIndex)
-        , fTextRange(text.begin() - fMaster->text().begin(), text.end() - fMaster->text().begin())
-        , fGraphemeRange(EMPTY_RANGE)
-        , fStart(start)
-        , fEnd(end)
-        , fWidth(width)
-        , fSpacing(0)
-        , fHeight(height)
-        , fHalfLetterSpacing(0.0) {
-    size_t len = fMaster->getWhitespacesLength(fTextRange);
-    fIsWhiteSpaces = (len == this->fTextRange.width());
-}
-
 }  // namespace textlayout
 }  // namespace skia

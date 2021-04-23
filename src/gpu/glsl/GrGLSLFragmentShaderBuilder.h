@@ -17,46 +17,15 @@ class GrRenderTarget;
 class GrGLSLVarying;
 
 /*
- * This base class encapsulates the common functionality which all processors use to build fragment
- * shaders.
- */
-class GrGLSLFragmentBuilder : public GrGLSLShaderBuilder {
-public:
-    GrGLSLFragmentBuilder(GrGLSLProgramBuilder* program) : INHERITED(program) {}
-    virtual ~GrGLSLFragmentBuilder() {}
-
-    /**
-     * This returns a variable name to access the 2D, perspective correct version of the coords in
-     * the fragment shader. The passed in coordinates must either be of type kHalf2 or kHalf3. If
-     * the coordinates are 3-dimensional, it a perspective divide into is emitted into the
-     * fragment shader (xy / z) to convert them to 2D.
-     */
-    virtual SkString ensureCoords2D(const GrShaderVar&, const SkSL::SampleMatrix& matrix) = 0;
-
-    // TODO: remove this method.
-    void declAppendf(const char* fmt, ...);
-
-private:
-    typedef GrGLSLShaderBuilder INHERITED;
-};
-
-/*
  * This class is used by fragment processors to build their fragment code.
  */
-class GrGLSLFPFragmentBuilder : virtual public GrGLSLFragmentBuilder {
+class GrGLSLFPFragmentBuilder : virtual public GrGLSLShaderBuilder {
 public:
-    /** Appease the compiler; the derived class initializes GrGLSLFragmentBuilder. */
-    GrGLSLFPFragmentBuilder() : GrGLSLFragmentBuilder(nullptr) {
+    /** Appease the compiler; the derived class initializes GrGLSLShaderBuilder. */
+    GrGLSLFPFragmentBuilder() : GrGLSLShaderBuilder(nullptr) {
         // Suppress unused warning error
         (void) fDummyPadding;
     }
-
-    /**
-     * Returns the variable name that holds the array of sample offsets from pixel center to each
-     * sample location. Before this is called, a processor must have advertised that it will use
-     * CustomFeatures::kSampleLocations.
-     */
-    virtual const char* sampleOffsets() = 0;
 
     enum class ScopeFlags {
         // Every fragment will always execute this code, and will do it exactly once.
@@ -68,31 +37,6 @@ public:
         // This code will be executed more than once.
         kInsideLoop = (1 << 2)
     };
-
-    /**
-     * Subtracts multisample coverage by AND-ing the sample mask with the provided "mask".
-     * Sample N corresponds to bit "1 << N".
-     *
-     * If the given scope is "kTopLevel" and the sample mask has not yet been modified, this method
-     * assigns the sample mask in place rather than pre-initializing it to ~0 then AND-ing it.
-     *
-     * Requires MSAA and GLSL support for sample variables.
-     */
-    virtual void maskOffMultisampleCoverage(const char* mask, ScopeFlags) = 0;
-
-    /**
-     * Turns off coverage at each sample where the implicit function fn > 0.
-     *
-     * The provided "fn" value represents the implicit function at pixel center. We then approximate
-     * the implicit at each sample by riding the gradient, "grad", linearly from pixel center to
-     * each sample location.
-     *
-     * If "grad" is null, we approximate the gradient using HW derivatives.
-     *
-     * Requires MSAA and GLSL support for sample variables. Also requires HW derivatives if not
-     * providing a gradient.
-     */
-    virtual void applyFnToMultisampleMask(const char* fn, const char* grad, ScopeFlags) = 0;
 
     SkString writeProcessorFunction(GrGLSLFragmentProcessor*, GrGLSLFragmentProcessor::EmitArgs&);
 
@@ -108,12 +52,12 @@ private:
     virtual const SkString& getMangleString() const = 0;
 
     // WARNING: LIke GrRenderTargetProxy, changes to this can cause issues in ASAN. This is caused
-    // by GrGLSLProgramBuilder's GrTAllocators requiring 16 byte alignment, but since
+    // by GrGLSLProgramBuilder's GrTBlockLists requiring 16 byte alignment, but since
     // GrGLSLFragmentShaderBuilder has a virtual diamond hierarchy, ASAN requires all this pointers
     // to start aligned, even though clang is already correctly offsetting the individual fields
     // that require the larger alignment. In the current world, this extra padding is sufficient to
     // correctly initialize GrGLSLXPFragmentBuilder second.
-    char fDummyPadding[4];
+    char fDummyPadding[4] = {};
 };
 
 GR_MAKE_BITFIELD_CLASS_OPS(GrGLSLFPFragmentBuilder::ScopeFlags);
@@ -121,10 +65,10 @@ GR_MAKE_BITFIELD_CLASS_OPS(GrGLSLFPFragmentBuilder::ScopeFlags);
 /*
  * This class is used by Xfer processors to build their fragment code.
  */
-class GrGLSLXPFragmentBuilder : virtual public GrGLSLFragmentBuilder {
+class GrGLSLXPFragmentBuilder : virtual public GrGLSLShaderBuilder {
 public:
-    /** Appease the compiler; the derived class initializes GrGLSLFragmentBuilder. */
-    GrGLSLXPFragmentBuilder() : GrGLSLFragmentBuilder(nullptr) {}
+    /** Appease the compiler; the derived class initializes GrGLSLShaderBuilder. */
+    GrGLSLXPFragmentBuilder() : GrGLSLShaderBuilder(nullptr) {}
 
     virtual bool hasCustomColorOutput() const = 0;
     virtual bool hasSecondaryOutput() const = 0;
@@ -150,14 +94,7 @@ public:
 
     GrGLSLFragmentShaderBuilder(GrGLSLProgramBuilder* program);
 
-    // Shared GrGLSLFragmentBuilder interface.
-    virtual SkString ensureCoords2D(const GrShaderVar&,
-                                    const SkSL::SampleMatrix& matrix) override;
-
     // GrGLSLFPFragmentBuilder interface.
-    const char* sampleOffsets() override;
-    void maskOffMultisampleCoverage(const char* mask, ScopeFlags) override;
-    void applyFnToMultisampleMask(const char* fn, const char* grad, ScopeFlags) override;
     void forceHighPrecision() override { fForceHighPrecision = true; }
 
     // GrGLSLXPFragmentBuilder interface.
@@ -232,6 +169,7 @@ private:
 
     friend class GrGLSLProgramBuilder;
     friend class GrGLProgramBuilder;
+    friend class GrVkPipelineStateBuilder;
 };
 
 #endif

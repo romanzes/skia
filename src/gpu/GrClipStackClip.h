@@ -27,28 +27,24 @@ public:
             , fStack(stack)
             , fMatrixProvider(matrixProvider) {}
 
-    bool quickContains(const SkRect&) const final;
-    bool quickContains(const SkRRect&) const final;
     SkIRect getConservativeBounds() const final;
-    bool apply(GrRecordingContext*, GrRenderTargetContext*, bool useHWAA,
-               bool hasUserStencilSettings, GrAppliedClip* out, SkRect* bounds) const final;
+    Effect apply(GrRecordingContext*, GrSurfaceDrawContext*, GrAAType aaType,
+                     bool hasUserStencilSettings, GrAppliedClip* out, SkRect* bounds) const final;
+    PreClipResult preApply(const SkRect& drawBounds, GrAA aa) const final;
 
-    bool isRRect(SkRRect* rr, GrAA* aa) const override;
-
-    sk_sp<GrTextureProxy> testingOnly_createClipMask(GrContext*) const;
+    sk_sp<GrTextureProxy> testingOnly_createClipMask(GrRecordingContext*) const;
     static const char kMaskTestTag[];
 
 private:
     static bool PathNeedsSWRenderer(GrRecordingContext* context,
                                     const SkIRect& scissorRect,
                                     bool hasUserStencilSettings,
-                                    const GrRenderTargetContext*,
+                                    const GrSurfaceDrawContext*,
                                     const SkMatrix& viewMatrix,
                                     const SkClipStack::Element* element,
-                                    GrPathRenderer** prOut,
                                     bool needsStencil);
 
-    bool applyClipMask(GrRecordingContext*, GrRenderTargetContext*, const GrReducedClip&,
+    bool applyClipMask(GrRecordingContext*, GrSurfaceDrawContext*, const GrReducedClip&,
                        bool hasUserStencilSettings, GrAppliedClip*) const;
 
     // Creates an alpha mask of the clip. The mask is a rasterization of elements through the
@@ -57,11 +53,11 @@ private:
 
     // Similar to createAlphaClipMask but it rasterizes in SW and uploads to the result texture.
     GrSurfaceProxyView createSoftwareClipMask(GrRecordingContext*, const GrReducedClip&,
-                                              GrRenderTargetContext*) const;
+                                              GrSurfaceDrawContext*) const;
 
     static bool UseSWOnlyPath(GrRecordingContext*,
                               bool hasUserStencilSettings,
-                              const GrRenderTargetContext*,
+                              const GrSurfaceDrawContext*,
                               const GrReducedClip&);
 
     // SkClipStack does not track device bounds explicitly, but it will refine these device bounds

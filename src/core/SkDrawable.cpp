@@ -14,7 +14,7 @@ static int32_t next_generation_id() {
 
     int32_t id;
     do {
-        id = nextID++;
+        id = nextID.fetch_add(1, std::memory_order_relaxed);
     } while (id == 0);
     return id;
 }
@@ -74,7 +74,7 @@ SkPicture* SkDrawable::onNewPictureSnapshot() {
     SkPictureRecorder recorder;
 
     const SkRect bounds = this->getBounds();
-    SkCanvas* canvas = recorder.beginRecording(bounds, nullptr, 0);
+    SkCanvas* canvas = recorder.beginRecording(bounds);
     this->draw(canvas);
     if (false) {
         draw_bbox(canvas, bounds);

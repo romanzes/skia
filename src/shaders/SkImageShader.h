@@ -17,20 +17,11 @@ class SkImageStageUpdater;
 
 class SkImageShader : public SkShaderBase {
 public:
-    enum FilterEnum {   // first 4 entries match SkFilterQuality
-        kNone,
-        kLow,
-        kMedium,
-        kHigh,
-        // this is the special value for backward compatibility
-        kInheritFromPaint,
-    };
-
     static sk_sp<SkShader> Make(sk_sp<SkImage>,
                                 SkTileMode tmx,
                                 SkTileMode tmy,
+                                const SkSamplingOptions&,
                                 const SkMatrix* localMatrix,
-                                FilterEnum,
                                 bool clampAsIfUnpremul = false);
 
     bool isOpaque() const override;
@@ -39,15 +30,17 @@ public:
     std::unique_ptr<GrFragmentProcessor> asFragmentProcessor(const GrFPArgs&) const override;
 #endif
 
+    static SkM44 CubicResamplerMatrix(float B, float C);
+
 private:
     SK_FLATTENABLE_HOOKS(SkImageShader)
 
     SkImageShader(sk_sp<SkImage>,
                   SkTileMode tmx,
                   SkTileMode tmy,
+                  const SkSamplingOptions&,
                   const SkMatrix* localMatrix,
-                  FilterEnum,
-                  bool clampAsIfUnpremul);
+                  bool clampAsIfUnpremul = false);
 
     void flatten(SkWriteBuffer&) const override;
 #ifdef SK_ENABLE_LEGACY_SHADERCONTEXT
@@ -59,24 +52,22 @@ private:
     SkStageUpdater* onAppendUpdatableStages(const SkStageRec&) const override;
 
     skvm::Color onProgram(skvm::Builder*, skvm::Coord device, skvm::Coord local, skvm::Color paint,
-                          const SkMatrixProvider&, const SkMatrix* localM,
-                          SkFilterQuality quality, const SkColorInfo& dst,
+                          const SkMatrixProvider&, const SkMatrix* localM, const SkColorInfo& dst,
                           skvm::Uniforms* uniforms, SkArenaAlloc*) const override;
 
     bool doStages(const SkStageRec&, SkImageStageUpdater* = nullptr) const;
 
-    SkFilterQuality resolveFiltering(SkFilterQuality paintQuality) const {
-        return fFiltering == kInheritFromPaint ? paintQuality : (SkFilterQuality)fFiltering;
-    }
-
-    sk_sp<SkImage>   fImage;
-    const SkTileMode fTileModeX;
-    const SkTileMode fTileModeY;
-    const FilterEnum fFiltering;
-    const bool       fClampAsIfUnpremul;
+    sk_sp<SkImage>          fImage;
+    const SkSamplingOptions fSampling;
+    const SkTileMode        fTileModeX;
+    const SkTileMode        fTileModeY;
+    const bool              fClampAsIfUnpremul;
 
     friend class SkShaderBase;
-    typedef SkShaderBase INHERITED;
+    using INHERITED = SkShaderBase;
+
+    // for legacy unflattening
+    static sk_sp<SkFlattenable> PreSamplingCreate(SkReadBuffer&);
 };
 
 #endif

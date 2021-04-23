@@ -12,7 +12,6 @@
 #include "include/gpu/GrBackendSurface.h"
 #include "include/private/SkNoncopyable.h"
 #include "src/gpu/GrGpuResource.h"
-#include "src/gpu/GrNonAtomicRef.h"
 #include "src/gpu/GrSurface.h"
 #include "src/gpu/GrTexture.h"
 
@@ -70,7 +69,7 @@ public:
         SkISize fDimensions;
         SkBackingFit fFit;
         GrRenderable fRenderable;
-        GrMipMapped fMipMapped;
+        GrMipmapped fMipmapped;
         int fSampleCnt;
         const GrBackendFormat& fFormat;
         GrProtected fProtected;
@@ -228,7 +227,20 @@ public:
     virtual GrRenderTargetProxy* asRenderTargetProxy() { return nullptr; }
     virtual const GrRenderTargetProxy* asRenderTargetProxy() const { return nullptr; }
 
+    /** @return The unique key for this proxy. May be invalid. */
+    virtual const GrUniqueKey& getUniqueKey() const {
+        // Base class never has a valid unique key.
+        static const GrUniqueKey kInvalidKey;
+        return kInvalidKey;
+    }
+
     bool isInstantiated() const { return SkToBool(fTarget); }
+
+    /** Called when this task becomes a target of a GrRenderTask. */
+    void isUsedAsTaskTarget() { ++fTaskTargetCount; }
+
+    /** How many render tasks has this proxy been the target of? */
+    int getTaskTargetCount() const { return fTaskTargetCount; }
 
     // If the proxy is already instantiated, return its backing GrTexture; if not, return null.
     GrSurface* peekSurface() const { return fTarget.get(); }
@@ -275,13 +287,10 @@ public:
      *
      * @return the amount of GPU memory used in bytes
      */
-    size_t gpuMemorySize(const GrCaps& caps) const {
+    size_t gpuMemorySize() const {
         SkASSERT(!this->isFullyLazy());
-        if (fTarget) {
-            return fTarget->gpuMemorySize();
-        }
         if (kInvalidGpuMemorySize == fGpuMemorySize) {
-            fGpuMemorySize = this->onUninstantiatedGpuMemorySize(caps);
+            fGpuMemorySize = this->onUninstantiatedGpuMemorySize();
             SkASSERT(kInvalidGpuMemorySize != fGpuMemorySize);
         }
         return fGpuMemorySize;
@@ -299,35 +308,52 @@ public:
     // new one. Thus, there isn't a need for a swizzle when doing the copy. The format of the copy
     // will be the same as the src. Therefore, the copy can be used in a view with the same swizzle
     // as the original for use with a given color type.
+    //
+    // Optionally gets the render task that performs the copy. If it is later determined that the
+    // copy is not neccessaru then the task can be marked skippable using GrRenderTask::canSkip() and
+    // the copy will be elided.
     static sk_sp<GrSurfaceProxy> Copy(GrRecordingContext*,
-                                      GrSurfaceProxy* src,
+                                      sk_sp<GrSurfaceProxy> src,
                                       GrSurfaceOrigin,
-                                      GrMipMapped,
+                                      GrMipmapped,
                                       SkIRect srcRect,
                                       SkBackingFit,
                                       SkBudgeted,
-                                      RectsMustMatch = RectsMustMatch::kNo);
+                                      RectsMustMatch = RectsMustMatch::kNo,
+                                      sk_sp<GrRenderTask>* outTask = nullptr);
 
     // Same as above Copy but copies the entire 'src'
     static sk_sp<GrSurfaceProxy> Copy(GrRecordingContext*,
-                                      GrSurfaceProxy* src,
+                                      sk_sp<GrSurfaceProxy> src,
                                       GrSurfaceOrigin,
-                                      GrMipMapped,
+                                      GrMipmapped,
                                       SkBackingFit,
-                                      SkBudgeted);
+                                      SkBudgeted,
+                                      sk_sp<GrRenderTask>* outTask = nullptr);
 
 #if GR_TEST_UTILS
     int32_t testingOnly_getBackingRefCnt() const;
     GrInternalSurfaceFlags testingOnly_getFlags() const;
+    SkString dump() const;
 #endif
 
-    SkDEBUGCODE(void validate(GrContext_Base*) const;)
+#ifdef SK_DEBUG
+    void validate(GrContext_Base*) const;
+    SkString getDebugName() {
+        return fDebugName.isEmpty() ? SkStringPrintf("%d", this->uniqueID().asUInt()) : fDebugName;
+    }
+    void setDebugName(SkString name) { fDebugName = std::move(name); }
+#endif
 
     // Provides access to functions that aren't part of the public API.
     inline GrSurfaceProxyPriv priv();
-    inline const GrSurfaceProxyPriv priv() const;
+    inline const GrSurfaceProxyPriv priv() const;  // NOLINT(readability-const-return-type)
+
+    bool isDDLTarget() const { return fIsDDLTarget; }
 
     GrProtected isProtected() const { return fIsProtected; }
+
+    bool isPromiseProxy() { return fIsPromiseProxy; }
 
 protected:
     // Deferred version - takes a new UniqueID from the shared resource/proxy pool.
@@ -368,7 +394,7 @@ protected:
     void assign(sk_sp<GrSurface> surface);
 
     sk_sp<GrSurface> createSurfaceImpl(GrResourceProvider*, int sampleCnt, GrRenderable,
-                                       GrMipMapped) const;
+                                       GrMipmapped) const;
 
     // Once the dimensions of a fully-lazy proxy are decided, and before it gets instantiated, the
     // client can use this optional method to specify the proxy's dimensions. (A proxy's dimensions
@@ -381,7 +407,7 @@ protected:
     }
 
     bool instantiateImpl(GrResourceProvider* resourceProvider, int sampleCnt, GrRenderable,
-                         GrMipMapped, const GrUniqueKey*);
+                         GrMipmapped, const GrUniqueKey*);
 
     // For deferred proxies this will be null until the proxy is instantiated.
     // For wrapped proxies it will point to the wrapped resource.
@@ -419,18 +445,23 @@ private:
     static const size_t kInvalidGpuMemorySize = ~static_cast<size_t>(0);
     SkDEBUGCODE(size_t getRawGpuMemorySize_debugOnly() const { return fGpuMemorySize; })
 
-    virtual size_t onUninstantiatedGpuMemorySize(const GrCaps&) const = 0;
+    virtual size_t onUninstantiatedGpuMemorySize() const = 0;
 
     virtual LazySurfaceDesc callbackDesc() const = 0;
 
     bool                   fIgnoredByResourceAllocator = false;
+    bool                   fIsDDLTarget = false;
+    bool                   fIsPromiseProxy = false;
     GrProtected            fIsProtected;
+
+    int                     fTaskTargetCount = 0;
 
     // This entry is lazily evaluated so, when the proxy wraps a resource, the resource
     // will be called but, when the proxy is deferred, it will compute the answer itself.
     // If the proxy computes its own answer that answer is checked (in debug mode) in
-    // the instantiation method.
-    mutable size_t         fGpuMemorySize;
+    // the instantiation method. The image may be shared between threads, hence atomic.
+    mutable std::atomic<size_t>         fGpuMemorySize{kInvalidGpuMemorySize};
+    SkDEBUGCODE(SkString   fDebugName;)
 };
 
 GR_MAKE_BITFIELD_CLASS_OPS(GrSurfaceProxy::ResolveFlags)

@@ -8,12 +8,12 @@
 #ifndef SKSL_SPIRVTOHLSL
 #define SKSL_SPIRVTOHLSL
 
-#include "src/sksl/SkSLString.h"
+#include "include/private/SkSLString.h"
 
 namespace SkSL {
 
 bool SPIRVtoHLSL(const String& spirv, String* hlsl);
 
-}
+}  // namespace SkSL
 
 #endif

@@ -36,24 +36,22 @@ class SkTrivialExecutor final : public SkExecutor {
     }
 };
 
+static SkExecutor& trivial_executor() {
+    static auto* executor = new SkTrivialExecutor();
+    return *executor;
+}
+
 static SkExecutor* gDefaultExecutor = nullptr;
 
-void SetDefaultTrivialExecutor() {
-    static SkTrivialExecutor *gTrivial = new SkTrivialExecutor();
-    gDefaultExecutor = gTrivial;
-}
 SkExecutor& SkExecutor::GetDefault() {
-    if (!gDefaultExecutor) {
-        SetDefaultTrivialExecutor();
+    if (gDefaultExecutor) {
+        return *gDefaultExecutor;
     }
-    return *gDefaultExecutor;
+    return trivial_executor();
 }
+
 void SkExecutor::SetDefault(SkExecutor* executor) {
-    if (executor) {
-        gDefaultExecutor = executor;
-    } else {
-        SetDefaultTrivialExecutor();
-    }
+    gDefaultExecutor = executor;
 }
 
 // We'll always push_back() new work, but pop from the front of deques or the back of SkTArray.
@@ -89,7 +87,7 @@ public:
         }
     }
 
-    virtual void add(std::function<void(void)> work) override {
+    void add(std::function<void(void)> work) override {
         // Add some work to our pile of work to do.
         {
             SkAutoMutexExclusive lock(fWorkLock);
@@ -99,7 +97,7 @@ public:
         fWorkAvailable.signal(1);
     }
 
-    virtual void borrow() override {
+    void borrow() override {
         // If there is work waiting and we're allowed to borrow work, do it.
         if (fAllowBorrowing && fWorkAvailable.try_wait()) {
             SkAssertResult(this->do_work());

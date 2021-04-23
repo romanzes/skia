@@ -7,6 +7,8 @@
 
 #include "modules/skottie/src/effects/Effects.h"
 
+#include "modules/skottie/src/Composition.h"
+#include "modules/skottie/src/Layer.h"
 #include "modules/skottie/src/SkottieJson.h"
 #include "modules/sksg/include/SkSGRenderEffect.h"
 #include "src/utils/SkJSON.h"
@@ -17,8 +19,11 @@
 namespace skottie {
 namespace internal {
 
-EffectBuilder::EffectBuilder(const AnimationBuilder* abuilder, const SkSize& layer_size)
+EffectBuilder::EffectBuilder(const AnimationBuilder* abuilder,
+                             const SkSize& layer_size,
+                             CompositionBuilder* cbuilder)
     : fBuilder(abuilder)
+    , fCompBuilder(cbuilder)
     , fLayerSize(layer_size) {}
 
 EffectBuilder::EffectBuilderT EffectBuilder::findBuilder(const skjson::ObjectValue& jeffect) const {
@@ -26,11 +31,14 @@ EffectBuilder::EffectBuilderT EffectBuilder::findBuilder(const skjson::ObjectVal
         const char*    fName;
         EffectBuilderT fBuilder;
     } gBuilderInfo[] = {
+        { "ADBE Black&White"            , &EffectBuilder::attachBlackAndWhiteEffect      },
         { "ADBE Brightness & Contrast 2", &EffectBuilder::attachBrightnessContrastEffect },
         { "ADBE Corner Pin"             , &EffectBuilder::attachCornerPinEffect          },
+        { "ADBE Displacement Map"       , &EffectBuilder::attachDisplacementMapEffect    },
         { "ADBE Drop Shadow"            , &EffectBuilder::attachDropShadowEffect         },
         { "ADBE Easy Levels2"           , &EffectBuilder::attachEasyLevelsEffect         },
         { "ADBE Fill"                   , &EffectBuilder::attachFillEffect               },
+        { "ADBE Fractal Noise"          , &EffectBuilder::attachFractalNoiseEffect       },
         { "ADBE Gaussian Blur 2"        , &EffectBuilder::attachGaussianBlurEffect       },
         { "ADBE Geometry2"              , &EffectBuilder::attachTransformEffect          },
         { "ADBE HUE SATURATION"         , &EffectBuilder::attachHueSaturationEffect      },
@@ -40,10 +48,12 @@ EffectBuilder::EffectBuilderT EffectBuilder::findBuilder(const skjson::ObjectVal
         { "ADBE Radial Wipe"            , &EffectBuilder::attachRadialWipeEffect         },
         { "ADBE Ramp"                   , &EffectBuilder::attachGradientEffect           },
         { "ADBE Shift Channels"         , &EffectBuilder::attachShiftChannelsEffect      },
+        { "ADBE Threshold2"             , &EffectBuilder::attachThresholdEffect          },
         { "ADBE Tile"                   , &EffectBuilder::attachMotionTileEffect         },
         { "ADBE Tint"                   , &EffectBuilder::attachTintEffect               },
         { "ADBE Tritone"                , &EffectBuilder::attachTritoneEffect            },
         { "ADBE Venetian Blinds"        , &EffectBuilder::attachVenetianBlindsEffect     },
+        { "CC Sphere"                   , &EffectBuilder::attachSphereEffect             },
     };
 
     const skjson::StringValue* mn = jeffect["mn"];

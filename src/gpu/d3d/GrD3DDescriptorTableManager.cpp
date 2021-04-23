@@ -10,26 +10,26 @@
 #include "src/gpu/d3d/GrD3DGpu.h"
 
 GrD3DDescriptorTableManager::GrD3DDescriptorTableManager(GrD3DGpu* gpu)
-    : fCBVSRVDescriptorPool(gpu, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV)
+    : fCBVSRVUAVDescriptorPool(gpu, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV)
     , fSamplerDescriptorPool(gpu, D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER) {}
 
-std::unique_ptr<GrD3DDescriptorTable>
-        GrD3DDescriptorTableManager::createShaderOrConstantResourceTable(GrD3DGpu* gpu,
+sk_sp<GrD3DDescriptorTable>
+        GrD3DDescriptorTableManager::createCBVSRVUAVTable(GrD3DGpu* gpu,
                                                                          unsigned int size) {
-    std::unique_ptr<GrD3DDescriptorTable> table = fCBVSRVDescriptorPool.allocateTable(gpu, size);
+    sk_sp<GrD3DDescriptorTable> table = fCBVSRVUAVDescriptorPool.allocateTable(gpu, size);
     this->setHeaps(gpu);
     return table;
 }
 
-std::unique_ptr<GrD3DDescriptorTable> GrD3DDescriptorTableManager::createSamplerTable(
+sk_sp<GrD3DDescriptorTable> GrD3DDescriptorTableManager::createSamplerTable(
         GrD3DGpu* gpu, unsigned int size) {
-    std::unique_ptr<GrD3DDescriptorTable> table = fSamplerDescriptorPool.allocateTable(gpu, size);
+    sk_sp<GrD3DDescriptorTable> table = fSamplerDescriptorPool.allocateTable(gpu, size);
     this->setHeaps(gpu);
     return table;
 }
 
 void GrD3DDescriptorTableManager::setHeaps(GrD3DGpu* gpu) {
-    sk_sp<Heap>& currentCBVSRVHeap = fCBVSRVDescriptorPool.currentDescriptorHeap();
+    sk_sp<Heap>& currentCBVSRVHeap = fCBVSRVUAVDescriptorPool.currentDescriptorHeap();
     sk_sp<Heap>& currentSamplerHeap = fSamplerDescriptorPool.currentDescriptorHeap();
     GrD3DDirectCommandList* commandList = gpu->currentCommandList();
     commandList->setDescriptorHeaps(currentCBVSRVHeap,
@@ -39,7 +39,7 @@ void GrD3DDescriptorTableManager::setHeaps(GrD3DGpu* gpu) {
 }
 
 void GrD3DDescriptorTableManager::prepForSubmit(GrD3DGpu* gpu) {
-    fCBVSRVDescriptorPool.prepForSubmit(gpu);
+    fCBVSRVUAVDescriptorPool.prepForSubmit(gpu);
     fSamplerDescriptorPool.prepForSubmit(gpu);
 }
 
@@ -50,7 +50,7 @@ void GrD3DDescriptorTableManager::recycle(Heap* heap) {
     SkASSERT(heap);
     switch (heap->type()) {
         case D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV:
-            fCBVSRVDescriptorPool.recycle(std::move(wrappedHeap));
+            fCBVSRVUAVDescriptorPool.recycle(std::move(wrappedHeap));
             break;
         case D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER:
             fSamplerDescriptorPool.recycle(std::move(wrappedHeap));
@@ -74,12 +74,12 @@ sk_sp<GrD3DDescriptorTableManager::Heap> GrD3DDescriptorTableManager::Heap::Make
     return sk_sp< GrD3DDescriptorTableManager::Heap>(new Heap(gpu, heap, type, descriptorCount));
 }
 
-std::unique_ptr<GrD3DDescriptorTable> GrD3DDescriptorTableManager::Heap::allocateTable(
+sk_sp<GrD3DDescriptorTable> GrD3DDescriptorTableManager::Heap::allocateTable(
         unsigned int count) {
     SkASSERT(fDescriptorCount - fNextAvailable >= count);
     unsigned int startIndex = fNextAvailable;
     fNextAvailable += count;
-    return std::unique_ptr<GrD3DDescriptorTable>(
+    return sk_sp<GrD3DDescriptorTable>(
             new GrD3DDescriptorTable(fHeap->getCPUHandle(startIndex).fHandle,
                                      fHeap->getGPUHandle(startIndex).fHandle, fType));
 }
@@ -97,7 +97,7 @@ GrD3DDescriptorTableManager::HeapPool::HeapPool(GrD3DGpu* gpu, D3D12_DESCRIPTOR_
     fDescriptorHeaps.push_back(heap);
 }
 
-std::unique_ptr<GrD3DDescriptorTable> GrD3DDescriptorTableManager::HeapPool::allocateTable(
+sk_sp<GrD3DDescriptorTable> GrD3DDescriptorTableManager::HeapPool::allocateTable(
         GrD3DGpu* gpu, unsigned int count) {
     // In back-to-front order, iterate through heaps until we find one we can allocate from.
     // Any heap we can't allocate from gets removed from the list.

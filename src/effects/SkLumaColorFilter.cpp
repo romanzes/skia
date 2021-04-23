@@ -7,63 +7,18 @@
 
 #include "include/core/SkString.h"
 #include "include/effects/SkLumaColorFilter.h"
-#include "include/private/SkColorData.h"
-#include "src/core/SkColorFilterBase.h"
-#include "src/core/SkEffectPriv.h"
-#include "src/core/SkRasterPipeline.h"
-#include "src/core/SkVM.h"
-
-#if SK_SUPPORT_GPU
-#include "include/gpu/GrContext.h"
-#include "src/gpu/effects/generated/GrLumaColorFilterEffect.h"
-#include "src/gpu/glsl/GrGLSLFragmentProcessor.h"
-#include "src/gpu/glsl/GrGLSLFragmentShaderBuilder.h"
-#endif
-
-class SkLumaColorFilterImpl : public SkColorFilterBase {
-public:
-#if SK_SUPPORT_GPU
-    std::unique_ptr<GrFragmentProcessor> asFragmentProcessor(GrRecordingContext*,
-                                                             const GrColorInfo&) const override {
-        return GrLumaColorFilterEffect::Make(/*inputFP=*/nullptr);
-    }
-#endif
-
-    static sk_sp<SkFlattenable> CreateProc(SkReadBuffer&) {
-        return SkLumaColorFilter::Make();
-    }
-
-protected:
-    void flatten(SkWriteBuffer&) const override {}
-
-private:
-    Factory getFactory() const override { return CreateProc; }
-    const char* getTypeName() const override { return "SkLumaColorFilter"; }
-
-    bool onAppendStages(const SkStageRec& rec, bool shaderIsOpaque) const override {
-        rec.fPipeline->append(SkRasterPipeline::bt709_luminance_or_luma_to_alpha);
-        rec.fPipeline->append(SkRasterPipeline::clamp_0);
-        rec.fPipeline->append(SkRasterPipeline::clamp_1);
-        return true;
-    }
-
-    skvm::Color onProgram(skvm::Builder* p, skvm::Color c, SkColorSpace*, skvm::Uniforms*,
-                          SkArenaAlloc*) const override {
-        return {
-            p->splat(0.0f),
-            p->splat(0.0f),
-            p->splat(0.0f),
-            clamp01(c.r * 0.2126f + c.g * 0.7152f + c.b * 0.0722f),
-        };
-    }
-
-    typedef SkColorFilterBase INHERITED;
-};
+#include "include/effects/SkRuntimeEffect.h"
+#include "src/core/SkRuntimeEffectPriv.h"
 
 sk_sp<SkColorFilter> SkLumaColorFilter::Make() {
-    return sk_sp<SkColorFilter>(new SkLumaColorFilterImpl);
-}
+    const char* code =
+        "uniform shader input;"
+        "half4 main() {"
+            "return saturate(dot(half3(0.2126, 0.7152, 0.0722), sample(input).rgb)).000r;"
+        "}";
+    sk_sp<SkRuntimeEffect> effect = SkMakeCachedRuntimeEffect(code);
+    SkASSERT(effect);
 
-void SkLumaColorFilter::RegisterFlattenable() {
-    SkFlattenable::Register("SkLumaColorFilter", SkLumaColorFilterImpl::CreateProc);
+    sk_sp<SkColorFilter> input = nullptr;
+    return effect->makeColorFilter(SkData::MakeEmpty(), &input, 1);
 }

@@ -21,8 +21,8 @@ public:
     void emitCode(EmitArgs& args) override {
         fMatrixVar = args.fUniformHandler->addUniform(&args.fFp, kFragment_GrShaderFlag,
                                                       kFloat3x3_GrSLType, "matrix");
-        SkString child = this->invokeChild(0, args.fInputColor, args);
-        args.fFragBuilder->codeAppendf("%s = %s;\n", args.fOutputColor, child.c_str());
+        args.fFragBuilder->codeAppendf("return %s;\n",
+                                       this->invokeChildWithMatrix(0, args).c_str());
     }
 
 private:
@@ -35,8 +35,8 @@ private:
     UniformHandle fMatrixVar;
 };
 
-GrGLSLFragmentProcessor* GrMatrixEffect::onCreateGLSLInstance() const {
-    return new GrGLSLMatrixEffect();
+std::unique_ptr<GrGLSLFragmentProcessor> GrMatrixEffect::onMakeProgramImpl() const {
+    return std::make_unique<GrGLSLMatrixEffect>();
 }
 
 void GrMatrixEffect::onGetGLSLProcessorKey(const GrShaderCaps& caps,

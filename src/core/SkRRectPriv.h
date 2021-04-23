@@ -28,6 +28,10 @@ public:
         return rr.isSimple() && SkScalarNearlyEqual(rr.fRadii[0].fX, rr.fRadii[0].fY);
     }
 
+    // Looser version of IsSimpleCircular, where the x & y values of the radii
+    // only have to be nearly equal instead of strictly equal.
+    static bool IsNearlySimpleCircular(const SkRRect& rr, SkScalar tolerance = SK_ScalarNearlyZero);
+
     static bool EqualRadii(const SkRRect& rr) {
         return rr.isRect() || SkRRectPriv::IsCircle(rr)  || SkRRectPriv::IsSimpleCircular(rr);
     }
@@ -39,6 +43,11 @@ public:
     static bool ReadFromBuffer(SkRBuffer* buffer, SkRRect* rr);
 
     static void WriteToBuffer(const SkRRect& rr, SkWBuffer* buffer);
+
+    // Test if a point is in the rrect, if it were a closed set.
+    static bool ContainsPoint(const SkRRect& rr, const SkPoint& p) {
+        return rr.getBounds().contains(p.fX, p.fY) && rr.checkCornerContainment(p.fX, p.fY);
+    }
 
     // Compute an approximate largest inscribed bounding box of the rounded rect. For empty,
     // rect, oval, and simple types this will be the largest inscribed rectangle. Otherwise it may

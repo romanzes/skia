@@ -14,6 +14,11 @@
 #include "include/private/SkTArray.h"
 #include "src/core/SkAutoMalloc.h"
 
+/**
+ * Subclass of GrGLSLProgramDataManager used to store uniforms for a program in a CPU buffer that
+ * can be uploaded to a UBO. This currently assumes uniform layouts that are compatible with
+ * Vulkan, Dawn, and D3D12. It could be used more broadly if this aspect was made configurable.
+ */
 class GrUniformDataManager : public GrGLSLProgramDataManager {
 public:
     GrUniformDataManager(uint32_t uniformCount, uint32_t uniformSize);
@@ -42,12 +47,6 @@ public:
     void setMatrix2fv(UniformHandle, int arrayCount, const float matrices[]) const override;
     void setMatrix3fv(UniformHandle, int arrayCount, const float matrices[]) const override;
     void setMatrix4fv(UniformHandle, int arrayCount, const float matrices[]) const override;
-
-    // for nvpr only
-    void setPathFragmentInputTransform(VaryingHandle u, int components,
-                                       const SkMatrix& matrix) const override {
-        SK_ABORT("Only supported in NVPR, which is only available in GL");
-    }
 
     // For the uniform data to be dirty so that we will reupload on the next use.
     void markDirty() { fUniformsDirty = true; }

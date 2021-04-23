@@ -16,18 +16,15 @@ in uniform float yInvInset;
 
 uniform half2 offset;
 
-@coordTransform { SkMatrix::I() }
-
-void main() {
-    float2 coord = sk_TransformedCoords2D[0];
+half4 main(float2 coord) {
     float2 zoom_coord = offset + coord * float2(xInvZoom, yInvZoom);
     float2 delta = (coord - boundsUniform.xy) * boundsUniform.zw;
-    delta = min(delta, half2(1.0, 1.0) - delta);
+    delta = min(delta, float2(1.0) - delta);
     delta *= float2(xInvInset, yInvInset);
 
     float weight = 0.0;
     if (delta.s < 2.0 && delta.t < 2.0) {
-        delta = half2(2.0, 2.0) - delta;
+        delta = float2(2.0) - delta;
         float dist = length(delta);
         dist = max(2.0 - dist, 0.0);
         weight = min(dist * dist, 1.0);
@@ -36,7 +33,7 @@ void main() {
         weight = min(min(delta_squared.x, delta_squared.y), 1.0);
     }
 
-    sk_OutColor = sample(src, mix(coord, zoom_coord, weight));
+    return sample(src, mix(coord, zoom_coord, weight));
 }
 
 @setData(pdman) {

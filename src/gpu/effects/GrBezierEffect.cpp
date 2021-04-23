@@ -24,9 +24,9 @@ public:
                               const GrShaderCaps&,
                               GrProcessorKeyBuilder*);
 
-    void setData(const GrGLSLProgramDataManager& pdman, const GrPrimitiveProcessor& primProc,
-                 const CoordTransformRange& transformRange) override {
-        const GrConicEffect& ce = primProc.cast<GrConicEffect>();
+    void setData(const GrGLSLProgramDataManager& pdman,
+                 const GrGeometryProcessor& geomProc) override {
+        const GrConicEffect& ce = geomProc.cast<GrConicEffect>();
 
         this->setTransform(pdman, fViewMatrixUniform, ce.viewMatrix(), &fViewMatrix);
         this->setTransform(pdman, fLocalMatrixUniform, ce.localMatrix(), &fLocalMatrix);
@@ -40,7 +40,6 @@ public:
             pdman.set1f(fCoverageScaleUniform, GrNormalizeByteToFloat(ce.coverageScale()));
             fCoverageScale = ce.coverageScale();
         }
-        this->setTransformDataHelper(pdman, transformRange);
     }
 
 private:
@@ -53,7 +52,7 @@ private:
     UniformHandle fViewMatrixUniform;
     UniformHandle fLocalMatrixUniform;
 
-    typedef GrGLSLGeometryProcessor INHERITED;
+    using INHERITED = GrGLSLGeometryProcessor;
 };
 
 GrGLConicEffect::GrGLConicEffect(const GrGeometryProcessor& processor)
@@ -64,7 +63,7 @@ GrGLConicEffect::GrGLConicEffect(const GrGeometryProcessor& processor)
 
 void GrGLConicEffect::onEmitCode(EmitArgs& args, GrGPArgs* gpArgs) {
     GrGLSLVertexBuilder* vertBuilder = args.fVertBuilder;
-    const GrConicEffect& gp = args.fGP.cast<GrConicEffect>();
+    const GrConicEffect& gp = args.fGeomProc.cast<GrConicEffect>();
     GrGLSLVaryingHandler* varyingHandler = args.fVaryingHandler;
     GrGLSLUniformHandler* uniformHandler = args.fUniformHandler;
 
@@ -77,6 +76,7 @@ void GrGLConicEffect::onEmitCode(EmitArgs& args, GrGPArgs* gpArgs) {
 
     GrGLSLFPFragmentBuilder* fragBuilder = args.fFragBuilder;
     // Setup pass through color
+    fragBuilder->codeAppendf("half4 %s;", args.fOutputColor);
     this->setupUniformColor(fragBuilder, uniformHandler, args.fOutputColor, &fColorUniform);
 
     // Setup position
@@ -147,10 +147,10 @@ void GrGLConicEffect::onEmitCode(EmitArgs& args, GrGPArgs* gpArgs) {
                                                            kFloat_GrSLType,
                                                            "Coverage",
                                                            &coverageScale);
-        fragBuilder->codeAppendf("%s = half4(half(%s) * %s);",
+        fragBuilder->codeAppendf("half4 %s = half4(half(%s) * %s);",
                                  args.fOutputCoverage, coverageScale, edgeAlpha.c_str());
     } else {
-        fragBuilder->codeAppendf("%s = half4(%s);", args.fOutputCoverage, edgeAlpha.c_str());
+        fragBuilder->codeAppendf("half4 %s = half4(%s);", args.fOutputCoverage, edgeAlpha.c_str());
     }
 }
 
@@ -168,7 +168,7 @@ void GrGLConicEffect::GenKey(const GrGeometryProcessor& gp,
 
 //////////////////////////////////////////////////////////////////////////////
 
-constexpr GrPrimitiveProcessor::Attribute GrConicEffect::kAttributes[];
+constexpr GrGeometryProcessor::Attribute GrConicEffect::kAttributes[];
 
 GrConicEffect::~GrConicEffect() {}
 
@@ -177,7 +177,7 @@ void GrConicEffect::getGLSLProcessorKey(const GrShaderCaps& caps,
     GrGLConicEffect::GenKey(*this, caps, b);
 }
 
-GrGLSLPrimitiveProcessor* GrConicEffect::createGLSLInstance(const GrShaderCaps&) const {
+GrGLSLGeometryProcessor* GrConicEffect::createGLSLInstance(const GrShaderCaps&) const {
     return new GrGLConicEffect(*this);
 }
 
@@ -219,9 +219,9 @@ public:
                               const GrShaderCaps&,
                               GrProcessorKeyBuilder*);
 
-    void setData(const GrGLSLProgramDataManager& pdman, const GrPrimitiveProcessor& primProc,
-                 const CoordTransformRange& transformRange) override {
-        const GrQuadEffect& qe = primProc.cast<GrQuadEffect>();
+    void setData(const GrGLSLProgramDataManager& pdman,
+                 const GrGeometryProcessor& geomProc) override {
+        const GrQuadEffect& qe = geomProc.cast<GrQuadEffect>();
 
         this->setTransform(pdman, fViewMatrixUniform, qe.viewMatrix(), &fViewMatrix);
         this->setTransform(pdman, fLocalMatrixUniform, qe.localMatrix(), &fLocalMatrix);
@@ -235,7 +235,6 @@ public:
             pdman.set1f(fCoverageScaleUniform, GrNormalizeByteToFloat(qe.coverageScale()));
             fCoverageScale = qe.coverageScale();
         }
-        this->setTransformDataHelper(pdman, transformRange);
     }
 
 private:
@@ -249,7 +248,7 @@ private:
     UniformHandle fViewMatrixUniform;
     UniformHandle fLocalMatrixUniform;
 
-    typedef GrGLSLGeometryProcessor INHERITED;
+    using INHERITED = GrGLSLGeometryProcessor;
 };
 
 GrGLQuadEffect::GrGLQuadEffect(const GrGeometryProcessor& processor)
@@ -260,7 +259,7 @@ GrGLQuadEffect::GrGLQuadEffect(const GrGeometryProcessor& processor)
 
 void GrGLQuadEffect::onEmitCode(EmitArgs& args, GrGPArgs* gpArgs) {
     GrGLSLVertexBuilder* vertBuilder = args.fVertBuilder;
-    const GrQuadEffect& gp = args.fGP.cast<GrQuadEffect>();
+    const GrQuadEffect& gp = args.fGeomProc.cast<GrQuadEffect>();
     GrGLSLVaryingHandler* varyingHandler = args.fVaryingHandler;
     GrGLSLUniformHandler* uniformHandler = args.fUniformHandler;
 
@@ -273,6 +272,7 @@ void GrGLQuadEffect::onEmitCode(EmitArgs& args, GrGPArgs* gpArgs) {
 
     GrGLSLFPFragmentBuilder* fragBuilder = args.fFragBuilder;
     // Setup pass through color
+    fragBuilder->codeAppendf("half4 %s;", args.fOutputColor);
     this->setupUniformColor(fragBuilder, uniformHandler, args.fOutputColor, &fColorUniform);
 
     // Setup position
@@ -308,10 +308,10 @@ void GrGLQuadEffect::onEmitCode(EmitArgs& args, GrGPArgs* gpArgs) {
                                                            kHalf_GrSLType,
                                                            "Coverage",
                                                            &coverageScale);
-        fragBuilder->codeAppendf("%s = half4(%s * edgeAlpha);", args.fOutputCoverage,
+        fragBuilder->codeAppendf("half4 %s = half4(%s * edgeAlpha);", args.fOutputCoverage,
                                  coverageScale);
     } else {
-        fragBuilder->codeAppendf("%s = half4(edgeAlpha);", args.fOutputCoverage);
+        fragBuilder->codeAppendf("half4 %s = half4(edgeAlpha);", args.fOutputCoverage);
     }
 }
 
@@ -329,7 +329,7 @@ void GrGLQuadEffect::GenKey(const GrGeometryProcessor& gp,
 
 //////////////////////////////////////////////////////////////////////////////
 
-constexpr GrPrimitiveProcessor::Attribute GrQuadEffect::kAttributes[];
+constexpr GrGeometryProcessor::Attribute GrQuadEffect::kAttributes[];
 
 GrQuadEffect::~GrQuadEffect() {}
 
@@ -338,7 +338,7 @@ void GrQuadEffect::getGLSLProcessorKey(const GrShaderCaps& caps,
     GrGLQuadEffect::GenKey(*this, caps, b);
 }
 
-GrGLSLPrimitiveProcessor* GrQuadEffect::createGLSLInstance(const GrShaderCaps&) const {
+GrGLSLGeometryProcessor* GrQuadEffect::createGLSLInstance(const GrShaderCaps&) const {
     return new GrGLQuadEffect(*this);
 }
 

@@ -318,6 +318,10 @@ bool SkXPSDevice::endSheet() {
 }
 
 static HRESULT subset_typeface(const SkXPSDevice::TypefaceUse& current) {
+    //The CreateFontPackage API is only supported on desktop, not in UWP
+    #if defined(SK_WINUWP)
+    return E_NOTIMPL;
+    #else
     //CreateFontPackage wants unsigned short.
     //Microsoft, Y U NO stdint.h?
     std::vector<unsigned short> keepList;
@@ -410,6 +414,7 @@ static HRESULT subset_typeface(const SkXPSDevice::TypefaceUse& current) {
         "Could not set new stream for subsetted font.");
 
     return S_OK;
+    #endif //SK_WINUWP
 }
 
 bool SkXPSDevice::endPortfolio() {
@@ -1887,9 +1892,7 @@ static bool text_must_be_pathed(const SkPaint& paint, const SkMatrix& matrix) {
     ;
 }
 
-void SkXPSDevice::drawGlyphRunList(const SkGlyphRunList& glyphRunList) {
-
-    const SkPaint& paint = glyphRunList.paint();
+void SkXPSDevice::drawGlyphRunList(const SkGlyphRunList& glyphRunList, const SkPaint& paint) {
     for (const auto& run : glyphRunList) {
         const SkGlyphID* glyphIDs = run.glyphsIDs().data();
         size_t glyphCount = run.glyphsIDs().size();
@@ -1954,16 +1957,12 @@ void SkXPSDevice::drawGlyphRunList(const SkGlyphRunList& glyphRunList) {
     }
 }
 
-void SkXPSDevice::drawDevice(SkBaseDevice* dev,
-                             int x, int y,
-                             const SkPaint&) {
+void SkXPSDevice::drawDevice(SkBaseDevice* dev, const SkSamplingOptions&, const SkPaint&) {
     SkXPSDevice* that = static_cast<SkXPSDevice*>(dev);
     SkASSERT(that->fTopTypefaces == this->fTopTypefaces);
 
     SkTScopedComPtr<IXpsOMMatrixTransform> xpsTransform;
-    // TODO(halcanary): assert that current transform is identity rather than calling setter.
-    XPS_MATRIX rawTransform = {1.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f};
-    HRVM(this->fXpsFactory->CreateMatrixTransform(&rawTransform, &xpsTransform),
+    HRVM(this->createXpsTransform(dev->getRelativeTransform(*this), &xpsTransform),
          "Could not create layer transform.");
     HRVM(that->fCurrentXpsCanvas->SetTransformLocal(xpsTransform.get()),
          "Could not set layer transform.");
@@ -2007,16 +2006,18 @@ void SkXPSDevice::drawOval( const SkRect& o, const SkPaint& p) {
 void SkXPSDevice::drawImageRect(const SkImage* image,
                                 const SkRect* src,
                                 const SkRect& dst,
+                                const SkSamplingOptions& sampling,
                                 const SkPaint& paint,
                                 SkCanvas::SrcRectConstraint constraint) {
+    // TODO: support gpu images
     SkBitmap bitmap;
-    if (!as_IB(image)->getROPixels(&bitmap)) {
+    if (!as_IB(image)->getROPixels(nullptr, &bitmap)) {
         return;
     }
 
     SkRect bitmapBounds = SkRect::Make(bitmap.bounds());
     SkRect srcBounds = src ? *src : bitmapBounds;
-    SkMatrix matrix = SkMatrix::MakeRectToRect(srcBounds, dst, SkMatrix::kFill_ScaleToFit);
+    SkMatrix matrix = SkMatrix::RectToRect(srcBounds, dst);
     SkRect actualDst;
     if (!src || bitmapBounds.contains(*src)) {
         actualDst = dst;
@@ -2027,9 +2028,9 @@ void SkXPSDevice::drawImageRect(const SkImage* image,
         matrix.mapRect(&actualDst, srcBounds);
     }
 
-    auto bitmapShader = SkMakeBitmapShaderForPaint(paint, bitmap, SkTileMode::kClamp,
-                                                   SkTileMode::kClamp, &matrix,
-                                                   kNever_SkCopyPixelsMode);
+    auto bitmapShader = SkMakeBitmapShaderForPaint(paint, bitmap,
+                                                   SkTileMode::kClamp, SkTileMode::kClamp,
+                                                   sampling, &matrix, kNever_SkCopyPixelsMode);
     SkASSERT(bitmapShader);
     if (!bitmapShader) { return; }
     SkPaint paintWithShader(paint);

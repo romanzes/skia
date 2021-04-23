@@ -9,7 +9,6 @@
 #define SkPixelRef_DEFINED
 
 #include "include/core/SkBitmap.h"
-#include "include/core/SkFilterQuality.h"
 #include "include/core/SkImageInfo.h"
 #include "include/core/SkPixmap.h"
 #include "include/core/SkRefCnt.h"
@@ -118,7 +117,7 @@ private:
     void setImmutableWithID(uint32_t genID);
     friend void SkBitmapCache_setImmutableWithID(SkPixelRef*, uint32_t);
 
-    typedef SkRefCnt INHERITED;
+    using INHERITED = SkRefCnt;
 };
 
 #endif

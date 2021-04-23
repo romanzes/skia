@@ -30,10 +30,13 @@ public:
                                                             size_t size);
     GrD3DDescriptorHeap::CPUHandle createShaderResourceView(GrD3DGpu*,
                                                             ID3D12Resource* resource);
-    void recycleConstantOrShaderView(const GrD3DDescriptorHeap::CPUHandle&);
+    GrD3DDescriptorHeap::CPUHandle createUnorderedAccessView(GrD3DGpu*,
+                                                             ID3D12Resource* resource);
+    void recycleCBVSRVUAV(const GrD3DDescriptorHeap::CPUHandle&);
 
     GrD3DDescriptorHeap::CPUHandle createSampler(GrD3DGpu*,
                                                  D3D12_FILTER filter,
+                                                 float maxLOD,
                                                  D3D12_TEXTURE_ADDRESS_MODE addressModeU,
                                                  D3D12_TEXTURE_ADDRESS_MODE addressModeV);
     void recycleSampler(const GrD3DDescriptorHeap::CPUHandle&);
@@ -82,7 +85,7 @@ private:
 
     HeapPool fRTVDescriptorPool;
     HeapPool fDSVDescriptorPool;
-    HeapPool fCBVSRVDescriptorPool;
+    HeapPool fCBVSRVUAVDescriptorPool;
     HeapPool fSamplerDescriptorPool;
 };
 

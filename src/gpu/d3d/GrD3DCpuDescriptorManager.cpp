@@ -12,7 +12,7 @@
 GrD3DCpuDescriptorManager::GrD3DCpuDescriptorManager(GrD3DGpu* gpu)
     : fRTVDescriptorPool(gpu, D3D12_DESCRIPTOR_HEAP_TYPE_RTV)
     , fDSVDescriptorPool(gpu, D3D12_DESCRIPTOR_HEAP_TYPE_DSV)
-    , fCBVSRVDescriptorPool(gpu, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV)
+    , fCBVSRVUAVDescriptorPool(gpu, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV)
     , fSamplerDescriptorPool(gpu, D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER) {}
 
 GrD3DDescriptorHeap::CPUHandle GrD3DCpuDescriptorManager::createRenderTargetView(
@@ -41,7 +41,7 @@ void GrD3DCpuDescriptorManager::recycleDepthStencilView(
 
 GrD3DDescriptorHeap::CPUHandle GrD3DCpuDescriptorManager::createConstantBufferView(
         GrD3DGpu* gpu, ID3D12Resource* bufferResource, size_t offset, size_t size) {
-    const GrD3DDescriptorHeap::CPUHandle& descriptor = fCBVSRVDescriptorPool.allocateHandle(gpu);
+    const GrD3DDescriptorHeap::CPUHandle& descriptor = fCBVSRVUAVDescriptorPool.allocateHandle(gpu);
     D3D12_CONSTANT_BUFFER_VIEW_DESC desc = {};
     desc.BufferLocation = bufferResource->GetGPUVirtualAddress() + offset;
     desc.SizeInBytes = size;
@@ -51,20 +51,31 @@ GrD3DDescriptorHeap::CPUHandle GrD3DCpuDescriptorManager::createConstantBufferVi
 
 GrD3DDescriptorHeap::CPUHandle GrD3DCpuDescriptorManager::createShaderResourceView(
         GrD3DGpu* gpu, ID3D12Resource* resource) {
-    const GrD3DDescriptorHeap::CPUHandle& descriptor = fCBVSRVDescriptorPool.allocateHandle(gpu);
+    const GrD3DDescriptorHeap::CPUHandle& descriptor = fCBVSRVUAVDescriptorPool.allocateHandle(gpu);
     // TODO: for 4:2:0 YUV formats we'll need to map two different views, one for Y and one for UV.
     // For now map the entire resource.
     gpu->device()->CreateShaderResourceView(resource, nullptr, descriptor.fHandle);
     return descriptor;
 }
 
-void GrD3DCpuDescriptorManager::recycleConstantOrShaderView(
+GrD3DDescriptorHeap::CPUHandle GrD3DCpuDescriptorManager::createUnorderedAccessView(
+        GrD3DGpu* gpu, ID3D12Resource* resource) {
+    const GrD3DDescriptorHeap::CPUHandle& descriptor = fCBVSRVUAVDescriptorPool.allocateHandle(gpu);
+    // TODO: might need more granularity here for textures (specify miplevels, etc.)
+    gpu->device()->CreateUnorderedAccessView(resource, nullptr, nullptr, descriptor.fHandle);
+    return descriptor;
+}
+
+void GrD3DCpuDescriptorManager::recycleCBVSRVUAV(
         const GrD3DDescriptorHeap::CPUHandle& view) {
-    fCBVSRVDescriptorPool.releaseHandle(view);
+    fCBVSRVUAVDescriptorPool.releaseHandle(view);
 }
 
 GrD3DDescriptorHeap::CPUHandle GrD3DCpuDescriptorManager::createSampler(
-        GrD3DGpu* gpu, D3D12_FILTER filter, D3D12_TEXTURE_ADDRESS_MODE addressModeU,
+        GrD3DGpu* gpu,
+        D3D12_FILTER filter,
+        float maxLOD,
+        D3D12_TEXTURE_ADDRESS_MODE addressModeU,
         D3D12_TEXTURE_ADDRESS_MODE addressModeV) {
     const GrD3DDescriptorHeap::CPUHandle& descriptor = fSamplerDescriptorPool.allocateHandle(gpu);
     D3D12_SAMPLER_DESC desc = {};
@@ -77,7 +88,7 @@ GrD3DDescriptorHeap::CPUHandle GrD3DCpuDescriptorManager::createSampler(
     desc.ComparisonFunc = D3D12_COMPARISON_FUNC_ALWAYS;
     // desc.BorderColor initialized to { 0, 0, 0, 0 } by default initializer, above.
     desc.MinLOD = 0;
-    desc.MaxLOD = SK_ScalarMax;
+    desc.MaxLOD = maxLOD;
 
     gpu->device()->CreateSampler(&desc, descriptor.fHandle);
     return descriptor;

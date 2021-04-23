@@ -17,6 +17,7 @@
 #include <CoreText/CTFontManager.h>
 #include <CoreGraphics/CoreGraphics.h>
 #include <CoreFoundation/CoreFoundation.h>
+#include <dlfcn.h>
 #endif
 
 #include "include/core/SkData.h"
@@ -29,6 +30,7 @@
 #include "include/ports/SkFontMgr_mac_ct.h"
 #include "include/private/SkFixed.h"
 #include "include/private/SkOnce.h"
+#include "include/private/SkTPin.h"
 #include "include/private/SkTemplates.h"
 #include "include/private/SkTo.h"
 #include "src/core/SkFontDescriptor.h"
@@ -265,7 +267,7 @@ static CTFontVariation ctvariation_from_skfontdata(CTFontRef ct, SkFontData* fon
                 CFNumberCreate(kCFAllocatorDefault, kCFNumberDoubleType, &value));
         CFDictionaryAddValue(dict.get(), tagNumber, valueNumber.get());
     }
-    return { SkUniqueCFRef<CFDictionaryRef>(std::move(dict)), opsz };
+    return { SkUniqueCFRef<CFDictionaryRef>(std::move(dict)), nullptr, opsz };
 }
 
 static sk_sp<SkData> skdata_from_skstreamasset(std::unique_ptr<SkStreamAsset> stream) {
@@ -406,6 +408,59 @@ private:
     }
 };
 
+SkUniqueCFRef<CFArrayRef> SkCopyAvailableFontFamilyNames(CTFontCollectionRef collection) {
+    // Create a CFArray of all available font descriptors.
+    SkUniqueCFRef<CFArrayRef> descriptors(
+        CTFontCollectionCreateMatchingFontDescriptors(collection));
+
+    // Copy the font family names of the font descriptors into a CFSet.
+    auto addDescriptorFamilyNameToSet = [](const void* value, void* context) -> void {
+        CTFontDescriptorRef descriptor = static_cast<CTFontDescriptorRef>(value);
+        CFMutableSetRef familyNameSet = static_cast<CFMutableSetRef>(context);
+        SkUniqueCFRef<CFTypeRef> familyName(
+            CTFontDescriptorCopyAttribute(descriptor, kCTFontFamilyNameAttribute));
+        if (familyName) {
+            CFSetAddValue(familyNameSet, familyName.get());
+        }
+    };
+    SkUniqueCFRef<CFMutableSetRef> familyNameSet(
+        CFSetCreateMutable(kCFAllocatorDefault, 0, &kCFTypeSetCallBacks));
+    CFArrayApplyFunction(descriptors.get(), CFRangeMake(0, CFArrayGetCount(descriptors.get())),
+                         addDescriptorFamilyNameToSet, familyNameSet.get());
+
+    // Get the set of family names into an array; this does not retain.
+    CFIndex count = CFSetGetCount(familyNameSet.get());
+    std::unique_ptr<const void*[]> familyNames(new const void*[count]);
+    CFSetGetValues(familyNameSet.get(), familyNames.get());
+
+    // Sort the array of family names (to match CTFontManagerCopyAvailableFontFamilyNames).
+    std::sort(familyNames.get(), familyNames.get() + count, [](const void* a, const void* b){
+        return CFStringCompare((CFStringRef)a, (CFStringRef)b, 0) == kCFCompareLessThan;
+    });
+
+    // Copy family names into a CFArray; this does retain.
+    return SkUniqueCFRef<CFArrayRef>(
+        CFArrayCreate(kCFAllocatorDefault, familyNames.get(), count, &kCFTypeArrayCallBacks));
+}
+
+/** Use CTFontManagerCopyAvailableFontFamilyNames if available, simulate if not. */
+SkUniqueCFRef<CFArrayRef> SkCTFontManagerCopyAvailableFontFamilyNames() {
+#ifdef SK_BUILD_FOR_IOS
+    using CTFontManagerCopyAvailableFontFamilyNamesProc = CFArrayRef (*)(void);
+    CTFontManagerCopyAvailableFontFamilyNamesProc ctFontManagerCopyAvailableFontFamilyNames;
+    *(void**)(&ctFontManagerCopyAvailableFontFamilyNames) =
+        dlsym(RTLD_DEFAULT, "CTFontManagerCopyAvailableFontFamilyNames");
+    if (ctFontManagerCopyAvailableFontFamilyNames) {
+        return SkUniqueCFRef<CFArrayRef>(ctFontManagerCopyAvailableFontFamilyNames());
+    }
+    SkUniqueCFRef<CTFontCollectionRef> collection(
+        CTFontCollectionCreateFromAvailableFonts(nullptr));
+    return SkUniqueCFRef<CFArrayRef>(SkCopyAvailableFontFamilyNames(collection.get()));
+#else
+    return SkUniqueCFRef<CFArrayRef>(CTFontManagerCopyAvailableFontFamilyNames());
+#endif
+}
+
 } // namespace
 
 class SkFontMgr_Mac : public SkFontMgr {
@@ -430,21 +485,11 @@ class SkFontMgr_Mac : public SkFontMgr {
         return new SkFontStyleSet_Mac(desc.get());
     }
 
-    /** CTFontManagerCopyAvailableFontFamilyNames() is not always available, so we
-     *  provide a wrapper here that will return an empty array if need be.
-     */
-    static SkUniqueCFRef<CFArrayRef> CopyAvailableFontFamilyNames() {
-#ifdef SK_BUILD_FOR_IOS
-        return SkUniqueCFRef<CFArrayRef>(CFArrayCreate(nullptr, nullptr, 0, nullptr));
-#else
-        return SkUniqueCFRef<CFArrayRef>(CTFontManagerCopyAvailableFontFamilyNames());
-#endif
-    }
-
 public:
     SkUniqueCFRef<CTFontCollectionRef> fFontCollection;
     SkFontMgr_Mac(CTFontCollectionRef fontCollection)
-        : fNames(CopyAvailableFontFamilyNames())
+        : fNames(fontCollection ? SkCopyAvailableFontFamilyNames(fontCollection)
+                                : SkCTFontManagerCopyAvailableFontFamilyNames())
         , fCount(fNames ? SkToInt(CFArrayGetCount(fNames.get())) : 0)
         , fFontCollection(fontCollection ? (CTFontCollectionRef)CFRetain(fontCollection)
                                          : CTFontCollectionCreateFromAvailableFonts(nullptr))
@@ -570,13 +615,13 @@ protected:
         CTFontVariation ctVariation = SkCTVariationFromSkFontArguments(ct.get(), args);
 
         SkUniqueCFRef<CTFontRef> ctVariant;
-        if (ctVariation.dict) {
+        if (ctVariation.variation) {
             SkUniqueCFRef<CFMutableDictionaryRef> attributes(
                     CFDictionaryCreateMutable(kCFAllocatorDefault, 0,
                                               &kCFTypeDictionaryKeyCallBacks,
                                               &kCFTypeDictionaryValueCallBacks));
             CFDictionaryAddValue(attributes.get(),
-                                 kCTFontVariationAttribute, ctVariation.dict.get());
+                                 kCTFontVariationAttribute, ctVariation.variation.get());
             SkUniqueCFRef<CTFontDescriptorRef> varDesc(
                     CTFontDescriptorCreateWithAttributes(attributes.get()));
             ctVariant.reset(CTFontCreateCopyWithAttributes(ct.get(), 0, nullptr, varDesc.get()));
@@ -608,13 +653,13 @@ protected:
         CTFontVariation ctVariation = ctvariation_from_skfontdata(ct.get(), fontData.get());
 
         SkUniqueCFRef<CTFontRef> ctVariant;
-        if (ctVariation.dict) {
+        if (ctVariation.variation) {
             SkUniqueCFRef<CFMutableDictionaryRef> attributes(
                     CFDictionaryCreateMutable(kCFAllocatorDefault, 0,
                                               &kCFTypeDictionaryKeyCallBacks,
                                               &kCFTypeDictionaryValueCallBacks));
             CFDictionaryAddValue(attributes.get(),
-                                 kCTFontVariationAttribute, ctVariation.dict.get());
+                                 kCTFontVariationAttribute, ctVariation.variation.get());
             SkUniqueCFRef<CTFontDescriptorRef> varDesc(
                     CTFontDescriptorCreateWithAttributes(attributes.get()));
             ctVariant.reset(CTFontCreateCopyWithAttributes(ct.get(), 0, nullptr, varDesc.get()));

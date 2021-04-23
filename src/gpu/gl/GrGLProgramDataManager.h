@@ -10,7 +10,7 @@
 
 #include "include/gpu/gl/GrGLTypes.h"
 #include "src/gpu/GrShaderVar.h"
-#include "src/gpu/GrTAllocator.h"
+#include "src/gpu/GrTBlockList.h"
 #include "src/gpu/glsl/GrGLSLProgramDataManager.h"
 #include "src/gpu/glsl/GrGLSLUniformHandler.h"
 
@@ -35,14 +35,13 @@ public:
         GrGLint     fLocation;
     };
 
-    // This uses an allocator rather than array so that the GrShaderVars don't move in memory
-    // after they are inserted. Users of GrGLShaderBuilder get refs to the vars and ptrs to their
-    // name strings. Otherwise, we'd have to hand out copies.
-    typedef GrTAllocator<GLUniformInfo> UniformInfoArray;
-    typedef GrTAllocator<VaryingInfo>   VaryingInfoArray;
+    // This uses a GrTBlockList rather than SkTArray/std::vector so that the GrShaderVars
+    // don't move in memory after they are inserted. Users of GrGLShaderBuilder get refs to the vars
+    // and ptrs to their name strings. Otherwise, we'd have to hand out copies.
+    typedef GrTBlockList<GLUniformInfo> UniformInfoArray;
+    typedef GrTBlockList<VaryingInfo>   VaryingInfoArray;
 
-    GrGLProgramDataManager(GrGLGpu*, GrGLuint programID, const UniformInfoArray&,
-                           const VaryingInfoArray&);
+    GrGLProgramDataManager(GrGLGpu*, const UniformInfoArray&);
 
     void setSamplerUniforms(const UniformInfoArray& samplers, int startUnit) const;
 
@@ -74,10 +73,6 @@ public:
     void setMatrix3fv(UniformHandle, int arrayCount, const float matrices[]) const override;
     void setMatrix4fv(UniformHandle, int arrayCount, const float matrices[]) const override;
 
-    // for nvpr only
-    void setPathFragmentInputTransform(VaryingHandle u, int components,
-                                       const SkMatrix& matrix) const override;
-
 private:
     enum {
         kUnusedUniform = -1,
@@ -91,26 +86,13 @@ private:
 #endif
     };
 
-    enum {
-        kUnusedPathProcVarying = -1,
-    };
-    struct PathProcVarying {
-        GrGLint     fLocation;
-        SkDEBUGCODE(
-            GrSLType    fType;
-            int         fArrayCount;
-        );
-    };
-
     template<int N> inline void setMatrices(UniformHandle, int arrayCount,
                                             const float matrices[]) const;
 
     SkTArray<Uniform, true> fUniforms;
-    SkTArray<PathProcVarying, true> fPathProcVaryings;
     GrGLGpu* fGpu;
-    GrGLuint fProgramID;
 
-    typedef GrGLSLProgramDataManager INHERITED;
+    using INHERITED = GrGLSLProgramDataManager;
 };
 
 #endif

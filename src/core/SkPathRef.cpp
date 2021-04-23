@@ -41,6 +41,14 @@ SkPathRef::Editor::Editor(sk_sp<SkPathRef>* pathRef,
 // allocations to just fit the current needs. makeSpace() will only grow, but never shrinks.
 //
 void SkPath::shrinkToFit() {
+    // Since this can relocate the allocated arrays, we have to defensively copy ourselves if
+    // we're not the only owner of the pathref... since relocating the arrays will invalidate
+    // any existing iterators.
+    if (!fPathRef->unique()) {
+        SkPathRef* pr = new SkPathRef;
+        pr->copy(*fPathRef, 0, 0);
+        fPathRef.reset(pr);
+    }
     fPathRef->fPoints.shrinkToFit();
     fPathRef->fVerbs.shrinkToFit();
     fPathRef->fConicWeights.shrinkToFit();
@@ -48,6 +56,13 @@ void SkPath::shrinkToFit() {
 }
 
 //////////////////////////////////////////////////////////////////////////////
+
+size_t SkPathRef::approximateBytesUsed() const {
+    return sizeof(SkPathRef)
+         + fPoints      .reserved() * sizeof(fPoints      [0])
+         + fVerbs       .reserved() * sizeof(fVerbs       [0])
+         + fConicWeights.reserved() * sizeof(fConicWeights[0]);
+}
 
 SkPathRef::~SkPathRef() {
     // Deliberately don't validate() this path ref, otherwise there's no way
@@ -147,17 +162,17 @@ void SkPathRef::CreateTransformedCopy(sk_sp<SkPathRef>* dst,
     }
 
     if (dst->get() != &src) {
-        (*dst)->fPoints = src.fPoints;
         (*dst)->fVerbs = src.fVerbs;
         (*dst)->fConicWeights = src.fConicWeights;
         (*dst)->callGenIDChangeListeners();
         (*dst)->fGenerationID = 0;  // mark as dirty
+        // don't copy, just allocate the points
+        (*dst)->fPoints.setCount(src.fPoints.count());
     }
+    matrix.mapPoints((*dst)->fPoints.begin(), src.fPoints.begin(), src.fPoints.count());
 
     // Need to check this here in case (&src == dst)
     bool canXformBounds = !src.fBoundsIsDirty && matrix.rectStaysRect() && src.countPoints() > 1;
-
-    matrix.mapPoints((*dst)->fPoints.begin(), src.fPoints.begin(), src.fPoints.count());
 
     /*
      *  Here we optimize the bounds computation, by noting if the bounds are
@@ -308,21 +323,6 @@ void SkPathRef::copy(const SkPathRef& ref,
     fRRectOrOvalIsCCW = ref.fRRectOrOvalIsCCW;
     fRRectOrOvalStartIdx = ref.fRRectOrOvalStartIdx;
     SkDEBUGCODE(this->validate();)
-}
-
-unsigned SkPathRef::computeSegmentMask() const {
-    const uint8_t* verbs = fVerbs.begin();
-    unsigned mask = 0;
-    for (int i = 0; i < fVerbs.count(); ++i) {
-        switch (verbs[i]) {
-            case SkPath::kLine_Verb:  mask |= SkPath::kLine_SegmentMask; break;
-            case SkPath::kQuad_Verb:  mask |= SkPath::kQuad_SegmentMask; break;
-            case SkPath::kConic_Verb: mask |= SkPath::kConic_SegmentMask; break;
-            case SkPath::kCubic_Verb: mask |= SkPath::kCubic_SegmentMask; break;
-            default: break;
-        }
-    }
-    return mask;
 }
 
 void SkPathRef::interpolate(const SkPathRef& ending, SkScalar weight, SkPathRef* out) const {
@@ -490,16 +490,14 @@ void SkPathRef::addGenIDChangeListener(sk_sp<SkIDChangeListener> listener) {
     if (this == gEmpty) {
         return;
     }
-    bool singleThreaded = this->unique();
-    fGenIDChangeListeners.add(std::move(listener), singleThreaded);
+    fGenIDChangeListeners.add(std::move(listener));
 }
 
 int SkPathRef::genIDChangeListenerCount() { return fGenIDChangeListeners.count(); }
 
 // we need to be called *before* the genID gets changed or zerod
 void SkPathRef::callGenIDChangeListeners() {
-    bool singleThreaded = this->unique();
-    fGenIDChangeListeners.changed(singleThreaded);
+    fGenIDChangeListeners.changed();
 }
 
 SkRRect SkPathRef::getRRect() const {
@@ -681,6 +679,13 @@ bool SkPathRef::isValid() const {
     return true;
 }
 
+bool SkPathRef::dataMatchesVerbs() const {
+    const auto info = sk_path_analyze_verbs(fVerbs.begin(), fVerbs.count());
+    return info.valid                          &&
+           info.segmentMask == fSegmentMask    &&
+           info.points      == fPoints.count() &&
+           info.weights     == fConicWeights.count();
+}
 //////////////////////////////////////////////////////////////////////////////////////////////////
 
 SkPathEdgeIter::SkPathEdgeIter(const SkPath& path) {

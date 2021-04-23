@@ -55,10 +55,11 @@ private:
     void onEnd() override;
     bool onBindPipeline(const GrProgramInfo& programInfo, const SkRect& drawBounds) override;
     void onSetScissorRect(const SkIRect& scissor) override;
-    bool onBindTextures(const GrPrimitiveProcessor&, const GrSurfaceProxy* const primProcTextures[],
-                        const GrPipeline& pipeline) override;
-    void onBindBuffers(const GrBuffer* indexBuffer, const GrBuffer* instanceBuffer,
-                       const GrBuffer* vertexBuffer, GrPrimitiveRestart) override;
+    bool onBindTextures(const GrGeometryProcessor&,
+                        const GrSurfaceProxy* const geomProcTextures[],
+                        const GrPipeline&) override;
+    void onBindBuffers(sk_sp<const GrBuffer> indexBuffer, sk_sp<const GrBuffer> instanceBuffer,
+                       sk_sp<const GrBuffer> vertexBuffer, GrPrimitiveRestart) override;
     void onDraw(int vertexCount, int baseVertex) override;
     void onDrawIndexed(int indexCount, int baseIndex, uint16_t minIndexValue,
                        uint16_t maxIndexValue, int baseVertex) override;
@@ -67,9 +68,13 @@ private:
     void onDrawIndexedInstanced(int indexCount, int baseIndex, int instanceCount, int baseInstance,
                                 int baseVertex) override;
     void onDrawIndirect(const GrBuffer* drawIndirectBuffer, size_t offset, int drawCount) override;
+    void multiDrawArraysANGLEOrWebGL(const GrBuffer* drawIndirectBuffer, size_t offset,
+                                     int drawCount);
     void onDrawIndexedIndirect(const GrBuffer* drawIndirectBuffer, size_t offset,
                                int drawCount) override;
-    void onClear(const GrScissorState& scissor, const SkPMColor4f& color) override;
+    void multiDrawElementsANGLEOrWebGL(const GrBuffer* drawIndirectBuffer, size_t offset,
+                                       int drawCount);
+    void onClear(const GrScissorState& scissor, std::array<float, 4> color) override;
     void onClearStencilClip(const GrScissorState& scissor, bool insideStencilMask) override;
 
     GrGLGpu* fGpu;
@@ -85,7 +90,11 @@ private:
     // the indices, or nullptr if they reside physically in GPU memory.
     const uint16_t* fIndexPointer;
 
-    typedef GrOpsRenderPass INHERITED;
+    // This tracks whether or not we bound the respective buffers during the bindBuffers call.
+    SkDEBUGCODE(bool fDidBindVertexBuffer = false;)
+    SkDEBUGCODE(bool fDidBindInstanceBuffer = false;)
+
+    using INHERITED = GrOpsRenderPass;
 };
 
 #endif

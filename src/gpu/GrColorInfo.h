@@ -24,6 +24,13 @@ public:
     GrColorInfo(GrColorType, SkAlphaType, sk_sp<SkColorSpace>);
     /* implicit */ GrColorInfo(const SkColorInfo&);
 
+    bool operator==(const GrColorInfo& that) const {
+        return  fColorType == that.fColorType &&
+                fAlphaType == that.fAlphaType &&
+                SkColorSpace::Equals(fColorSpace.get(), that.fColorSpace.get());
+    }
+    bool operator!=(const GrColorInfo& that) const { return !(*this == that); }
+
     bool isLinearlyBlended() const { return fColorSpace && fColorSpace->gammaIsLinear(); }
 
     SkColorSpace* colorSpace() const { return fColorSpace.get(); }
@@ -34,6 +41,8 @@ public:
 
     GrColorType colorType() const { return fColorType; }
     SkAlphaType alphaType() const { return fAlphaType; }
+
+    bool isAlphaOnly() const { return GrColorTypeIsAlphaOnly(fColorType); }
 
     bool isValid() const {
         return fColorType != GrColorType::kUnknown && fAlphaType != kUnknown_SkAlphaType;

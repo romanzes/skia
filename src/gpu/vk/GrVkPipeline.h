@@ -10,13 +10,15 @@
 
 #include "include/gpu/vk/GrVkTypes.h"
 #include "include/private/GrTypesPriv.h"
+#include "src/gpu/GrGeometryProcessor.h"
+#include "src/gpu/GrXferProcessor.h"
 #include "src/gpu/vk/GrVkManagedResource.h"
 
 class GrPipeline;
-class GrPrimitiveProcessor;
+class GrProgramInfo;
 class GrRenderTarget;
-class GrXferProcessor;
 class GrStencilSettings;
+class GrSwizzle;
 class GrVkCommandBuffer;
 class GrVkGpu;
 class GrVkRenderPass;
@@ -24,16 +26,40 @@ struct SkIRect;
 
 class GrVkPipeline : public GrVkManagedResource {
 public:
-    static GrVkPipeline* Create(GrVkGpu*,
-                                const GrProgramInfo&,
-                                VkPipelineShaderStageCreateInfo* shaderStageInfo,
-                                int shaderStageCount,
-                                VkRenderPass compatibleRenderPass,
-                                VkPipelineLayout layout,
-                                VkPipelineCache cache);
+    static sk_sp<GrVkPipeline> Make(GrVkGpu*,
+                                    const GrGeometryProcessor::AttributeSet& vertexAttribs,
+                                    const GrGeometryProcessor::AttributeSet& instanceAttribs,
+                                    GrPrimitiveType,
+                                    GrSurfaceOrigin,
+                                    const GrStencilSettings&,
+                                    int numRasterSamples,
+                                    bool isHWAntialiasState,
+                                    bool isMixedSampled,
+                                    const GrXferProcessor::BlendInfo&,
+                                    bool isWireframe,
+                                    bool useConservativeRaster,
+                                    uint32_t subpass,
+                                    VkPipelineShaderStageCreateInfo* shaderStageInfo,
+                                    int shaderStageCount,
+                                    VkRenderPass compatibleRenderPass,
+                                    VkPipelineLayout layout,
+                                    bool ownsLayout,
+                                    VkPipelineCache cache);
+
+    static sk_sp<GrVkPipeline> Make(GrVkGpu*,
+                                    const GrProgramInfo&,
+                                    VkPipelineShaderStageCreateInfo* shaderStageInfo,
+                                    int shaderStageCount,
+                                    VkRenderPass compatibleRenderPass,
+                                    VkPipelineLayout layout,
+                                    VkPipelineCache cache,
+                                    uint32_t subpass);
 
     VkPipeline pipeline() const { return fPipeline; }
-    VkPipelineLayout layout() const { return fPipelineLayout; }
+    VkPipelineLayout layout() const {
+        SkASSERT(fPipelineLayout != VK_NULL_HANDLE);
+        return fPipelineLayout;
+    }
 
     static void SetDynamicScissorRectState(GrVkGpu*, GrVkCommandBuffer*, const GrRenderTarget*,
                                            GrSurfaceOrigin, const SkIRect& scissorRect);
@@ -59,7 +85,7 @@ protected:
 private:
     void freeGPUData() const override;
 
-    typedef GrVkManagedResource INHERITED;
+    using INHERITED = GrVkManagedResource;
 };
 
 #endif

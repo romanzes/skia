@@ -21,9 +21,6 @@ private:
     bool onIsUsed(GrSurfaceProxy* proxy) const override {
         return false;
     }
-    void handleInternalAllocationFailure() override {
-        // No need to do anything special here. We just double check the proxies during onExecute.
-    }
     void gatherProxyIntervals(GrResourceAllocator*) const override;
 
     ExpectedOutcome onMakeClosed(const GrCaps&, SkIRect*) override {
@@ -32,8 +29,10 @@ private:
 
     bool onExecute(GrOpFlushState*) override;
 
-#ifdef SK_DEBUG
+#if GR_TEST_UTILS
     const char* name() const final { return "TextureResolve"; }
+#endif
+#ifdef SK_DEBUG
     void visitProxies_debugOnly(const GrOp::VisitProxyFunc&) const override;
 #endif
 

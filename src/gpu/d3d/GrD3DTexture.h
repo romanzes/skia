@@ -21,7 +21,7 @@ public:
                                               SkISize dimensions,
                                               const D3D12_RESOURCE_DESC&,
                                               GrProtected,
-                                              GrMipMapsStatus);
+                                              GrMipmapStatus);
 
     static sk_sp<GrD3DTexture> MakeWrappedTexture(GrD3DGpu*,
                                                   SkISize dimensions,
@@ -39,16 +39,13 @@ public:
 
     void textureParamsModified() override {}
 
-    void addIdleProc(sk_sp<GrRefCntedCallback>, IdleState) override;
-    void callIdleProcsOnBehalfOfResource() override;
-
 protected:
     GrD3DTexture(GrD3DGpu*,
                  SkISize dimensions,
                  const GrD3DTextureResourceInfo&,
                  sk_sp<GrD3DResourceState>,
                  const GrD3DDescriptorHeap::CPUHandle& shaderResourceView,
-                 GrMipMapsStatus);
+                 GrMipmapStatus);
 
     GrD3DGpu* getD3DGpu() const;
 
@@ -59,17 +56,15 @@ protected:
         return false;
     }
 
-    void willRemoveLastRef() override;
-
 private:
     GrD3DTexture(GrD3DGpu*, SkBudgeted, SkISize dimensions, const GrD3DTextureResourceInfo&,
                  sk_sp<GrD3DResourceState>,
                  const GrD3DDescriptorHeap::CPUHandle& shaderResourceView,
-                 GrMipMapsStatus);
+                 GrMipmapStatus);
     GrD3DTexture(GrD3DGpu*, SkISize dimensions, const GrD3DTextureResourceInfo&,
                  sk_sp<GrD3DResourceState>,
                  const GrD3DDescriptorHeap::CPUHandle& shaderResourceView,
-                 GrMipMapsStatus, GrWrapCacheable, GrIOType);
+                 GrMipmapStatus, GrWrapCacheable, GrIOType);
 
     // In D3D we call the release proc after we are finished with the underlying
     // GrSurfaceResource::Resource object (which occurs after the GPU has finished all work on it).
@@ -78,17 +73,13 @@ private:
         this->setResourceRelease(std::move(releaseHelper));
     }
 
-    void removeFinishIdleProcs();
-
     struct SamplerHash {
-        uint32_t operator()(GrSamplerState state) const {
-            return GrSamplerState::GenerateKey(state);
-        }
+        uint32_t operator()(GrSamplerState state) const { return state.asIndex(); }
     };
 
     GrD3DDescriptorHeap::CPUHandle fShaderResourceView;
 
-    typedef GrTexture INHERITED;
+    using INHERITED = GrTexture;
 };
 
 #endif

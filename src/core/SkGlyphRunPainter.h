@@ -16,9 +16,9 @@
 #include "src/core/SkTextBlobPriv.h"
 
 #if SK_SUPPORT_GPU
-#include "src/gpu/text/GrSDFTOptions.h"
+#include "src/gpu/text/GrSDFTControl.h"
 class GrColorInfo;
-class GrRenderTargetContext;
+class GrSurfaceDrawContext;
 #endif
 
 class SkGlyphRunPainterInterface;
@@ -62,7 +62,7 @@ public:
     // The following two ctors are used exclusively by the GPU, and will always use the global
     // strike cache.
     SkGlyphRunListPainter(const SkSurfaceProps&, const GrColorInfo&);
-    explicit SkGlyphRunListPainter(const GrRenderTargetContext& renderTargetContext);
+    explicit SkGlyphRunListPainter(const GrSurfaceDrawContext& surfaceDrawContext);
 #endif  // SK_SUPPORT_GPU
 
     class BitmapDevicePainter {
@@ -77,18 +77,18 @@ public:
     };
 
     void drawForBitmapDevice(
-            const SkGlyphRunList& glyphRunList, const SkMatrix& deviceMatrix,
+            const SkGlyphRunList& glyphRunList, const SkPaint& paint, const SkMatrix& deviceMatrix,
             const BitmapDevicePainter* bitmapDevice);
 
 #if SK_SUPPORT_GPU
     // A nullptr for process means that the calls to the cache will be performed, but none of the
     // callbacks will be called.
-    void processGlyphRunList(const SkGlyphRunList& glyphRunList,
-                             const SkMatrix& drawMatrix,
-                             const SkSurfaceProps& props,
-                             bool contextSupportsDistanceFieldText,
-                             const GrSDFTOptions& options,
-                             SkGlyphRunPainterInterface* process);
+    void processGlyphRun(const SkGlyphRun& glyphRun,
+                         const SkMatrix& drawMatrix,
+                         const SkPaint& drawPaint,
+                         const GrSDFTControl& control,
+                         SkGlyphRunPainterInterface* process,
+                         const char* tag = nullptr);
 #endif  // SK_SUPPORT_GPU
 
 private:
@@ -102,6 +102,7 @@ private:
     };
 
     ScopedBuffers SK_WARN_UNUSED_RESULT ensureBuffers(const SkGlyphRunList& glyphRunList);
+    ScopedBuffers SK_WARN_UNUSED_RESULT ensureBuffers(const SkGlyphRun& glyphRun);
 
     // The props as on the actual device.
     const SkSurfaceProps fDeviceProps;

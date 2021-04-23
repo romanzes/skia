@@ -23,21 +23,23 @@ REVERT_CL_SUBJECT_PREFIX = 'Revert '
 
 # Please add the complete email address here (and not just 'xyz@' or 'xyz').
 PUBLIC_API_OWNERS = (
-    'mtklein@google.com',
-    'reed@chromium.org',
-    'reed@google.com',
-    'bsalomon@chromium.org',
+    'brianosman@google.com',
     'bsalomon@google.com',
     'djsollen@chromium.org',
     'djsollen@google.com',
     'hcm@chromium.org',
     'hcm@google.com',
+    'mtklein@google.com',
+    'reed@chromium.org',
+    'reed@google.com',
 )
 
 AUTHORS_FILE_NAME = 'AUTHORS'
 RELEASE_NOTES_FILE_NAME = 'RELEASE_NOTES.txt'
 
-DOCS_PREVIEW_URL = 'https://skia.org/?cl={issue}'
+DOCS_PREVIEW_URL_TMPL = 'https://skia.org/{path}?cl={issue}'
+DOCS_INDEX = '_index'
+
 GOLD_TRYBOT_URL = 'https://gold.skia.org/search?issue='
 
 SERVICE_ACCOUNT_SUFFIX = [
@@ -135,7 +137,8 @@ def _CopyrightChecks(input_api, output_api, source_file_filter=None):
       r'Copyright (\([cC]\) )?%s \w+' % years_pattern)
 
   for affected_file in input_api.AffectedSourceFiles(source_file_filter):
-    if 'third_party' in affected_file.LocalPath():
+    if ('third_party/' in affected_file.LocalPath() or
+        'tests/sksl/' in affected_file.LocalPath()):
       continue
     contents = input_api.ReadFile(affected_file, 'rb')
     if not re.search(copyright_pattern, contents):
@@ -190,6 +193,24 @@ def _CheckGNFormatted(input_api, output_api):
           '`%s` failed, try\n\t%s' % (' '.join(cmd), fix)))
   return results
 
+
+def _CheckGitConflictMarkers(input_api, output_api):
+  pattern = input_api.re.compile('^(?:<<<<<<<|>>>>>>>) |^=======$')
+  results = []
+  for f in input_api.AffectedFiles():
+    for line_num, line in f.ChangedContents():
+      if f.LocalPath().endswith('.md'):
+        # First-level headers in markdown look a lot like version control
+        # conflict markers. http://daringfireball.net/projects/markdown/basics
+        continue
+      if pattern.match(line):
+        results.append(
+            output_api.PresubmitError(
+                'Git conflict markers found in %s:%d %s' % (
+                    f.LocalPath(), line_num, line)))
+  return results
+
+
 def _CheckIncludesFormatted(input_api, output_api):
   """Make sure #includes in files we're changing have been formatted."""
   files = [str(f) for f in input_api.AffectedFiles() if f.Action() != 'D']
@@ -199,27 +220,6 @@ def _CheckIncludesFormatted(input_api, output_api):
   if 0 != subprocess.call(cmd):
     return [output_api.PresubmitError('`%s` failed' % ' '.join(cmd))]
   return []
-
-def _CheckCompileIsolate(input_api, output_api):
-  """Ensure that gen_compile_isolate.py does not change compile.isolate."""
-  # Only run the check if files were added or removed.
-  results = []
-  script = os.path.join('infra', 'bots', 'gen_compile_isolate.py')
-  isolate = os.path.join('infra', 'bots', 'compile.isolated')
-  for f in input_api.AffectedFiles():
-    if f.Action() in ('A', 'D', 'R'):
-      break
-    if f.LocalPath() in (script, isolate):
-      break
-  else:
-    return results
-
-  cmd = ['python', script, 'test']
-  try:
-    subprocess.check_output(cmd, stderr=subprocess.STDOUT)
-  except subprocess.CalledProcessError as e:
-    results.append(output_api.PresubmitError(e.output))
-  return results
 
 
 class _WarningsAsErrors():
@@ -275,10 +275,10 @@ def _CommonChecks(input_api, output_api):
   results.extend(_IfDefChecks(input_api, output_api))
   results.extend(_CopyrightChecks(input_api, output_api,
                                   source_file_filter=sources))
-  results.extend(_CheckCompileIsolate(input_api, output_api))
   results.extend(_CheckDEPSValid(input_api, output_api))
   results.extend(_CheckIncludesFormatted(input_api, output_api))
   results.extend(_CheckGNFormatted(input_api, output_api))
+  results.extend(_CheckGitConflictMarkers(input_api, output_api))
   return results
 
 
@@ -472,17 +472,22 @@ def PostUploadHook(gerrit, change, output_api):
       return []
 
   results = []
-  at_least_one_docs_change = False
   all_docs_changes = True
+  docs_preview_links = []
   for affected_file in change.AffectedFiles():
     affected_file_path = affected_file.LocalPath()
     file_path, _ = os.path.splitext(affected_file_path)
-    if 'site' == file_path.split(os.path.sep)[0]:
-      at_least_one_docs_change = True
+    top_level_dir = file_path.split(os.path.sep)[0]
+    if 'site' == top_level_dir:
+      site_path = os.path.sep.join(file_path.split(os.path.sep)[1:])
+      # Strip DOCS_INDEX from the site_path to construct the docs_preview_link.
+      if site_path.endswith(DOCS_INDEX):
+        site_path = site_path[:-len(DOCS_INDEX)]
+      docs_preview_link = DOCS_PREVIEW_URL_TMPL.format(
+          path=site_path, issue=change.issue)
+      docs_preview_links.append(docs_preview_link)
     else:
       all_docs_changes = False
-    if at_least_one_docs_change and not all_docs_changes:
-      break
 
   footers = change.GitFootersFromDescription()
   description_changed = False
@@ -497,18 +502,18 @@ def PostUploadHook(gerrit, change, output_api):
             'This change has only doc changes. Automatically added '
             '\'No-Try: true\' to the CL\'s description'))
 
-  # If there is at least one docs change then add preview link in the CL's
-  # description if it does not already exist there.
-  docs_preview_link = DOCS_PREVIEW_URL.format(issue=change.issue)
-  if (at_least_one_docs_change
-      and docs_preview_link not in footers.get('Docs-Preview', [])):
-    # Automatically add a link to where the docs can be previewed.
-    description_changed = True
-    change.AddDescriptionFooter('Docs-Preview', docs_preview_link)
-    results.append(
-        output_api.PresubmitNotifyResult(
-            'Automatically added a link to preview the docs changes to the '
-            'CL\'s description'))
+  # Add all preview links that do not already exist in the description.
+  if len(docs_preview_links) > 0:
+    missing_preview_links = list(
+        set(docs_preview_links) - set(footers.get('Docs-Preview', [])))
+    if len(missing_preview_links) > 0:
+      description_changed = True
+      for missing_link in missing_preview_links:
+        change.AddDescriptionFooter('Docs-Preview', missing_link)
+      results.append(
+          output_api.PresubmitNotifyResult(
+              'Automatically added link(s) to preview the docs changes to '
+              'the CL\'s description'))
 
   # If the description has changed update it.
   if description_changed:

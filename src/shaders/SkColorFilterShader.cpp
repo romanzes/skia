@@ -56,19 +56,20 @@ bool SkColorFilterShader::onAppendStages(const SkStageRec& rec) const {
     if (fAlpha != 1.0f) {
         rec.fPipeline->append(SkRasterPipeline::scale_1_float, rec.fAlloc->make<float>(fAlpha));
     }
-    fFilter->appendStages(rec, fShader->isOpaque());
+    if (!fFilter->appendStages(rec, fShader->isOpaque())) {
+        return false;
+    }
     return true;
 }
 
 skvm::Color SkColorFilterShader::onProgram(skvm::Builder* p,
                                            skvm::Coord device, skvm::Coord local, skvm::Color paint,
                                            const SkMatrixProvider& matrices, const SkMatrix* localM,
-                                           SkFilterQuality quality, const SkColorInfo& dst,
+                                           const SkColorInfo& dst,
                                            skvm::Uniforms* uniforms, SkArenaAlloc* alloc) const {
     // Run the shader.
     skvm::Color c = as_SB(fShader)->program(p, device,local, paint,
-                                            matrices,localM,
-                                            quality,dst,
+                                            matrices,localM, dst,
                                             uniforms,alloc);
     if (!c) {
         return {};
@@ -89,25 +90,22 @@ skvm::Color SkColorFilterShader::onProgram(skvm::Builder* p,
 #if SK_SUPPORT_GPU
 /////////////////////////////////////////////////////////////////////
 
-#include "include/gpu/GrContext.h"
 
 std::unique_ptr<GrFragmentProcessor> SkColorFilterShader::asFragmentProcessor(
         const GrFPArgs& args) const {
-    auto fp1 = as_SB(fShader)->asFragmentProcessor(args);
-    if (!fp1) {
+    auto shaderFP = as_SB(fShader)->asFragmentProcessor(args);
+    if (!shaderFP) {
         return nullptr;
     }
 
     // TODO I guess, but it shouldn't come up as used today.
     SkASSERT(fAlpha == 1.0f);
 
-    auto fp2 = fFilter->asFragmentProcessor(args.fContext, *args.fDstColorInfo);
-    if (!fp2) {
-        return fp1;
-    }
-
-    std::unique_ptr<GrFragmentProcessor> fpSeries[] = { std::move(fp1), std::move(fp2) };
-    return GrFragmentProcessor::RunInSeries(fpSeries, 2);
+    auto [success, fp] = fFilter->asFragmentProcessor(std::move(shaderFP), args.fContext,
+                                                      *args.fDstColorInfo);
+    // If the filter FP could not be created, we still want to return the shader FP, so checking
+    // success can be omitted here.
+    return std::move(fp);
 }
 #endif
 

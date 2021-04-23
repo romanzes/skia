@@ -13,6 +13,10 @@
 #include "include/core/SkPaint.h"
 #include "include/core/SkPoint.h"
 
+#ifndef SK_SUPPORT_LEGACY_DRAWLOOPER
+#error "SkDrawLooper is unsupported"
+#endif
+
 /**
  *  DEPRECATED: No longer supported by Skia.
  */
@@ -109,12 +113,13 @@ private:
         static void ApplyInfo(SkPaint* dst, const SkPaint& src, const LayerInfo&);
     };
 
-    typedef SkDrawLooper INHERITED;
+    using INHERITED = SkDrawLooper;
 
 public:
     class SK_API Builder {
     public:
         Builder();
+
         ~Builder();
 
         /**
@@ -144,6 +149,9 @@ public:
         sk_sp<SkDrawLooper> detach();
 
     private:
+        Builder(const Builder&) = delete;
+        Builder& operator=(const Builder&) = delete;
+
         Rec* fRecs;
         Rec* fTopRec;
         int  fCount;

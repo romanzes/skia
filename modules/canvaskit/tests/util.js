@@ -18,7 +18,7 @@ const _commonGM = (it, pause, name, callback, assetsToFetchOrPromisesToWaitOn) =
     }
     it('draws gm '+name, (done) => {
         const surface = CanvasKit.MakeCanvasSurface('test');
-        expect(surface).toBeTruthy('Could not make surface')
+        expect(surface).toBeTruthy('Could not make surface');
         if (!surface) {
             done();
             return;
@@ -49,13 +49,13 @@ const _commonGM = (it, pause, name, callback, assetsToFetchOrPromisesToWaitOn) =
             done();
         });
     })
-}
+};
 
 /**
  * Takes a name, a callback, and any number of assets or promises. It executes the
  * callback (presumably, the test) and reports the resulting surface to Gold.
  * @param name {string}
- * @param callback {Function}, has two params, the first is a CanvasKit.SkCanvas
+ * @param callback {Function}, has two params, the first is a CanvasKit.Canvas
  *    and the second is an array of results from the passed in assets or promises.
  *    If a given assetOrPromise was a string, the result will be an ArrayBuffer.
  * @param assetsToFetchOrPromisesToWaitOn {string|Promise}. If a string, it will
@@ -65,7 +65,7 @@ const _commonGM = (it, pause, name, callback, assetsToFetchOrPromisesToWaitOn) =
  */
 const gm = (name, callback, ...assetsToFetchOrPromisesToWaitOn) => {
     _commonGM(it, false, name, callback, assetsToFetchOrPromisesToWaitOn);
-}
+};
 
 /**
  *  fgm is like gm, except only tests declared with fgm, force_gm, or fit will be
@@ -73,7 +73,7 @@ const gm = (name, callback, ...assetsToFetchOrPromisesToWaitOn) => {
  */
 const fgm = (name, callback, ...assetsToFetchOrPromisesToWaitOn) => {
     _commonGM(fit, false, name, callback, assetsToFetchOrPromisesToWaitOn);
-}
+};
 
 /**
  *  force_gm is like gm, except only tests declared with fgm, force_gm, or fit will be
@@ -81,7 +81,7 @@ const fgm = (name, callback, ...assetsToFetchOrPromisesToWaitOn) => {
  */
 const force_gm = (name, callback, ...assetsToFetchOrPromisesToWaitOn) => {
     fgm(name, callback, assetsToFetchOrPromisesToWaitOn);
-}
+};
 
 /**
  *  skip_gm does nothing. It is a convenient way to skip a test temporarily.
@@ -89,7 +89,7 @@ const force_gm = (name, callback, ...assetsToFetchOrPromisesToWaitOn) => {
 const skip_gm = (name, callback, ...assetsToFetchOrPromisesToWaitOn) => {
     console.log(`Skipping gm ${name}`);
     // do nothing, skip the test for now
-}
+};
 
 /**
  *  pause_gm is like fgm, except the test will not finish right away and clear,
@@ -97,7 +97,7 @@ const skip_gm = (name, callback, ...assetsToFetchOrPromisesToWaitOn) => {
  */
 const pause_gm = (name, callback, ...assetsToFetchOrPromisesToWaitOn) => {
     _commonGM(fit, true, name, callback, assetsToFetchOrPromisesToWaitOn);
-}
+};
 
 const _commonMultipleCanvasGM = (it, pause, name, callback) => {
     it(`draws gm ${name} on both CanvasKit and using Canvas2D`, (done) => {
@@ -133,19 +133,19 @@ const _commonMultipleCanvasGM = (it, pause, name, callback) => {
             done();
         }).catch(reportError(done));
     });
-}
+};
 
 /**
  * Takes a name and a callback. It executes the callback (presumably, the test)
- * for both a CanvasKit.SkCanvas and a native Canvas2D. The result of both will be
+ * for both a CanvasKit.Canvas and a native Canvas2D. The result of both will be
  * uploaded to Gold.
  * @param name {string}
- * @param callback {Function}, has one param, either a CanvasKit.SkCanvas or a native
+ * @param callback {Function}, has one param, either a CanvasKit.Canvas or a native
  *    Canvas2D object.
  */
 const multipleCanvasGM = (name, callback) => {
     _commonMultipleCanvasGM(it, false, name, callback);
-}
+};
 
 /**
  *  fmultipleCanvasGM is like multipleCanvasGM, except only tests declared with
@@ -154,7 +154,7 @@ const multipleCanvasGM = (name, callback) => {
  */
 const fmultipleCanvasGM = (name, callback) => {
     _commonMultipleCanvasGM(fit, false, name, callback);
-}
+};
 
 /**
  *  force_multipleCanvasGM is like multipleCanvasGM, except only tests declared
@@ -163,7 +163,7 @@ const fmultipleCanvasGM = (name, callback) => {
  */
 const force_multipleCanvasGM = (name, callback) => {
     fmultipleCanvasGM(name, callback);
-}
+};
 
 /**
  *  pause_multipleCanvasGM is like fmultipleCanvasGM, except the test will not
@@ -171,14 +171,14 @@ const force_multipleCanvasGM = (name, callback) => {
  */
 const pause_multipleCanvasGM = (name, callback) => {
     _commonMultipleCanvasGM(fit, true, name, callback);
-}
+};
 
 /**
  *  skip_multipleCanvasGM does nothing. It is a convenient way to skip a test temporarily.
  */
 const skip_multipleCanvasGM = (name, callback) => {
     console.log(`Skipping multiple canvas gm ${name}`);
-}
+};
 
 
 function reportSurface(surface, testname, done) {
@@ -186,12 +186,24 @@ function reportSurface(surface, testname, done) {
     // data. So, we copy it out and draw it to a normal canvas to take a picture.
     // To be consistent across CPU and GPU, we just do it for all configurations
     // (even though the CPU canvas shows up after flush just fine).
-    let pixels = surface.getCanvas().readPixels(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+    let pixels = surface.getCanvas().readPixels(0, 0, {
+        width: CANVAS_WIDTH,
+        height: CANVAS_HEIGHT,
+        colorType: CanvasKit.ColorType.RGBA_8888,
+        alphaType: CanvasKit.AlphaType.Unpremul,
+        colorSpace: CanvasKit.ColorSpace.SRGB,
+    });
+    if (!pixels) {
+        throw 'Could not get pixels for test '+testname;
+    }
     pixels = new Uint8ClampedArray(pixels.buffer);
     const imageData = new ImageData(pixels, CANVAS_WIDTH, CANVAS_HEIGHT);
 
     const reportingCanvas = document.getElementById('report');
     reportingCanvas.getContext('2d').putImageData(imageData, 0, 0);
+    if (!done) {
+        return;
+    }
     reportCanvas(reportingCanvas, testname).then(() => {
         // TODO(kjlubick): should we call surface.delete() here?
         done();
@@ -200,7 +212,7 @@ function reportSurface(surface, testname, done) {
 
 
 function starPath(CanvasKit, X=128, Y=128, R=116) {
-    const p = new CanvasKit.SkPath();
+    const p = new CanvasKit.Path();
     p.moveTo(X + R, Y);
     for (let i = 1; i < 8; i++) {
       let a = 2.6927937 * i;

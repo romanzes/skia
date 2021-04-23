@@ -5,22 +5,24 @@
  * found in the LICENSE file.
  */
 
-#include "include/private/GrRecordingContext.h"
+#include "include/gpu/GrRecordingContext.h"
 
-#include "include/gpu/GrContext.h"
 #include "include/gpu/GrContextThreadSafeProxy.h"
 #include "src/core/SkArenaAlloc.h"
 #include "src/gpu/GrAuditTrail.h"
 #include "src/gpu/GrCaps.h"
+#include "src/gpu/GrContextThreadSafeProxyPriv.h"
 #include "src/gpu/GrDrawingManager.h"
 #include "src/gpu/GrMemoryPool.h"
 #include "src/gpu/GrProgramDesc.h"
 #include "src/gpu/GrProxyProvider.h"
 #include "src/gpu/GrRecordingContextPriv.h"
-#include "src/gpu/GrRenderTargetContext.h"
 #include "src/gpu/GrSurfaceContext.h"
+#include "src/gpu/GrSurfaceDrawContext.h"
 #include "src/gpu/SkGr.h"
 #include "src/gpu/effects/GrSkSLFP.h"
+#include "src/gpu/ops/GrAtlasTextOp.h"
+#include "src/gpu/text/GrTextBlob.h"
 #include "src/gpu/text/GrTextBlobCache.h"
 
 GrRecordingContext::ProgramData::ProgramData(std::unique_ptr<const GrProgramDesc> desc,
@@ -36,106 +38,96 @@ GrRecordingContext::ProgramData::ProgramData(ProgramData&& other)
 
 GrRecordingContext::ProgramData::~ProgramData() = default;
 
-GrRecordingContext::GrRecordingContext(sk_sp<GrContextThreadSafeProxy> proxy)
+GrRecordingContext::GrRecordingContext(sk_sp<GrContextThreadSafeProxy> proxy, bool ddlRecording)
         : INHERITED(std::move(proxy))
-        , fAuditTrail(new GrAuditTrail()) {
+        , fAuditTrail(new GrAuditTrail())
+        , fArenas(ddlRecording) {
+    fProxyProvider = std::make_unique<GrProxyProvider>(this);
 }
 
-GrRecordingContext::~GrRecordingContext() = default;
+GrRecordingContext::~GrRecordingContext() {
+    GrAtlasTextOp::ClearCache();
+}
+
+int GrRecordingContext::maxSurfaceSampleCountForColorType(SkColorType colorType) const {
+    GrBackendFormat format =
+            this->caps()->getDefaultBackendFormat(SkColorTypeToGrColorType(colorType),
+                                                  GrRenderable::kYes);
+    return this->caps()->maxRenderTargetSampleCount(format);
+}
 
 bool GrRecordingContext::init() {
-
     if (!INHERITED::init()) {
         return false;
     }
 
-    auto overBudget = [this]() {
-        if (GrContext* direct = this->priv().asDirectContext(); direct != nullptr) {
-
-            // TODO: move text blob draw calls below context
-            // TextBlobs are drawn at the SkGpuDevice level, therefore they cannot rely on
-            // GrRenderTargetContext to perform a necessary flush. The solution is to move drawText
-            // calls to below the GrContext level, but this is not trivial because they call
-            // drawPath on SkGpuDevice.
-            direct->flushAndSubmit();
-        }
-    };
-
-    fTextBlobCache.reset(new GrTextBlobCache(overBudget, this->contextID()));
-
-    return true;
-}
-
-void GrRecordingContext::setupDrawingManager(bool sortOpsTasks, bool reduceOpsTaskSplitting) {
     GrPathRendererChain::Options prcOptions;
     prcOptions.fAllowPathMaskCaching = this->options().fAllowPathMaskCaching;
 #if GR_TEST_UTILS
     prcOptions.fGpuPathRenderers = this->options().fGpuPathRenderers;
 #endif
     // FIXME: Once this is removed from Chrome and Android, rename to fEnable"".
-    if (!this->options().fDisableCoverageCountingPaths) {
-        prcOptions.fGpuPathRenderers |= GpuPathRenderers::kCoverageCounting;
-    }
     if (this->options().fDisableDistanceFieldPaths) {
         prcOptions.fGpuPathRenderers &= ~GpuPathRenderers::kSmall;
     }
 
-    if (!this->proxyProvider()->renderingDirectly()) {
-        // DDL TODO: remove this crippling of the path renderer chain
-        // Disable the small path renderer bc of the proxies in the atlas. They need to be
-        // unified when the opsTasks are added back to the destination drawing manager.
-        prcOptions.fGpuPathRenderers &= ~GpuPathRenderers::kSmall;
+    bool reduceOpsTaskSplitting = false;
+    if (GrContextOptions::Enable::kYes == this->options().fReduceOpsTaskSplitting) {
+        reduceOpsTaskSplitting = true;
+    } else if (GrContextOptions::Enable::kNo == this->options().fReduceOpsTaskSplitting) {
+        reduceOpsTaskSplitting = false;
     }
-
     fDrawingManager.reset(new GrDrawingManager(this,
                                                prcOptions,
-                                               sortOpsTasks,
                                                reduceOpsTaskSplitting));
+    return true;
 }
 
 void GrRecordingContext::abandonContext() {
     INHERITED::abandonContext();
 
-    fTextBlobCache->freeAll();
+    this->destroyDrawingManager();
 }
 
 GrDrawingManager* GrRecordingContext::drawingManager() {
     return fDrawingManager.get();
 }
 
-GrRecordingContext::Arenas::Arenas(GrOpMemoryPool* opMemoryPool, SkArenaAlloc* recordTimeAllocator)
-        : fOpMemoryPool(opMemoryPool)
-        , fRecordTimeAllocator(recordTimeAllocator) {
+void GrRecordingContext::destroyDrawingManager() {
+    fDrawingManager.reset();
+}
+
+GrRecordingContext::Arenas::Arenas(SkArenaAlloc* recordTimeAllocator,
+                                   GrSubRunAllocator* subRunAllocator)
+        : fRecordTimeAllocator(recordTimeAllocator)
+        , fRecordTimeSubRunAllocator(subRunAllocator) {
     // OwnedArenas should instantiate these before passing the bare pointer off to this struct.
-    SkASSERT(opMemoryPool);
-    SkASSERT(recordTimeAllocator);
+    SkASSERT(subRunAllocator);
 }
 
 // Must be defined here so that std::unique_ptr can see the sizes of the various pools, otherwise
 // it can't generate a default destructor for them.
-GrRecordingContext::OwnedArenas::OwnedArenas() {}
+GrRecordingContext::OwnedArenas::OwnedArenas(bool ddlRecording) : fDDLRecording(ddlRecording) {}
 GrRecordingContext::OwnedArenas::~OwnedArenas() {}
 
 GrRecordingContext::OwnedArenas& GrRecordingContext::OwnedArenas::operator=(OwnedArenas&& a) {
-    fOpMemoryPool = std::move(a.fOpMemoryPool);
+    fDDLRecording = a.fDDLRecording;
     fRecordTimeAllocator = std::move(a.fRecordTimeAllocator);
+    fRecordTimeSubRunAllocator = std::move(a.fRecordTimeSubRunAllocator);
     return *this;
 }
 
 GrRecordingContext::Arenas GrRecordingContext::OwnedArenas::get() {
-    if (!fOpMemoryPool) {
-        // DDL TODO: should the size of the memory pool be decreased in DDL mode? CPU-side memory
-        // consumed in DDL mode vs. normal mode for a single skp might be a good metric of wasted
-        // memory.
-        fOpMemoryPool = GrOpMemoryPool::Make(16384, 16384);
-    }
-
-    if (!fRecordTimeAllocator) {
+    if (!fRecordTimeAllocator && fDDLRecording) {
         // TODO: empirically determine a better number for SkArenaAlloc's firstHeapAllocation param
-        fRecordTimeAllocator = std::make_unique<SkArenaAlloc>(sizeof(GrPipeline) * 100);
+        fRecordTimeAllocator = std::make_unique<SkArenaAlloc>(1024);
     }
 
-    return {fOpMemoryPool.get(), fRecordTimeAllocator.get()};
+    if (!fRecordTimeSubRunAllocator) {
+        fRecordTimeSubRunAllocator = std::make_unique<GrSubRunAllocator>();
+    }
+
+    return {fRecordTimeAllocator.get(), fRecordTimeSubRunAllocator.get()};
 }
 
 GrRecordingContext::OwnedArenas&& GrRecordingContext::detachArenas() {
@@ -143,15 +135,36 @@ GrRecordingContext::OwnedArenas&& GrRecordingContext::detachArenas() {
 }
 
 GrTextBlobCache* GrRecordingContext::getTextBlobCache() {
-    return fTextBlobCache.get();
+    return fThreadSafeProxy->priv().getTextBlobCache();
 }
 
 const GrTextBlobCache* GrRecordingContext::getTextBlobCache() const {
-    return fTextBlobCache.get();
+    return fThreadSafeProxy->priv().getTextBlobCache();
+}
+
+GrThreadSafeCache* GrRecordingContext::threadSafeCache() {
+    return fThreadSafeProxy->priv().threadSafeCache();
+}
+
+const GrThreadSafeCache* GrRecordingContext::threadSafeCache() const {
+    return fThreadSafeProxy->priv().threadSafeCache();
 }
 
 void GrRecordingContext::addOnFlushCallbackObject(GrOnFlushCallbackObject* onFlushCBObject) {
     this->drawingManager()->addOnFlushCallbackObject(onFlushCBObject);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+int GrRecordingContext::maxTextureSize() const { return this->caps()->maxTextureSize(); }
+
+int GrRecordingContext::maxRenderTargetSize() const { return this->caps()->maxRenderTargetSize(); }
+
+bool GrRecordingContext::colorTypeSupportedAsImage(SkColorType colorType) const {
+    GrBackendFormat format =
+            this->caps()->getDefaultBackendFormat(SkColorTypeToGrColorType(colorType),
+                                                  GrRenderable::kNo);
+    return format.isValid();
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -161,10 +174,6 @@ sk_sp<const GrCaps> GrRecordingContextPriv::refCaps() const {
 
 void GrRecordingContextPriv::addOnFlushCallbackObject(GrOnFlushCallbackObject* onFlushCBObject) {
     fContext->addOnFlushCallbackObject(onFlushCBObject);
-}
-
-GrContext* GrRecordingContextPriv::backdoor() {
-    return (GrContext*) fContext;
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////

@@ -5,6 +5,8 @@
  * found in the LICENSE file.
  */
 
+#include "tools/gpu/gl/angle/GLTestContext_angle.h"
+
 #include "include/core/SkTime.h"
 #include "include/gpu/gl/GrGLAssembleInterface.h"
 #include "include/gpu/gl/GrGLInterface.h"
@@ -12,8 +14,9 @@
 #include "src/gpu/gl/GrGLDefines.h"
 #include "src/gpu/gl/GrGLUtil.h"
 #include "src/ports/SkOSLibrary.h"
-#include "tools/gpu/gl/angle/GLTestContext_angle.h"
 #include "third_party/externals/angle2/include/platform/Platform.h"
+
+#include <vector>
 
 #define EGL_EGL_PROTOTYPES 1
 #include <EGL/egl.h>
@@ -48,11 +51,11 @@ std::function<void()> context_restorer() {
 
 static GrGLFuncPtr angle_get_gl_proc(void* ctx, const char name[]) {
     const Libs* libs = reinterpret_cast<const Libs*>(ctx);
-    GrGLFuncPtr proc = (GrGLFuncPtr) GetProcedureAddress(libs->fGLLib, name);
+    GrGLFuncPtr proc = (GrGLFuncPtr) SkGetProcedureAddress(libs->fGLLib, name);
     if (proc) {
         return proc;
     }
-    proc = (GrGLFuncPtr) GetProcedureAddress(libs->fEGLLib, name);
+    proc = (GrGLFuncPtr) SkGetProcedureAddress(libs->fEGLLib, name);
     if (proc) {
         return proc;
     }
@@ -483,14 +486,14 @@ sk_sp<const GrGLInterface> CreateANGLEGLInterface() {
     if (nullptr == gLibs.fGLLib) {
         // We load the ANGLE library and never let it go
 #if defined _WIN32
-        gLibs.fGLLib = DynamicLoadLibrary("libGLESv2.dll");
-        gLibs.fEGLLib = DynamicLoadLibrary("libEGL.dll");
+        gLibs.fGLLib = SkLoadDynamicLibrary("libGLESv2.dll");
+        gLibs.fEGLLib = SkLoadDynamicLibrary("libEGL.dll");
 #elif defined SK_BUILD_FOR_MAC
-        gLibs.fGLLib = DynamicLoadLibrary("libGLESv2.dylib");
-        gLibs.fEGLLib = DynamicLoadLibrary("libEGL.dylib");
+        gLibs.fGLLib = SkLoadDynamicLibrary("libGLESv2.dylib");
+        gLibs.fEGLLib = SkLoadDynamicLibrary("libEGL.dylib");
 #else
-        gLibs.fGLLib = DynamicLoadLibrary("libGLESv2.so");
-        gLibs.fEGLLib = DynamicLoadLibrary("libEGL.so");
+        gLibs.fGLLib = SkLoadDynamicLibrary("libGLESv2.so");
+        gLibs.fEGLLib = SkLoadDynamicLibrary("libEGL.so");
 #endif
     }
 

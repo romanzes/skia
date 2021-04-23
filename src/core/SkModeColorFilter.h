@@ -16,11 +16,11 @@ public:
         return sk_sp<SkColorFilter>(new SkModeColorFilter(color, mode));
     }
 
-    uint32_t onGetFlags() const override;
+    bool onIsAlphaUnchanged() const override;
 
 #if SK_SUPPORT_GPU
-    std::unique_ptr<GrFragmentProcessor> asFragmentProcessor(GrRecordingContext*,
-                                                             const GrColorInfo&) const override;
+    GrFPResult asFragmentProcessor(std::unique_ptr<GrFragmentProcessor> inputFP,
+                                   GrRecordingContext*, const GrColorInfo&) const override;
 #endif
 
     SK_FLATTENABLE_HOOKS(SkModeColorFilter)
@@ -41,7 +41,7 @@ private:
 
     friend class SkColorFilter;
 
-    typedef SkColorFilterBase INHERITED;
+    using INHERITED = SkColorFilterBase;
 };
 
 #endif
