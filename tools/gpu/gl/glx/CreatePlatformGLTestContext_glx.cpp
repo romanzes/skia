@@ -87,7 +87,7 @@ static Display* get_display() {
     };
     static std::unique_ptr<AutoDisplay> ad;
     static SkOnce once;
-    once([] { ad.reset(new AutoDisplay{}); });
+    once([] { ad = std::make_unique<AutoDisplay>(); });
     return ad->display();
 }
 
@@ -205,7 +205,7 @@ GLXGLTestContext::GLXGLTestContext(GrGLStandard forcedGpuAPI, GLXGLTestContext* 
     if (!gluCheckExtension(reinterpret_cast<const GLubyte*>("GLX_ARB_create_context"),
                            reinterpret_cast<const GLubyte*>(glxExts))) {
         if (kGLES_GrGLStandard != forcedGpuAPI) {
-            fContext = glXCreateNewContext(fDisplay, bestFbc, GLX_RGBA_TYPE, 0, True);
+            fContext = glXCreateNewContext(fDisplay, bestFbc, GLX_RGBA_TYPE, nullptr, True);
         }
     } else {
         if (kGLES_GrGLStandard == forcedGpuAPI) {
@@ -333,10 +333,7 @@ GLXContext GLXGLTestContext::CreateBestContext(bool isES, Display* display, GLXF
             flags.push_back(GLX_CONTEXT_ES2_PROFILE_BIT_EXT);
         } else if (versions[i].first > 2) {
             flags.push_back(GLX_CONTEXT_PROFILE_MASK_ARB);
-            // TODO When Nvidia implements NVPR on Core profiles, we should start
-            // requesting core here - currently Nv Path rendering on Nvidia
-            // requires a compatibility profile.
-            flags.push_back(GLX_CONTEXT_COMPATIBILITY_PROFILE_BIT_ARB);
+            flags.push_back(GLX_CONTEXT_CORE_PROFILE_BIT_ARB);
         }
         flags.push_back(0);
         context = glXCreateContextAttribsARB(display, bestFbc, glxShareContext, true,

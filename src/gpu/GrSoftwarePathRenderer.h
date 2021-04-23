@@ -26,8 +26,8 @@ public:
             , fAllowCaching(allowCaching) {
     }
 
-    static bool GetShapeAndClipBounds(GrRenderTargetContext*,
-                                      const GrClip& clip,
+    static bool GetShapeAndClipBounds(GrSurfaceDrawContext*,
+                                      const GrClip* clip,
                                       const GrStyledShape& shape,
                                       const SkMatrix& matrix,
                                       SkIRect* unclippedDevShapeBounds,
@@ -35,17 +35,17 @@ public:
                                       SkIRect* devClipBounds);
 
 private:
-    static void DrawNonAARect(GrRenderTargetContext* renderTargetContext,
+    static void DrawNonAARect(GrSurfaceDrawContext* surfaceDrawContext,
                               GrPaint&& paint,
                               const GrUserStencilSettings& userStencilSettings,
-                              const GrClip& clip,
+                              const GrClip* clip,
                               const SkMatrix& viewMatrix,
                               const SkRect& rect,
                               const SkMatrix& localMatrix);
-    static void DrawAroundInvPath(GrRenderTargetContext* renderTargetContext,
+    static void DrawAroundInvPath(GrSurfaceDrawContext* surfaceDrawContext,
                                   GrPaint&& paint,
                                   const GrUserStencilSettings& userStencilSettings,
-                                  const GrClip& clip,
+                                  const GrClip* clip,
                                   const SkMatrix& viewMatrix,
                                   const SkIRect& devClipBounds,
                                   const SkIRect& devPathBounds);
@@ -54,10 +54,10 @@ private:
     // space. The 'viewMatrix' will be used to ensure the correct local coords are provided to
     // any fragment processors in the paint.
     static void DrawToTargetWithShapeMask(GrSurfaceProxyView,
-                                          GrRenderTargetContext* renderTargetContext,
+                                          GrSurfaceDrawContext* surfaceDrawContext,
                                           GrPaint&& paint,
                                           const GrUserStencilSettings& userStencilSettings,
-                                          const GrClip& clip,
+                                          const GrClip* clip,
                                           const SkMatrix& viewMatrix,
                                           const SkIPoint& textureOriginInDeviceSpace,
                                           const SkIRect& deviceSpaceRectToDraw);
@@ -74,7 +74,7 @@ private:
     GrProxyProvider*       fProxyProvider;
     bool                   fAllowCaching;
 
-    typedef GrPathRenderer INHERITED;
+    using INHERITED = GrPathRenderer;
 };
 
 #endif

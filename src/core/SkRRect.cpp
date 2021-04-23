@@ -6,15 +6,39 @@
  */
 
 #include "include/core/SkMatrix.h"
+#include "include/core/SkString.h"
 #include "include/private/SkMalloc.h"
 #include "src/core/SkBuffer.h"
 #include "src/core/SkRRectPriv.h"
+#include "src/core/SkRectPriv.h"
 #include "src/core/SkScaleToSides.h"
 
 #include <cmath>
 #include <utility>
 
 ///////////////////////////////////////////////////////////////////////////////
+
+void SkRRect::setOval(const SkRect& oval) {
+    if (!this->initializeRect(oval)) {
+        return;
+    }
+
+    SkScalar xRad = SkRectPriv::HalfWidth(fRect);
+    SkScalar yRad = SkRectPriv::HalfHeight(fRect);
+
+    if (xRad == 0.0f || yRad == 0.0f) {
+        // All the corners will be square
+        memset(fRadii, 0, sizeof(fRadii));
+        fType = kRect_Type;
+    } else {
+        for (int i = 0; i < 4; ++i) {
+            fRadii[i].set(xRad, yRad);
+        }
+        fType = kOval_Type;
+    }
+
+    SkASSERT(this->isValid());
+}
 
 void SkRRect::setRectXY(const SkRect& rect, SkScalar xRad, SkScalar yRad) {
     if (!this->initializeRect(rect)) {
@@ -158,6 +182,11 @@ void SkRRect::setRectRadii(const SkRect& rect, const SkVector radii[4]) {
     }
 
     this->scaleRadii();
+
+    if (!this->isValid()) {
+        this->setRect(rect);
+        return;
+    }
 }
 
 bool SkRRect::initializeRect(const SkRect& rect) {
@@ -227,7 +256,9 @@ bool SkRRect::scaleRadii() {
     // May be simple, oval, or complex, or become a rect/empty if the radii adjustment made them 0
     this->computeType();
 
-    SkASSERT(this->isValid());
+    // TODO:  Why can't we assert this here?
+    //SkASSERT(this->isValid());
+
     return scale < 1.0;
 }
 
@@ -284,6 +315,17 @@ bool SkRRect::checkCornerContainment(SkScalar x, SkScalar y) const {
     SkScalar dist =  SkScalarSquare(canonicalPt.fX) * SkScalarSquare(fRadii[index].fY) +
                      SkScalarSquare(canonicalPt.fY) * SkScalarSquare(fRadii[index].fX);
     return dist <= SkScalarSquare(fRadii[index].fX * fRadii[index].fY);
+}
+
+bool SkRRectPriv::IsNearlySimpleCircular(const SkRRect& rr, SkScalar tolerance) {
+    SkScalar simpleRadius = rr.fRadii[0].fX;
+    return SkScalarNearlyEqual(simpleRadius, rr.fRadii[0].fY, tolerance) &&
+           SkScalarNearlyEqual(simpleRadius, rr.fRadii[1].fX, tolerance) &&
+           SkScalarNearlyEqual(simpleRadius, rr.fRadii[1].fY, tolerance) &&
+           SkScalarNearlyEqual(simpleRadius, rr.fRadii[2].fX, tolerance) &&
+           SkScalarNearlyEqual(simpleRadius, rr.fRadii[2].fY, tolerance) &&
+           SkScalarNearlyEqual(simpleRadius, rr.fRadii[3].fX, tolerance) &&
+           SkScalarNearlyEqual(simpleRadius, rr.fRadii[3].fY, tolerance);
 }
 
 bool SkRRectPriv::AllCornersCircular(const SkRRect& rr, SkScalar tolerance) {
@@ -369,7 +411,11 @@ void SkRRect::computeType() {
     } else {
         fType = kComplex_Type;
     }
-    SkASSERT(this->isValid());
+
+    if (!this->isValid()) {
+        this->setRect(this->rect());
+        SkASSERT(this->isValid());
+    }
 }
 
 bool SkRRect::transform(const SkMatrix& matrix, SkRRect* dst) const {
@@ -491,7 +537,7 @@ bool SkRRect::transform(const SkMatrix& matrix, SkRRect* dst) const {
     }
 
     dst->scaleRadii();
-    dst->isValid();
+    dst->isValid();  // TODO: is this meant to be SkASSERT(dst->isValid())?
 
     return true;
 }
@@ -571,7 +617,7 @@ bool SkRRectPriv::ReadFromBuffer(SkRBuffer* buffer, SkRRect* rr) {
 #include "include/core/SkString.h"
 #include "src/core/SkStringUtils.h"
 
-void SkRRect::dump(bool asHex) const {
+SkString SkRRect::dumpToString(bool asHex) const {
     SkScalarAsStringType asType = asHex ? kHex_SkScalarAsStringType : kDec_SkScalarAsStringType;
 
     fRect.dump(asHex);
@@ -587,8 +633,10 @@ void SkRRect::dump(bool asHex) const {
         line.append("\n");
     }
     line.append("};");
-    SkDebugf("%s\n", line.c_str());
+    return line;
 }
+
+void SkRRect::dump(bool asHex) const { SkDebugf("%s\n", this->dumpToString(asHex).c_str()); }
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -645,8 +693,8 @@ bool SkRRect::isValid() const {
             }
 
             for (int i = 0; i < 4; ++i) {
-                if (!SkScalarNearlyEqual(fRadii[i].fX, SkScalarHalf(fRect.width())) ||
-                    !SkScalarNearlyEqual(fRadii[i].fY, SkScalarHalf(fRect.height()))) {
+                if (!SkScalarNearlyEqual(fRadii[i].fX, SkRectPriv::HalfWidth(fRect)) ||
+                    !SkScalarNearlyEqual(fRadii[i].fY, SkRectPriv::HalfHeight(fRect))) {
                     return false;
                 }
             }
@@ -746,7 +794,6 @@ SkRect SkRRectPriv::InnerBounds(const SkRRect& rr) {
     }
 
     SkASSERT(innerBounds.isSorted() && !innerBounds.isEmpty());
-    SkASSERT(rr.contains(innerBounds));
     return innerBounds;
 }
 
@@ -779,7 +826,22 @@ SkRRect SkRRectPriv::ConservativeIntersect(const SkRRect& a, const SkRRect& b) {
         SkPoint aCorner = getCorner(a.rect(), corner);
         SkPoint bCorner = getCorner(b.rect(), corner);
 
-        if (test == aCorner) {
+        if (test == aCorner && test == bCorner) {
+            // The round rects share a corner anchor, so pick A or B such that its X and Y radii
+            // are both larger than the other rrect's, or return false if neither A or B has the max
+            // corner radii (this is more permissive than the single corner tests below).
+            SkVector aRadii = a.radii(corner);
+            SkVector bRadii = b.radii(corner);
+            if (aRadii.fX >= bRadii.fX && aRadii.fY >= bRadii.fY) {
+                *radii = aRadii;
+                return true;
+            } else if (bRadii.fX >= aRadii.fX && bRadii.fY >= aRadii.fY) {
+                *radii = bRadii;
+                return true;
+            } else {
+                return false;
+            }
+        } else if (test == aCorner) {
             // Test that A's ellipse is contained by B. This is a non-trivial function to evaluate
             // so we resrict it to when the corners have the same radii. If not, we use the more
             // conservative test that the extreme point of A's bounding box is contained in B.

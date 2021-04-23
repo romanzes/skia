@@ -21,6 +21,7 @@
 #include "src/shaders/SkBitmapProcShader.h"
 #include "src/shaders/SkColorShader.h"
 #include "src/shaders/SkEmptyShader.h"
+#include "src/shaders/SkImageShader.h"
 #include "src/shaders/SkPictureShader.h"
 #include "src/shaders/SkShaderBase.h"
 
@@ -102,7 +103,7 @@ SkShaderBase::Context::Context(const SkShaderBase& shader, const ContextRec& rec
     // invertible.
     SkAssertResult(fShader.computeTotalInverse(*rec.fMatrix, rec.fLocalMatrix, &fTotalInverse));
 
-    fPaintAlpha = rec.fPaint->getAlpha();
+    fPaintAlpha = rec.fPaintAlpha;
 }
 
 SkShaderBase::Context::~Context() {}
@@ -137,15 +138,14 @@ sk_sp<SkShader> SkShaderBase::makeAsALocalMatrixShader(SkMatrix*) const {
 sk_sp<SkShader> SkShaders::Empty() { return sk_make_sp<SkEmptyShader>(); }
 sk_sp<SkShader> SkShaders::Color(SkColor color) { return sk_make_sp<SkColorShader>(color); }
 
-sk_sp<SkShader> SkBitmap::makeShader(SkTileMode tmx, SkTileMode tmy, const SkMatrix* lm) const {
+sk_sp<SkShader> SkBitmap::makeShader(SkTileMode tmx, SkTileMode tmy,
+                                     const SkSamplingOptions& sampling,
+                                     const SkMatrix* lm) const {
     if (lm && !lm->invert(nullptr)) {
         return nullptr;
     }
-    return SkMakeBitmapShader(*this, tmx, tmy, lm, kIfMutable_SkCopyPixelsMode);
-}
-
-sk_sp<SkShader> SkBitmap::makeShader(const SkMatrix* lm) const {
-    return this->makeShader(SkTileMode::kClamp, SkTileMode::kClamp, lm);
+    return SkImageShader::Make(SkMakeImageFromRasterBitmap(*this, kIfMutable_SkCopyPixelsMode),
+                               tmx, tmy, sampling, lm);
 }
 
 bool SkShaderBase::appendStages(const SkStageRec& rec) const {
@@ -189,16 +189,23 @@ bool SkShaderBase::onAppendStages(const SkStageRec& rec) const {
         rec.fPipeline->append(SkRasterPipeline::callback, cb);
         rec.fAlloc->make<SkColorSpaceXformSteps>(sk_srgb_singleton(), kPremul_SkAlphaType,
                                                  rec.fDstCS,          kPremul_SkAlphaType)
-            ->apply(rec.fPipeline, true);
+            ->apply(rec.fPipeline);
         return true;
     }
     return false;
 }
 
-skvm::Color SkShaderBase::program(skvm::Builder* p, skvm::F32 x, skvm::F32 y, skvm::Color paint,
-                                  const SkMatrix& ctm, const SkMatrix* localM,
-                                  SkFilterQuality quality, const SkColorInfo& dst,
+skvm::Color SkShaderBase::program(skvm::Builder* p,
+                                  skvm::Coord device, skvm::Coord local, skvm::Color paint,
+                                  const SkMatrixProvider& matrices, const SkMatrix* localM,
+                                  const SkColorInfo& dst,
                                   skvm::Uniforms* uniforms, SkArenaAlloc* alloc) const {
+    // Shader subclasses should always act as if the destination were premul or opaque.
+    // SkVMBlitter handles all the coordination of unpremul itself, via premul.
+    SkColorInfo tweaked = dst.alphaType() == kUnpremul_SkAlphaType
+                           ? dst.makeAlphaType(kPremul_SkAlphaType)
+                           : dst;
+
     // Force opaque alpha for all opaque shaders.
     //
     // This is primarily nice in that we usually have a 1.0f constant splat
@@ -211,20 +218,13 @@ skvm::Color SkShaderBase::program(skvm::Builder* p, skvm::F32 x, skvm::F32 y, sk
     // shader program hash and blitter Key.  This makes it safe for us to use
     // that bit to make decisions when constructing an SkVMBlitter, like doing
     // SrcOver -> Src strength reduction.
-    if (auto color = this->onProgram(p, x,y, paint, ctm,localM, quality,dst, uniforms,alloc)) {
+    if (auto color = this->onProgram(p, device,local, paint, matrices,localM, tweaked,
+                                     uniforms,alloc)) {
         if (this->isOpaque()) {
             color.a = p->splat(1.0f);
         }
         return color;
     }
-    return {};
-}
-
-skvm::Color SkShaderBase::onProgram(skvm::Builder*, skvm::F32 x, skvm::F32 y, skvm::Color paint,
-                                    const SkMatrix& ctm, const SkMatrix* localM,
-                                    SkFilterQuality quality, const SkColorInfo& dst,
-                                    skvm::Uniforms* uniforms, SkArenaAlloc* alloc) const {
-    //SkDebugf("cannot onProgram %s\n", this->getTypeName());
     return {};
 }
 
@@ -234,36 +234,39 @@ sk_sp<SkShader> SkShaderBase::makeInvertAlpha() const {
 }
 
 
-void SkShaderBase::ApplyMatrix(skvm::Builder* p, const SkMatrix& m,
-                               skvm::F32* x, skvm::F32* y, skvm::Uniforms* uniforms) {
+skvm::Coord SkShaderBase::ApplyMatrix(skvm::Builder* p, const SkMatrix& m,
+                                      skvm::Coord coord, skvm::Uniforms* uniforms) {
+    skvm::F32 x = coord.x,
+              y = coord.y;
     if (m.isIdentity()) {
         // That was easy.
     } else if (m.isTranslate()) {
-        *x = p->add(*x, p->uniformF(uniforms->pushF(m[2])));
-        *y = p->add(*y, p->uniformF(uniforms->pushF(m[5])));
+        x = p->add(x, p->uniformF(uniforms->pushF(m[2])));
+        y = p->add(y, p->uniformF(uniforms->pushF(m[5])));
     } else if (m.isScaleTranslate()) {
-        *x = p->mad(*x, p->uniformF(uniforms->pushF(m[0])), p->uniformF(uniforms->pushF(m[2])));
-        *y = p->mad(*y, p->uniformF(uniforms->pushF(m[4])), p->uniformF(uniforms->pushF(m[5])));
+        x = p->mad(x, p->uniformF(uniforms->pushF(m[0])), p->uniformF(uniforms->pushF(m[2])));
+        y = p->mad(y, p->uniformF(uniforms->pushF(m[4])), p->uniformF(uniforms->pushF(m[5])));
     } else {  // Affine or perspective.
-        auto dot = [&,X=*x,Y=*y](int row) {
-            return p->mad(X, p->uniformF(uniforms->pushF(m[3*row+0])),
-                   p->mad(Y, p->uniformF(uniforms->pushF(m[3*row+1])),
+        auto dot = [&,x,y](int row) {
+            return p->mad(x, p->uniformF(uniforms->pushF(m[3*row+0])),
+                   p->mad(y, p->uniformF(uniforms->pushF(m[3*row+1])),
                              p->uniformF(uniforms->pushF(m[3*row+2]))));
         };
-        *x = dot(0);
-        *y = dot(1);
+        x = dot(0);
+        y = dot(1);
         if (m.hasPerspective()) {
-            *x = p->div(*x, dot(2));
-            *y = p->div(*y, dot(2));
+            x = x * (1.0f / dot(2));
+            y = y * (1.0f / dot(2));
         }
     }
+    return {x,y};
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
-skvm::Color SkEmptyShader::onProgram(skvm::Builder*, skvm::F32, skvm::F32, skvm::Color,
-                                     const SkMatrix&, const SkMatrix*, SkFilterQuality,
-                                     const SkColorInfo&, skvm::Uniforms*, SkArenaAlloc*) const {
+skvm::Color SkEmptyShader::onProgram(skvm::Builder*, skvm::Coord, skvm::Coord, skvm::Color,
+                                     const SkMatrixProvider&, const SkMatrix*, const SkColorInfo&,
+                                     skvm::Uniforms*, SkArenaAlloc*) const {
     return {};  // signal failure
 }
 

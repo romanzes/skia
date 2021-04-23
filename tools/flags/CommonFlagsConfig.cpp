@@ -5,10 +5,12 @@
  * found in the LICENSE file.
  */
 
+#include "tools/flags/CommonFlagsConfig.h"
+
 #include "include/core/SkImageInfo.h"
+#include "include/core/SkSurfaceProps.h"
 #include "include/private/SkTHash.h"
 #include "src/core/SkColorSpacePriv.h"
-#include "tools/flags/CommonFlagsConfig.h"
 
 #include <stdlib.h>
 
@@ -37,6 +39,9 @@ static const struct {
 } gPredefinedConfigs[] = {
     { "gl",                    "gpu", "api=gl" },
     { "gles",                  "gpu", "api=gles" },
+    { "glesfakev2",            "gpu", "api=glesfakev2" },
+    { "gldmsaa",               "gpu", "api=gl,dmsaa=true" },
+    { "glesdmsaa",             "gpu", "api=gles,dmsaa=true" },
     { "glmsaa4",               "gpu", "api=gl,samples=4" },
     { "glmsaa8" ,              "gpu", "api=gl,samples=8" },
     { "glesmsaa4",             "gpu", "api=gles,samples=4" },
@@ -72,6 +77,7 @@ static const struct {
     { "gltestprecompile",      "gpu", "api=gl,testPrecompile=true" },
     { "glestestprecompile",    "gpu", "api=gles,testPrecompile=true" },
     { "glddl",                 "gpu", "api=gl,useDDLSink=true" },
+    { "glooprddl",             "gpu", "api=gl,OOPRish=true" },
     { "angle_d3d11_es2",       "gpu", "api=angle_d3d11_es2" },
     { "angle_d3d11_es3",       "gpu", "api=angle_d3d11_es3" },
     { "angle_d3d9_es2",        "gpu", "api=angle_d3d9_es2" },
@@ -81,7 +87,9 @@ static const struct {
     { "angle_d3d11_es3_msaa8", "gpu", "api=angle_d3d11_es3,samples=8" },
     { "angle_gl_es2",          "gpu", "api=angle_gl_es2" },
     { "angle_gl_es3",          "gpu", "api=angle_gl_es3" },
+    { "angle_gl_es2_msaa4",    "gpu", "api=angle_gl_es2,samples=4" },
     { "angle_gl_es2_msaa8",    "gpu", "api=angle_gl_es2,samples=8" },
+    { "angle_gl_es3_msaa4",    "gpu", "api=angle_gl_es3,samples=4" },
     { "angle_gl_es3_msaa8",    "gpu", "api=angle_gl_es3,samples=8" },
     { "commandbuffer",         "gpu", "api=commandbuffer" },
     { "mock",                  "gpu", "api=mock" },
@@ -103,6 +111,7 @@ static const struct {
     { "vkbert",                "gpu", "api=vulkan,surf=bert" },
     { "vktestpersistentcache", "gpu", "api=vulkan,testPersistentCache=1" },
     { "vkddl",                 "gpu", "api=vulkan,useDDLSink=true" },
+    { "vkooprddl",             "gpu", "api=vulkan,OOPRish=true" },
 #endif
 #ifdef SK_METAL
     { "mtl",                   "gpu", "api=metal" },
@@ -110,9 +119,13 @@ static const struct {
     { "mtlmsaa4",              "gpu", "api=metal,samples=4" },
     { "mtlmsaa8",              "gpu", "api=metal,samples=8" },
     { "mtlddl",                "gpu", "api=metal,useDDLSink=true" },
+    { "mtlooprddl",            "gpu", "api=metal,OOPRish=true" },
+    { "mtltestprecompile",     "gpu", "api=metal,testPrecompile=true" },
 #endif
 #ifdef SK_DIRECT3D
     { "d3d",                   "gpu", "api=direct3d" },
+    { "d3dmsaa4",              "gpu", "api=direct3d,samples=4" },
+    { "d3dmsaa8",              "gpu", "api=direct3d,samples=8" },
 #endif
 };
 // clang-format on
@@ -134,12 +147,13 @@ static const char configExtendedHelp[] =
         "Extended form: 'backend(option=value,...)'\n\n"
         "Possible backends and options:\n"
         "\n"
-        "gpu[api=string,color=string,dit=bool,samples=int]\n"
+        "gpu[api=string,color=string,dit=bool,dmsaa=bool,samples=int]\n"
         "\tapi\ttype: string\trequired\n"
         "\t    Select graphics API to use with gpu backend.\n"
         "\t    Options:\n"
         "\t\tgl    \t\t\tUse OpenGL.\n"
         "\t\tgles  \t\t\tUse OpenGL ES.\n"
+        "\t\tglesfakev2  \t\t\tUse OpenGL ES with version faked as 2.0.\n"
         "\t\tnullgl \t\t\tUse null OpenGL.\n"
         "\t\tangle_d3d9_es2\t\tUse OpenGL ES2 on the ANGLE Direct3D9 backend.\n"
         "\t\tangle_d3d11_es2\t\tUse OpenGL ES2 on the ANGLE Direct3D11 backend.\n"
@@ -169,6 +183,8 @@ static const char configExtendedHelp[] =
         "\t\tf16\t\t\tLinearly blended 16-bit floating point.\n"
         "\tdit\ttype: bool\tdefault: false.\n"
         "\t    Use device independent text.\n"
+        "\tdmsaa\ttype: bool\tdefault: false.\n"
+        "\t    Use internal MSAA to render to non-MSAA surfaces.\n"
         "\tsamples\ttype: int\tdefault: 0.\n"
         "\t    Use multisampling with N samples.\n"
         "\tstencils\ttype: bool\tdefault: true.\n"
@@ -230,13 +246,20 @@ static bool parse_option_bool(const SkString& value, bool* outBool) {
     return false;
 }
 static bool parse_option_gpu_api(const SkString&                      value,
-                                 SkCommandLineConfigGpu::ContextType* outContextType) {
+                                 SkCommandLineConfigGpu::ContextType* outContextType,
+                                 bool*                                outFakeGLESVersion2) {
+    *outFakeGLESVersion2 = false;
     if (value.equals("gl")) {
         *outContextType = GrContextFactory::kGL_ContextType;
         return true;
     }
     if (value.equals("gles")) {
         *outContextType = GrContextFactory::kGLES_ContextType;
+        return true;
+    }
+    if (value.equals("glesfakev2")) {
+        *outContextType = GrContextFactory::kGLES_ContextType;
+        *outFakeGLESVersion2 = true;
         return true;
     }
     if (value.equals("angle_d3d9_es2")) {
@@ -408,12 +431,13 @@ public:
 
     bool get_option_gpu_api(const char*                          optionKey,
                             SkCommandLineConfigGpu::ContextType* outContextType,
+                            bool*                                outFakeGLESVersion2,
                             bool                                 optional = true) const {
         SkString* optionValue = fOptionsMap.find(SkString(optionKey));
         if (optionValue == nullptr) {
             return optional;
         }
-        return parse_option_gpu_api(*optionValue, outContextType);
+        return parse_option_gpu_api(*optionValue, outContextType, outFakeGLESVersion2);
     }
 
     bool get_option_gpu_surf_type(const char*                       optionKey,
@@ -449,8 +473,10 @@ private:
 SkCommandLineConfigGpu::SkCommandLineConfigGpu(const SkString&           tag,
                                                const SkTArray<SkString>& viaParts,
                                                ContextType               contextType,
-                                               bool                      useDIText,
+                                               bool                      fakeGLESVersion2,
+                                               uint32_t                  surfaceFlags,
                                                int                       samples,
+                                               bool                      useDMSAA,
                                                SkColorType               colorType,
                                                SkAlphaType               alphaType,
                                                sk_sp<SkColorSpace>       colorSpace,
@@ -459,12 +485,14 @@ SkCommandLineConfigGpu::SkCommandLineConfigGpu(const SkString&           tag,
                                                int                       testPersistentCache,
                                                bool                      testPrecompile,
                                                bool                      useDDLSink,
+                                               bool                      OOPRish,
                                                SurfType                  surfType)
         : SkCommandLineConfig(tag, SkString("gpu"), viaParts)
         , fContextType(contextType)
         , fContextOverrides(ContextOverrides::kNone)
-        , fUseDIText(useDIText)
+        , fSurfaceFlags(surfaceFlags)
         , fSamples(samples)
+        , fUseDMSAA(useDMSAA)
         , fColorType(colorType)
         , fAlphaType(alphaType)
         , fColorSpace(std::move(colorSpace))
@@ -472,9 +500,13 @@ SkCommandLineConfigGpu::SkCommandLineConfigGpu(const SkString&           tag,
         , fTestPersistentCache(testPersistentCache)
         , fTestPrecompile(testPrecompile)
         , fUseDDLSink(useDDLSink)
+        , fOOPRish(OOPRish)
         , fSurfType(surfType) {
     if (!useStencilBuffers) {
         fContextOverrides |= ContextOverrides::kAvoidStencilBuffers;
+    }
+    if (fakeGLESVersion2) {
+        fContextOverrides |= ContextOverrides::kFakeGLESVersionAs2;
     }
 }
 
@@ -484,6 +516,7 @@ SkCommandLineConfigGpu* parse_command_line_config_gpu(const SkString&           
     // Defaults for GPU backend.
     SkCommandLineConfigGpu::ContextType contextType         = GrContextFactory::kGL_ContextType;
     bool                                useDIText           = false;
+    bool                                useDMSAA            = false;
     int                                 samples             = 1;
     SkColorType                         colorType           = kRGBA_8888_SkColorType;
     SkAlphaType                         alphaType           = kPremul_SkAlphaType;
@@ -493,6 +526,8 @@ SkCommandLineConfigGpu* parse_command_line_config_gpu(const SkString&           
     int                                 testPersistentCache = 0;
     bool                                testPrecompile      = false;
     bool                                useDDLs             = false;
+    bool                                ooprish             = false;
+    bool                                fakeGLESVersion2    = false;
     SkCommandLineConfigGpu::SurfType    surfType = SkCommandLineConfigGpu::SurfType::kDefault;
 
     bool            parseSucceeded = false;
@@ -502,15 +537,17 @@ SkCommandLineConfigGpu* parse_command_line_config_gpu(const SkString&           
     }
 
     bool validOptions =
-            extendedOptions.get_option_gpu_api("api", &contextType, false) &&
+            extendedOptions.get_option_gpu_api("api", &contextType, &fakeGLESVersion2, false) &&
             extendedOptions.get_option_bool("dit", &useDIText) &&
             extendedOptions.get_option_int("samples", &samples) &&
+            extendedOptions.get_option_bool("dmsaa", &useDMSAA) &&
             extendedOptions.get_option_gpu_color("color", &colorType, &alphaType, &colorSpace) &&
             extendedOptions.get_option_bool("stencils", &useStencils) &&
             extendedOptions.get_option_bool("testThreading", &testThreading) &&
             extendedOptions.get_option_int("testPersistentCache", &testPersistentCache) &&
             extendedOptions.get_option_bool("testPrecompile", &testPrecompile) &&
             extendedOptions.get_option_bool("useDDLSink", &useDDLs) &&
+            extendedOptions.get_option_bool("OOPRish", &ooprish) &&
             extendedOptions.get_option_gpu_surf_type("surf", &surfType);
 
     // testing threading and the persistent cache are mutually exclusive.
@@ -518,11 +555,18 @@ SkCommandLineConfigGpu* parse_command_line_config_gpu(const SkString&           
         return nullptr;
     }
 
+    uint32_t surfaceFlags = 0;
+    if (useDIText) {
+        surfaceFlags |= SkSurfaceProps::kUseDeviceIndependentFonts_Flag;
+    }
+
     return new SkCommandLineConfigGpu(tag,
                                       vias,
                                       contextType,
-                                      useDIText,
+                                      fakeGLESVersion2,
+                                      surfaceFlags,
                                       samples,
+                                      useDMSAA,
                                       colorType,
                                       alphaType,
                                       colorSpace,
@@ -531,6 +575,7 @@ SkCommandLineConfigGpu* parse_command_line_config_gpu(const SkString&           
                                       testPersistentCache,
                                       testPrecompile,
                                       useDDLs,
+                                      ooprish,
                                       surfType);
 }
 

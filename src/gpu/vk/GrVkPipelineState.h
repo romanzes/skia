@@ -16,15 +16,16 @@
 
 class GrPipeline;
 class GrStencilSettings;
+class GrVkBuffer;
 class GrVkCommandBuffer;
 class GrVkDescriptorPool;
 class GrVkDescriptorSet;
 class GrVkGpu;
 class GrVkImageView;
 class GrVkPipeline;
+class GrVkRenderTarget;
 class GrVkSampler;
 class GrVkTexture;
-class GrVkUniformBuffer;
 
 /**
  * This class holds onto a GrVkPipeline object that we use for draws. Besides storing the acutal
@@ -38,17 +39,17 @@ public:
     using UniformHandle = GrGLSLProgramDataManager::UniformHandle;
 
     GrVkPipelineState(
-            GrVkGpu* gpu,
-            GrVkPipeline* pipeline,
+            GrVkGpu*,
+            sk_sp<const GrVkPipeline>,
             const GrVkDescriptorSetManager::Handle& samplerDSHandle,
             const GrGLSLBuiltinUniformHandles& builtinUniformHandles,
             const UniformInfoArray& uniforms,
             uint32_t uniformSize,
+            bool usePushConstants,
             const UniformInfoArray& samplers,
-            std::unique_ptr<GrGLSLPrimitiveProcessor> geometryProcessor,
-            std::unique_ptr<GrGLSLXferProcessor> xferProcessor,
-            std::unique_ptr<std::unique_ptr<GrGLSLFragmentProcessor>[]> fragmentProcessors,
-            int fFragmentProcessorCnt);
+            std::unique_ptr<GrGLSLGeometryProcessor>,
+            std::unique_ptr<GrGLSLXferProcessor>,
+            std::vector<std::unique_ptr<GrGLSLFragmentProcessor>> fpImpls);
 
     ~GrVkPipelineState();
 
@@ -58,15 +59,17 @@ public:
      * This must be called after setAndBindUniforms() since that function invalidates texture
      * bindings.
      */
-    bool setAndBindTextures(GrVkGpu*, const GrPrimitiveProcessor&, const GrPipeline&,
-                            const GrSurfaceProxy* const primitiveProcessorTextures[],
+    bool setAndBindTextures(GrVkGpu*,
+                            const GrGeometryProcessor&,
+                            const GrPipeline&,
+                            const GrSurfaceProxy* const geomProcTextures[],
                             GrVkCommandBuffer*);
+
+    bool setAndBindInputAttachment(GrVkGpu*, GrVkRenderTarget* renderTarget, GrVkCommandBuffer*);
 
     void bindPipeline(const GrVkGpu* gpu, GrVkCommandBuffer* commandBuffer);
 
-    void addUniformResources(GrVkCommandBuffer&, GrVkSampler*[], GrVkTexture*[], int numTextures);
-
-    void freeGPUResources();
+    void freeGPUResources(GrVkGpu* gpu);
 
 private:
     /**
@@ -109,23 +112,20 @@ private:
     void setRenderTargetState(const GrRenderTarget*, GrSurfaceOrigin);
 
     // GrManagedResources
-    GrVkPipeline* fPipeline;
+    sk_sp<const GrVkPipeline> fPipeline;
 
     const GrVkDescriptorSetManager::Handle fSamplerDSHandle;
 
     SkSTArray<4, const GrVkSampler*> fImmutableSamplers;
-
-    std::unique_ptr<GrVkUniformBuffer> fUniformBuffer;
 
     // Tracks the current render target uniforms stored in the vertex buffer.
     RenderTargetState fRenderTargetState;
     GrGLSLBuiltinUniformHandles fBuiltinUniformHandles;
 
     // Processors in the GrVkPipelineState
-    std::unique_ptr<GrGLSLPrimitiveProcessor> fGeometryProcessor;
+    std::unique_ptr<GrGLSLGeometryProcessor> fGeometryProcessor;
     std::unique_ptr<GrGLSLXferProcessor> fXferProcessor;
-    std::unique_ptr<std::unique_ptr<GrGLSLFragmentProcessor>[]> fFragmentProcessors;
-    int fFragmentProcessorCnt;
+    std::vector<std::unique_ptr<GrGLSLFragmentProcessor>> fFPImpls;
 
     GrVkPipelineStateDataManager fDataManager;
 

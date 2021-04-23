@@ -12,43 +12,49 @@
 #include "include/core/SkSurface.h"
 #include "include/gpu/GrTypes.h"
 #include "include/private/SkTArray.h"
+#include "src/core/SkSpan.h"
 #include "src/core/SkTInternalLList.h"
+#include "src/gpu/GrAttachment.h"
 #include "src/gpu/GrCaps.h"
 #include "src/gpu/GrOpsRenderPass.h"
-#include "src/gpu/GrSamplePatternDictionary.h"
-#include "src/gpu/GrStagingBuffer.h"
+#include "src/gpu/GrPixmap.h"
 #include "src/gpu/GrSwizzle.h"
 #include "src/gpu/GrTextureProducer.h"
 #include "src/gpu/GrXferProcessor.h"
-#include <map>
 
+class GrAttachment;
 class GrBackendRenderTarget;
 class GrBackendSemaphore;
-class GrGpuBuffer;
-class GrContext;
 struct GrContextOptions;
+class GrDirectContext;
+class GrGpuBuffer;
 class GrGLContext;
 class GrPath;
 class GrPathRenderer;
 class GrPathRendererChain;
-class GrPathRendering;
 class GrPipeline;
-class GrPrimitiveProcessor;
+class GrGeometryProcessor;
 class GrRenderTarget;
+class GrRingBuffer;
 class GrSemaphore;
-class GrStencilAttachment;
+class GrStagingBufferManager;
 class GrStencilSettings;
 class GrSurface;
 class GrTexture;
+class GrThreadSafePipelineBuilder;
 class SkJSONWriter;
+
+namespace SkSL {
+    class Compiler;
+}
 
 class GrGpu : public SkRefCnt {
 public:
-    GrGpu(GrContext* context);
+    GrGpu(GrDirectContext* direct);
     ~GrGpu() override;
 
-    GrContext* getContext() { return fContext; }
-    const GrContext* getContext() const { return fContext; }
+    GrDirectContext* getContext() { return fContext; }
+    const GrDirectContext* getContext() const { return fContext; }
 
     /**
      * Gets the capabilities of the draw target.
@@ -56,7 +62,11 @@ public:
     const GrCaps* caps() const { return fCaps.get(); }
     sk_sp<const GrCaps> refCaps() const { return fCaps; }
 
-    GrPathRendering* pathRendering() { return fPathRendering.get();  }
+    virtual GrStagingBufferManager* stagingBufferManager() { return nullptr; }
+
+    virtual GrRingBuffer* uniformsRingBuffer() { return nullptr; }
+
+    SkSL::Compiler* shaderCompiler() const { return fCompiler.get(); }
 
     enum class DisconnectType {
         // No cleanup should be attempted, immediately cease making backend API calls
@@ -66,12 +76,15 @@ public:
         kCleanup,
     };
 
-    // Called by GrContext when the underlying backend context is already or will be destroyed
-    // before GrContext.
+    // Called by context when the underlying backend context is already or will be destroyed
+    // before GrDirectContext.
     virtual void disconnect(DisconnectType);
 
-    // Called by GrContext::isContextLost. Returns true if the backend Gpu object has gotten into an
-    // unrecoverable, lost state.
+    virtual GrThreadSafePipelineBuilder* pipelineBuilder() = 0;
+    virtual sk_sp<GrThreadSafePipelineBuilder> refPipelineBuilder() = 0;
+
+    // Called by GrDirectContext::isContextLost. Returns true if the backend Gpu object has gotten
+    // into an unrecoverable, lost state.
     virtual bool isDeviceLost() const { return false; }
 
     /**
@@ -134,14 +147,14 @@ public:
                                    const GrBackendFormat& format,
                                    GrRenderable renderable,
                                    int renderTargetSampleCnt,
-                                   GrMipMapped mipMapped,
+                                   GrMipmapped mipMapped,
                                    SkBudgeted budgeted,
                                    GrProtected isProtected);
 
     sk_sp<GrTexture> createCompressedTexture(SkISize dimensions,
                                              const GrBackendFormat& format,
                                              SkBudgeted budgeted,
-                                             GrMipMapped mipMapped,
+                                             GrMipmapped mipMapped,
                                              GrProtected isProtected,
                                              const void* data, size_t dataSize);
 
@@ -171,11 +184,6 @@ public:
     sk_sp<GrRenderTarget> wrapBackendRenderTarget(const GrBackendRenderTarget&);
 
     /**
-     * Implements GrResourceProvider::wrapBackendTextureAsRenderTarget
-     */
-    sk_sp<GrRenderTarget> wrapBackendTextureAsRenderTarget(const GrBackendTexture&, int sampleCnt);
-
-    /**
      * Implements GrResourceProvider::wrapVulkanSecondaryCBAsRenderTarget
      */
     sk_sp<GrRenderTarget> wrapVulkanSecondaryCBAsRenderTarget(const SkImageInfo&,
@@ -194,15 +202,10 @@ public:
     sk_sp<GrGpuBuffer> createBuffer(size_t size, GrGpuBufferType intendedType,
                                     GrAccessPattern accessPattern, const void* data = nullptr);
 
-    enum class ForExternalIO : bool {
-        kYes = true,
-        kNo = false
-    };
-
     /**
      * Resolves MSAA. The resolveRect must already be in the native destination space.
      */
-    void resolveRenderTarget(GrRenderTarget*, const SkIRect& resolveRect, ForExternalIO);
+    void resolveRenderTarget(GrRenderTarget*, const SkIRect& resolveRect);
 
     /**
      * Uses the base of the texture to recompute the contents of the other levels.
@@ -275,7 +278,7 @@ public:
     bool writePixels(GrSurface* surface, int left, int top, int width, int height,
                      GrColorType surfaceColorType, GrColorType srcColorType, const void* buffer,
                      size_t rowBytes, bool prepForTexSampling = false) {
-        GrMipLevel mipLevel = {buffer, rowBytes};
+        GrMipLevel mipLevel = {buffer, rowBytes, nullptr};
         return this->writePixels(surface, left, top, width, height, surfaceColorType, srcColorType,
                                  &mipLevel, 1, prepForTexSampling);
     }
@@ -299,7 +302,7 @@ public:
      */
     bool transferPixelsTo(GrTexture* texture, int left, int top, int width, int height,
                           GrColorType textureColorType, GrColorType bufferColorType,
-                          GrGpuBuffer* transferBuffer, size_t offset, size_t rowBytes);
+                          sk_sp<GrGpuBuffer> transferBuffer, size_t offset, size_t rowBytes);
 
     /**
      * Reads the pixels from a rectangle of a surface into a buffer. Use
@@ -324,7 +327,7 @@ public:
      */
     bool transferPixelsFrom(GrSurface* surface, int left, int top, int width, int height,
                             GrColorType surfaceColorType, GrColorType bufferColorType,
-                            GrGpuBuffer* transferBuffer, size_t offset);
+                            sk_sp<GrGpuBuffer> transferBuffer, size_t offset);
 
     // Called to perform a surface to surface copy. Fallbacks to issuing a draw from the src to dst
     // take place at higher levels and this function implement faster copy paths. The rect
@@ -335,34 +338,28 @@ public:
     bool copySurface(GrSurface* dst, GrSurface* src, const SkIRect& srcRect,
                      const SkIPoint& dstPoint);
 
-    // Queries the per-pixel HW sample locations for the given render target, and then finds or
-    // assigns a key that uniquely identifies the sample pattern. The actual sample locations can be
-    // retrieved with retrieveSampleLocations().
-    int findOrAssignSamplePatternKey(GrRenderTarget*);
-
-    // Retrieves the per-pixel HW sample locations for the given sample pattern key, and, as a
-    // by-product, the actual number of samples in use. (This may differ from the number of samples
-    // requested by the render target.) Sample locations are returned as 0..1 offsets relative to
-    // the top-left corner of the pixel.
-    const SkTArray<SkPoint>& retrieveSampleLocations(int samplePatternKey) const {
-        return fSamplePatternDictionary.retrieveSampleLocations(samplePatternKey);
-    }
-
     // Returns a GrOpsRenderPass which GrOpsTasks send draw commands to instead of directly
     // to the Gpu object. The 'bounds' rect is the content rect of the renderTarget.
-    virtual GrOpsRenderPass* getOpsRenderPass(
-            GrRenderTarget* renderTarget, GrSurfaceOrigin, const SkIRect& bounds,
-            const GrOpsRenderPass::LoadAndStoreInfo&,
-            const GrOpsRenderPass::StencilLoadAndStoreInfo&,
-            const SkTArray<GrSurfaceProxy*, true>& sampledProxies) = 0;
+    // If a 'stencil' is provided it will be the one bound to 'renderTarget'. If one is not
+    // provided but 'renderTarget' has a stencil buffer then that is a signal that the
+    // render target's stencil buffer should be ignored.
+    GrOpsRenderPass* getOpsRenderPass(GrRenderTarget* renderTarget,
+                                      GrAttachment* stencil,
+                                      GrSurfaceOrigin,
+                                      const SkIRect& bounds,
+                                      const GrOpsRenderPass::LoadAndStoreInfo&,
+                                      const GrOpsRenderPass::StencilLoadAndStoreInfo&,
+                                      const SkTArray<GrSurfaceProxy*, true>& sampledProxies,
+                                      GrXferBarrierFlags renderPassXferBarriers);
 
     // Called by GrDrawingManager when flushing.
     // Provides a hook for post-flush actions (e.g. Vulkan command buffer submits). This will also
     // insert any numSemaphore semaphores on the gpu and set the backendSemaphores to match the
     // inserted semaphores.
-    void executeFlushInfo(GrSurfaceProxy*[], int numProxies,
-                          SkSurface::BackendSurfaceAccess access, const GrFlushInfo&,
-                          const GrPrepareForExternalIORequests&);
+    void executeFlushInfo(SkSpan<GrSurfaceProxy*>,
+                          SkSurface::BackendSurfaceAccess access,
+                          const GrFlushInfo&,
+                          const GrBackendSurfaceMutableState* newState);
 
     bool submitToGpu(bool syncCpu);
 
@@ -379,40 +376,43 @@ public:
     virtual void insertSemaphore(GrSemaphore* semaphore) = 0;
     virtual void waitSemaphore(GrSemaphore* semaphore) = 0;
 
+    virtual void addFinishedProc(GrGpuFinishedProc finishedProc,
+                                 GrGpuFinishedContext finishedContext) = 0;
     virtual void checkFinishProcs() = 0;
+    virtual void finishOutstandingGpuWork() = 0;
+
+    virtual void takeOwnershipOfBuffer(sk_sp<GrGpuBuffer>) {}
 
     /**
-     *  Put this texture in a safe and known state for use across multiple GrContexts. Depending on
+     * Checks if we detected an OOM from the underlying 3D API and if so returns true and resets
+     * the internal OOM state to false. Otherwise, returns false.
+     */
+    bool checkAndResetOOMed();
+
+    /**
+     *  Put this texture in a safe and known state for use across multiple contexts. Depending on
      *  the backend, this may return a GrSemaphore. If so, other contexts should wait on that
      *  semaphore before using this texture.
      */
     virtual std::unique_ptr<GrSemaphore> prepareTextureForCrossContextUsage(GrTexture*) = 0;
+
+    /**
+     * Frees any backend specific objects that are not currently in use by the GPU. This is called
+     * when the client is trying to free up as much GPU memory as possible. We will not release
+     * resources connected to programs/pipelines since the cost to recreate those is significantly
+     * higher that other resources.
+     */
+    virtual void releaseUnlockedBackendObjects() {}
 
     ///////////////////////////////////////////////////////////////////////////
     // Debugging and Stats
 
     class Stats {
     public:
-        enum class ProgramCacheResult {
-            kHit,       // the program was found in the cache
-            kMiss,      // the program was not found in the cache (and was, thus, compiled)
-            kPartial,   // a precompiled version was found in the persistent cache
-
-            kLast = kPartial
-        };
-
-        static const int kNumProgramCacheResults = (int)ProgramCacheResult::kLast + 1;
-
 #if GR_GPU_STATS
         Stats() = default;
 
         void reset() { *this = {}; }
-
-        int renderTargetBinds() const { return fRenderTargetBinds; }
-        void incRenderTargetBinds() { fRenderTargetBinds++; }
-
-        int shaderCompilations() const { return fShaderCompilations; }
-        void incShaderCompilations() { fShaderCompilations++; }
 
         int textureCreates() const { return fTextureCreates; }
         void incTextureCreates() { fTextureCreates++; }
@@ -429,6 +429,9 @@ public:
         int stencilAttachmentCreates() const { return fStencilAttachmentCreates; }
         void incStencilAttachmentCreates() { fStencilAttachmentCreates++; }
 
+        int msaaAttachmentCreates() const { return fMSAAAttachmentCreates; }
+        void incMSAAAttachmentCreates() { fMSAAAttachmentCreates++; }
+
         int numDraws() const { return fNumDraws; }
         void incNumDraws() { fNumDraws++; }
 
@@ -441,84 +444,48 @@ public:
         int numScratchTexturesReused() const { return fNumScratchTexturesReused; }
         void incNumScratchTexturesReused() { ++fNumScratchTexturesReused; }
 
-        int numInlineCompilationFailures() const { return fNumInlineCompilationFailures; }
-        void incNumInlineCompilationFailures() { ++fNumInlineCompilationFailures; }
+        int numScratchMSAAAttachmentsReused() const { return fNumScratchMSAAAttachmentsReused; }
+        void incNumScratchMSAAAttachmentsReused() { ++fNumScratchMSAAAttachmentsReused; }
 
-        int numInlineProgramCacheResult(ProgramCacheResult stat) const {
-            return fInlineProgramCacheStats[(int) stat];
-        }
-        void incNumInlineProgramCacheResult(ProgramCacheResult stat) {
-            ++fInlineProgramCacheStats[(int) stat];
-        }
-
-        int numPreCompilationFailures() const { return fNumPreCompilationFailures; }
-        void incNumPreCompilationFailures() { ++fNumPreCompilationFailures; }
-
-        int numPreProgramCacheResult(ProgramCacheResult stat) const {
-            return fPreProgramCacheStats[(int) stat];
-        }
-        void incNumPreProgramCacheResult(ProgramCacheResult stat) {
-            ++fPreProgramCacheStats[(int) stat];
-        }
-
-        int numCompilationFailures() const { return fNumCompilationFailures; }
-        void incNumCompilationFailures() { ++fNumCompilationFailures; }
-
-        int numPartialCompilationSuccesses() const { return fNumPartialCompilationSuccesses; }
-        void incNumPartialCompilationSuccesses() { ++fNumPartialCompilationSuccesses; }
-
-        int numCompilationSuccesses() const { return fNumCompilationSuccesses; }
-        void incNumCompilationSuccesses() { ++fNumCompilationSuccesses; }
+        int renderPasses() const { return fRenderPasses; }
+        void incRenderPasses() { fRenderPasses++; }
 
 #if GR_TEST_UTILS
         void dump(SkString*);
         void dumpKeyValuePairs(SkTArray<SkString>* keys, SkTArray<double>* values);
 #endif
     private:
-        int fRenderTargetBinds = 0;
-        int fShaderCompilations = 0;
         int fTextureCreates = 0;
         int fTextureUploads = 0;
         int fTransfersToTexture = 0;
         int fTransfersFromSurface = 0;
         int fStencilAttachmentCreates = 0;
+        int fMSAAAttachmentCreates = 0;
         int fNumDraws = 0;
         int fNumFailedDraws = 0;
         int fNumSubmitToGpus = 0;
         int fNumScratchTexturesReused = 0;
+        int fNumScratchMSAAAttachmentsReused = 0;
+        int fRenderPasses = 0;
 
-        int fNumInlineCompilationFailures = 0;
-        int fInlineProgramCacheStats[kNumProgramCacheResults] = { 0 };
-
-        int fNumPreCompilationFailures = 0;
-        int fPreProgramCacheStats[kNumProgramCacheResults] = { 0 };
-
-        int fNumCompilationFailures = 0;
-        int fNumPartialCompilationSuccesses = 0;
-        int fNumCompilationSuccesses = 0;
-
-#else
+#else  // !GR_GPU_STATS
 
 #if GR_TEST_UTILS
         void dump(SkString*) {}
         void dumpKeyValuePairs(SkTArray<SkString>*, SkTArray<double>*) {}
 #endif
-        void incRenderTargetBinds() {}
-        void incShaderCompilations() {}
         void incTextureCreates() {}
         void incTextureUploads() {}
         void incTransfersToTexture() {}
+        void incTransfersFromSurface() {}
         void incStencilAttachmentCreates() {}
+        void incMSAAAttachmentCreates() {}
         void incNumDraws() {}
         void incNumFailedDraws() {}
         void incNumSubmitToGpus() {}
-        void incNumInlineCompilationFailures() {}
-        void incNumInlineProgramCacheResult(ProgramCacheResult stat) {}
-        void incNumPreCompilationFailures() {}
-        void incNumPreProgramCacheResult(ProgramCacheResult stat) {}
-        void incNumCompilationFailures() {}
-        void incNumPartialCompilationSuccesses() {}
-        void incNumCompilationSuccesses() {}
+        void incNumScratchTexturesReused() {}
+        void incNumScratchMSAAAttachmentsReused() {}
+        void incRenderPasses() {}
 #endif
     };
 
@@ -533,7 +500,7 @@ public:
         enum class Type { kColor, kPixmaps, kCompressed };
         BackendTextureData() = default;
         BackendTextureData(const SkColor4f& color) : fType(Type::kColor), fColor(color) {}
-        BackendTextureData(const SkPixmap pixmaps[]) : fType(Type::kPixmaps), fPixmaps(pixmaps) {
+        BackendTextureData(const GrPixmap pixmaps[]) : fType(Type::kPixmaps), fPixmaps(pixmaps) {
             SkASSERT(pixmaps);
         }
         BackendTextureData(const void* data, size_t size) : fType(Type::kCompressed) {
@@ -548,11 +515,11 @@ public:
             return fColor;
         }
 
-        const SkPixmap& pixmap(int i) const {
+        const GrPixmap& pixmap(int i) const {
             SkASSERT(this->type() == Type::kPixmaps);
             return fPixmaps[i];
         }
-        const SkPixmap* pixmaps() const {
+        const GrPixmap* pixmaps() const {
             SkASSERT(this->type() == Type::kPixmaps);
             return fPixmaps;
         }
@@ -566,12 +533,11 @@ public:
             return fCompressed.fSize;
         }
 
-
     private:
         Type fType = Type::kColor;
         union {
             SkColor4f fColor = {0, 0, 0, 0};
-            const SkPixmap* fPixmaps;
+            const GrPixmap* fPixmaps;
             struct {
                 const void*  fData;
                 size_t       fSize;
@@ -596,12 +562,11 @@ public:
     GrBackendTexture createBackendTexture(SkISize dimensions,
                                           const GrBackendFormat&,
                                           GrRenderable,
-                                          GrMipMapped,
+                                          GrMipmapped,
                                           GrProtected);
 
     bool updateBackendTexture(const GrBackendTexture&,
-                              GrGpuFinishedProc finishedProc,
-                              GrGpuFinishedContext finishedContext,
+                              sk_sp<GrRefCntedCallback> finishedCallback,
                               const BackendTextureData*);
 
     /**
@@ -610,15 +575,30 @@ public:
      */
     GrBackendTexture createCompressedBackendTexture(SkISize dimensions,
                                                     const GrBackendFormat&,
-                                                    GrMipMapped,
-                                                    GrProtected,
-                                                    GrGpuFinishedProc finishedProc,
-                                                    GrGpuFinishedContext finishedContext,
-                                                    const BackendTextureData*);
+                                                    GrMipmapped,
+                                                    GrProtected);
+
+    bool updateCompressedBackendTexture(const GrBackendTexture&,
+                                        sk_sp<GrRefCntedCallback> finishedCallback,
+                                        const BackendTextureData*);
+
+    virtual bool setBackendTextureState(const GrBackendTexture&,
+                                        const GrBackendSurfaceMutableState&,
+                                        GrBackendSurfaceMutableState* previousState,
+                                        sk_sp<GrRefCntedCallback> finishedCallback) {
+        return false;
+    }
+
+    virtual bool setBackendRenderTargetState(const GrBackendRenderTarget&,
+                                             const GrBackendSurfaceMutableState&,
+                                             GrBackendSurfaceMutableState* previousState,
+                                             sk_sp<GrRefCntedCallback> finishedCallback) {
+        return false;
+    }
 
     /**
      * Frees a texture created by createBackendTexture(). If ownership of the backend
-     * texture has been transferred to a GrContext using adopt semantics this should not be called.
+     * texture has been transferred to a context using adopt semantics this should not be called.
      */
     virtual void deleteBackendTexture(const GrBackendTexture&) = 0;
 
@@ -633,9 +613,24 @@ public:
     /** Check a handle represents an actual texture in the backend API that has not been freed. */
     virtual bool isTestingOnlyBackendTexture(const GrBackendTexture&) const = 0;
 
-    virtual GrBackendRenderTarget createTestingOnlyBackendRenderTarget(int w, int h,
-                                                                       GrColorType) = 0;
+    /**
+     * Creates a GrBackendRenderTarget that can be wrapped using
+     * SkSurface::MakeFromBackendRenderTarget. Ideally this is a non-textureable allocation to
+     * differentiate from testing with SkSurface::MakeFromBackendTexture. When sampleCnt > 1 this
+     * is used to test client wrapped allocations with MSAA where Skia does not allocate a separate
+     * buffer for resolving. If the color is non-null the backing store should be cleared to the
+     * passed in color.
+     */
+    virtual GrBackendRenderTarget createTestingOnlyBackendRenderTarget(
+            SkISize dimensions,
+            GrColorType,
+            int sampleCount = 1,
+            GrProtected = GrProtected::kNo) = 0;
 
+    /**
+     * Deletes a GrBackendRenderTarget allocated with the above. Synchronization to make this safe
+     * is up to the caller.
+     */
     virtual void deleteTestingOnlyBackendRenderTarget(const GrBackendRenderTarget&) = 0;
 
     // This is only to be used in GL-specific tests.
@@ -643,12 +638,6 @@ public:
 
     // This is only to be used by testing code
     virtual void resetShaderCacheForTesting() const {}
-
-    /**
-     * Flushes all work to the gpu and forces the GPU to wait until all the gpu work has completed.
-     * This is for testing purposes only.
-     */
-    virtual void testingOnly_flushGpuAndSync() = 0;
 
     /**
      * Inserted as a pair around a block of code to do a GPU frame capture.
@@ -660,16 +649,18 @@ public:
 
     // width and height may be larger than rt (if underlying API allows it).
     // Returns nullptr if compatible sb could not be created, otherwise the caller owns the ref on
-    // the GrStencilAttachment.
-    virtual GrStencilAttachment* createStencilAttachmentForRenderTarget(
-            const GrRenderTarget*, int width, int height, int numStencilSamples) = 0;
+    // the GrAttachment.
+    virtual sk_sp<GrAttachment> makeStencilAttachmentForRenderTarget(const GrRenderTarget*,
+                                                                     SkISize dimensions,
+                                                                     int numStencilSamples) = 0;
 
-    // Determines whether a texture will need to be copied because the draw requires mips but the
-    // texutre doesn't have any. This call should be only checked if IsACopyNeededForTextureParams
-    // fails. If the previous call succeeds, then a copy should be done using those params and the
-    // mip mapping requirements will be handled there.
-    static bool IsACopyNeededForMips(const GrCaps* caps, const GrTextureProxy* texProxy,
-                                     GrSamplerState::Filter filter);
+    virtual GrBackendFormat getPreferredStencilFormat(const GrBackendFormat&) = 0;
+
+    // Creates an MSAA surface to be used as an MSAA attachment on a framebuffer.
+    virtual sk_sp<GrAttachment> makeMSAAAttachment(SkISize dimensions,
+                                                   const GrBackendFormat& format,
+                                                   int numSamples,
+                                                   GrProtected isProtected) = 0;
 
     void handleDirtyContext() {
         if (fResetBits) {
@@ -688,57 +679,46 @@ public:
     // Called before certain draws in order to guarantee coherent results from dst reads.
     virtual void xferBarrier(GrRenderTarget*, GrXferBarrierType) = 0;
 
-    GrStagingBuffer* findStagingBuffer(size_t size);
-    GrStagingBuffer::Slice allocateStagingBufferSlice(size_t size);
-    virtual std::unique_ptr<GrStagingBuffer> createStagingBuffer(size_t size) { return nullptr; }
-    void unmapStagingBuffers();
-    void moveStagingBufferFromActiveToBusy(GrStagingBuffer* buffer);
-    void moveStagingBufferFromBusyToAvailable(GrStagingBuffer* buffer);
-
 protected:
-    static bool MipMapsAreCorrect(SkISize dimensions, GrMipMapped, const BackendTextureData*);
+    static bool MipMapsAreCorrect(SkISize dimensions, GrMipmapped, const BackendTextureData*);
     static bool CompressedDataIsCorrect(SkISize dimensions, SkImage::CompressionType,
-                                        GrMipMapped, const BackendTextureData*);
+                                        GrMipmapped, const BackendTextureData*);
 
     // Handles cases where a surface will be updated without a call to flushRenderTarget.
     void didWriteToSurface(GrSurface* surface, GrSurfaceOrigin origin, const SkIRect* bounds,
                            uint32_t mipLevels = 1) const;
 
-    typedef SkTInternalLList<GrStagingBuffer> StagingBufferList;
-    const StagingBufferList& availableStagingBuffers() { return fAvailableStagingBuffers; }
-    const StagingBufferList& activeStagingBuffers() { return fActiveStagingBuffers; }
-    const StagingBufferList& busyStagingBuffers() { return fBusyStagingBuffers; }
+    void setOOMed() { fOOMed = true; }
 
     Stats                            fStats;
-    std::unique_ptr<GrPathRendering> fPathRendering;
-    // Subclass must initialize this in its constructor.
-    sk_sp<const GrCaps>              fCaps;
+
+    // Subclass must call this to initialize caps & compiler in its constructor.
+    void initCapsAndCompiler(sk_sp<const GrCaps> caps);
 
 private:
     virtual GrBackendTexture onCreateBackendTexture(SkISize dimensions,
                                                     const GrBackendFormat&,
                                                     GrRenderable,
-                                                    GrMipMapped,
+                                                    GrMipmapped,
                                                     GrProtected) = 0;
 
     virtual GrBackendTexture onCreateCompressedBackendTexture(
-            SkISize dimensions, const GrBackendFormat&, GrMipMapped, GrProtected,
-            sk_sp<GrRefCntedCallback> finishedCallback, const BackendTextureData*) = 0;
+            SkISize dimensions, const GrBackendFormat&, GrMipmapped, GrProtected) = 0;
 
     virtual bool onUpdateBackendTexture(const GrBackendTexture&,
                                         sk_sp<GrRefCntedCallback> finishedCallback,
                                         const BackendTextureData*) = 0;
 
+    virtual bool onUpdateCompressedBackendTexture(const GrBackendTexture&,
+                                                  sk_sp<GrRefCntedCallback> finishedCallback,
+                                                  const BackendTextureData*) = 0;
+
     // called when the 3D context state is unknown. Subclass should emit any
     // assumed 3D context state and dirty any state cache.
-    virtual void onResetContext(uint32_t resetBits) = 0;
+    virtual void onResetContext(uint32_t resetBits) {}
 
     // Implementation of resetTextureBindings.
     virtual void onResetTextureBindings() {}
-
-    // Queries the effective number of samples in use by the hardware for the given render target,
-    // and queries the individual sample locations.
-    virtual void querySampleLocations(GrRenderTarget*, SkTArray<SkPoint>*) = 0;
 
     // overridden by backend-specific derived class to create objects.
     // Texture size, renderablility, format support, sample count will have already been validated
@@ -755,7 +735,7 @@ private:
     virtual sk_sp<GrTexture> onCreateCompressedTexture(SkISize dimensions,
                                                        const GrBackendFormat&,
                                                        SkBudgeted,
-                                                       GrMipMapped,
+                                                       GrMipmapped,
                                                        GrProtected,
                                                        const void* data, size_t dataSize) = 0;
     virtual sk_sp<GrTexture> onWrapBackendTexture(const GrBackendTexture&,
@@ -772,8 +752,6 @@ private:
                                                             GrWrapOwnership,
                                                             GrWrapCacheable) = 0;
     virtual sk_sp<GrRenderTarget> onWrapBackendRenderTarget(const GrBackendRenderTarget&) = 0;
-    virtual sk_sp<GrRenderTarget> onWrapBackendTextureAsRenderTarget(const GrBackendTexture&,
-                                                                     int sampleCnt) = 0;
     virtual sk_sp<GrRenderTarget> onWrapVulkanSecondaryCBAsRenderTarget(const SkImageInfo&,
                                                                         const GrVkDrawableInfo&);
 
@@ -794,16 +772,16 @@ private:
     // overridden by backend-specific derived class to perform the texture transfer
     virtual bool onTransferPixelsTo(GrTexture*, int left, int top, int width, int height,
                                     GrColorType textiueColorType, GrColorType bufferColorType,
-                                    GrGpuBuffer* transferBuffer, size_t offset,
+                                    sk_sp<GrGpuBuffer> transferBuffer, size_t offset,
                                     size_t rowBytes) = 0;
     // overridden by backend-specific derived class to perform the surface transfer
     virtual bool onTransferPixelsFrom(GrSurface*, int left, int top, int width, int height,
                                       GrColorType surfaceColorType, GrColorType bufferColorType,
-                                      GrGpuBuffer* transferBuffer, size_t offset) = 0;
+                                      sk_sp<GrGpuBuffer> transferBuffer,
+                                      size_t offset) = 0;
 
     // overridden by backend-specific derived class to perform the resolve
-    virtual void onResolveRenderTarget(GrRenderTarget* target, const SkIRect& resolveRect,
-                                       ForExternalIO) = 0;
+    virtual void onResolveRenderTarget(GrRenderTarget* target, const SkIRect& resolveRect) = 0;
 
     // overridden by backend specific derived class to perform mip map level regeneration.
     virtual bool onRegenerateMipMapLevels(GrTexture*) = 0;
@@ -812,14 +790,25 @@ private:
     virtual bool onCopySurface(GrSurface* dst, GrSurface* src, const SkIRect& srcRect,
                                const SkIPoint& dstPoint) = 0;
 
-    virtual void addFinishedProc(GrGpuFinishedProc finishedProc,
-                                 GrGpuFinishedContext finishedContext) = 0;
+    virtual GrOpsRenderPass* onGetOpsRenderPass(
+            GrRenderTarget* renderTarget,
+            GrAttachment* stencil,
+            GrSurfaceOrigin,
+            const SkIRect& bounds,
+            const GrOpsRenderPass::LoadAndStoreInfo&,
+            const GrOpsRenderPass::StencilLoadAndStoreInfo&,
+            const SkTArray<GrSurfaceProxy*, true>& sampledProxies,
+            GrXferBarrierFlags renderPassXferBarriers) = 0;
 
-    virtual void prepareSurfacesForBackendAccessAndExternalIO(
-            GrSurfaceProxy* proxies[], int numProxies, SkSurface::BackendSurfaceAccess access,
-            const GrPrepareForExternalIORequests& externalRequests) {}
+    virtual void prepareSurfacesForBackendAccessAndStateUpdates(
+            SkSpan<GrSurfaceProxy*> proxies,
+            SkSurface::BackendSurfaceAccess access,
+            const GrBackendSurfaceMutableState* newState) {}
 
     virtual bool onSubmitToGpu(bool syncCpu) = 0;
+
+    void reportSubmitHistograms();
+    virtual void onReportSubmitHistograms() {}
 
 #ifdef SK_ENABLE_DUMP_GPU
     virtual void onDumpJSON(SkJSONWriter*) const {}
@@ -838,24 +827,35 @@ private:
         this->onResetContext(fResetBits);
         fResetBits = 0;
     }
-#ifdef SK_DEBUG
-    bool inStagingBuffers(GrStagingBuffer* b) const;
-    void validateStagingBuffers() const;
-#endif
+
+    void callSubmittedProcs(bool success);
+
+    sk_sp<const GrCaps>             fCaps;
+    // Compiler used for compiling SkSL into backend shader code. We only want to create the
+    // compiler once, as there is significant overhead to the first compile.
+    std::unique_ptr<SkSL::Compiler> fCompiler;
 
     uint32_t fResetBits;
     // The context owns us, not vice-versa, so this ptr is not ref'ed by Gpu.
-    GrContext* fContext;
-    GrSamplePatternDictionary fSamplePatternDictionary;
+    GrDirectContext* fContext;
 
-    std::vector<std::unique_ptr<GrStagingBuffer>> fStagingBuffers;
+    struct SubmittedProc {
+        SubmittedProc(GrGpuSubmittedProc proc, GrGpuSubmittedContext context)
+                : fProc(proc), fContext(context) {}
 
-    StagingBufferList                fAvailableStagingBuffers;
-    StagingBufferList                fActiveStagingBuffers;
-    StagingBufferList                fBusyStagingBuffers;
+        GrGpuSubmittedProc fProc;
+        GrGpuSubmittedContext fContext;
+    };
+    SkSTArray<4, SubmittedProc> fSubmittedProcs;
+
+    bool fOOMed = false;
+
+#if SK_HISTOGRAMS_ENABLED
+    int fCurrentSubmitRenderPassCount = 0;
+#endif
 
     friend class GrPathRendering;
-    typedef SkRefCnt INHERITED;
+    using INHERITED = SkRefCnt;
 };
 
 #endif

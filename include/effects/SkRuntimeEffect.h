@@ -9,26 +9,29 @@
 #define SkRuntimeEffect_DEFINED
 
 #include "include/core/SkData.h"
+#include "include/core/SkImageInfo.h"
+#include "include/core/SkMatrix.h"
+#include "include/core/SkShader.h"
 #include "include/core/SkString.h"
+#include "include/private/SkOnce.h"
+#include "include/private/SkSLSampleUsage.h"
 
 #include <vector>
 
-#if SK_SUPPORT_GPU
-#include "include/gpu/GrContextOptions.h"
-#include "include/private/GrTypesPriv.h"
-#endif
-
-class GrShaderCaps;
+class GrFragmentProcessor;
+class GrRecordingContext;
 class SkColorFilter;
-class SkMatrix;
+class SkImage;
 class SkShader;
 
 namespace SkSL {
-class ByteCode;
-struct PipelineStageArgs;
+class FunctionDefinition;
 struct Program;
-class SharedCompiler;
-}
+}  // namespace SkSL
+
+namespace skvm {
+class Program;
+}  // namespace skvm
 
 /*
  * SkRuntimeEffect supports creating custom SkShader and SkColorFilter objects using Skia's SkSL
@@ -38,15 +41,8 @@ class SharedCompiler;
  */
 class SK_API SkRuntimeEffect : public SkRefCnt {
 public:
-    struct Variable {
-        enum class Qualifier {
-            kUniform,
-            kIn,
-        };
-
+    struct Uniform {
         enum class Type {
-            kBool,
-            kInt,
             kFloat,
             kFloat2,
             kFloat3,
@@ -54,6 +50,10 @@ public:
             kFloat2x2,
             kFloat3x3,
             kFloat4x4,
+            kInt,
+            kInt2,
+            kInt3,
+            kInt4,
         };
 
         enum Flags {
@@ -63,45 +63,61 @@ public:
             kSRGBUnpremul_Flag  = 0x8,
         };
 
-        SkString  fName;
-        size_t    fOffset;
-        Qualifier fQualifier;
-        Type      fType;
-        int       fCount;
-        uint32_t  fFlags;
-        uint32_t  fMarker;
+        SkString  name;
+        size_t    offset;
+        Type      type;
+        int       count;
+        uint32_t  flags;
+        uint32_t  marker;
 
-#if SK_SUPPORT_GPU
-        GrSLType fGPUType;
-#endif
-
-        bool isArray() const { return SkToBool(fFlags & kArray_Flag); }
+        bool isArray() const { return SkToBool(this->flags & kArray_Flag); }
         size_t sizeInBytes() const;
     };
 
     struct Varying {
-        SkString fName;
-        int      fWidth;  // 1 - 4 (floats)
+        SkString name;
+        int      width;  // 1 - 4 (floats)
     };
 
-    // [Effect, ErrorText]
-    // If successful, Effect != nullptr, otherwise, ErrorText contains the reason for failure.
-    using EffectResult = std::tuple<sk_sp<SkRuntimeEffect>, SkString>;
-    static EffectResult Make(SkString sksl);
+    struct Options {
+        // For testing purposes, completely disable the inliner. (Normally, Runtime Effects don't
+        // run the inliner directly, but they still get an inlining pass once they are painted.)
+        bool forceNoInline = false;
+    };
 
-    sk_sp<SkShader> makeShader(sk_sp<SkData> inputs,
+    // If the effect is compiled successfully, `effect` will be non-null.
+    // Otherwise, `errorText` will contain the reason for failure.
+    struct Result {
+        sk_sp<SkRuntimeEffect> effect;
+        SkString errorText;
+    };
+
+    static Result Make(SkString sksl, const Options& options);
+
+    // We can't use a default argument for `options` due to a bug in Clang.
+    // https://bugs.llvm.org/show_bug.cgi?id=36684
+    static Result Make(SkString sksl) { return Make(std::move(sksl), Options{}); }
+
+    sk_sp<SkShader> makeShader(sk_sp<SkData> uniforms,
                                sk_sp<SkShader> children[],
                                size_t childCount,
                                const SkMatrix* localMatrix,
-                               bool isOpaque);
+                               bool isOpaque) const;
 
-    sk_sp<SkColorFilter> makeColorFilter(sk_sp<SkData> inputs,
+    sk_sp<SkImage> makeImage(GrRecordingContext*,
+                             sk_sp<SkData> uniforms,
+                             sk_sp<SkShader> children[],
+                             size_t childCount,
+                             const SkMatrix* localMatrix,
+                             SkImageInfo resultInfo,
+                             bool mipmapped) const;
+
+    sk_sp<SkColorFilter> makeColorFilter(sk_sp<SkData> uniforms) const;
+    sk_sp<SkColorFilter> makeColorFilter(sk_sp<SkData> uniforms,
                                          sk_sp<SkColorFilter> children[],
-                                         size_t childCount);
-    sk_sp<SkColorFilter> makeColorFilter(sk_sp<SkData> inputs);
+                                         size_t childCount) const;
 
     const SkString& source() const { return fSkSL; }
-    uint32_t hash() const { return fHash; }
 
     template <typename T>
     class ConstIterable {
@@ -118,63 +134,177 @@ public:
         const std::vector<T>& fVec;
     };
 
-    // Combined size of all 'in' and 'uniform' variables. When calling makeColorFilter or
-    // makeShader, provide an SkData of this size, containing values for all of those variables.
-    size_t inputSize() const;
+    // Combined size of all 'uniform' variables. When calling makeColorFilter or makeShader,
+    // provide an SkData of this size, containing values for all of those variables.
+    size_t uniformSize() const;
 
-    ConstIterable<Variable> inputs() const { return ConstIterable<Variable>(fInAndUniformVars); }
+    ConstIterable<Uniform> uniforms() const { return ConstIterable<Uniform>(fUniforms); }
     ConstIterable<SkString> children() const { return ConstIterable<SkString>(fChildren); }
     ConstIterable<Varying> varyings() const { return ConstIterable<Varying>(fVaryings); }
 
-    // Returns pointer to the named in/uniform variable's description, or nullptr if not found
-    const Variable* findInput(const char* name) const;
+    // Returns pointer to the named uniform variable's description, or nullptr if not found
+    const Uniform* findUniform(const char* name) const;
 
     // Returns index of the named child, or -1 if not found
     int findChild(const char* name) const;
 
     static void RegisterFlattenables();
-    ~SkRuntimeEffect();
-
-private:
-    SkRuntimeEffect(SkString sksl, std::unique_ptr<SkSL::Program> baseProgram,
-                    std::vector<Variable>&& inAndUniformVars, std::vector<SkString>&& children,
-                    std::vector<Varying>&& varyings, size_t uniformSize);
-
-    using SpecializeResult = std::tuple<std::unique_ptr<SkSL::Program>, SkString>;
-    SpecializeResult specialize(SkSL::Program& baseProgram, const void* inputs,
-                                const SkSL::SharedCompiler&) const;
+    ~SkRuntimeEffect() override;
 
 #if SK_SUPPORT_GPU
-    friend class GrSkSLFP;  // toPipelineStage
-
-    // This re-compiles the program from scratch, using the supplied shader caps.
-    // This is necessary to get the correct values of settings.
-    bool toPipelineStage(const void* inputs, const GrShaderCaps* shaderCaps,
-                         GrContextOptions::ShaderErrorHandler* errorHandler,
-                         SkSL::PipelineStageArgs* outArgs);
+    // For internal use.
+    std::unique_ptr<GrFragmentProcessor> makeFP(GrRecordingContext*,
+                                                sk_sp<SkData> uniforms,
+                                                std::unique_ptr<GrFragmentProcessor> children[],
+                                                size_t childCount) const;
 #endif
 
-    friend class SkRTShader;            // toByteCode & uniformSize
+private:
+    SkRuntimeEffect(SkString sksl,
+                    std::unique_ptr<SkSL::Program> baseProgram,
+                    const Options& options,
+                    const SkSL::FunctionDefinition& main,
+                    std::vector<Uniform>&& uniforms,
+                    std::vector<SkString>&& children,
+                    std::vector<SkSL::SampleUsage>&& sampleUsages,
+                    std::vector<Varying>&& varyings,
+                    bool usesSampleCoords,
+                    bool allowColorFilter);
+
+    uint32_t hash() const { return fHash; }
+    bool usesSampleCoords() const { return fUsesSampleCoords; }
+
+    const skvm::Program* getFilterColorProgram();
+
+#if SK_SUPPORT_GPU
+    friend class GrSkSLFP;      // fBaseProgram, fSampleUsages
+    friend class GrGLSLSkSLFP;  //
+#endif
+
+    friend class SkRTShader;            // fBaseProgram, fMain
     friend class SkRuntimeColorFilter;  //
-
-    // [ByteCode, ErrorText]
-    // If successful, ByteCode != nullptr, otherwise, ErrorText contains the reason for failure.
-    using ByteCodeResult = std::tuple<std::unique_ptr<SkSL::ByteCode>, SkString>;
-    ByteCodeResult toByteCode(const void* inputs) const;
-
-    // Combined size of just the 'uniform' variables.
-    size_t uniformSize() const { return fUniformSize; }
-
 
     uint32_t fHash;
     SkString fSkSL;
 
     std::unique_ptr<SkSL::Program> fBaseProgram;
-    std::vector<Variable> fInAndUniformVars;
+    const SkSL::FunctionDefinition& fMain;
+    std::vector<Uniform> fUniforms;
     std::vector<SkString> fChildren;
+    std::vector<SkSL::SampleUsage> fSampleUsages;
     std::vector<Varying>  fVaryings;
 
-    size_t fUniformSize;
+    SkOnce fColorFilterProgramOnce;
+    std::unique_ptr<skvm::Program> fColorFilterProgram;
+
+    bool   fUsesSampleCoords;
+    bool   fAllowColorFilter;
+};
+
+/** Base class for SkRuntimeShaderBuilder, defined below. */
+template <typename Child> class SkRuntimeEffectBuilder {
+public:
+    struct BuilderUniform {
+        // Copy 'val' to this variable. No type conversion is performed - 'val' must be same
+        // size as expected by the effect. Information about the variable can be queried by
+        // looking at fVar. If the size is incorrect, no copy will be performed, and debug
+        // builds will abort. If this is the result of querying a missing variable, fVar will
+        // be nullptr, and assigning will also do nothing (and abort in debug builds).
+        template <typename T>
+        std::enable_if_t<std::is_trivially_copyable<T>::value, BuilderUniform&> operator=(
+                const T& val) {
+            if (!fVar) {
+                SkDEBUGFAIL("Assigning to missing variable");
+            } else if (sizeof(val) != fVar->sizeInBytes()) {
+                SkDEBUGFAIL("Incorrect value size");
+            } else {
+                memcpy(SkTAddOffset<void>(fOwner->writableUniformData(), fVar->offset),
+                       &val, sizeof(val));
+            }
+            return *this;
+        }
+
+        BuilderUniform& operator=(const SkMatrix& val) {
+            if (!fVar) {
+                SkDEBUGFAIL("Assigning to missing variable");
+            } else if (fVar->sizeInBytes() != 9 * sizeof(float)) {
+                SkDEBUGFAIL("Incorrect value size");
+            } else {
+                float* data = SkTAddOffset<float>(fOwner->writableUniformData(), fVar->offset);
+                data[0] = val.get(0); data[1] = val.get(3); data[2] = val.get(6);
+                data[3] = val.get(1); data[4] = val.get(4); data[5] = val.get(7);
+                data[6] = val.get(2); data[7] = val.get(5); data[8] = val.get(8);
+            }
+            return *this;
+        }
+
+        template <typename T>
+        bool set(const T val[], const int count) {
+            static_assert(std::is_trivially_copyable<T>::value, "Value must be trivial copyable");
+            if (!fVar) {
+                SkDEBUGFAIL("Assigning to missing variable");
+                return false;
+            } else if (sizeof(T) * count != fVar->sizeInBytes()) {
+                SkDEBUGFAIL("Incorrect value size");
+                return false;
+            } else {
+                memcpy(SkTAddOffset<void>(fOwner->writableUniformData(), fVar->offset),
+                       val, sizeof(T) * count);
+            }
+            return true;
+        }
+
+        SkRuntimeEffectBuilder*         fOwner;
+        const SkRuntimeEffect::Uniform* fVar;    // nullptr if the variable was not found
+    };
+
+    struct BuilderChild {
+        template <typename C> BuilderChild& operator=(C&& val) {
+            if (fIndex < 0) {
+                SkDEBUGFAIL("Assigning to missing child");
+            } else {
+                fOwner->fChildren[fIndex] = std::forward<C>(val);
+            }
+            return *this;
+        }
+
+        SkRuntimeEffectBuilder* fOwner;
+        int                     fIndex;  // -1 if the child was not found
+    };
+
+    const SkRuntimeEffect* effect() const { return fEffect.get(); }
+
+    BuilderUniform uniform(const char* name) { return { this, fEffect->findUniform(name) }; }
+    BuilderChild child(const char* name) { return { this, fEffect->findChild(name) }; }
+
+protected:
+    SkRuntimeEffectBuilder() = delete;
+    explicit SkRuntimeEffectBuilder(sk_sp<SkRuntimeEffect> effect)
+            : fEffect(std::move(effect))
+            , fUniforms(SkData::MakeUninitialized(fEffect->uniformSize()))
+            , fChildren(fEffect->children().count()) {}
+
+    SkRuntimeEffectBuilder(SkRuntimeEffectBuilder&&) = default;
+    SkRuntimeEffectBuilder(const SkRuntimeEffectBuilder&) = default;
+
+    SkRuntimeEffectBuilder& operator=(SkRuntimeEffectBuilder&&) = delete;
+    SkRuntimeEffectBuilder& operator=(const SkRuntimeEffectBuilder&) = delete;
+
+    sk_sp<SkData> uniforms() { return fUniforms; }
+    Child* children() { return fChildren.data(); }
+    size_t numChildren() { return fChildren.size(); }
+
+private:
+    void* writableUniformData() {
+        if (!fUniforms->unique()) {
+            fUniforms = SkData::MakeWithCopy(fUniforms->data(), fUniforms->size());
+        }
+        return fUniforms->writable_data();
+    }
+
+    sk_sp<SkRuntimeEffect> fEffect;
+    sk_sp<SkData>          fUniforms;
+    std::vector<Child>     fChildren;
 };
 
 /**
@@ -183,63 +313,36 @@ private:
  * NOTE: Like SkRuntimeEffect, this API is experimental and subject to change!
  *
  * Given an SkRuntimeEffect, the SkRuntimeShaderBuilder manages creating an input data block and
- * provides named access to the 'in' and 'uniform' variables in that block, as well as named access
+ * provides named access to the 'uniform' variables in that block, as well as named access
  * to a list of child shader slots. Usage:
  *
  *   sk_sp<SkRuntimeEffect> effect = ...;
  *   SkRuntimeShaderBuilder builder(effect);
- *   builder.input("some_uniform_float")  = 3.14f;
- *   builder.input("some_uniform_matrix") = SkM44::Rotate(...);
- *   builder.child("some_child_effect")   = mySkImage->makeShader(...);
+ *   builder.uniform("some_uniform_float")  = 3.14f;
+ *   builder.uniform("some_uniform_matrix") = SkM44::Rotate(...);
+ *   builder.child("some_child_effect")     = mySkImage->makeShader(...);
  *   ...
  *   sk_sp<SkShader> shader = builder.makeShader(nullptr, false);
  *
  * Note that SkRuntimeShaderBuilder is built entirely on the public API of SkRuntimeEffect,
  * so can be used as-is or serve as inspiration for other interfaces or binding techniques.
  */
-struct SkRuntimeShaderBuilder {
-    SkRuntimeShaderBuilder(sk_sp<SkRuntimeEffect>);
+class SK_API SkRuntimeShaderBuilder : public SkRuntimeEffectBuilder<sk_sp<SkShader>> {
+public:
+    explicit SkRuntimeShaderBuilder(sk_sp<SkRuntimeEffect>);
+    // This is currently required by Android Framework but may go away if that dependency
+    // can be removed.
+    SkRuntimeShaderBuilder(const SkRuntimeShaderBuilder&) = default;
     ~SkRuntimeShaderBuilder();
 
-    struct BuilderInput {
-        // Copy 'val' to this variable. No type conversion is performed - 'val' must be same
-        // size as expected by the effect. Information about the variable can be queried by
-        // looking at fVar. If the size is incorrect, no copy will be performed, and debug
-        // builds will abort. If this is the result of querying a missing variable, fVar will
-        // be nullptr, and assigning will also do nothing (and abort in debug builds).
-        template <typename T>
-        std::enable_if_t<std::is_trivially_copyable<T>::value, BuilderInput&> operator=(
-                const T& val) {
-            if (!fVar) {
-                SkDEBUGFAIL("Assigning to missing variable");
-            } else if (sizeof(val) != fVar->sizeInBytes()) {
-                SkDEBUGFAIL("Incorrect value size");
-            } else {
-                memcpy(SkTAddOffset<void>(fOwner->fInputs->writable_data(), fVar->fOffset),
-                        &val, sizeof(val));
-            }
-            return *this;
-        }
-
-        SkRuntimeShaderBuilder*          fOwner;
-        const SkRuntimeEffect::Variable* fVar;    // nullptr if the variable was not found
-    };
-
-    struct BuilderChild {
-        BuilderChild& operator=(const sk_sp<SkShader>& val);
-
-        SkRuntimeShaderBuilder* fOwner;
-        int                     fIndex;  // -1 if the child was not found
-    };
-
-    BuilderInput input(const char* name) { return { this, fEffect->findInput(name) }; }
-    BuilderChild child(const char* name) { return { this, fEffect->findChild(name) }; }
-
     sk_sp<SkShader> makeShader(const SkMatrix* localMatrix, bool isOpaque);
+    sk_sp<SkImage> makeImage(GrRecordingContext*,
+                             const SkMatrix* localMatrix,
+                             SkImageInfo resultInfo,
+                             bool mipmapped);
 
-    sk_sp<SkRuntimeEffect>       fEffect;
-    sk_sp<SkData>                fInputs;
-    std::vector<sk_sp<SkShader>> fChildren;
+private:
+    using INHERITED = SkRuntimeEffectBuilder<sk_sp<SkShader>>;
 };
 
 #endif

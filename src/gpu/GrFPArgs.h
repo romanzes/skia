@@ -8,7 +8,6 @@
 #ifndef GrFPArgs_DEFINED
 #define GrFPArgs_DEFINED
 
-#include "include/core/SkFilterQuality.h"
 #include "include/core/SkMatrix.h"
 
 class GrColorInfo;
@@ -18,17 +17,21 @@ class SkMatrixProvider;
 struct GrFPArgs {
     GrFPArgs(GrRecordingContext* context,
              const SkMatrixProvider& matrixProvider,
-             SkFilterQuality filterQuality,
              const GrColorInfo* dstColorInfo)
             : fContext(context)
             , fMatrixProvider(matrixProvider)
-            , fFilterQuality(filterQuality)
             , fDstColorInfo(dstColorInfo) {
         SkASSERT(fContext);
     }
 
     class WithPreLocalMatrix;
-    class WithPostLocalMatrix;
+
+    GrFPArgs withNewMatrixProvider(const SkMatrixProvider& provider) const {
+        GrFPArgs newArgs(fContext, provider, fDstColorInfo);
+        newArgs.fInputColorIsOpaque = fInputColorIsOpaque;
+        newArgs.fPreLocalMatrix = fPreLocalMatrix;
+        return newArgs;
+    }
 
     GrRecordingContext* fContext;
     const SkMatrixProvider& fMatrixProvider;
@@ -38,7 +41,6 @@ struct GrFPArgs {
     // Make this SkAlphaType?
     bool fInputColorIsOpaque = false;
 
-    SkFilterQuality fFilterQuality;
     const GrColorInfo* fDstColorInfo;
 };
 
@@ -65,4 +67,3 @@ private:
 };
 
 #endif
-

@@ -10,7 +10,10 @@
 
 #include "include/core/SkVertices.h"
 
-struct SkVertices_DeprecatedBone        {    float values[6]; };
+class SkReadBuffer;
+class SkWriteBuffer;
+
+struct SkVertices_DeprecatedBone { float values[6]; };
 
 /** Class that adds methods to SkVertices that are only intended for use internal to Skia.
     This class is purely a privileged window into SkVertices. It should never have additional
@@ -41,6 +44,9 @@ public:
     // Never called due to RVO in priv(), but must exist for MSVC 2017.
     SkVerticesPriv(const SkVerticesPriv&) = default;
 
+    void encode(SkWriteBuffer&) const;
+    static sk_sp<SkVertices> Decode(SkReadBuffer&);
+
 private:
     explicit SkVerticesPriv(SkVertices* vertices) : fVertices(vertices) {}
     SkVerticesPriv& operator=(const SkVerticesPriv&) = delete;
@@ -56,7 +62,7 @@ private:
 
 inline SkVerticesPriv SkVertices::priv() { return SkVerticesPriv(this); }
 
-inline const SkVerticesPriv SkVertices::priv() const {
+inline const SkVerticesPriv SkVertices::priv() const {  // NOLINT(readability-const-return-type)
     return SkVerticesPriv(const_cast<SkVertices*>(this));
 }
 

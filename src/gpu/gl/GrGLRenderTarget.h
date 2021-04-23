@@ -15,20 +15,20 @@
 
 class GrGLCaps;
 class GrGLGpu;
-class GrGLStencilAttachment;
+class GrGLAttachment;
 
 class GrGLRenderTarget : public GrRenderTarget {
 public:
     bool alwaysClearStencil() const override { return 0 == fRTFBOID; }
 
-    // set fTexFBOID to this value to indicate that it is multisampled but
+    // set fSingleSampleFBOID to this value to indicate that it is multisampled but
     // Gr doesn't know how to resolve it.
     enum { kUnresolvableFBOID = 0 };
 
     struct IDs {
         GrGLuint                   fRTFBOID;
         GrBackendObjectOwnership   fRTFBOOwnership;
-        GrGLuint                   fTexFBOID;
+        GrGLuint                   fSingleSampleFBOID;
         GrGLuint                   fMSColorRenderbufferID;
     };
 
@@ -44,7 +44,7 @@ public:
     // FBO ID used to render into
     GrGLuint renderFBOID() const { return fRTFBOID; }
     // FBO ID that has texture ID attached.
-    GrGLuint textureFBOID() const { return fTexFBOID; }
+    GrGLuint singleSampleFBOID() const { return fSingleSampleFBOID; }
 
     GrBackendRenderTarget getBackendRenderTarget() const override;
 
@@ -53,7 +53,7 @@ public:
     bool canAttemptStencilAttachment() const override;
 
     // GrGLRenderTarget overrides dumpMemoryStatistics so it can log its texture and renderbuffer
-    // components seperately.
+    // components separately.
     void dumpMemoryStatistics(SkTraceMemoryDump* traceMemoryDump) const override;
 
     GrGLFormat format() const { return fRTFormat; }
@@ -75,12 +75,8 @@ protected:
 
 private:
     // Constructor for instances wrapping backend objects.
-    GrGLRenderTarget(GrGLGpu*,
-                     const SkISize&,
-                     GrGLFormat,
-                     int sampleCount,
-                     const IDs&,
-                     GrGLStencilAttachment*);
+    GrGLRenderTarget(
+            GrGLGpu*, const SkISize&, GrGLFormat, int sampleCount, const IDs&, GrGLAttachment*);
 
     void setFlags(const GrGLCaps&, const IDs&);
 
@@ -94,7 +90,7 @@ private:
     int totalSamples() const;
 
     GrGLuint    fRTFBOID;
-    GrGLuint    fTexFBOID;
+    GrGLuint    fSingleSampleFBOID;
     GrGLuint    fMSColorRenderbufferID;
     GrGLFormat  fRTFormat;
 
@@ -105,7 +101,7 @@ private:
     // the IDs are just required for the computation in totalSamples we cache that result here.
     int         fNumSamplesOwnedPerPixel;
 
-    typedef GrRenderTarget INHERITED;
+    using INHERITED = GrRenderTarget;
 };
 
 #endif

@@ -14,11 +14,10 @@
 
 class GrCaps;
 class GrClip;
-class GrFixedClip;
 class GrHardClip;
 class GrPaint;
 class GrRecordingContext;
-class GrRenderTargetContext;
+class GrSurfaceDrawContext;
 class GrRenderTargetProxy;
 class GrStyledShape;
 class GrStyle;
@@ -87,7 +86,7 @@ public:
         GrAAType                    fAAType;
         bool                        fTargetIsWrappedVkSecondaryCB;
 
-        // This is only used by GrStencilAndCoverPathRenderer
+        // This is only used by GrTessellationPathRenderer
         bool                        fHasUserStencilSettings;
 
 #ifdef SK_DEBUG
@@ -115,7 +114,7 @@ public:
         GrRecordingContext*          fContext;
         GrPaint&&                    fPaint;
         const GrUserStencilSettings* fUserStencilSettings;
-        GrRenderTargetContext*       fRenderTargetContext;
+        GrSurfaceDrawContext*        fRenderTargetContext;
         const GrClip*                fClip;
         const SkIRect*               fClipConservativeBounds;
         const SkMatrix*              fViewMatrix;
@@ -127,7 +126,6 @@ public:
             SkASSERT(fContext);
             SkASSERT(fUserStencilSettings);
             SkASSERT(fRenderTargetContext);
-            SkASSERT(fClip);
             SkASSERT(fClipConservativeBounds);
             SkASSERT(fViewMatrix);
             SkASSERT(fShape);
@@ -147,7 +145,7 @@ public:
         SkDEBUGCODE(StencilPathArgs() { memset(this, 0, sizeof(*this)); }) // For validation.
 
         GrRecordingContext*    fContext;
-        GrRenderTargetContext* fRenderTargetContext;
+        GrSurfaceDrawContext*  fRenderTargetContext;
         const GrHardClip*      fClip;
         const SkIRect*         fClipConservativeBounds;
         const SkMatrix*        fViewMatrix;
@@ -204,7 +202,7 @@ private:
      */
     virtual void onStencilPath(const StencilPathArgs&);
 
-    typedef SkRefCnt INHERITED;
+    using INHERITED = SkRefCnt;
 };
 
 #endif

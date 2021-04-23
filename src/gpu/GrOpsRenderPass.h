@@ -13,12 +13,12 @@
 #include "src/gpu/ops/GrDrawOp.h"
 
 class GrOpFlushState;
-class GrFixedClip;
 class GrGpu;
 class GrPipeline;
-class GrPrimitiveProcessor;
+class GrGeometryProcessor;
 class GrProgramInfo;
 class GrRenderTarget;
+class GrScissorState;
 class GrSemaphore;
 struct SkIRect;
 struct SkRect;
@@ -33,9 +33,9 @@ public:
     virtual ~GrOpsRenderPass() {}
 
     struct LoadAndStoreInfo {
-        GrLoadOp    fLoadOp;
-        GrStoreOp   fStoreOp;
-        SkPMColor4f fClearColor;
+        GrLoadOp             fLoadOp;
+        GrStoreOp            fStoreOp;
+        std::array<float, 4> fClearColor;
     };
 
     // Load-time clears of the stencil buffer are always to 0 so we don't store
@@ -68,11 +68,12 @@ public:
     // FP textures from GrPipeline.)
     //
     // If the current program does not use textures, this is a no-op.
-    void bindTextures(const GrPrimitiveProcessor&, const GrSurfaceProxy* const primProcTextures[],
+    void bindTextures(const GrGeometryProcessor&,
+                      const GrSurfaceProxy* const geomProcTextures[],
                       const GrPipeline&);
 
-    void bindBuffers(const GrBuffer* indexBuffer, const GrBuffer* instanceBuffer,
-                     const GrBuffer* vertexBuffer, GrPrimitiveRestart = GrPrimitiveRestart::kNo);
+    void bindBuffers(sk_sp<const GrBuffer> indexBuffer, sk_sp<const GrBuffer> instanceBuffer,
+                     sk_sp<const GrBuffer> vertexBuffer, GrPrimitiveRestart = GrPrimitiveRestart::kNo);
 
     // The next several draw*() methods issue draws using the current pipeline state. Before
     // drawing, the caller must configure the pipeline and dynamic state:
@@ -120,11 +121,17 @@ public:
     virtual void inlineUpload(GrOpFlushState*, GrDeferredTextureUploadFn&) = 0;
 
     /**
-     * Clear the owned render target. Ignores the draw state and clip.
+     * Clear the owned render target. Clears the full target if 'scissor' is disabled, otherwise it
+     * is restricted to 'scissor'. Must check caps.performPartialClearsAsDraws() before using an
+     * enabled scissor test; must check caps.performColorClearsAsDraws() before using this at all.
      */
-    void clear(const GrFixedClip&, const SkPMColor4f&);
+    void clear(const GrScissorState& scissor, std::array<float, 4> color);
 
-    void clearStencilClip(const GrFixedClip&, bool insideStencilMask);
+    /**
+     * Same as clear() but modifies the stencil; check caps.performStencilClearsAsDraws() and
+     * caps.performPartialClearsAsDraws().
+     */
+    void clearStencilClip(const GrScissorState& scissor, bool insideStencilMask);
 
     /**
      * Executes the SkDrawable object for the underlying backend.
@@ -171,11 +178,11 @@ private:
     virtual void onEnd() {}
     virtual bool onBindPipeline(const GrProgramInfo&, const SkRect& drawBounds) = 0;
     virtual void onSetScissorRect(const SkIRect&) = 0;
-    virtual bool onBindTextures(const GrPrimitiveProcessor&,
-                                const GrSurfaceProxy* const primProcTextures[],
+    virtual bool onBindTextures(const GrGeometryProcessor&,
+                                const GrSurfaceProxy* const geomProcTextures[],
                                 const GrPipeline&) = 0;
-    virtual void onBindBuffers(const GrBuffer* indexBuffer, const GrBuffer* instanceBuffer,
-                               const GrBuffer* vertexBuffer, GrPrimitiveRestart) = 0;
+    virtual void onBindBuffers(sk_sp<const GrBuffer> indexBuffer, sk_sp<const GrBuffer> instanceBuffer,
+                               sk_sp<const GrBuffer> vertexBuffer, GrPrimitiveRestart) = 0;
     virtual void onDraw(int vertexCount, int baseVertex) = 0;
     virtual void onDrawIndexed(int indexCount, int baseIndex, uint16_t minIndexValue,
                                uint16_t maxIndexValue, int baseVertex) = 0;
@@ -189,8 +196,8 @@ private:
     virtual void onDrawIndexedIndirect(const GrBuffer*, size_t offset, int drawCount) {
         SK_ABORT("Not implemented.");  // Only called if caps.nativeDrawIndirectSupport().
     }
-    virtual void onClear(const GrFixedClip&, const SkPMColor4f&) = 0;
-    virtual void onClearStencilClip(const GrFixedClip&, bool insideStencilMask) = 0;
+    virtual void onClear(const GrScissorState&, std::array<float, 4> color) = 0;
+    virtual void onClearStencilClip(const GrScissorState&, bool insideStencilMask) = 0;
     virtual void onExecuteDrawable(std::unique_ptr<SkDrawable::GpuDrawHandler>) {}
 
     enum class DrawPipelineStatus {
@@ -216,7 +223,7 @@ private:
     DynamicStateStatus fVertexBufferStatus;
 #endif
 
-    typedef GrOpsRenderPass INHERITED;
+    using INHERITED = GrOpsRenderPass;
 };
 
 #endif

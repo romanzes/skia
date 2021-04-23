@@ -15,6 +15,8 @@
 #include "dawn/webgpu_cpp.h"
 #include "src/gpu/glsl/GrGLSLProgramBuilder.h"
 
+#include <vector>
+
 class GrPipeline;
 
 struct GrDawnProgram : public SkRefCnt {
@@ -53,11 +55,10 @@ struct GrDawnProgram : public SkRefCnt {
                   uint32_t uniformBufferSize)
       : fDataManager(uniforms, uniformBufferSize) {
     }
-    std::unique_ptr<GrGLSLPrimitiveProcessor> fGeometryProcessor;
+    std::unique_ptr<GrGLSLGeometryProcessor> fGeometryProcessor;
     std::unique_ptr<GrGLSLXferProcessor> fXferProcessor;
-    std::unique_ptr<std::unique_ptr<GrGLSLFragmentProcessor>[]> fFragmentProcessors;
-    int fFragmentProcessorCnt;
-    wgpu::BindGroupLayout fBindGroupLayouts[2];
+    std::vector<std::unique_ptr<GrGLSLFragmentProcessor>> fFPImpls;
+    std::vector<wgpu::BindGroupLayout> fBindGroupLayouts;
     wgpu::RenderPipeline fRenderPipeline;
     GrDawnProgramDataManager fDataManager;
     RenderTargetState fRenderTargetState;
@@ -65,10 +66,10 @@ struct GrDawnProgram : public SkRefCnt {
 
     void setRenderTargetState(const GrRenderTarget*, GrSurfaceOrigin);
     wgpu::BindGroup setUniformData(GrDawnGpu*, const GrRenderTarget*, const GrProgramInfo&);
-    wgpu::BindGroup setTextures(GrDawnGpu* gpu,
-                                const GrPrimitiveProcessor& primProc,
-                                const GrPipeline& pipeline,
-                                const GrSurfaceProxy* const primProcTextures[]);
+    wgpu::BindGroup setTextures(GrDawnGpu*,
+                                const GrGeometryProcessor&,
+                                const GrPipeline&,
+                                const GrSurfaceProxy* const geomProcTextures[]);
 };
 
 class GrDawnProgramBuilder : public GrGLSLProgramBuilder {
@@ -87,17 +88,19 @@ public:
 
     GrDawnGpu* gpu() const { return fGpu; }
 
+    SkSL::Compiler* shaderCompiler() const override;
+
 private:
     GrDawnProgramBuilder(GrDawnGpu*,
                          GrRenderTarget*,
                          const GrProgramInfo&,
                          GrProgramDesc*);
-    wgpu::ShaderModule createShaderModule(const GrGLSLShaderBuilder&, SkSL::Program::Kind,
+    wgpu::ShaderModule createShaderModule(const GrGLSLShaderBuilder&, SkSL::ProgramKind,
                                           bool flipY, SkSL::Program::Inputs* inputs);
     GrDawnGpu*             fGpu;
     GrSPIRVVaryingHandler   fVaryingHandler;
     GrSPIRVUniformHandler   fUniformHandler;
 
-    typedef GrGLSLProgramBuilder INHERITED;
+    using INHERITED = GrGLSLProgramBuilder;
 };
 #endif

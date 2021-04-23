@@ -7,10 +7,11 @@
 
 
 #include "include/gpu/GrContextOptions.h"
+#include "include/gpu/GrDirectContext.h"
 #include "src/core/SkOpts.h"
-#include "src/gpu/GrContextPriv.h"
+#include "src/gpu/GrDirectContextPriv.h"
 #include "src/gpu/GrProcessor.h"
-#include "src/gpu/GrRenderTargetPriv.h"
+#include "src/gpu/GrRenderTarget.h"
 #include "src/gpu/GrStencilSettings.h"
 #include "src/gpu/glsl/GrGLSLFragmentProcessor.h"
 #include "src/gpu/glsl/GrGLSLProgramDataManager.h"
@@ -31,7 +32,7 @@ struct GrVkResourceProvider::PipelineStateCache::Entry {
 
     ~Entry() {
         if (fPipelineState) {
-            fPipelineState->freeGPUResources();
+            fPipelineState->freeGPUResources(fGpu);
         }
     }
 
@@ -49,13 +50,13 @@ GrVkResourceProvider::PipelineStateCache::~PipelineStateCache() {
     // dump stats
 #ifdef SK_DEBUG
     if (c_DisplayVkPipelineCache) {
-        using CacheResult = GrGpu::Stats::ProgramCacheResult;
+        using CacheResult = Stats::ProgramCacheResult;
 
-        int misses = fGpu->stats()->numInlineProgramCacheResult(CacheResult::kMiss) +
-                     fGpu->stats()->numPreProgramCacheResult(CacheResult::kMiss);
+        int misses = fStats.numInlineProgramCacheResult(CacheResult::kMiss) +
+                     fStats.numPreProgramCacheResult(CacheResult::kMiss);
 
-        int total = misses + fGpu->stats()->numInlineProgramCacheResult(CacheResult::kHit) +
-                             fGpu->stats()->numPreProgramCacheResult(CacheResult::kHit);
+        int total = misses + fStats.numInlineProgramCacheResult(CacheResult::kHit) +
+                             fStats.numPreProgramCacheResult(CacheResult::kHit);
 
         SkDebugf("--- Pipeline State Cache ---\n");
         SkDebugf("Total requests: %d\n", total);
@@ -72,29 +73,35 @@ void GrVkResourceProvider::PipelineStateCache::release() {
 GrVkPipelineState* GrVkResourceProvider::PipelineStateCache::findOrCreatePipelineState(
         GrRenderTarget* renderTarget,
         const GrProgramInfo& programInfo,
-        VkRenderPass compatibleRenderPass) {
+        VkRenderPass compatibleRenderPass,
+        bool overrideSubpassForResolveLoad) {
 #ifdef SK_DEBUG
-    if (programInfo.pipeline().isStencilEnabled()) {
-        SkASSERT(renderTarget->renderTargetPriv().getStencilAttachment());
-        SkASSERT(renderTarget->renderTargetPriv().numStencilBits() == 8);
-        SkASSERT(renderTarget->renderTargetPriv().getStencilAttachment()->numSamples() ==
+    if (programInfo.isStencilEnabled()) {
+        SkASSERT(renderTarget->getStencilAttachment());
+        SkASSERT(renderTarget->numStencilBits() == 8);
+        SkASSERT(renderTarget->getStencilAttachment()->numSamples() ==
                  programInfo.numStencilSamples());
     }
 #endif
 
-    GrProgramDesc desc = fGpu->caps()->makeDesc(renderTarget, programInfo);
+    auto flags = overrideSubpassForResolveLoad
+            ? GrCaps::ProgramDescOverrideFlags::kVulkanHasResolveLoadSubpass
+            : GrCaps::ProgramDescOverrideFlags::kNone;
+
+    GrProgramDesc desc = fGpu->caps()->makeDesc(renderTarget, programInfo, flags);
     if (!desc.isValid()) {
         GrCapsDebugf(fGpu->caps(), "Failed to build vk program descriptor!\n");
         return nullptr;
     }
 
-    GrGpu::Stats::ProgramCacheResult stat;
+    Stats::ProgramCacheResult stat;
     auto tmp = this->findOrCreatePipelineState(renderTarget, desc, programInfo,
-                                               compatibleRenderPass, &stat);
+                                               compatibleRenderPass, overrideSubpassForResolveLoad,
+                                               &stat);
     if (!tmp) {
-        fGpu->stats()->incNumInlineCompilationFailures();
+        fStats.incNumInlineCompilationFailures();
     } else {
-        fGpu->stats()->incNumInlineProgramCacheResult(stat);
+        fStats.incNumInlineProgramCacheResult(stat);
     }
 
     return tmp;
@@ -105,22 +112,24 @@ GrVkPipelineState* GrVkResourceProvider::PipelineStateCache::findOrCreatePipelin
         const GrProgramDesc& desc,
         const GrProgramInfo& programInfo,
         VkRenderPass compatibleRenderPass,
-        GrGpu::Stats::ProgramCacheResult* stat) {
+        bool overrideSubpassForResolveLoad,
+        Stats::ProgramCacheResult* stat) {
     if (stat) {
-        *stat = GrGpu::Stats::ProgramCacheResult::kHit;
+        *stat = Stats::ProgramCacheResult::kHit;
     }
 
     std::unique_ptr<Entry>* entry = fMap.find(desc);
     if (!entry) {
         if (stat) {
-            *stat = GrGpu::Stats::ProgramCacheResult::kMiss;
+            *stat = Stats::ProgramCacheResult::kMiss;
         }
         GrVkPipelineState* pipelineState(GrVkPipelineStateBuilder::CreatePipelineState(
-                fGpu, renderTarget, desc, programInfo, compatibleRenderPass));
+                fGpu, renderTarget, desc, programInfo, compatibleRenderPass,
+                overrideSubpassForResolveLoad));
         if (!pipelineState) {
             return nullptr;
         }
-        entry = fMap.insert(desc, std::unique_ptr<Entry>(new Entry(fGpu, pipelineState)));
+        entry = fMap.insert(desc, std::make_unique<Entry>(fGpu, pipelineState));
         return (*entry)->fPipelineState.get();
     }
     return (*entry)->fPipelineState.get();

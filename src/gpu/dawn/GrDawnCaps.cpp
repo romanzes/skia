@@ -10,11 +10,10 @@
 #include "src/gpu/GrProgramDesc.h"
 #include "src/gpu/GrProgramInfo.h"
 #include "src/gpu/GrRenderTarget.h"
-#include "src/gpu/GrRenderTargetPriv.h"
 #include "src/gpu/GrStencilSettings.h"
 
 GrDawnCaps::GrDawnCaps(const GrContextOptions& contextOptions) : INHERITED(contextOptions) {
-    fMipMapSupport = false;  // FIXME: implement onRegenerateMipMapLevels in GrDawnGpu.
+    fMipmapSupport = true;
     fBufferMapThreshold = SK_MaxS32;  // FIXME: get this from Dawn?
     fShaderCaps.reset(new GrShaderCaps(contextOptions));
     fMaxTextureSize = fMaxRenderTargetSize = 8192; // FIXME
@@ -38,10 +37,6 @@ bool GrDawnCaps::isFormatSRGB(const GrBackendFormat& format) const {
     return false;
 }
 
-SkImage::CompressionType GrDawnCaps::compressionType(const GrBackendFormat& format) const {
-    return SkImage::CompressionType::kNone;
-}
-
 bool GrDawnCaps::isFormatTexturable(const GrBackendFormat& format) const {
     // Currently, all the formats in GrDawnFormatToPixelConfig are texturable.
     wgpu::TextureFormat dawnFormat;
@@ -54,9 +49,9 @@ static GrSwizzle get_swizzle(const GrBackendFormat& format, GrColorType colorTyp
         case GrColorType::kAlpha_8: // fall through
         case GrColorType::kAlpha_F16:
             if (forOutput) {
-                return GrSwizzle::AAAA();
+                return GrSwizzle("a000");
             } else {
-                return GrSwizzle::RRRR();
+                return GrSwizzle("000r");
             }
         case GrColorType::kGray_8:
             if (!forOutput) {
@@ -67,6 +62,7 @@ static GrSwizzle get_swizzle(const GrBackendFormat& format, GrColorType colorTyp
             if (!forOutput) {
                 return GrSwizzle::RGB1();
             }
+            break;
         default:
             return GrSwizzle::RGBA();
     }
@@ -88,12 +84,16 @@ bool GrDawnCaps::isFormatAsColorTypeRenderable(GrColorType ct, const GrBackendFo
     return isFormatRenderable(format, sampleCount);
 }
 
-size_t GrDawnCaps::bytesPerPixel(const GrBackendFormat& backendFormat) const {
-    wgpu::TextureFormat dawnFormat;
-    if (!backendFormat.asDawnFormat(&dawnFormat)) {
-        return 0;
-    }
-    return GrDawnBytesPerPixel(dawnFormat);
+GrCaps::SurfaceReadPixelsSupport GrDawnCaps::surfaceSupportsReadPixels(
+      const GrSurface* surface) const {
+    // We currently support readbacks only from Textures and TextureRenderTargets.
+    return surface->asTexture() ? SurfaceReadPixelsSupport::kSupported
+                                : SurfaceReadPixelsSupport::kUnsupported;
+}
+
+bool GrDawnCaps::onSurfaceSupportsWritePixels(const GrSurface* surface) const {
+    // We currently support writePixels only to Textures and TextureRenderTargets.
+    return surface->asTexture() != nullptr;
 }
 
 int GrDawnCaps::getRenderTargetSampleCount(int requestedCount,
@@ -122,7 +122,7 @@ GrBackendFormat GrDawnCaps::getBackendFormatFromCompressionType(SkImage::Compres
     return GrBackendFormat();
 }
 
-GrSwizzle GrDawnCaps::getReadSwizzle(const GrBackendFormat& format, GrColorType colorType) const
+GrSwizzle GrDawnCaps::onGetReadSwizzle(const GrBackendFormat& format, GrColorType colorType) const
 {
     return get_swizzle(format, colorType, false);
 }
@@ -164,33 +164,33 @@ static uint32_t get_blend_info_key(const GrPipeline& pipeline) {
     return key;
 }
 
-GrProgramDesc GrDawnCaps::makeDesc(const GrRenderTarget* rt,
-                                   const GrProgramInfo& programInfo) const {
+GrProgramDesc GrDawnCaps::makeDesc(GrRenderTarget* rt,
+                                   const GrProgramInfo& programInfo,
+                                   ProgramDescOverrideFlags overrideFlags) const {
+    SkASSERT(overrideFlags == ProgramDescOverrideFlags::kNone);
     GrProgramDesc desc;
-    if (!GrProgramDesc::Build(&desc, rt, programInfo, *this)) {
-        SkASSERT(!desc.isValid());
-        return desc;
-    }
+    GrProgramDesc::Build(&desc, programInfo, *this);
 
     wgpu::TextureFormat format;
     if (!programInfo.backendFormat().asDawnFormat(&format)) {
-        desc.key().reset();
+        desc.reset();
         SkASSERT(!desc.isValid());
         return desc;
     }
 
-    GrProcessorKeyBuilder b(&desc.key());
-
+    GrProcessorKeyBuilder b(desc.key());
     GrStencilSettings stencil = programInfo.nonGLStencilSettings();
     stencil.genKey(&b, true);
 
     // TODO: remove this reliance on the renderTarget
-    bool hasDepthStencil = rt->renderTargetPriv().getStencilAttachment() != nullptr;
+    bool hasDepthStencil = rt->getStencilAttachment() != nullptr;
 
     b.add32(static_cast<uint32_t>(format));
     b.add32(static_cast<int32_t>(hasDepthStencil));
     b.add32(get_blend_info_key(programInfo.pipeline()));
     b.add32(programInfo.primitiveTypeKey());
+
+    b.flush();
     return desc;
 }
 
@@ -207,7 +207,7 @@ std::vector<GrCaps::TestFormatColorTypeCombination> GrDawnCaps::getTestingCombin
     };
 
 #ifdef SK_DEBUG
-    for (auto combo : combos) {
+    for (const GrCaps::TestFormatColorTypeCombination& combo : combos) {
         SkASSERT(this->onAreColorTypeAndFormatCompatible(combo.fColorType, combo.fFormat));
     }
 #endif

@@ -7,12 +7,9 @@
 
 #include "src/gpu/mtl/GrMtlPipelineState.h"
 
-#include "include/gpu/GrContext.h"
-#include "src/gpu/GrContextPriv.h"
 #include "src/gpu/GrPipeline.h"
 #include "src/gpu/GrRenderTarget.h"
-#include "src/gpu/GrRenderTargetPriv.h"
-#include "src/gpu/GrTexturePriv.h"
+#include "src/gpu/GrTexture.h"
 #include "src/gpu/glsl/GrGLSLFragmentProcessor.h"
 #include "src/gpu/glsl/GrGLSLGeometryProcessor.h"
 #include "src/gpu/glsl/GrGLSLXferProcessor.h"
@@ -24,6 +21,8 @@
 #error This file must be compiled with Arc. Use -fobjc-arc flag
 #endif
 
+GR_NORETAIN_BEGIN
+
 GrMtlPipelineState::SamplerBindings::SamplerBindings(GrSamplerState state,
                                                      GrTexture* texture,
                                                      GrMtlGpu* gpu)
@@ -32,17 +31,16 @@ GrMtlPipelineState::SamplerBindings::SamplerBindings(GrSamplerState state,
 }
 
 GrMtlPipelineState::GrMtlPipelineState(
-        GrMtlGpu* gpu,
-        id<MTLRenderPipelineState> pipelineState,
-        MTLPixelFormat pixelFormat,
-        const GrGLSLBuiltinUniformHandles& builtinUniformHandles,
-        const UniformInfoArray& uniforms,
-        uint32_t uniformBufferSize,
-        uint32_t numSamplers,
-        std::unique_ptr<GrGLSLPrimitiveProcessor> geometryProcessor,
-        std::unique_ptr<GrGLSLXferProcessor> xferProcessor,
-        std::unique_ptr<std::unique_ptr<GrGLSLFragmentProcessor>[]> fragmentProcessors,
-        int fragmentProcessorCnt)
+            GrMtlGpu* gpu,
+            id<MTLRenderPipelineState> pipelineState,
+            MTLPixelFormat pixelFormat,
+            const GrGLSLBuiltinUniformHandles& builtinUniformHandles,
+            const UniformInfoArray& uniforms,
+            uint32_t uniformBufferSize,
+            uint32_t numSamplers,
+            std::unique_ptr<GrGLSLGeometryProcessor> geometryProcessor,
+            std::unique_ptr<GrGLSLXferProcessor> xferProcessor,
+            std::vector<std::unique_ptr<GrGLSLFragmentProcessor>> fpImpls)
         : fGpu(gpu)
         , fPipelineState(pipelineState)
         , fPixelFormat(pixelFormat)
@@ -50,8 +48,7 @@ GrMtlPipelineState::GrMtlPipelineState(
         , fNumSamplers(numSamplers)
         , fGeometryProcessor(std::move(geometryProcessor))
         , fXferProcessor(std::move(xferProcessor))
-        , fFragmentProcessors(std::move(fragmentProcessors))
-        , fFragmentProcessorCnt(fragmentProcessorCnt)
+        , fFPImpls(std::move(fpImpls))
         , fDataManager(uniforms, uniformBufferSize) {
     (void) fPixelFormat; // Suppress unused-var warning.
 }
@@ -59,15 +56,14 @@ GrMtlPipelineState::GrMtlPipelineState(
 void GrMtlPipelineState::setData(const GrRenderTarget* renderTarget,
                                  const GrProgramInfo& programInfo) {
     this->setRenderTargetState(renderTarget, programInfo.origin());
-    GrFragmentProcessor::PipelineCoordTransformRange transformRange(programInfo.pipeline());
-    fGeometryProcessor->setData(fDataManager, programInfo.primProc(), transformRange);
+    fGeometryProcessor->setData(fDataManager, programInfo.geomProc());
 
-    GrFragmentProcessor::CIter fpIter(programInfo.pipeline());
-    GrGLSLFragmentProcessor::Iter glslIter(fFragmentProcessors.get(), fFragmentProcessorCnt);
-    for (; fpIter && glslIter; ++fpIter, ++glslIter) {
-        glslIter->setData(fDataManager, *fpIter);
+    for (int i = 0; i < programInfo.pipeline().numFragmentProcessors(); ++i) {
+        auto& fp = programInfo.pipeline().getFragmentProcessor(i);
+        for (auto [fp, impl] : GrGLSLFragmentProcessor::ParallelRange(fp, *fFPImpls[i])) {
+            impl.setData(fDataManager, fp);
+        }
     }
-    SkASSERT(!fpIter && !glslIter);
 
     {
         SkIPoint offset;
@@ -79,33 +75,29 @@ void GrMtlPipelineState::setData(const GrRenderTarget* renderTarget,
     fDataManager.resetDirtyBits();
 
 #ifdef SK_DEBUG
-    if (programInfo.pipeline().isStencilEnabled()) {
-        SkASSERT(renderTarget->renderTargetPriv().getStencilAttachment());
-        SkASSERT(renderTarget->renderTargetPriv().numStencilBits() == 8);
+    if (programInfo.isStencilEnabled()) {
+        SkASSERT(renderTarget->getStencilAttachment());
+        SkASSERT(renderTarget->numStencilBits() == 8);
     }
 #endif
 
     fStencil = programInfo.nonGLStencilSettings();
 }
 
-void GrMtlPipelineState::setTextures(const GrPrimitiveProcessor& primProc,
+void GrMtlPipelineState::setTextures(const GrGeometryProcessor& geomProc,
                                      const GrPipeline& pipeline,
-                                     const GrSurfaceProxy* const primProcTextures[]) {
+                                     const GrSurfaceProxy* const geomProcTextures[]) {
     fSamplerBindings.reset();
-    for (int i = 0; i < primProc.numTextureSamplers(); ++i) {
-        SkASSERT(primProcTextures[i]->asTextureProxy());
-        const auto& sampler = primProc.textureSampler(i);
-        auto texture = static_cast<GrMtlTexture*>(primProcTextures[i]->peekTexture());
+    for (int i = 0; i < geomProc.numTextureSamplers(); ++i) {
+        SkASSERT(geomProcTextures[i]->asTextureProxy());
+        const auto& sampler = geomProc.textureSampler(i);
+        auto texture = static_cast<GrMtlTexture*>(geomProcTextures[i]->peekTexture());
         fSamplerBindings.emplace_back(sampler.samplerState(), texture, fGpu);
     }
 
-    GrFragmentProcessor::CIter fpIter(pipeline);
-    for (; fpIter; ++fpIter) {
-        for (int i = 0; i < fpIter->numTextureSamplers(); ++i) {
-            const auto& sampler = fpIter->textureSampler(i);
-            fSamplerBindings.emplace_back(sampler.samplerState(), sampler.peekTexture(), fGpu);
-        }
-    }
+    pipeline.visitTextureEffects([&](const GrTextureEffect& te) {
+        fSamplerBindings.emplace_back(te.samplerState(), te.texture(), fGpu);
+    });
 
     if (GrTextureProxy* dstTextureProxy = pipeline.dstProxyView().asTextureProxy()) {
         fSamplerBindings.emplace_back(
@@ -237,3 +229,5 @@ bool GrMtlPipelineState::doesntSampleAttachment(
     }
     return true;
 }
+
+GR_NORETAIN_END

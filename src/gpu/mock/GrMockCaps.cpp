@@ -9,11 +9,12 @@
 
 #include "src/gpu/GrProgramDesc.h"
 
-GrProgramDesc GrMockCaps::makeDesc(const GrRenderTarget* rt,
-                                   const GrProgramInfo& programInfo) const {
+GrProgramDesc GrMockCaps::makeDesc(GrRenderTarget* /* rt */,
+                                   const GrProgramInfo& programInfo,
+                                   ProgramDescOverrideFlags overrideFlags) const {
+    SkASSERT(overrideFlags == ProgramDescOverrideFlags::kNone);
     GrProgramDesc desc;
-    SkDEBUGCODE(bool result =) GrProgramDesc::Build(&desc, rt, programInfo, *this);
-    SkASSERT(result == desc.isValid());
+    GrProgramDesc::Build(&desc, programInfo, *this);
     return desc;
 }
 
@@ -76,7 +77,7 @@ std::vector<GrCaps::TestFormatColorTypeCombination> GrMockCaps::getTestingCombin
     };
 
 #ifdef SK_DEBUG
-    for (auto combo : combos) {
+    for (const GrCaps::TestFormatColorTypeCombination& combo : combos) {
         SkASSERT(this->onAreColorTypeAndFormatCompatible(combo.fColorType, combo.fFormat));
     }
 #endif

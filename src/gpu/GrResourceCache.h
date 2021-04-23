@@ -9,6 +9,7 @@
 #define GrResourceCache_DEFINED
 
 #include "include/core/SkRefCnt.h"
+#include "include/gpu/GrDirectContext.h"
 #include "include/private/GrResourceKey.h"
 #include "include/private/SkTArray.h"
 #include "include/private/SkTHash.h"
@@ -26,16 +27,16 @@ class SkString;
 class SkTraceMemoryDump;
 class GrSingleOwner;
 class GrTexture;
+class GrThreadSafeCache;
 
 struct GrTextureFreedMessage {
     GrTexture* fTexture;
-    uint32_t fOwningUniqueID;
+    GrDirectContext::DirectContextID fIntendedRecipient;
 };
 
 static inline bool SkShouldPostMessageToBus(
-        const GrTextureFreedMessage& msg, uint32_t msgBusUniqueID) {
-    // The inbox's ID is the unique ID of the owning GrContext.
-    return msgBusUniqueID == msg.fOwningUniqueID;
+        const GrTextureFreedMessage& msg, GrDirectContext::DirectContextID potentialRecipient) {
+    return potentialRecipient == msg.fIntendedRecipient;
 }
 
 /**
@@ -57,11 +58,13 @@ static inline bool SkShouldPostMessageToBus(
  */
 class GrResourceCache {
 public:
-    GrResourceCache(const GrCaps*, GrSingleOwner* owner, uint32_t contextUniqueID);
+    GrResourceCache(GrSingleOwner* owner,
+                    GrDirectContext::DirectContextID owningContextID,
+                    uint32_t familyID);
     ~GrResourceCache();
 
     // Default maximum number of bytes of gpu memory of budgeted resources in the cache.
-    static const size_t kDefaultMaxSize             = 96 * (1 << 20);
+    static const size_t kDefaultMaxSize             = 256 * (1 << 20);
 
     /** Used to access functionality needed by GrGpuResource for lifetime management. */
     class ResourceAccess;
@@ -91,7 +94,7 @@ public:
     size_t getResourceBytes() const { return fBytes; }
 
     /**
-     * Returns the number of bytes held by unlocked reosources which are available for purging.
+     * Returns the number of bytes held by unlocked resources which are available for purging.
      */
     size_t getPurgeableBytes() const { return fPurgeableBytes; }
 
@@ -238,6 +241,9 @@ public:
     void dumpMemoryStatistics(SkTraceMemoryDump* traceMemoryDump) const;
 
     void setProxyProvider(GrProxyProvider* proxyProvider) { fProxyProvider = proxyProvider; }
+    void setThreadSafeCache(GrThreadSafeCache* threadSafeCache) {
+        fThreadSafeCache = threadSafeCache;
+    }
 
 private:
     ///////////////////////////////////////////////////////////////////////////
@@ -245,7 +251,7 @@ private:
     ////
     void insertResource(GrGpuResource*);
     void removeResource(GrGpuResource*);
-    void notifyRefCntReachedZero(GrGpuResource*);
+    void notifyARefCntReachedZero(GrGpuResource*, GrGpuResource::LastRemovedRef);
     void changeUniqueKey(GrGpuResource*, const GrUniqueKey&);
     void removeUniqueKey(GrGpuResource*);
     void willRemoveScratchKey(const GrGpuResource*);
@@ -317,12 +323,16 @@ private:
         return res->cacheAccess().accessCacheIndex();
     }
 
-    typedef SkMessageBus<GrUniqueKeyInvalidatedMessage>::Inbox InvalidUniqueKeyInbox;
-    typedef SkMessageBus<GrTextureFreedMessage>::Inbox FreedTextureInbox;
+    using TextureFreedMessageBus = SkMessageBus<GrTextureFreedMessage,
+                                                GrDirectContext::DirectContextID>;
+
+    typedef SkMessageBus<GrUniqueKeyInvalidatedMessage, uint32_t>::Inbox InvalidUniqueKeyInbox;
     typedef SkTDPQueue<GrGpuResource*, CompareTimestamp, AccessResourceIndex> PurgeableQueue;
     typedef SkTDArray<GrGpuResource*> ResourceArray;
 
     GrProxyProvider*                    fProxyProvider = nullptr;
+    GrThreadSafeCache*                  fThreadSafeCache = nullptr;
+
     // Whenever a resource is added to the cache or the result of a cache lookup, fTimestamp is
     // assigned as the resource's timestamp and then incremented. fPurgeableQueue orders the
     // purgeable resources by this value, and thus is used to purge resources in LRU order.
@@ -356,24 +366,23 @@ private:
     int                                 fNumBudgetedResourcesFlushWillMakePurgeable = 0;
 
     InvalidUniqueKeyInbox               fInvalidUniqueKeyInbox;
-    FreedTextureInbox                   fFreedTextureInbox;
+    TextureFreedMessageBus::Inbox       fFreedTextureInbox;
     TexturesAwaitingUnref               fTexturesAwaitingUnref;
 
+    GrDirectContext::DirectContextID    fOwningContextID;
     uint32_t                            fContextUniqueID = SK_InvalidUniqueID;
     GrSingleOwner*                      fSingleOwner = nullptr;
 
     // This resource is allowed to be in the nonpurgeable array for the sake of validate() because
     // we're in the midst of converting it to purgeable status.
     SkDEBUGCODE(GrGpuResource*          fNewlyPurgeableResourceForValidation = nullptr;)
-
-    bool                                fPreferVRAMUseOverFlushes = false;
 };
 
 class GrResourceCache::ResourceAccess {
 private:
     ResourceAccess(GrResourceCache* cache) : fCache(cache) { }
     ResourceAccess(const ResourceAccess& that) : fCache(that.fCache) { }
-    ResourceAccess& operator=(const ResourceAccess&); // unimpl
+    ResourceAccess& operator=(const ResourceAccess&) = delete;
 
     /**
      * Insert a resource into the cache.
@@ -402,10 +411,12 @@ private:
         kRefCntReachedZero_RefNotificationFlag  = 0x2,
     };
     /**
-     * Called by GrGpuResources when they detect that their ref cnt has reached zero.
+     * Called by GrGpuResources when they detect one of their ref cnts have reached zero. This may
+     * either be the main ref or the command buffer usage ref.
      */
-    void notifyRefCntReachedZero(GrGpuResource* resource) {
-        fCache->notifyRefCntReachedZero(resource);
+    void notifyARefCntReachedZero(GrGpuResource* resource,
+                                  GrGpuResource::LastRemovedRef removedRef) {
+        fCache->notifyARefCntReachedZero(resource, removedRef);
     }
 
     /**

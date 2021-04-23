@@ -47,8 +47,9 @@ static void load_color(SkRasterPipeline_UniformColorCtx* ctx, const float rgba[]
 }
 
 void SkDraw::drawAtlas(const SkImage* atlas, const SkRSXform xform[], const SkRect textures[],
-                       const SkColor colors[], int count, SkBlendMode bmode, const SkPaint& paint) {
-    sk_sp<SkShader> atlasShader = atlas->makeShader();
+                       const SkColor colors[], int count, SkBlendMode bmode,
+                       const SkSamplingOptions& sampling, const SkPaint& paint) {
+    sk_sp<SkShader> atlasShader = atlas->makeShader(sampling);
     if (!atlasShader) {
         return;
     }
@@ -101,24 +102,25 @@ void SkDraw::drawAtlas(const SkImage* atlas, const SkRSXform xform[], const SkRe
         isOpaque = false;
     }
 
-    auto blitter = SkCreateRasterPipelineBlitter(fDst, p, pipeline, isOpaque, &alloc,
-                                                 fRC->clipShader());
-    SkPath scratchPath;
+    if (auto blitter = SkCreateRasterPipelineBlitter(fDst, p, pipeline, isOpaque, &alloc,
+                                                     fRC->clipShader())) {
+        SkPath scratchPath;
 
-    for (int i = 0; i < count; ++i) {
-        if (colors) {
-            SkColor4f c4 = SkColor4f::FromColor(colors[i]);
-            steps.apply(c4.vec());
-            load_color(uniformCtx, c4.premul().vec());
-        }
+        for (int i = 0; i < count; ++i) {
+            if (colors) {
+                SkColor4f c4 = SkColor4f::FromColor(colors[i]);
+                steps.apply(c4.vec());
+                load_color(uniformCtx, c4.premul().vec());
+            }
 
-        SkMatrix mx;
-        mx.setRSXform(xform[i]);
-        mx.preTranslate(-textures[i].fLeft, -textures[i].fTop);
-        mx.postConcat(fMatrixProvider->localToDevice());
+            SkMatrix mx;
+            mx.setRSXform(xform[i]);
+            mx.preTranslate(-textures[i].fLeft, -textures[i].fTop);
+            mx.postConcat(fMatrixProvider->localToDevice());
 
-        if (updator->update(mx, nullptr)) {
-            fill_rect(mx, *fRC, textures[i], blitter, &scratchPath);
+            if (updator->update(mx, nullptr)) {
+                fill_rect(mx, *fRC, textures[i], blitter, &scratchPath);
+            }
         }
     }
 }

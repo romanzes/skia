@@ -5,6 +5,7 @@
  * found in the LICENSE file.
  */
 
+#include "include/core/SkBitmap.h"
 #include "src/core/SkDraw.h"
 #include "src/core/SkFontPriv.h"
 #include "src/core/SkMatrixProvider.h"
@@ -112,16 +113,19 @@ void SkDraw::paintMasks(SkDrawableGlyphBuffer* drawables, const SkPaint& paint) 
 
 void SkDraw::paintPaths(SkDrawableGlyphBuffer* drawables,
                         SkScalar scale,
+                        SkPoint origin,
                         const SkPaint& paint) const {
     for (auto [variant, pos] : drawables->drawable()) {
         const SkPath* path = variant.path();
         SkMatrix m;
-        m.setScaleTranslate(scale, scale, pos.x(), pos.y());
+        SkPoint translate = origin + pos;
+        m.setScaleTranslate(scale, scale, translate.x(), translate.y());
         this->drawPath(*path, paint, &m, false);
     }
 }
 
 void SkDraw::drawGlyphRunList(const SkGlyphRunList& glyphRunList,
+                              const SkPaint& paint,
                               SkGlyphRunListPainter* glyphPainter) const {
 
     SkDEBUGCODE(this->validate();)
@@ -130,7 +134,7 @@ void SkDraw::drawGlyphRunList(const SkGlyphRunList& glyphRunList,
         return;
     }
 
-    glyphPainter->drawForBitmapDevice(glyphRunList, fMatrixProvider->localToDevice(), this);
+    glyphPainter->drawForBitmapDevice(glyphRunList, paint, fMatrixProvider->localToDevice(), this);
 }
 
 #if defined _WIN32

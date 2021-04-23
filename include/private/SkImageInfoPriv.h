@@ -74,7 +74,7 @@ static int SkColorTypeShiftPerPixel(SkColorType ct) {
 }
 
 static inline size_t SkColorTypeMinRowBytes(SkColorType ct, int width) {
-    return width * SkColorTypeBytesPerPixel(ct);
+    return (size_t)(width * SkColorTypeBytesPerPixel(ct));
 }
 
 static inline bool SkColorTypeIsValid(unsigned value) {
@@ -85,7 +85,7 @@ static inline size_t SkColorTypeComputeOffset(SkColorType ct, int x, int y, size
     if (kUnknown_SkColorType == ct) {
         return 0;
     }
-    return y * rowBytes + (x << SkColorTypeShiftPerPixel(ct));
+    return (size_t)y * rowBytes + ((size_t)x << SkColorTypeShiftPerPixel(ct));
 }
 
 static inline bool SkColorTypeIsNormalized(SkColorType ct) {
@@ -112,6 +112,46 @@ static inline bool SkColorTypeIsNormalized(SkColorType ct) {
         case kRGBA_F16_SkColorType:
         case kRGBA_F32_SkColorType:
         case kR16G16_float_SkColorType:       return false;
+    }
+    SkUNREACHABLE;
+}
+
+static inline int SkColorTypeMaxBitsPerChannel(SkColorType ct) {
+    switch (ct) {
+        case kUnknown_SkColorType:
+            return 0;
+
+        case kARGB_4444_SkColorType:
+            return 4;
+
+        case kRGB_565_SkColorType:
+            return 6;
+
+        case kAlpha_8_SkColorType:
+        case kRGBA_8888_SkColorType:
+        case kRGB_888x_SkColorType:
+        case kBGRA_8888_SkColorType:
+        case kGray_8_SkColorType:
+        case kR8G8_unorm_SkColorType:
+            return 8;
+
+        case kRGBA_1010102_SkColorType:
+        case kRGB_101010x_SkColorType:
+        case kBGRA_1010102_SkColorType:
+        case kBGR_101010x_SkColorType:
+            return 10;
+
+        case kRGBA_F16Norm_SkColorType:
+        case kA16_unorm_SkColorType:
+        case kA16_float_SkColorType:
+        case kR16G16_unorm_SkColorType:
+        case kR16G16B16A16_unorm_SkColorType:
+        case kRGBA_F16_SkColorType:
+        case kR16G16_float_SkColorType:
+            return 16;
+
+        case kRGBA_F32_SkColorType:
+            return 32;
     }
     SkUNREACHABLE;
 }

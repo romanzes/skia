@@ -8,17 +8,16 @@
 #include "src/gpu/GrOpsRenderPass.h"
 
 #include "include/core/SkRect.h"
-#include "include/gpu/GrContext.h"
 #include "src/gpu/GrCaps.h"
-#include "src/gpu/GrContextPriv.h"
-#include "src/gpu/GrFixedClip.h"
+#include "src/gpu/GrCpuBuffer.h"
+#include "src/gpu/GrDrawIndirectCommand.h"
+#include "src/gpu/GrGeometryProcessor.h"
 #include "src/gpu/GrGpu.h"
-#include "src/gpu/GrPrimitiveProcessor.h"
 #include "src/gpu/GrProgramInfo.h"
 #include "src/gpu/GrRenderTarget.h"
-#include "src/gpu/GrRenderTargetPriv.h"
+#include "src/gpu/GrScissorState.h"
 #include "src/gpu/GrSimpleMesh.h"
-#include "src/gpu/GrTexturePriv.h"
+#include "src/gpu/GrTexture.h"
 
 void GrOpsRenderPass::begin() {
     fDrawPipelineStatus = DrawPipelineStatus::kNotConfigured;
@@ -37,21 +36,22 @@ void GrOpsRenderPass::end() {
     this->resetActiveBuffers();
 }
 
-void GrOpsRenderPass::clear(const GrFixedClip& clip, const SkPMColor4f& color) {
+void GrOpsRenderPass::clear(const GrScissorState& scissor, std::array<float, 4> color) {
     SkASSERT(fRenderTarget);
     // A clear at this level will always be a true clear, so make sure clears were not supposed to
     // be redirected to draws instead
     SkASSERT(!this->gpu()->caps()->performColorClearsAsDraws());
-    SkASSERT(!clip.scissorEnabled() || !this->gpu()->caps()->performPartialClearsAsDraws());
+    SkASSERT(!scissor.enabled() || !this->gpu()->caps()->performPartialClearsAsDraws());
     fDrawPipelineStatus = DrawPipelineStatus::kNotConfigured;
-    this->onClear(clip, color);
+    this->onClear(scissor, color);
 }
 
-void GrOpsRenderPass::clearStencilClip(const GrFixedClip& clip, bool insideStencilMask) {
+void GrOpsRenderPass::clearStencilClip(const GrScissorState& scissor, bool insideStencilMask) {
     // As above, make sure the stencil clear wasn't supposed to be a draw rect with stencil settings
     SkASSERT(!this->gpu()->caps()->performStencilClearsAsDraws());
+    SkASSERT(!scissor.enabled() || !this->gpu()->caps()->performPartialClearsAsDraws());
     fDrawPipelineStatus = DrawPipelineStatus::kNotConfigured;
-    this->onClearStencilClip(clip, insideStencilMask);
+    this->onClearStencilClip(scissor, insideStencilMask);
 }
 
 void GrOpsRenderPass::executeDrawable(std::unique_ptr<SkDrawable::GpuDrawHandler> drawable) {
@@ -64,22 +64,18 @@ void GrOpsRenderPass::bindPipeline(const GrProgramInfo& programInfo, const SkRec
     // Both the 'programInfo' and this renderPass have an origin. Since they come from the same
     // place (i.e., the target renderTargetProxy) they had best agree.
     SkASSERT(programInfo.origin() == fOrigin);
-    if (programInfo.primProc().hasInstanceAttributes()) {
+    if (programInfo.geomProc().hasInstanceAttributes()) {
          SkASSERT(this->gpu()->caps()->drawInstancedSupport());
     }
     if (programInfo.pipeline().usesConservativeRaster()) {
         SkASSERT(this->gpu()->caps()->conservativeRasterSupport());
-        // Conservative raster, by default, only supports triangles. Implementations can
-        // optionally indicate that they also support points and lines, but we don't currently
-        // query or track that info.
-        SkASSERT(GrIsPrimTypeTris(programInfo.primitiveType()));
     }
     if (programInfo.pipeline().isWireframe()) {
          SkASSERT(this->gpu()->caps()->wireframeSupport());
     }
     if (this->gpu()->caps()->twoSidedStencilRefsAndMasksMustMatch() &&
-        programInfo.pipeline().isStencilEnabled()) {
-        const GrUserStencilSettings* stencil = programInfo.pipeline().getUserStencil();
+        programInfo.isStencilEnabled()) {
+        const GrUserStencilSettings* stencil = programInfo.userStencilSettings();
         if (stencil->isTwoSided(programInfo.pipeline().hasStencilClip())) {
             SkASSERT(stencil->fCCWFace.fRef == stencil->fCWFace.fRef);
             SkASSERT(stencil->fCCWFace.fTestMask == stencil->fCWFace.fTestMask);
@@ -95,7 +91,7 @@ void GrOpsRenderPass::bindPipeline(const GrProgramInfo& programInfo, const SkRec
 
     this->resetActiveBuffers();
 
-    if (programInfo.primProc().numVertexAttributes() > this->gpu()->caps()->maxVertexAttributes()) {
+    if (programInfo.geomProc().numVertexAttributes() > this->gpu()->caps()->maxVertexAttributes()) {
         fDrawPipelineStatus = DrawPipelineStatus::kFailedToBind;
         return;
     }
@@ -106,32 +102,25 @@ void GrOpsRenderPass::bindPipeline(const GrProgramInfo& programInfo, const SkRec
     }
 
 #ifdef SK_DEBUG
-    GrProcessor::CustomFeatures processorFeatures = programInfo.requestedFeatures();
-    if (GrProcessor::CustomFeatures::kSampleLocations & processorFeatures) {
-        // Verify we always have the same sample pattern key, regardless of graphics state.
-        SkASSERT(this->gpu()->findOrAssignSamplePatternKey(fRenderTarget)
-                         == fRenderTarget->renderTargetPriv().getSamplePatternKey());
-    }
     fScissorStatus = (programInfo.pipeline().isScissorTestEnabled()) ?
             DynamicStateStatus::kUninitialized : DynamicStateStatus::kDisabled;
-    bool hasTextures = (programInfo.primProc().numTextureSamplers() > 0);
+    bool hasTextures = (programInfo.geomProc().numTextureSamplers() > 0);
     if (!hasTextures) {
-        programInfo.pipeline().visitProxies([&hasTextures](GrSurfaceProxy*, GrMipMapped) {
+        programInfo.pipeline().visitProxies([&hasTextures](GrSurfaceProxy*, GrMipmapped) {
             hasTextures = true;
         });
     }
     fTextureBindingStatus = (hasTextures) ?
             DynamicStateStatus::kUninitialized : DynamicStateStatus::kDisabled;
     fHasIndexBuffer = false;
-    fInstanceBufferStatus = (programInfo.primProc().hasInstanceAttributes()) ?
+    fInstanceBufferStatus = (programInfo.geomProc().hasInstanceAttributes()) ?
             DynamicStateStatus::kUninitialized : DynamicStateStatus::kDisabled;
-    fVertexBufferStatus = (programInfo.primProc().hasVertexAttributes()) ?
+    fVertexBufferStatus = (programInfo.geomProc().hasVertexAttributes()) ?
             DynamicStateStatus::kUninitialized : DynamicStateStatus::kDisabled;
 #endif
 
     fDrawPipelineStatus = DrawPipelineStatus::kOk;
-    fXferBarrierType = programInfo.pipeline().xferBarrierType(fRenderTarget->asTexture(),
-                                                              *this->gpu()->caps());
+    fXferBarrierType = programInfo.pipeline().xferBarrierType(*this->gpu()->caps());
 }
 
 void GrOpsRenderPass::setScissorRect(const SkIRect& scissor) {
@@ -144,26 +133,25 @@ void GrOpsRenderPass::setScissorRect(const SkIRect& scissor) {
     SkDEBUGCODE(fScissorStatus = DynamicStateStatus::kConfigured);
 }
 
-void GrOpsRenderPass::bindTextures(const GrPrimitiveProcessor& primProc,
-                                   const GrSurfaceProxy* const primProcTextures[],
+void GrOpsRenderPass::bindTextures(const GrGeometryProcessor& geomProc,
+                                   const GrSurfaceProxy* const geomProcTextures[],
                                    const GrPipeline& pipeline) {
 #ifdef SK_DEBUG
-    SkASSERT((primProc.numTextureSamplers() > 0) == SkToBool(primProcTextures));
-    for (int i = 0; i < primProc.numTextureSamplers(); ++i) {
-        const auto& sampler = primProc.textureSampler(i);
-        const GrSurfaceProxy* proxy = primProcTextures[i];
+    SkASSERT((geomProc.numTextureSamplers() > 0) == SkToBool(geomProcTextures));
+    for (int i = 0; i < geomProc.numTextureSamplers(); ++i) {
+        const auto& sampler = geomProc.textureSampler(i);
+        const GrSurfaceProxy* proxy = geomProcTextures[i];
         SkASSERT(proxy);
         SkASSERT(proxy->backendFormat() == sampler.backendFormat());
         SkASSERT(proxy->backendFormat().textureType() == sampler.backendFormat().textureType());
 
         const GrTexture* tex = proxy->peekTexture();
         SkASSERT(tex);
-        if (GrSamplerState::Filter::kMipMap == sampler.samplerState().filter() &&
+        if (sampler.samplerState().mipmapped() == GrMipmapped::kYes &&
             (tex->width() != 1 || tex->height() != 1)) {
             // There are some cases where we might be given a non-mipmapped texture with a mipmap
             // filter. See skbug.com/7094.
-            SkASSERT(tex->texturePriv().mipMapped() != GrMipMapped::kYes ||
-                     !tex->texturePriv().mipMapsAreDirty());
+            SkASSERT(tex->mipmapped() != GrMipmapped::kYes || !tex->mipmapsAreDirty());
         }
     }
 #endif
@@ -176,7 +164,7 @@ void GrOpsRenderPass::bindTextures(const GrPrimitiveProcessor& primProc,
     // Don't assert on fTextureBindingStatus. onBindTextures() just turns into a no-op when there
     // aren't any textures, and it's hard to tell from the GrPipeline whether there are any. For
     // many clients it is easier to just always call this method.
-    if (!this->onBindTextures(primProc, primProcTextures, pipeline)) {
+    if (!this->onBindTextures(geomProc, geomProcTextures, pipeline)) {
         fDrawPipelineStatus = DrawPipelineStatus::kFailedToBind;
         return;
     }
@@ -184,8 +172,10 @@ void GrOpsRenderPass::bindTextures(const GrPrimitiveProcessor& primProc,
     SkDEBUGCODE(fTextureBindingStatus = DynamicStateStatus::kConfigured);
 }
 
-void GrOpsRenderPass::bindBuffers(const GrBuffer* indexBuffer, const GrBuffer* instanceBuffer,
-                                  const GrBuffer* vertexBuffer, GrPrimitiveRestart primRestart) {
+void GrOpsRenderPass::bindBuffers(sk_sp<const GrBuffer> indexBuffer,
+                                  sk_sp<const GrBuffer> instanceBuffer,
+                                  sk_sp<const GrBuffer> vertexBuffer,
+                                  GrPrimitiveRestart primRestart) {
     if (DrawPipelineStatus::kOk != fDrawPipelineStatus) {
         SkASSERT(DrawPipelineStatus::kNotConfigured != fDrawPipelineStatus);
         return;
@@ -211,7 +201,8 @@ void GrOpsRenderPass::bindBuffers(const GrBuffer* indexBuffer, const GrBuffer* i
     }
 #endif
 
-    this->onBindBuffers(indexBuffer, instanceBuffer, vertexBuffer, primRestart);
+    this->onBindBuffers(std::move(indexBuffer), std::move(instanceBuffer), std::move(vertexBuffer),
+                        primRestart);
 }
 
 bool GrOpsRenderPass::prepareToDraw() {
@@ -288,13 +279,12 @@ void GrOpsRenderPass::drawIndirect(const GrBuffer* drawIndirectBuffer, size_t bu
     if (!this->gpu()->caps()->nativeDrawIndirectSupport()) {
         // Polyfill indirect draws with looping instanced calls.
         SkASSERT(drawIndirectBuffer->isCpuBuffer());
-        auto cpuIndirectBuffer = static_cast<const GrCpuBuffer*>(drawIndirectBuffer);
-        auto cmd = reinterpret_cast<const GrDrawIndirectCommand*>(
+        auto* cpuIndirectBuffer = static_cast<const GrCpuBuffer*>(drawIndirectBuffer);
+        auto* cmds = reinterpret_cast<const GrDrawIndirectCommand*>(
                 cpuIndirectBuffer->data() + bufferOffset);
-        auto end = cmd + drawCount;
-        for (; cmd != end; ++cmd) {
-            this->onDrawInstanced(cmd->fInstanceCount, cmd->fBaseInstance, cmd->fVertexCount,
-                                  cmd->fBaseVertex);
+        for (int i = 0; i < drawCount; ++i) {
+            auto [vertexCount, instanceCount, baseVertex, baseInstance] = cmds[i];
+            this->onDrawInstanced(instanceCount, baseInstance, vertexCount, baseVertex);
         }
         return;
     }
@@ -316,13 +306,13 @@ void GrOpsRenderPass::drawIndexedIndirect(const GrBuffer* drawIndirectBuffer, si
         this->gpu()->caps()->nativeDrawIndexedIndirectIsBroken()) {
         // Polyfill indexedIndirect draws with looping indexedInstanced calls.
         SkASSERT(drawIndirectBuffer->isCpuBuffer());
-        auto cpuIndirectBuffer = static_cast<const GrCpuBuffer*>(drawIndirectBuffer);
-        auto cmd = reinterpret_cast<const GrDrawIndexedIndirectCommand*>(
+        auto* cpuIndirectBuffer = static_cast<const GrCpuBuffer*>(drawIndirectBuffer);
+        auto* cmds = reinterpret_cast<const GrDrawIndexedIndirectCommand*>(
                 cpuIndirectBuffer->data() + bufferOffset);
-        auto end = cmd + drawCount;
-        for (; cmd != end; ++cmd) {
-            this->onDrawIndexedInstanced(cmd->fIndexCount, cmd->fBaseIndex, cmd->fInstanceCount,
-                                         cmd->fBaseInstance, cmd->fBaseVertex);
+        for (int i = 0; i < drawCount; ++i) {
+            auto [indexCount, instanceCount, baseIndex, baseVertex, baseInstance] = cmds[i];
+            this->onDrawIndexedInstanced(indexCount, baseIndex, instanceCount, baseInstance,
+                                         baseVertex);
         }
         return;
     }
