@@ -61,8 +61,8 @@ public:
 
     /**
      * A helper that uses findOrCreateProxyByUniqueKey() to find a proxy and if found creates a view
-     *a view for the found proxy using the passed in origin and color type. It is assumed that if
-     * the proxy is renderable then it was created by GrRenderTargetContext::MakeWithFallback and
+     * a view for the found proxy using the passed in origin and color type. It is assumed that if
+     * the proxy is renderable then it was created by GrSurfaceDrawContext::MakeWithFallback and
      * the fallback color type will be used to create the view.
      */
     GrSurfaceProxyView findCachedProxyWithColorTypeFallback(const GrUniqueKey&,
@@ -75,7 +75,7 @@ public:
      * The bitmap is uploaded to the texture proxy assuming a kTopLeft_GrSurfaceOrigin.
      */
     sk_sp<GrTextureProxy> createProxyFromBitmap(const SkBitmap&,
-                                                GrMipMapped,
+                                                GrMipmapped,
                                                 SkBackingFit,
                                                 SkBudgeted);
 
@@ -86,7 +86,7 @@ public:
                                       SkISize dimensions,
                                       GrRenderable,
                                       int renderTargetSampleCnt,
-                                      GrMipMapped,
+                                      GrMipmapped,
                                       SkBackingFit,
                                       SkBudgeted,
                                       GrProtected,
@@ -98,7 +98,7 @@ public:
      */
     sk_sp<GrTextureProxy> createCompressedTextureProxy(SkISize dimensions,
                                                        SkBudgeted,
-                                                       GrMipMapped,
+                                                       GrMipmapped,
                                                        GrProtected,
                                                        SkImage::CompressionType,
                                                        sk_sp<SkData> data);
@@ -137,11 +137,6 @@ public:
     sk_sp<GrSurfaceProxy> wrapBackendRenderTarget(const GrBackendRenderTarget&,
                                                   sk_sp<GrRefCntedCallback> releaseHelper);
 
-    /*
-     * Create a render target proxy that wraps a backend texture
-     */
-    sk_sp<GrSurfaceProxy> wrapBackendTextureAsRenderTarget(const GrBackendTexture&, int sampleCnt);
-
     sk_sp<GrRenderTargetProxy> wrapVulkanSecondaryCBAsRenderTarget(const SkImageInfo&,
                                                                    const GrVkDrawableInfo&);
 
@@ -151,15 +146,25 @@ public:
     using LazyInstantiateCallback = GrSurfaceProxy::LazyInstantiateCallback;
 
     struct TextureInfo {
-        GrMipMapped fMipMapped;
+        GrMipmapped fMipmapped;
         GrTextureType fTextureType;
     };
 
     /**
+     * Similar to createLazyProxy below, except narrowed to the use case of shared promise images
+     * i.e. static so it doesn't have access to mutable state. Used by MakePromiseImageLazyProxy().
+     */
+    static sk_sp<GrTextureProxy> CreatePromiseProxy(GrContextThreadSafeProxy*,
+                                                    LazyInstantiateCallback&&,
+                                                    const GrBackendFormat&,
+                                                    SkISize dimensions,
+                                                    GrMipmapped);
+
+    /**
      * Creates a texture proxy that will be instantiated by a user-supplied callback during flush.
-     * (Stencil is not supported by this method.) The width and height must either both be greater
-     * than 0 or both less than or equal to zero. A non-positive value is a signal that the width
-     * and height are currently unknown.
+     * The width and height must either both be greater than 0 or both less than or equal to zero. A
+     * non-positive value is a signal that the width height are currently unknown. The texture will
+     * not be renderable.
      *
      * When called, the callback must be able to cleanup any resources that it captured at creation.
      * It also must support being passed in a null GrResourceProvider. When this happens, the
@@ -168,10 +173,8 @@ public:
     sk_sp<GrTextureProxy> createLazyProxy(LazyInstantiateCallback&&,
                                           const GrBackendFormat&,
                                           SkISize dimensions,
-                                          GrRenderable,
-                                          int renderTargetSampleCnt,
-                                          GrMipMapped,
-                                          GrMipMapsStatus,
+                                          GrMipmapped,
+                                          GrMipmapStatus,
                                           GrInternalSurfaceFlags,
                                           SkBackingFit,
                                           SkBudgeted,
@@ -185,7 +188,7 @@ public:
                                                            int renderTargetSampleCnt,
                                                            GrInternalSurfaceFlags,
                                                            const TextureInfo*,
-                                                           GrMipMapsStatus,
+                                                           GrMipmapStatus,
                                                            SkBackingFit,
                                                            SkBudgeted,
                                                            GrProtected,

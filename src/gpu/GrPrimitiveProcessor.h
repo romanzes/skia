@@ -14,8 +14,6 @@
 #include "src/gpu/GrShaderVar.h"
 #include "src/gpu/GrSwizzle.h"
 
-class GrCoordTransform;
-
 /*
  * The GrPrimitiveProcessor represents some kind of geometric primitive.  This includes the shape
  * of the primitive and the inherent color of the primitive.  The GrPrimitiveProcessor is
@@ -125,6 +123,9 @@ public:
     public:
         Iter begin() const { return Iter(fAttributes, fCount); }
         Iter end() const { return Iter(); }
+
+        int count() const { return fCount; }
+        size_t stride() const { return fStride; }
 
     private:
         friend class GrPrimitiveProcessor;
@@ -266,7 +267,7 @@ private:
     AttributeSet fInstanceAttributes;
 
     int fTextureSamplerCnt = 0;
-    typedef GrProcessor INHERITED;
+    using INHERITED = GrProcessor;
 };
 
 //////////////////////////////////////////////////////////////////////////////

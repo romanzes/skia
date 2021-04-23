@@ -7,8 +7,9 @@
 
 #include "src/gpu/vk/GrVkUtil.h"
 
-#include "src/gpu/GrContextPriv.h"
+#include "include/gpu/GrDirectContext.h"
 #include "src/gpu/GrDataUtils.h"
+#include "src/gpu/GrDirectContextPriv.h"
 #include "src/gpu/vk/GrVkGpu.h"
 #include "src/sksl/SkSLCompiler.h"
 
@@ -36,6 +37,9 @@ bool GrVkFormatIsSupported(VkFormat format) {
         case VK_FORMAT_G8_B8R8_2PLANE_420_UNORM:
         case VK_FORMAT_R16G16B16A16_UNORM:
         case VK_FORMAT_R16G16_SFLOAT:
+        case VK_FORMAT_S8_UINT:
+        case VK_FORMAT_D24_UNORM_S8_UINT:
+        case VK_FORMAT_D32_SFLOAT_S8_UINT:
             return true;
         default:
             return false;
@@ -70,15 +74,15 @@ bool GrSampleCountToVkSampleCount(uint32_t samples, VkSampleCountFlagBits* vkSam
     }
 }
 
-SkSL::Program::Kind vk_shader_stage_to_skiasl_kind(VkShaderStageFlagBits stage) {
+SkSL::ProgramKind vk_shader_stage_to_skiasl_kind(VkShaderStageFlagBits stage) {
     if (VK_SHADER_STAGE_VERTEX_BIT == stage) {
-        return SkSL::Program::kVertex_Kind;
+        return SkSL::ProgramKind::kVertex;
     }
     if (VK_SHADER_STAGE_GEOMETRY_BIT == stage) {
-        return SkSL::Program::kGeometry_Kind;
+        return SkSL::ProgramKind::kGeometry;
     }
     SkASSERT(VK_SHADER_STAGE_FRAGMENT_BIT == stage);
-    return SkSL::Program::kFragment_Kind;
+    return SkSL::ProgramKind::kFragment;
 }
 
 bool GrCompileVkShaderModule(GrVkGpu* gpu,
@@ -150,4 +154,3 @@ bool GrVkFormatIsCompressed(VkFormat vkFormat) {
     }
     SkUNREACHABLE;
 }
-

@@ -50,7 +50,8 @@ struct OpszVariation {
 };
 
 struct CTFontVariation {
-    SkUniqueCFRef<CFDictionaryRef> dict;
+    SkUniqueCFRef<CFDictionaryRef> variation;
+    SkUniqueCFRef<CFDictionaryRef> wrongOpszVariation;
     OpszVariation opsz;
 };
 
@@ -93,16 +94,16 @@ public:
 protected:
     int onGetUPEM() const override;
     std::unique_ptr<SkStreamAsset> onOpenStream(int* ttcIndex) const override;
-    std::unique_ptr<SkFontData> onMakeFontData() const override;
     int onGetVariationDesignPosition(SkFontArguments::VariationPosition::Coordinate coordinates[],
                                      int coordinateCount) const override;
     void onGetFamilyName(SkString* familyName) const override;
+    bool onGetPostScriptName(SkString*) const override;
     SkTypeface::LocalizedStrings* onCreateFamilyNameIterator() const override;
     int onGetTableTags(SkFontTableTag tags[]) const override;
     size_t onGetTableData(SkFontTableTag, size_t offset, size_t length, void* data) const override;
     sk_sp<SkData> onCopyTableData(SkFontTableTag) const override;
-    SkScalerContext* onCreateScalerContext(const SkScalerContextEffects&,
-                                           const SkDescriptor*) const override;
+    std::unique_ptr<SkScalerContext> onCreateScalerContext(const SkScalerContextEffects&,
+                                                           const SkDescriptor*) const override;
     void onFilterRec(SkScalerContextRec*) const override;
     void onGetFontDescriptor(SkFontDescriptor*, bool*) const override;
     void getGlyphToUnicodeMap(SkUnichar*) const override;
@@ -121,7 +122,7 @@ private:
     bool fIsFromStream;
     mutable SkOnce fInitStream;
 
-    typedef SkTypeface INHERITED;
+    using INHERITED = SkTypeface;
 };
 
 #endif

@@ -282,7 +282,7 @@ GrGLVendor GrGLGetVendorFromString(const char* vendorString) {
         if (0 == strncmp(vendorString, "Intel ", 6) || 0 == strcmp(vendorString, "Intel")) {
             return kIntel_GrGLVendor;
         }
-        if (0 == strcmp(vendorString, "Qualcomm")) {
+        if (0 == strcmp(vendorString, "Qualcomm") || 0 == strcmp(vendorString, "freedreno")) {
             return kQualcomm_GrGLVendor;
         }
         if (0 == strcmp(vendorString, "NVIDIA Corporation")) {
@@ -341,6 +341,10 @@ GrGLRenderer GrGLGetRendererFromStrings(const char* rendererString,
         }
         int adrenoNumber;
         n = sscanf(rendererString, "Adreno (TM) %d", &adrenoNumber);
+        if (n < 1) {
+            // retry with freedreno driver
+            n = sscanf(rendererString, "FD%d", &adrenoNumber);
+        }
         if (1 == n) {
             if (adrenoNumber >= 300) {
                 if (adrenoNumber < 400) {
@@ -351,7 +355,8 @@ GrGLRenderer GrGLGetRendererFromStrings(const char* rendererString,
                             ? kAdreno430_GrGLRenderer : kAdreno4xx_other_GrGLRenderer;
                 }
                 if (adrenoNumber < 600) {
-                    return kAdreno5xx_GrGLRenderer;
+                    return adrenoNumber == 530 ? kAdreno530_GrGLRenderer
+                                               : kAdreno5xx_other_GrGLRenderer;
                 }
                 if (adrenoNumber == 615) {
                     return kAdreno615_GrGLRenderer;
@@ -625,6 +630,7 @@ bool GrGLFormatIsCompressed(GrGLFormat format) {
         case GrGLFormat::kR8:
         case GrGLFormat::kALPHA8:
         case GrGLFormat::kLUMINANCE8:
+        case GrGLFormat::kLUMINANCE8_ALPHA8:
         case GrGLFormat::kBGRA8:
         case GrGLFormat::kRGB565:
         case GrGLFormat::kRGBA16F:
@@ -639,6 +645,9 @@ bool GrGLFormatIsCompressed(GrGLFormat format) {
         case GrGLFormat::kRG16:
         case GrGLFormat::kRGBA16:
         case GrGLFormat::kRG16F:
+        case GrGLFormat::kSTENCIL_INDEX8:
+        case GrGLFormat::kSTENCIL_INDEX16:
+        case GrGLFormat::kDEPTH24_STENCIL8:
         case GrGLFormat::kUnknown:
             return false;
     }

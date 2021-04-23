@@ -11,6 +11,7 @@
 #include "include/core/SkPictureRecorder.h"
 #include "include/core/SkShader.h"
 #include "include/effects/SkGradientShader.h"
+#include "include/private/SkTPin.h"
 #include "modules/skottie/src/Adapter.h"
 #include "modules/skottie/src/SkottieValue.h"
 #include "modules/sksg/include/SkSGRenderNode.h"
@@ -78,9 +79,8 @@ protected:
                                             tile_size.width(),
                                             tile_size.height());
 
-        const auto layerShaderMatrix = SkMatrix::MakeRectToRect(
-                    SkRect::MakeWH(fLayerSize.width(), fLayerSize.height()),
-                    tile, SkMatrix::kFill_ScaleToFit);
+        const auto layerShaderMatrix = SkMatrix::RectToRect(
+                    SkRect::MakeWH(fLayerSize.width(), fLayerSize.height()), tile);
 
         const auto tm = fMirrorEdges ? SkTileMode::kMirror : SkTileMode::kRepeat;
         auto layer_shader = fLayerPicture->makeShader(tm, tm, &layerShaderMatrix);
@@ -223,7 +223,7 @@ private:
     using INHERITED = DiscardableAdapterBase<MotionTileAdapter, TileRenderNode>;
 };
 
-} // anonymous ns
+}  // namespace
 
 sk_sp<sksg::RenderNode> EffectBuilder::attachMotionTileEffect(const skjson::ArrayValue& jprops,
                                                               sk_sp<sksg::RenderNode> layer) const {

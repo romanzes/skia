@@ -205,7 +205,10 @@ bool GrGLInterface::validate() const {
         // all functions were marked optional or test_only
     }
 
-    if (GR_IS_GR_GL(fStandard) ||
+    if ((GR_IS_GR_GL(fStandard) && (
+          (glVer >= GR_GL_VER(3,0)) ||
+          fExtensions.has("GL_ARB_vertex_array_object") ||
+          fExtensions.has("GL_APPLE_vertex_array_object"))) ||
        (GR_IS_GR_GL_ES(fStandard) && (
           (glVer >= GR_GL_VER(3,0)) ||
           fExtensions.has("GL_OES_vertex_array_object"))) ||
@@ -226,7 +229,9 @@ bool GrGLInterface::validate() const {
        (GR_IS_GR_GL_ES(fStandard) && (
           (glVer >= GR_GL_VER(3,2)) ||
           fExtensions.has("GL_OES_tessellation_shader")))) {
-        // all functions were marked optional or test_only
+        if (!fFunctions.fPatchParameteri) {
+            RETURN_FALSE_INTERFACE;
+        }
     }
 
     if ((GR_IS_GR_GL(fStandard) && (
@@ -287,7 +292,9 @@ bool GrGLInterface::validate() const {
           fExtensions.has("GL_ARB_base_instance"))) ||
        (GR_IS_GR_GL_ES(fStandard) && (
           fExtensions.has("GL_EXT_base_instance") ||
-          fExtensions.has("GL_ANGLE_base_vertex_base_instance")))) {
+          fExtensions.has("GL_ANGLE_base_vertex_base_instance"))) ||
+       (GR_IS_GR_WEBGL(fStandard) && (
+          fExtensions.has("GL_WEBGL_draw_instanced_base_vertex_base_instance")))) {
         if (!fFunctions.fDrawArraysInstancedBaseInstance ||
             !fFunctions.fDrawElementsInstancedBaseVertexBaseInstance) {
             RETURN_FALSE_INTERFACE;
@@ -312,6 +319,16 @@ bool GrGLInterface::validate() const {
           (glVer >= GR_GL_VER(3,1))))) {
         if (!fFunctions.fDrawArraysIndirect ||
             !fFunctions.fDrawElementsIndirect) {
+            RETURN_FALSE_INTERFACE;
+        }
+    }
+
+    if ((GR_IS_GR_GL_ES(fStandard) && (
+          fExtensions.has("GL_ANGLE_base_vertex_base_instance"))) ||
+       (GR_IS_GR_WEBGL(fStandard) && (
+          fExtensions.has("GL_WEBGL_multi_draw_instanced_base_vertex_base_instance")))) {
+        if (!fFunctions.fMultiDrawArraysInstancedBaseInstance ||
+            !fFunctions.fMultiDrawElementsInstancedBaseVertexBaseInstance) {
             RETURN_FALSE_INTERFACE;
         }
     }

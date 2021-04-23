@@ -8,6 +8,7 @@
 #include "include/core/SkString.h"
 #include "include/core/SkTypes.h"
 #include "src/core/SkGeometry.h"
+#include "src/core/SkMatrixPriv.h"
 #include "src/core/SkPathPriv.h"
 #include "src/core/SkPointPriv.h"
 #include "src/gpu/GrAuditTrail.h"
@@ -16,7 +17,7 @@
 #include "src/gpu/GrGeometryProcessor.h"
 #include "src/gpu/GrProcessor.h"
 #include "src/gpu/GrProgramInfo.h"
-#include "src/gpu/GrRenderTargetContext.h"
+#include "src/gpu/GrSurfaceDrawContext.h"
 #include "src/gpu/GrVertexWriter.h"
 #include "src/gpu/geometry/GrPathUtils.h"
 #include "src/gpu/geometry/GrStyledShape.h"
@@ -116,7 +117,7 @@ static bool center_of_mass(const SegmentArray& segments, SkPoint* c) {
 
 static bool compute_vectors(SegmentArray* segments,
                             SkPoint* fanPt,
-                            SkPathPriv::FirstDirection dir,
+                            SkPathFirstDirection dir,
                             int* vCount,
                             int* iCount) {
     if (!center_of_mass(*segments, fanPt)) {
@@ -126,7 +127,7 @@ static bool compute_vectors(SegmentArray* segments,
 
     // Make the normals point towards the outside
     SkPointPriv::Side normSide;
-    if (dir == SkPathPriv::kCCW_FirstDirection) {
+    if (dir == SkPathFirstDirection::kCCW) {
         normSide = SkPointPriv::kRight_Side;
     } else {
         normSide = SkPointPriv::kLeft_Side;
@@ -222,12 +223,13 @@ static void update_degenerate_test(DegenerateTestData* data, const SkPoint& pt) 
 }
 
 static inline bool get_direction(const SkPath& path, const SkMatrix& m,
-                                 SkPathPriv::FirstDirection* dir) {
+                                 SkPathFirstDirection* dir) {
     // At this point, we've already returned true from canDraw(), which checked that the path's
     // direction could be determined, so this should just be fetching the cached direction.
     // However, if perspective is involved, we're operating on a transformed path, which may no
     // longer have a computable direction.
-    if (!SkPathPriv::CheapComputeFirstDirection(path, dir)) {
+    *dir = SkPathPriv::ComputeFirstDirection(path);
+    if (*dir == SkPathFirstDirection::kUnknown) {
         return false;
     }
 
@@ -264,7 +266,7 @@ static inline void add_quad_segment(const SkPoint pts[3],
 }
 
 static inline void add_cubic_segments(const SkPoint pts[4],
-                                      SkPathPriv::FirstDirection dir,
+                                      SkPathFirstDirection dir,
                                       SegmentArray* segments) {
     SkSTArray<15, SkPoint, true> quads;
     GrPathUtils::convertCubicToQuadsConstrainToTangents(pts, SK_Scalar1, dir, &quads);
@@ -289,7 +291,7 @@ static bool get_segments(const SkPath& path,
     // line paths. We detect paths that are very close to a line (zero area) and
     // draw nothing.
     DegenerateTestData degenerateData;
-    SkPathPriv::FirstDirection dir;
+    SkPathFirstDirection dir;
     if (!get_direction(path, m, &dir)) {
         return false;
     }
@@ -373,7 +375,6 @@ static void create_vertices(const SegmentArray& segments,
     // alias just to make vert/index assignments easier to read.
     int* v = &draw->fVertexCnt;
     int* i = &draw->fIndexCnt;
-    const size_t uvOffset = sizeof(SkPoint) + color.size();
 
     int count = segments.count();
     for (int a = 0; a < count; ++a) {
@@ -452,52 +453,57 @@ static void create_vertices(const SegmentArray& segments,
 
             *v += 5;
         } else {
-            void* quadVertsBegin = verts.fPtr;
-
             SkPoint qpts[] = {sega.endPt(), segb.fPts[0], segb.fPts[1]};
 
             SkScalar c0 = segb.fNorms[0].dot(qpts[0]);
             SkScalar c1 = segb.fNorms[1].dot(qpts[2]);
-            GrVertexWriter::Skip<SkPoint> skipUVs;
 
-            verts.write(fanPt,
-                        color, skipUVs,
+            // We must transform the positions into UV in cpu memory and then copy them to the gpu
+            // buffer. If we write the position first into the gpu buffer then calculate the UVs, it
+            // will cause us to read from the GPU buffer which can be very slow.
+            struct PosAndUV {
+                SkPoint fPos;
+                SkPoint fUV;
+            };
+            PosAndUV posAndUVPoints[6];
+            posAndUVPoints[0].fPos = fanPt;
+            posAndUVPoints[1].fPos = qpts[0];
+            posAndUVPoints[2].fPos = qpts[2];
+            posAndUVPoints[3].fPos = qpts[0] + segb.fNorms[0];
+            posAndUVPoints[4].fPos = qpts[2] + segb.fNorms[1];
+            SkVector midVec = segb.fNorms[0] + segb.fNorms[1];
+            midVec.normalize();
+            posAndUVPoints[5].fPos = qpts[1] + midVec;
+
+            GrPathUtils::QuadUVMatrix toUV(qpts);
+            toUV.apply(posAndUVPoints, 6, sizeof(PosAndUV), sizeof(SkPoint));
+
+            verts.write(posAndUVPoints[0].fPos, color, posAndUVPoints[0].fUV,
                         -segb.fNorms[0].dot(fanPt) + c0,
                         -segb.fNorms[1].dot(fanPt) + c1);
 
-            verts.write(qpts[0],
-                        color, skipUVs,
+            verts.write(posAndUVPoints[1].fPos, color, posAndUVPoints[1].fUV,
                         0.0f,
                         -segb.fNorms[1].dot(qpts[0]) + c1);
 
-            verts.write(qpts[2],
-                        color, skipUVs,
+            verts.write(posAndUVPoints[2].fPos, color, posAndUVPoints[2].fUV,
                         -segb.fNorms[0].dot(qpts[2]) + c0,
                         0.0f);
             // We need a negative value that is very large that it won't effect results if it is
             // interpolated with. However, the value can't be too large of a negative that it
             // effects numerical precision on less powerful GPUs.
             static const SkScalar kStableLargeNegativeValue = -SK_ScalarMax/1000000;
-            verts.write(qpts[0] + segb.fNorms[0],
-                        color, skipUVs,
+            verts.write(posAndUVPoints[3].fPos, color, posAndUVPoints[3].fUV,
                         kStableLargeNegativeValue,
                         kStableLargeNegativeValue);
 
-            verts.write(qpts[2] + segb.fNorms[1],
-                        color, skipUVs,
+            verts.write(posAndUVPoints[4].fPos, color, posAndUVPoints[4].fUV,
                         kStableLargeNegativeValue,
                         kStableLargeNegativeValue);
 
-            SkVector midVec = segb.fNorms[0] + segb.fNorms[1];
-            midVec.normalize();
-
-            verts.write(qpts[1] + midVec,
-                        color, skipUVs,
+            verts.write(posAndUVPoints[5].fPos, color, posAndUVPoints[5].fUV,
                         kStableLargeNegativeValue,
                         kStableLargeNegativeValue);
-
-            GrPathUtils::QuadUVMatrix toUV(qpts);
-            toUV.apply(quadVertsBegin, 6, vertexStride, uvOffset);
 
             idxs[*i + 0] = *v + 3;
             idxs[*i + 1] = *v + 1;
@@ -546,7 +552,9 @@ public:
                                      const SkMatrix& localMatrix,
                                      bool usesLocalCoords,
                                      bool wideColor) {
-        return arena->make<QuadEdgeEffect>(localMatrix, usesLocalCoords, wideColor);
+        return arena->make([&](void* ptr) {
+            return new (ptr) QuadEdgeEffect(localMatrix, usesLocalCoords, wideColor);
+        });
     }
 
     ~QuadEdgeEffect() override {}
@@ -566,7 +574,9 @@ public:
             // emit attributes
             varyingHandler->emitAttributes(qe);
 
-            GrGLSLVarying v(kHalf4_GrSLType);
+            // GL on iOS 14 needs more precision for the quadedge attributes
+            // We might as well enable it everywhere
+            GrGLSLVarying v(kFloat4_GrSLType);
             varyingHandler->addVarying("QuadEdge", &v);
             vertBuilder->codeAppendf("%s = %s;", v.vsOut(), qe.fInQuadEdge.name());
 
@@ -590,13 +600,13 @@ public:
             fragBuilder->codeAppendf("half2 duvdy = half2(dFdy(%s.xy));", v.fsIn());
             fragBuilder->codeAppendf("if (%s.z > 0.0 && %s.w > 0.0) {", v.fsIn(), v.fsIn());
             // today we know z and w are in device space. We could use derivatives
-            fragBuilder->codeAppendf("edgeAlpha = min(min(%s.z, %s.w) + 0.5, 1.0);", v.fsIn(),
+            fragBuilder->codeAppendf("edgeAlpha = half(min(min(%s.z, %s.w) + 0.5, 1.0));", v.fsIn(),
                                      v.fsIn());
             fragBuilder->codeAppendf ("} else {");
-            fragBuilder->codeAppendf("half2 gF = half2(2.0*%s.x*duvdx.x - duvdx.y,"
-                                     "               2.0*%s.x*duvdy.x - duvdy.y);",
+            fragBuilder->codeAppendf("half2 gF = half2(half(2.0*%s.x*duvdx.x - duvdx.y),"
+                                     "                 half(2.0*%s.x*duvdy.x - duvdy.y));",
                                      v.fsIn(), v.fsIn());
-            fragBuilder->codeAppendf("edgeAlpha = (%s.x*%s.x - %s.y);", v.fsIn(), v.fsIn(),
+            fragBuilder->codeAppendf("edgeAlpha = half(%s.x*%s.x - %s.y);", v.fsIn(), v.fsIn(),
                                      v.fsIn());
             fragBuilder->codeAppendf("edgeAlpha = "
                                      "saturate(0.5 - edgeAlpha / length(gF));}");
@@ -614,15 +624,13 @@ public:
         }
 
         void setData(const GrGLSLProgramDataManager& pdman,
-                     const GrPrimitiveProcessor& gp,
-                     const CoordTransformRange& transformRange) override {
+                     const GrPrimitiveProcessor& gp) override {
             const QuadEdgeEffect& qe = gp.cast<QuadEdgeEffect>();
-            this->setTransformDataHelper(pdman, transformRange);
             this->setTransform(pdman, fLocalMatrixUniform, qe.fLocalMatrix, &fLocalMatrix);
         }
 
     private:
-        typedef GrGLSLGeometryProcessor INHERITED;
+        using INHERITED = GrGLSLGeometryProcessor;
 
         SkMatrix      fLocalMatrix = SkMatrix::InvalidMatrix();
         UniformHandle fLocalMatrixUniform;
@@ -637,15 +645,14 @@ public:
     }
 
 private:
-    friend class ::SkArenaAlloc; // for access to ctor
-
     QuadEdgeEffect(const SkMatrix& localMatrix, bool usesLocalCoords, bool wideColor)
             : INHERITED(kQuadEdgeEffect_ClassID)
             , fLocalMatrix(localMatrix)
             , fUsesLocalCoords(usesLocalCoords) {
         fInPosition = {"inPosition", kFloat2_GrVertexAttribType, kFloat2_GrSLType};
         fInColor = MakeColorAttribute("inColor", wideColor);
-        fInQuadEdge = {"inQuadEdge", kFloat4_GrVertexAttribType, kHalf4_GrSLType};
+        // GL on iOS 14 needs more precision for the quadedge attributes
+        fInQuadEdge = {"inQuadEdge", kFloat4_GrVertexAttribType, kFloat4_GrSLType};
         this->setVertexAttributes(&fInPosition, 3);
     }
 
@@ -658,7 +665,7 @@ private:
 
     GR_DECLARE_GEOMETRY_PROCESSOR_TEST
 
-    typedef GrGeometryProcessor INHERITED;
+    using INHERITED = GrGeometryProcessor;
 };
 
 GR_DEFINE_GEOMETRY_PROCESSOR_TEST(QuadEdgeEffect);
@@ -697,19 +704,19 @@ private:
 public:
     DEFINE_OP_CLASS_ID
 
-    static std::unique_ptr<GrDrawOp> Make(GrRecordingContext* context,
-                                          GrPaint&& paint,
-                                          const SkMatrix& viewMatrix,
-                                          const SkPath& path,
-                                          const GrUserStencilSettings* stencilSettings) {
+    static GrOp::Owner Make(GrRecordingContext* context,
+                            GrPaint&& paint,
+                            const SkMatrix& viewMatrix,
+                            const SkPath& path,
+                            const GrUserStencilSettings* stencilSettings) {
         return Helper::FactoryHelper<AAConvexPathOp>(context, std::move(paint), viewMatrix, path,
                                                      stencilSettings);
     }
 
-    AAConvexPathOp(const Helper::MakeArgs& helperArgs, const SkPMColor4f& color,
+    AAConvexPathOp(GrProcessorSet* processorSet, const SkPMColor4f& color,
                    const SkMatrix& viewMatrix, const SkPath& path,
                    const GrUserStencilSettings* stencilSettings)
-            : INHERITED(ClassID()), fHelper(helperArgs, GrAAType::kCoverage, stencilSettings) {
+            : INHERITED(ClassID()), fHelper(processorSet, GrAAType::kCoverage, stencilSettings) {
         fPaths.emplace_back(PathData{viewMatrix, path, color});
         this->setTransformedBounds(path.getBounds(), viewMatrix, HasAABloat::kYes,
                                    IsHairline::kNo);
@@ -724,16 +731,6 @@ public:
             fHelper.visitProxies(func);
         }
     }
-
-#ifdef SK_DEBUG
-    SkString dumpInfo() const override {
-        SkString string;
-        string.appendf("Count: %d\n", fPaths.count());
-        string += fHelper.dumpInfo();
-        string += INHERITED::dumpInfo();
-        return string;
-    }
-#endif
 
     FixedFunctionFlags fixedFunctionFlags() const override { return fHelper.fixedFunctionFlags(); }
 
@@ -750,9 +747,11 @@ private:
 
     void onCreateProgramInfo(const GrCaps* caps,
                              SkArenaAlloc* arena,
-                             const GrSurfaceProxyView* writeView,
+                             const GrSurfaceProxyView& writeView,
                              GrAppliedClip&& appliedClip,
-                             const GrXferProcessor::DstProxyView& dstProxyView) override {
+                             const GrXferProcessor::DstProxyView& dstProxyView,
+                             GrXferBarrierFlags renderPassXferBarriers,
+                             GrLoadOp colorLoadOp) override {
         SkMatrix invert;
         if (fHelper.usesLocalCoords() && !fPaths.back().fViewMatrix.invert(&invert)) {
             return;
@@ -765,7 +764,8 @@ private:
         fProgramInfo = fHelper.createProgramInfoWithStencil(caps, arena, writeView,
                                                             std::move(appliedClip),
                                                             dstProxyView, quadProcessor,
-                                                            GrPrimitiveType::kTriangles);
+                                                            GrPrimitiveType::kTriangles,
+                                                            renderPassXferBarriers, colorLoadOp);
     }
 
     void onPrepareDraws(Target* target) override {
@@ -868,8 +868,7 @@ private:
         }
     }
 
-    CombineResult onCombineIfPossible(GrOp* t, GrRecordingContext::Arenas*,
-                                      const GrCaps& caps) override {
+    CombineResult onCombineIfPossible(GrOp* t, SkArenaAlloc*, const GrCaps& caps) override {
         AAConvexPathOp* that = t->cast<AAConvexPathOp>();
         if (!fHelper.isCompatible(that->fHelper, caps, this->bounds(), that->bounds())) {
             return CombineResult::kCannotCombine;
@@ -883,6 +882,12 @@ private:
         fWideColor |= that->fWideColor;
         return CombineResult::kMerged;
     }
+
+#if GR_TEST_UTILS
+    SkString onDumpInfo() const override {
+        return SkStringPrintf("Count: %d\n%s", fPaths.count(), fHelper.dumpInfo().c_str());
+    }
+#endif
 
     struct PathData {
         SkMatrix    fViewMatrix;
@@ -902,7 +907,7 @@ private:
     SkTDArray<MeshDraw> fDraws;
     GrProgramInfo*      fProgramInfo = nullptr;
 
-    typedef GrMeshDrawOp INHERITED;
+    using INHERITED = GrMeshDrawOp;
 };
 
 }  // anonymous namespace
@@ -916,9 +921,9 @@ bool GrAAConvexPathRenderer::onDrawPath(const DrawPathArgs& args) {
     SkPath path;
     args.fShape->asPath(&path);
 
-    std::unique_ptr<GrDrawOp> op = AAConvexPathOp::Make(args.fContext, std::move(args.fPaint),
-                                                        *args.fViewMatrix,
-                                                        path, args.fUserStencilSettings);
+    GrOp::Owner op = AAConvexPathOp::Make(args.fContext, std::move(args.fPaint),
+                                          *args.fViewMatrix,
+                                          path, args.fUserStencilSettings);
     args.fRenderTargetContext->addDrawOp(args.fClip, std::move(op));
     return true;
 }
@@ -929,7 +934,7 @@ bool GrAAConvexPathRenderer::onDrawPath(const DrawPathArgs& args) {
 
 GR_DRAW_OP_TEST_DEFINE(AAConvexPathOp) {
     SkMatrix viewMatrix = GrTest::TestMatrixInvertible(random);
-    SkPath path = GrTest::TestPathConvex(random);
+    const SkPath& path = GrTest::TestPathConvex(random);
     const GrUserStencilSettings* stencilSettings = GrGetRandomStencil(random, context);
     return AAConvexPathOp::Make(context, std::move(paint), viewMatrix, path, stencilSettings);
 }

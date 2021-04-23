@@ -362,7 +362,20 @@ void Tessellator::append(GrQuad* deviceQuad, GrQuad* localQuad,
             fWriteProc(&fVertexWriter, fVertexSpec, deviceQuad, localQuad, coverage, color,
                        geomSubset, uvSubset);
 
-            // Then outer vertices, which use 0.f for their coverage
+            // Then outer vertices, which use 0.f for their coverage. If the inset was degenerate
+            // to a line (had all coverages < 1), tweak the outset distance so the outer frame's
+            // narrow axis reaches out to 2px, which gives better animation under translation.
+            if (coverage[0] < 1.f && coverage[1] < 1.f && coverage[2] < 1.f && coverage[3] < 1.f) {
+                skvx::Vec<4, float> len = fAAHelper.getEdgeLengths();
+                // Using max guards us against trying to scale a degenerate triangle edge of 0 len
+                // up to 2px. The shuffles are so that edge 0's adjustment is based on the lengths
+                // of its connecting edges (1 and 2), and so forth.
+                skvx::Vec<4, float> maxWH = max(skvx::shuffle<1, 0, 3, 2>(len),
+                                                skvx::shuffle<2, 3, 0, 1>(len));
+                // wh + 2e' = 2, so e' = (2 - wh) / 2 => e' = e * (2 - wh). But if w or h > 1, then
+                // 2 - wh < 1 and represents the non-narrow axis so clamp to 1.
+                edgeDistances *= max(1.f, 2.f - maxWH);
+            }
             fAAHelper.outset(edgeDistances, deviceQuad, localQuad);
             fWriteProc(&fVertexWriter, fVertexSpec, deviceQuad, localQuad, kZeroCoverage, color,
                        geomSubset, uvSubset);
@@ -520,7 +533,9 @@ public:
     using Saturate = GrTextureOp::Saturate;
 
     static GrGeometryProcessor* Make(SkArenaAlloc* arena, const VertexSpec& spec) {
-        return arena->make<QuadPerEdgeAAGeometryProcessor>(spec);
+        return arena->make([&](void* ptr) {
+            return new (ptr) QuadPerEdgeAAGeometryProcessor(spec);
+        });
     }
 
     static GrGeometryProcessor* Make(SkArenaAlloc* arena,
@@ -531,9 +546,11 @@ public:
                                      const GrSwizzle& swizzle,
                                      sk_sp<GrColorSpaceXform> textureColorSpaceXform,
                                      Saturate saturate) {
-        return arena->make<QuadPerEdgeAAGeometryProcessor>(
-                vertexSpec, caps, backendFormat, samplerState, swizzle,
-                std::move(textureColorSpaceXform), saturate);
+        return arena->make([&](void* ptr) {
+            return new (ptr) QuadPerEdgeAAGeometryProcessor(
+                    vertexSpec, caps, backendFormat, samplerState, swizzle,
+                    std::move(textureColorSpaceXform), saturate);
+        });
     }
 
     const char* name() const override { return "QuadPerEdgeAAGeometryProcessor"; }
@@ -568,10 +585,9 @@ public:
     GrGLSLPrimitiveProcessor* createGLSLInstance(const GrShaderCaps& caps) const override {
         class GLSLProcessor : public GrGLSLGeometryProcessor {
         public:
-            void setData(const GrGLSLProgramDataManager& pdman, const GrPrimitiveProcessor& proc,
-                         const CoordTransformRange& transformRange) override {
+            void setData(const GrGLSLProgramDataManager& pdman,
+                         const GrPrimitiveProcessor& proc) override {
                 const auto& gp = proc.cast<QuadPerEdgeAAGeometryProcessor>();
-                this->setTransformDataHelper(pdman, transformRange);
                 fTextureColorSpaceXformHelper.setData(pdman, gp.fTextureColorSpaceXform.get());
             }
 
@@ -714,8 +730,6 @@ public:
     }
 
 private:
-    friend class ::SkArenaAlloc; // for access to ctor
-
     QuadPerEdgeAAGeometryProcessor(const VertexSpec& spec)
             : INHERITED(kQuadPerEdgeAAGeometryProcessor_ClassID)
             , fTextureColorSpaceXform(nullptr) {
@@ -805,7 +819,7 @@ private:
     sk_sp<GrColorSpaceXform> fTextureColorSpaceXform;
     TextureSampler fSampler;
 
-    typedef GrGeometryProcessor INHERITED;
+    using INHERITED = GrGeometryProcessor;
 };
 
 GrGeometryProcessor* MakeProcessor(SkArenaAlloc* arena, const VertexSpec& spec) {

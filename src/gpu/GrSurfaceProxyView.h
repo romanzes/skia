@@ -20,11 +20,11 @@ public:
     GrSurfaceProxyView() = default;
 
     GrSurfaceProxyView(sk_sp<GrSurfaceProxy> proxy, GrSurfaceOrigin origin, GrSwizzle swizzle)
-            : fProxy(proxy), fOrigin(origin), fSwizzle(swizzle) {}
+            : fProxy(std::move(proxy)), fOrigin(origin), fSwizzle(swizzle) {}
 
     // This entry point is used when we don't care about the origin or the swizzle.
     explicit GrSurfaceProxyView(sk_sp<GrSurfaceProxy> proxy)
-            : fProxy(proxy), fOrigin(kTopLeft_GrSurfaceOrigin) {}
+            : fProxy(std::move(proxy)), fOrigin(kTopLeft_GrSurfaceOrigin) {}
 
     GrSurfaceProxyView(GrSurfaceProxyView&& view) = default;
     GrSurfaceProxyView(const GrSurfaceProxyView&) = default;
@@ -72,6 +72,16 @@ public:
     GrSurfaceOrigin origin() const { return fOrigin; }
     GrSwizzle swizzle() const { return fSwizzle; }
 
+    void concatSwizzle(GrSwizzle swizzle) { fSwizzle = GrSwizzle::Concat(fSwizzle, swizzle); }
+
+    GrSurfaceProxyView makeSwizzle(GrSwizzle swizzle) const & {
+        return {fProxy, fOrigin, GrSwizzle::Concat(fSwizzle, swizzle)};
+    }
+
+    GrSurfaceProxyView makeSwizzle(GrSwizzle swizzle) && {
+        return {std::move(fProxy), fOrigin, GrSwizzle::Concat(fSwizzle, swizzle)};
+    }
+
     void reset() {
         *this = {};
     }
@@ -80,13 +90,31 @@ public:
     // the same origin and swizzle as the src view.
     static GrSurfaceProxyView Copy(GrRecordingContext* context,
                                    GrSurfaceProxyView src,
-                                   GrMipMapped mipMapped,
+                                   GrMipmapped mipMapped,
                                    SkIRect srcRect,
                                    SkBackingFit fit,
                                    SkBudgeted budgeted) {
-        auto origin = src.origin();
-        auto* proxy = src.proxy();
-        auto copy = GrSurfaceProxy::Copy(context, proxy, origin, mipMapped, srcRect, fit, budgeted);
+        auto copy = GrSurfaceProxy::Copy(context,
+                                         src.refProxy(),
+                                         src.origin(),
+                                         mipMapped,
+                                         srcRect,
+                                         fit,
+                                         budgeted);
+        return {std::move(copy), src.origin(), src.swizzle()};
+    }
+
+    static GrSurfaceProxyView Copy(GrRecordingContext* context,
+                                   GrSurfaceProxyView src,
+                                   GrMipmapped mipMapped,
+                                   SkBackingFit fit,
+                                   SkBudgeted budgeted) {
+        auto copy = GrSurfaceProxy::Copy(context,
+                                         src.refProxy(),
+                                         src.origin(),
+                                         mipMapped,
+                                         fit,
+                                         budgeted);
         return {std::move(copy), src.origin(), src.swizzle()};
     }
 

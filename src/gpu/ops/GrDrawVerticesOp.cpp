@@ -9,6 +9,7 @@
 #include "include/effects/SkRuntimeEffect.h"
 #include "src/core/SkArenaAlloc.h"
 #include "src/core/SkDevice.h"
+#include "src/core/SkMatrixPriv.h"
 #include "src/core/SkVerticesPriv.h"
 #include "src/gpu/GrOpFlushState.h"
 #include "src/gpu/GrProgramInfo.h"
@@ -117,9 +118,11 @@ public:
                                      const SkVertices::Attribute* attrs,
                                      int attrCount,
                                      const MarkedMatrices* customMatrices) {
-        return arena->make<VerticesGP>(localCoordsType, colorArrayType, color,
-                                       std::move(colorSpaceXform), viewMatrix, attrs, attrCount,
-                                       customMatrices);
+        return arena->make([&](void* ptr) {
+            return new (ptr) VerticesGP(localCoordsType, colorArrayType, color,
+                                        std::move(colorSpaceXform), viewMatrix, attrs, attrCount,
+                                        customMatrices);
+        });
     }
 
     const char* name() const override { return "VerticesGP"; }
@@ -314,12 +317,10 @@ public:
         }
 
         void setData(const GrGLSLProgramDataManager& pdman,
-                     const GrPrimitiveProcessor& gp,
-                     const CoordTransformRange& transformRange) override {
+                     const GrPrimitiveProcessor& gp) override {
             const VerticesGP& vgp = gp.cast<VerticesGP>();
 
             this->setTransform(pdman, fViewMatrixUniform, vgp.viewMatrix(), &fViewMatrix);
-            this->setTransformDataHelper(pdman, transformRange);
 
             if (!vgp.colorAttr().isInitialized() && vgp.color() != fColor) {
                 pdman.set4fv(fColorUniform, 1, vgp.color().vec());
@@ -364,7 +365,7 @@ public:
         };
         std::vector<MarkedUniform> fCustomMatrixUniforms;
 
-        typedef GrGLSLGeometryProcessor INHERITED;
+        using INHERITED = GrGLSLGeometryProcessor;
     };
 
     void getGLSLProcessorKey(const GrShaderCaps& caps, GrProcessorKeyBuilder* b) const override {
@@ -376,8 +377,6 @@ public:
     }
 
 private:
-    friend class ::SkArenaAlloc; // for access to ctor
-
     VerticesGP(LocalCoordsType localCoordsType,
                ColorArrayType colorArrayType,
                const SkPMColor4f& color,
@@ -432,7 +431,7 @@ private:
     int                          fCustomAttributeCount;
     const MarkedMatrices*        fCustomMatrices;
 
-    typedef GrGeometryProcessor INHERITED;
+    using INHERITED = GrGeometryProcessor;
 };
 
 class DrawVerticesOp final : public GrMeshDrawOp {
@@ -442,7 +441,7 @@ private:
 public:
     DEFINE_OP_CLASS_ID
 
-    DrawVerticesOp(const Helper::MakeArgs&, const SkPMColor4f&, sk_sp<SkVertices>,
+    DrawVerticesOp(GrProcessorSet*, const SkPMColor4f&, sk_sp<SkVertices>,
                    GrPrimitiveType, GrAAType, sk_sp<GrColorSpaceXform>, const SkMatrixProvider&,
                    const SkRuntimeEffect*);
 
@@ -456,10 +455,6 @@ public:
         }
     }
 
-#ifdef SK_DEBUG
-    SkString dumpInfo() const override;
-#endif
-
     FixedFunctionFlags fixedFunctionFlags() const override;
 
     GrProcessorSet::Analysis finalize(const GrCaps&, const GrAppliedClip*,
@@ -470,12 +465,17 @@ private:
 
     void onCreateProgramInfo(const GrCaps*,
                              SkArenaAlloc*,
-                             const GrSurfaceProxyView* writeView,
+                             const GrSurfaceProxyView& writeView,
                              GrAppliedClip&&,
-                             const GrXferProcessor::DstProxyView&) override;
+                             const GrXferProcessor::DstProxyView&,
+                             GrXferBarrierFlags renderPassXferBarriers,
+                             GrLoadOp colorLoadOp) override;
 
     void onPrepareDraws(Target*) override;
     void onExecute(GrOpFlushState*, const SkRect& chainBounds) override;
+#if GR_TEST_UTILS
+    SkString onDumpInfo() const override;
+#endif
 
     GrGeometryProcessor* makeGP(SkArenaAlloc*);
 
@@ -486,7 +486,7 @@ private:
                GrPrimitiveType::kPoints == fPrimitiveType;
     }
 
-    CombineResult onCombineIfPossible(GrOp* t, GrRecordingContext::Arenas*, const GrCaps&) override;
+    CombineResult onCombineIfPossible(GrOp* t, SkArenaAlloc*, const GrCaps&) override;
 
     struct Mesh {
         SkPMColor4f fColor;  // Used if this->hasPerVertexColors() is false.
@@ -535,10 +535,10 @@ private:
     GrSimpleMesh*  fMesh = nullptr;
     GrProgramInfo* fProgramInfo = nullptr;
 
-    typedef GrMeshDrawOp INHERITED;
+    using INHERITED = GrMeshDrawOp;
 };
 
-DrawVerticesOp::DrawVerticesOp(const Helper::MakeArgs& helperArgs,
+DrawVerticesOp::DrawVerticesOp(GrProcessorSet* processorSet,
                                const SkPMColor4f& color,
                                sk_sp<SkVertices> vertices,
                                GrPrimitiveType primitiveType,
@@ -547,7 +547,7 @@ DrawVerticesOp::DrawVerticesOp(const Helper::MakeArgs& helperArgs,
                                const SkMatrixProvider& matrixProvider,
                                const SkRuntimeEffect* effect)
         : INHERITED(ClassID())
-        , fHelper(helperArgs, aaType)
+        , fHelper(processorSet, aaType)
         , fPrimitiveType(primitiveType)
         , fMultipleViewMatrices(false)
         , fColorSpaceXform(std::move(colorSpaceXform)) {
@@ -582,14 +582,11 @@ DrawVerticesOp::DrawVerticesOp(const Helper::MakeArgs& helperArgs,
                                 zeroArea);
 }
 
-#ifdef SK_DEBUG
-SkString DrawVerticesOp::dumpInfo() const {
-    SkString string;
-    string.appendf("PrimType: %d, MeshCount %d, VCount: %d, ICount: %d\n", (int)fPrimitiveType,
-                   fMeshes.count(), fVertexCount, fIndexCount);
-    string += fHelper.dumpInfo();
-    string += INHERITED::dumpInfo();
-    return string;
+#if GR_TEST_UTILS
+SkString DrawVerticesOp::onDumpInfo() const {
+    return SkStringPrintf("PrimType: %d, MeshCount %d, VCount: %d, ICount: %d\n%s",
+                          (int)fPrimitiveType, fMeshes.count(), fVertexCount, fIndexCount,
+                          fHelper.dumpInfo().c_str());
 }
 #endif
 
@@ -637,12 +634,15 @@ GrGeometryProcessor* DrawVerticesOp::makeGP(SkArenaAlloc* arena) {
 
 void DrawVerticesOp::onCreateProgramInfo(const GrCaps* caps,
                                          SkArenaAlloc* arena,
-                                         const GrSurfaceProxyView* writeView,
+                                         const GrSurfaceProxyView& writeView,
                                          GrAppliedClip&& appliedClip,
-                                         const GrXferProcessor::DstProxyView& dstProxyView) {
+                                         const GrXferProcessor::DstProxyView& dstProxyView,
+                                         GrXferBarrierFlags renderPassXferBarriers,
+                                         GrLoadOp colorLoadOp) {
     GrGeometryProcessor* gp = this->makeGP(arena);
     fProgramInfo = fHelper.createProgramInfo(caps, arena, writeView, std::move(appliedClip),
-                                             dstProxyView, gp, this->primitiveType());
+                                             dstProxyView, gp, this->primitiveType(),
+                                             renderPassXferBarriers, colorLoadOp);
 }
 
 void DrawVerticesOp::onPrepareDraws(Target* target) {
@@ -713,7 +713,8 @@ void DrawVerticesOp::onPrepareDraws(Target* target) {
 
         if (fMultipleViewMatrices) {
             SkASSERT(!mesh.fViewMatrix.hasPerspective());
-            SkMatrixPriv::MapPointsWithStride(mesh.fViewMatrix, posBase, vertexStride, vertexCount);
+            SkMatrixPriv::MapPointsWithStride(mesh.fViewMatrix, posBase, vertexStride,
+                                              positions, sizeof(SkPoint), vertexCount);
         }
 
         vertexOffset += vertexCount;
@@ -743,8 +744,8 @@ void DrawVerticesOp::onExecute(GrOpFlushState* flushState, const SkRect& chainBo
     flushState->drawMesh(*fMesh);
 }
 
-GrOp::CombineResult DrawVerticesOp::onCombineIfPossible(GrOp* t, GrRecordingContext::Arenas*,
-                                                        const GrCaps& caps) {
+GrOp::CombineResult DrawVerticesOp::onCombineIfPossible(GrOp* t, SkArenaAlloc*, const GrCaps& caps)
+{
     DrawVerticesOp* that = t->cast<DrawVerticesOp>();
 
     if (!fHelper.isCompatible(that->fHelper, caps, this->bounds(), that->bounds())) {
@@ -847,14 +848,14 @@ static GrPrimitiveType SkVertexModeToGrPrimitiveType(SkVertices::VertexMode mode
     SK_ABORT("Invalid mode");
 }
 
-std::unique_ptr<GrDrawOp> GrDrawVerticesOp::Make(GrRecordingContext* context,
-                                                 GrPaint&& paint,
-                                                 sk_sp<SkVertices> vertices,
-                                                 const SkMatrixProvider& matrixProvider,
-                                                 GrAAType aaType,
-                                                 sk_sp<GrColorSpaceXform> colorSpaceXform,
-                                                 GrPrimitiveType* overridePrimType,
-                                                 const SkRuntimeEffect* effect) {
+GrOp::Owner GrDrawVerticesOp::Make(GrRecordingContext* context,
+                                   GrPaint&& paint,
+                                   sk_sp<SkVertices> vertices,
+                                   const SkMatrixProvider& matrixProvider,
+                                   GrAAType aaType,
+                                   sk_sp<GrColorSpaceXform> colorSpaceXform,
+                                   GrPrimitiveType* overridePrimType,
+                                   const SkRuntimeEffect* effect) {
     SkASSERT(vertices);
     GrPrimitiveType primType = overridePrimType
                                        ? *overridePrimType

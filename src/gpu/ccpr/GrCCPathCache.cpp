@@ -13,7 +13,7 @@
 
 static constexpr int kMaxKeyDataCountU32 = 256;  // 1kB of uint32_t's.
 
-DECLARE_SKMESSAGEBUS_MESSAGE(sk_sp<GrCCPathCache::Key>);
+DECLARE_SKMESSAGEBUS_MESSAGE(sk_sp<GrCCPathCache::Key>, true);
 
 static inline uint32_t next_path_cache_id() {
     static std::atomic<uint32_t> gNextID(1);
@@ -106,7 +106,7 @@ GrCCPathCache::~GrCCPathCache() {
 
     // Now take all the atlas textures we just invalidated and purge them from the GrResourceCache.
     // We just purge via message bus since we don't have any access to the resource cache right now.
-    for (sk_sp<GrTextureProxy>& proxy : fInvalidatedProxies) {
+    for (const sk_sp<GrTextureProxy>& proxy : fInvalidatedProxies) {
         SkMessageBus<GrUniqueKeyInvalidatedMessage>::Post(
                 GrUniqueKeyInvalidatedMessage(proxy->getUniqueKey(), fContextUniqueID));
     }
@@ -158,7 +158,7 @@ private:
     int fShapeUnstyledKeyCount;
 };
 
-}
+}  // namespace
 
 GrCCPathCache::OnFlushEntryRef GrCCPathCache::find(
         GrOnFlushResourceProvider* onFlushRP, const GrStyledShape& shape,
@@ -295,7 +295,7 @@ void GrCCPathCache::purgeEntriesOlderThan(GrProxyProvider* proxyProvider,
 }
 
 void GrCCPathCache::purgeInvalidatedAtlasTextures(GrOnFlushResourceProvider* onFlushRP) {
-    for (sk_sp<GrTextureProxy>& proxy : fInvalidatedProxies) {
+    for (const sk_sp<GrTextureProxy>& proxy : fInvalidatedProxies) {
         onFlushRP->removeUniqueKeyFromProxy(proxy.get());
     }
     fInvalidatedProxies.reset();
@@ -307,7 +307,7 @@ void GrCCPathCache::purgeInvalidatedAtlasTextures(GrOnFlushResourceProvider* onF
 }
 
 void GrCCPathCache::purgeInvalidatedAtlasTextures(GrProxyProvider* proxyProvider) {
-    for (sk_sp<GrTextureProxy>& proxy : fInvalidatedProxies) {
+    for (const sk_sp<GrTextureProxy>& proxy : fInvalidatedProxies) {
         proxyProvider->removeUniqueKeyFromProxy(proxy.get());
     }
     fInvalidatedProxies.reset();

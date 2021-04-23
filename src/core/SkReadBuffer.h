@@ -8,7 +8,6 @@
 #ifndef SkReadBuffer_DEFINED
 #define SkReadBuffer_DEFINED
 
-#include "include/core/SkDrawLooper.h"
 #include "include/core/SkFont.h"
 #include "include/core/SkImageFilter.h"
 #include "include/core/SkPath.h"
@@ -23,6 +22,10 @@
 #include "src/core/SkPicturePriv.h"
 #include "src/core/SkWriteBuffer.h"
 #include "src/shaders/SkShaderBase.h"
+
+#ifdef SK_SUPPORT_LEGACY_DRAWLOOPER
+#include "include/core/SkDrawLooper.h"
+#endif
 
 class SkData;
 class SkImage;
@@ -92,9 +95,11 @@ public:
     void readPoint(SkPoint* point);
     SkPoint readPoint() { SkPoint p; this->readPoint(&p); return p; }
     void readPoint3(SkPoint3* point);
+    void read(SkM44*);
     void readMatrix(SkMatrix* matrix);
     void readIRect(SkIRect* rect);
     void readRect(SkRect* rect);
+    SkRect readRect();
     void readRRect(SkRRect* rrect);
     void readRegion(SkRegion* region);
 
@@ -109,7 +114,9 @@ public:
         return sk_sp<T>((T*)this->readFlattenable(T::GetFlattenableType()));
     }
     sk_sp<SkColorFilter> readColorFilter() { return this->readFlattenable<SkColorFilterBase>(); }
+#ifdef SK_SUPPORT_LEGACY_DRAWLOOPER
     sk_sp<SkDrawLooper> readDrawLooper() { return this->readFlattenable<SkDrawLooper>(); }
+#endif
     sk_sp<SkImageFilter> readImageFilter() { return this->readFlattenable<SkImageFilter>(); }
     sk_sp<SkMaskFilter> readMaskFilter() { return this->readFlattenable<SkMaskFilterBase>(); }
     sk_sp<SkPathEffect> readPathEffect() { return this->readFlattenable<SkPathEffect>(); }
@@ -195,12 +202,16 @@ public:
 
     SkFilterQuality checkFilterQuality();
 
+    SkSamplingOptions readSampling();
+
 private:
     const char* readString(size_t* length);
 
     void setInvalid();
     bool readArray(void* value, size_t size, size_t elementSize);
     bool isAvailable(size_t size) const { return size <= this->available(); }
+
+    sk_sp<SkImage> readImage_preV78();
 
     // These are always 4-byte aligned
     const char* fCurr = nullptr;  // current position within buffer

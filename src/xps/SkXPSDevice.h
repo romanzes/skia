@@ -90,12 +90,11 @@ protected:
                   bool pathIsMutable = false) override;
     void drawImageRect(const SkImage*,
                        const SkRect* srcOrNull, const SkRect& dst,
-                       const SkPaint& paint,
+                       const SkSamplingOptions&, const SkPaint& paint,
                        SkCanvas::SrcRectConstraint) override;
     void drawGlyphRunList(const SkGlyphRunList& glyphRunList) override;
     void drawVertices(const SkVertices*, SkBlendMode, const SkPaint&) override;
-    void drawDevice(SkBaseDevice*, int x, int y,
-                    const SkPaint&) override;
+    void drawDevice(SkBaseDevice*, const SkSamplingOptions&, const SkPaint&) override;
 
 private:
     class TypefaceUse {
@@ -273,7 +272,7 @@ private:
     SkXPSDevice(const SkXPSDevice&);
     void operator=(const SkXPSDevice&);
 
-    typedef SkClipStackDevice INHERITED;
+    using INHERITED = SkClipStackDevice;
 };
 
 #endif  // SK_BUILD_FOR_WIN

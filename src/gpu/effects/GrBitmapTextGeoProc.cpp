@@ -39,9 +39,7 @@ public:
         fAtlasDimensionsInvUniform = uniformHandler->addUniform(nullptr, kVertex_GrShaderFlag,
                 kFloat2_GrSLType, "AtlasSizeInv", &atlasDimensionsInvName);
 
-        GrGLSLVarying uv(kFloat2_GrSLType);
-        GrSLType texIdxType = args.fShaderCaps->integerSupport() ? kInt_GrSLType : kFloat_GrSLType;
-        GrGLSLVarying texIdx(texIdxType);
+        GrGLSLVarying uv, texIdx;
         append_index_uv_varyings(args, btgp.numTextureSamplers(), btgp.inTextureCoords().name(),
                                  atlasDimensionsInvName, &uv, &texIdx, nullptr);
 
@@ -72,8 +70,7 @@ public:
         }
     }
 
-    void setData(const GrGLSLProgramDataManager& pdman, const GrPrimitiveProcessor& gp,
-                 const CoordTransformRange& transformRange) override {
+    void setData(const GrGLSLProgramDataManager& pdman, const GrPrimitiveProcessor& gp) override {
         const GrBitmapTextGeoProc& btgp = gp.cast<GrBitmapTextGeoProc>();
         if (btgp.color() != fColor && !btgp.hasVertexColor()) {
             pdman.set4fv(fColorUniform, 1, btgp.color().vec());
@@ -91,7 +88,6 @@ public:
         }
 
         this->setTransform(pdman, fLocalMatrixUniform, btgp.localMatrix(), &fLocalMatrix);
-        this->setTransformDataHelper(pdman, transformRange);
     }
 
     static inline void GenKey(const GrGeometryProcessor& proc,
@@ -116,7 +112,7 @@ private:
     SkMatrix      fLocalMatrix;
     UniformHandle fLocalMatrixUniform;
 
-    typedef GrGLSLGeometryProcessor INHERITED;
+    using INHERITED = GrGLSLGeometryProcessor;
 };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -209,7 +205,7 @@ GrGeometryProcessor* GrBitmapTextGeoProc::TestCreate(GrProcessorTestData* d) {
     GrSamplerState::WrapMode wrapModes[2];
     GrTest::TestWrapModes(d->fRandom, wrapModes);
     GrSamplerState samplerState(wrapModes, d->fRandom->nextBool()
-                                                   ? GrSamplerState::Filter::kBilerp
+                                                   ? GrSamplerState::Filter::kLinear
                                                    : GrSamplerState::Filter::kNearest);
 
     GrMaskFormat format;

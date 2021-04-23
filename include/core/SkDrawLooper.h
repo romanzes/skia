@@ -16,6 +16,10 @@
 #include "include/core/SkPoint.h"
 #include <functional>  // std::function
 
+#ifndef SK_SUPPORT_LEGACY_DRAWLOOPER
+#error "SkDrawLooper is unsupported"
+#endif
+
 class  SkArenaAlloc;
 class  SkCanvas;
 class  SkMatrix;
@@ -125,7 +129,7 @@ protected:
     SkDrawLooper() {}
 
 private:
-    typedef SkFlattenable INHERITED;
+    using INHERITED = SkFlattenable;
 };
 
 #endif

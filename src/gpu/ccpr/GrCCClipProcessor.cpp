@@ -30,11 +30,8 @@ GrCCClipProcessor::GrCCClipProcessor(std::unique_ptr<GrFragmentProcessor> inputF
         , fMustCheckBounds(MustCheckBounds::kYes == mustCheckBounds) {
     auto view = make_view(caps, clipPath->atlasLazyProxy(), fIsCoverageCount);
     auto texEffect = GrTextureEffect::Make(std::move(view), kUnknown_SkAlphaType);
-    this->registerExplicitlySampledChild(std::move(texEffect));
-
-    if (inputFP != nullptr) {
-        this->registerChild(std::move(inputFP));
-    }
+    this->registerChild(std::move(texEffect), SkSL::SampleUsage::Explicit());
+    this->registerChild(std::move(inputFP));
 }
 
 GrCCClipProcessor::GrCCClipProcessor(const GrCCClipProcessor& that)
@@ -66,12 +63,6 @@ bool GrCCClipProcessor::onIsEqual(const GrFragmentProcessor& fp) const {
            that.fIsCoverageCount == fIsCoverageCount && that.fMustCheckBounds == fMustCheckBounds;
 }
 
-bool GrCCClipProcessor::hasInputFP() const {
-    // We always have a `texEffect`, and this accounts for one child.
-    // The second child will be the input FP, if we have one.
-    return this->numChildProcessors() > 1;
-}
-
 class GrCCClipProcessor::Impl : public GrGLSLFragmentProcessor {
 public:
     void emitCode(EmitArgs& args) override {
@@ -86,8 +77,8 @@ public:
             fPathIBoundsUniform = uniHandler->addUniform(&proc, kFragment_GrShaderFlag,
                                                          kFloat4_GrSLType, "path_ibounds",
                                                          &pathIBounds);
-            f->codeAppendf("if (all(greaterThan(float4(sk_FragCoord.xy, %s.zw), "
-                                               "float4(%s.xy, sk_FragCoord.xy)))) {",
+            f->codeAppendf("if (all(greaterThan(float4(sk_FragCoord.xy, %s.RB), "
+                                               "float4(%s.LT, sk_FragCoord.xy)))) {",
                                                pathIBounds, pathIBounds);
         }
 
@@ -123,11 +114,9 @@ public:
         }
 
         constexpr int kInputFPIndex = 1;
-        SkString inputColor = proc.hasInputFP()
-            ? this->invokeChild(kInputFPIndex, args.fInputColor, args)
-            : SkString(args.fInputColor);
+        SkString inputColor = this->invokeChild(kInputFPIndex, args);
 
-        f->codeAppendf("%s = %s * coverage;", args.fOutputColor, inputColor.c_str());
+        f->codeAppendf("return %s * coverage;", inputColor.c_str());
     }
 
     void onSetData(const GrGLSLProgramDataManager& pdman,
@@ -147,6 +136,6 @@ private:
     UniformHandle fAtlasTranslateUniform;
 };
 
-GrGLSLFragmentProcessor* GrCCClipProcessor::onCreateGLSLInstance() const {
-    return new Impl();
+std::unique_ptr<GrGLSLFragmentProcessor> GrCCClipProcessor::onMakeProgramImpl() const {
+    return std::make_unique<Impl>();
 }

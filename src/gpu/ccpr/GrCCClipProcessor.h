@@ -31,8 +31,7 @@ public:
     std::unique_ptr<GrFragmentProcessor> clone() const override;
     void onGetGLSLProcessorKey(const GrShaderCaps&, GrProcessorKeyBuilder*) const override;
     bool onIsEqual(const GrFragmentProcessor&) const override;
-    GrGLSLFragmentProcessor* onCreateGLSLInstance() const override;
-    bool hasInputFP() const;
+    std::unique_ptr<GrGLSLFragmentProcessor> onMakeProgramImpl() const override;
 
 private:
     explicit GrCCClipProcessor(const GrCCClipProcessor&);
@@ -43,7 +42,7 @@ private:
 
     class Impl;
 
-    typedef GrFragmentProcessor INHERITED;
+    using INHERITED = GrFragmentProcessor;
 };
 
 #endif

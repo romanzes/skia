@@ -56,11 +56,10 @@ GrShaderCaps::GrShaderCaps(const GrContextOptions& options) {
     fHalfIs32Bits = false;
     fHasLowFragmentPrecision = false;
     fColorSpaceMathNeedsFloat = false;
-    // Backed API support is required to be able to make swizzle-neutral shaders (e.g.
-    // GL_ARB_texture_swizzle).
-    fTextureSwizzleAppliedInShader = true;
     fBuiltinFMASupport = false;
+    fBuiltinDeterminantSupport = false;
     fCanUseDoLoops = true;
+    fUseNodePools = true;
 
     fVersionDeclString = nullptr;
     fShaderDerivativeExtensionString = nullptr;
@@ -96,12 +95,10 @@ void GrShaderCaps::dumpJSON(SkJSONWriter* writer) const {
         "Not Supported",
         "Automatic",
         "General Enable",
-        "Specific Enables",
     };
     static_assert(0 == kNotSupported_AdvBlendEqInteraction);
     static_assert(1 == kAutomatic_AdvBlendEqInteraction);
     static_assert(2 == kGeneralEnable_AdvBlendEqInteraction);
-    static_assert(3 == kSpecificEnables_AdvBlendEqInteraction);
     static_assert(SK_ARRAY_COUNT(kAdvBlendEqInteractionStr) == kLast_AdvBlendEqInteraction + 1);
 
     writer->appendBool("FB Fetch Support", fFBFetchSupport);
@@ -140,9 +137,10 @@ void GrShaderCaps::dumpJSON(SkJSONWriter* writer) const {
     writer->appendBool("half == fp32", fHalfIs32Bits);
     writer->appendBool("Has poor fragment precision", fHasLowFragmentPrecision);
     writer->appendBool("Color space math needs float", fColorSpaceMathNeedsFloat);
-    writer->appendBool("Texture swizzle applied in shader", fTextureSwizzleAppliedInShader);
     writer->appendBool("Builtin fma() support", fBuiltinFMASupport);
+    writer->appendBool("Builtin determinant() support", fBuiltinDeterminantSupport);
     writer->appendBool("Can use do-while loops", fCanUseDoLoops);
+    writer->appendBool("Use node pools", fUseNodePools);
 
     writer->appendS32("Max FS Samplers", fMaxFragmentSamplers);
     writer->appendS32("Max Tessellation Segments", fMaxTessellationSegments);
@@ -187,5 +185,12 @@ void GrShaderCaps::applyOptionsOverrides(const GrContextOptions& options) {
     if (options.fSuppressTessellationShaders) {
         fMaxTessellationSegments = 0;
     }
+    if (options.fMaxTessellationSegmentsOverride > 0) {
+        fMaxTessellationSegments = std::min(options.fMaxTessellationSegmentsOverride,
+                                            fMaxTessellationSegments);
+    }
+#else
+    // Tessellation shaders are still very experimental. Always disable them outside of test builds.
+    fMaxTessellationSegments = 0;
 #endif
 }

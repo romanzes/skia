@@ -1,6 +1,21 @@
 CanvasKit._extraInitializations = CanvasKit._extraInitializations || [];
 CanvasKit._extraInitializations.push(function() {
-  CanvasKit.SkRuntimeEffect.prototype.makeShader = function(floats, isOpaque, localMatrix) {
+
+  // sksl is the shader code.
+  // errorCallback is a function that will be called with an error string if the
+  // effect cannot be made. If not provided, the error will be logged.
+  CanvasKit.RuntimeEffect.Make = function(sksl, errorCallback) {
+    // The easiest way to pass a function into C++ code is to wrap it in an object and
+    // treat it as an emscripten::val on the other side.
+    var callbackObj = {
+      'onError': errorCallback || function(err) {
+        console.log('RuntimeEffect error', err);
+      },
+    };
+    return CanvasKit.RuntimeEffect._Make(sksl, callbackObj);
+  };
+
+  CanvasKit.RuntimeEffect.prototype.makeShader = function(floats, isOpaque, localMatrix) {
     // We don't need to free these floats because they will become owned by the shader.
     var fptr = copy1dArray(floats, "HEAPF32");
     var localMatrixPtr = copy3x3MatrixToWasm(localMatrix);
@@ -9,8 +24,8 @@ CanvasKit._extraInitializations.push(function() {
     return this._makeShader(fptr, floats.length * 4, !!isOpaque, localMatrixPtr);
   }
 
-  // childrenWithShaders is an array of other shaders (e.g. SkImage.makeShader())
-  CanvasKit.SkRuntimeEffect.prototype.makeShaderWithChildren = function(floats, isOpaque, childrenShaders, localMatrix) {
+  // childrenWithShaders is an array of other shaders (e.g. Image.makeShader())
+  CanvasKit.RuntimeEffect.prototype.makeShaderWithChildren = function(floats, isOpaque, childrenShaders, localMatrix) {
     // We don't need to free these floats because they will become owned by the shader.
     var fptr = copy1dArray(floats, "HEAPF32");
     var localMatrixPtr = copy3x3MatrixToWasm(localMatrix);

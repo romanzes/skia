@@ -12,7 +12,7 @@
 #include "src/gpu/GrOpFlushState.h"
 #include "src/gpu/GrRenderTarget.h"
 #include "src/gpu/GrResourceAllocator.h"
-#include "src/gpu/GrTexturePriv.h"
+#include "src/gpu/GrTexture.h"
 
 void GrTextureResolveRenderTask::addProxy(GrDrawingManager* drawingMgr,
                                           sk_sp<GrSurfaceProxy> proxyRef,
@@ -37,14 +37,14 @@ void GrTextureResolveRenderTask::addProxy(GrDrawingManager* drawingMgr,
 
     if (GrSurfaceProxy::ResolveFlags::kMipMaps & flags) {
         GrTextureProxy* textureProxy = proxy->asTextureProxy();
-        SkASSERT(GrMipMapped::kYes == textureProxy->mipMapped());
-        SkASSERT(textureProxy->mipMapsAreDirty());
-        textureProxy->markMipMapsClean();
+        SkASSERT(GrMipmapped::kYes == textureProxy->mipmapped());
+        SkASSERT(textureProxy->mipmapsAreDirty());
+        textureProxy->markMipmapsClean();
     }
 
     // Add the proxy as a dependency: We will read the existing contents of this texture while
     // generating mipmap levels and/or resolving MSAA.
-    this->addDependency(drawingMgr, proxy, GrMipMapped::kNo,
+    this->addDependency(drawingMgr, proxy, GrMipmapped::kNo,
                         GrTextureResolveManager(nullptr), caps);
     this->addTarget(drawingMgr, GrSurfaceProxyView(std::move(proxyRef)));
 }
@@ -55,9 +55,8 @@ void GrTextureResolveRenderTask::gatherProxyIntervals(GrResourceAllocator* alloc
     // manipulate the resolve proxies.
     auto fakeOp = alloc->curOp();
     SkASSERT(fResolves.count() == this->numTargets());
-    for (const GrSurfaceProxyView& target : fTargets) {
-        alloc->addInterval(target.proxy(), fakeOp, fakeOp,
-                           GrResourceAllocator::ActualUse::kYes);
+    for (const sk_sp<GrSurfaceProxy>& target : fTargets) {
+        alloc->addInterval(target.get(), fakeOp, fakeOp, GrResourceAllocator::ActualUse::kYes);
     }
     alloc->incOps();
 }
@@ -68,11 +67,10 @@ bool GrTextureResolveRenderTask::onExecute(GrOpFlushState* flushState) {
     for (int i = 0; i < fResolves.count(); ++i) {
         const Resolve& resolve = fResolves[i];
         if (GrSurfaceProxy::ResolveFlags::kMSAA & resolve.fFlags) {
-            GrSurfaceProxy* proxy = this->target(i).proxy();
+            GrSurfaceProxy* proxy = this->target(i);
             // peekRenderTarget might be null if there was an instantiation error.
             if (GrRenderTarget* renderTarget = proxy->peekRenderTarget()) {
-                flushState->gpu()->resolveRenderTarget(renderTarget, resolve.fMSAAResolveRect,
-                                                       GrGpu::ForExternalIO::kNo);
+                flushState->gpu()->resolveRenderTarget(renderTarget, resolve.fMSAAResolveRect);
             }
         }
     }
@@ -81,10 +79,10 @@ bool GrTextureResolveRenderTask::onExecute(GrOpFlushState* flushState) {
         const Resolve& resolve = fResolves[i];
         if (GrSurfaceProxy::ResolveFlags::kMipMaps & resolve.fFlags) {
             // peekTexture might be null if there was an instantiation error.
-            GrTexture* texture = this->target(i).proxy()->peekTexture();
-            if (texture && texture->texturePriv().mipMapsAreDirty()) {
+            GrTexture* texture = this->target(i)->peekTexture();
+            if (texture && texture->mipmapsAreDirty()) {
                 flushState->gpu()->regenerateMipMapLevels(texture);
-                SkASSERT(!texture->texturePriv().mipMapsAreDirty());
+                SkASSERT(!texture->mipmapsAreDirty());
             }
         }
     }

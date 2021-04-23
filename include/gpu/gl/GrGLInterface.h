@@ -47,7 +47,7 @@ SK_API const GrGLInterface* GrGLCreateNativeInterface();
  */
 struct SK_API GrGLInterface : public SkRefCnt {
 private:
-    typedef SkRefCnt INHERITED;
+    using INHERITED = SkRefCnt;
 
 #if GR_GL_CHECK_ERROR
     // This is here to avoid having our debug code that checks for a GL error after most GL calls
@@ -209,6 +209,8 @@ public:
         GrGLFunction<GrGLDrawElementsInstancedBaseVertexBaseInstanceFn> fDrawElementsInstancedBaseVertexBaseInstance;
         GrGLFunction<GrGLMultiDrawArraysIndirectFn> fMultiDrawArraysIndirect;
         GrGLFunction<GrGLMultiDrawElementsIndirectFn> fMultiDrawElementsIndirect;
+        GrGLFunction<GrGLMultiDrawArraysInstancedBaseInstanceFn> fMultiDrawArraysInstancedBaseInstance;
+        GrGLFunction<GrGLMultiDrawElementsInstancedBaseVertexBaseInstanceFn> fMultiDrawElementsInstancedBaseVertexBaseInstance;
         GrGLFunction<GrGLPatchParameteriFn> fPatchParameteri;
         GrGLFunction<GrGLPixelStoreiFn> fPixelStorei;
         GrGLFunction<GrGLPolygonModeFn> fPolygonMode;

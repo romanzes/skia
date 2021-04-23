@@ -45,7 +45,7 @@ public:
     bool npotTextureTileSupport() const { return fNPOTTextureTileSupport; }
     /** To avoid as-yet-unnecessary complexity we don't allow any partial support of MIP Maps (e.g.
         only for POT textures) */
-    bool mipMapSupport() const { return fMipMapSupport; }
+    bool mipmapSupport() const { return fMipmapSupport; }
 
     bool gpuTracingSupport() const { return fGpuTracingSupport; }
     bool oversizedStencilSupport() const { return fOversizedStencilSupport; }
@@ -57,6 +57,16 @@ public:
     // as it can polyfill them with instanced calls, but this cap tells us if they are supported
     // natively.)
     bool nativeDrawIndirectSupport() const { return fNativeDrawIndirectSupport; }
+    bool useClientSideIndirectBuffers() const {
+#ifdef SK_DEBUG
+        if (!fNativeDrawIndirectSupport || fNativeDrawIndexedIndirectIsBroken) {
+            // We might implement indirect draws with a polyfill, so the commands need to reside in
+            // CPU memory.
+            SkASSERT(fUseClientSideIndirectBuffers);
+        }
+#endif
+        return fUseClientSideIndirectBuffers;
+    }
     bool mixedSamplesSupport() const { return fMixedSamplesSupport; }
     bool conservativeRasterSupport() const { return fConservativeRasterSupport; }
     bool wireframeSupport() const { return fWireframeSupport; }
@@ -79,9 +89,13 @@ public:
     // Should we discard stencil values after a render pass? (Tilers get better performance if we
     // always load stencil buffers with a "clear" op, and then discard the content when finished.)
     bool discardStencilValuesAfterRenderPass() const {
+        // b/160958008
+        return false;
+#if 0
         // This method is actually just a duplicate of preferFullscreenClears(), with a descriptive
         // name for the sake of readability.
         return this->preferFullscreenClears();
+#endif
     }
 
     // D3D does not allow the refs or masks to differ on a two-sided stencil draw.
@@ -129,10 +143,10 @@ public:
         return kAdvancedCoherent_BlendEquationSupport == fBlendEquationSupport;
     }
 
-    bool isAdvancedBlendEquationBlacklisted(GrBlendEquation equation) const {
+    bool isAdvancedBlendEquationDisabled(GrBlendEquation equation) const {
         SkASSERT(GrBlendEquationIsAdvanced(equation));
         SkASSERT(this->advancedBlendEquationSupport());
-        return SkToBool(fAdvBlendEqBlacklist & (1 << equation));
+        return SkToBool(fAdvBlendEqDisableFlags & (1 << equation));
     }
 
     // On some GPUs it is a performance win to disable blending instead of doing src-over with a src
@@ -140,6 +154,12 @@ public:
     // handle the disabling of blending.
     bool shouldCollapseSrcOverToSrcWhenAble() const {
         return fShouldCollapseSrcOverToSrcWhenAble;
+    }
+
+    // When abandoning the GrDirectContext do we need to sync the GPU before we start abandoning
+    // resources.
+    bool mustSyncGpuDuringAbandon() const {
+        return fMustSyncGpuDuringAbandon;
     }
 
     /**
@@ -156,6 +176,11 @@ public:
                                      //   submitted to GrGpu.
     };
 
+    // This returns the general mapping support for the GPU. However, even if this returns a flag
+    // that says buffers can be mapped, it does NOT mean that every buffer will be mappable. Thus
+    // calls of map should still check to see if a valid pointer was returned from the map call and
+    // handle fallbacks appropriately. If this does return kNone_MapFlags then all calls to map() on
+    // any buffer will fail.
     uint32_t mapBufferFlags() const { return fMapBufferFlags; }
 
     // Scratch textures not being reused means that those scratch textures
@@ -176,19 +201,14 @@ public:
 
     int maxTextureSize() const { return fMaxTextureSize; }
 
-    /** This is the maximum tile size to use by GPU devices for rendering sw-backed images/bitmaps.
-        It is usually the max texture size, unless we're overriding it for testing. */
-    int maxTileSize() const {
-        SkASSERT(fMaxTileSize <= fMaxTextureSize);
-        return fMaxTileSize;
-    }
-
     int maxWindowRectangles() const { return fMaxWindowRectangles; }
 
     // Returns whether mixed samples is supported for the given backend render target.
     bool isWindowRectanglesSupportedForRT(const GrBackendRenderTarget& rt) const {
         return this->maxWindowRectangles() > 0 && this->onIsWindowRectanglesSupportedForRT(rt);
     }
+
+    uint32_t maxPushConstantsSize() const { return fMaxPushConstantsSize; }
 
     virtual bool isFormatSRGB(const GrBackendFormat&) const = 0;
 
@@ -220,10 +240,6 @@ public:
     // sample count is 1 then 1 will be returned if non-MSAA rendering is supported, otherwise 0.
     // For historical reasons requestedCount==0 is handled identically to requestedCount==1.
     virtual int getRenderTargetSampleCount(int requestedCount, const GrBackendFormat&) const = 0;
-
-    // Returns the number of bytes per pixel for the given GrBackendFormat. This is only supported
-    // for "normal" formats. For compressed formats this will return 0.
-    virtual size_t bytesPerPixel(const GrBackendFormat&) const = 0;
 
     /**
      * Backends may have restrictions on what types of surfaces support GrGpu::writePixels().
@@ -366,8 +382,14 @@ public:
     bool allowCoverageCounting() const { return fAllowCoverageCounting; }
 
     // Should we disable the CCPR code due to a faulty driver?
-    bool driverBlacklistCCPR() const { return fDriverBlacklistCCPR; }
-    bool driverBlacklistMSAACCPR() const { return fDriverBlacklistMSAACCPR; }
+    bool driverDisableCCPR() const { return fDriverDisableCCPR; }
+    bool driverDisableMSAACCPR() const { return fDriverDisableMSAACCPR; }
+
+    // Should we disable GrTessellationPathRenderer due to a faulty driver?
+    bool disableTessellationPathRenderer() const { return fDisableTessellationPathRenderer; }
+
+    // Returns how to sample the dst values for the passed in GrRenderTargetProxy.
+    GrDstSampleType getDstSampleTypeForProxy(const GrRenderTargetProxy*) const;
 
     /**
      * This is used to try to ensure a successful copy a dst in order to perform shader-based
@@ -390,7 +412,7 @@ public:
     }
 
     bool validateSurfaceParams(const SkISize&, const GrBackendFormat&, GrRenderable renderable,
-                               int renderTargetSampleCnt, GrMipMapped) const;
+                               int renderTargetSampleCnt, GrMipmapped) const;
 
     bool areColorTypeAndFormatCompatible(GrColorType grCT, const GrBackendFormat& format) const;
 
@@ -430,7 +452,31 @@ public:
                                     GrSamplerState,
                                     const GrBackendFormat&) const {}
 
-    virtual GrProgramDesc makeDesc(const GrRenderTarget*, const GrProgramInfo&) const = 0;
+    enum class ProgramDescOverrideFlags {
+        kNone = 0,
+        // If using discardable msaa surfaces in vulkan, when we break up a render pass for an
+        // inline upload, we must do a load msaa subpass for the second render pass. However, if the
+        // original render pass did not have this load subpass (e.g. clear or discard load op), then
+        // all the GrProgramInfos for draws that end up in the second render pass will have been
+        // recorded thinking they will be in a render pass with only 1 subpass. Thus we add an
+        // override flag to the makeDesc call to force the actually VkPipeline that gets created to
+        // be created using a render pass with 2 subpasses. We do miss on the pre-compile with this
+        // approach, but inline uploads are very rare and already slow.
+        kVulkanHasResolveLoadSubpass = 0x1,
+    };
+    GR_DECL_BITFIELD_CLASS_OPS_FRIENDS(ProgramDescOverrideFlags);
+
+
+    virtual GrProgramDesc makeDesc(
+            GrRenderTarget*, const GrProgramInfo&,
+            ProgramDescOverrideFlags overrideFlags = ProgramDescOverrideFlags::kNone) const = 0;
+
+    // This method specifies, for each backend, the extra properties of a RT when Ganesh creates one
+    // internally. For example, for Vulkan, Ganesh always creates RTs that can be used as input
+    // attachments.
+    virtual GrInternalSurfaceFlags getExtraSurfaceFlagsForDeferredRT() const {
+        return GrInternalSurfaceFlags::kNone;
+    }
 
 #if GR_TEST_UTILS
     struct TestFormatColorTypeCombination {
@@ -450,7 +496,7 @@ protected:
     sk_sp<GrShaderCaps> fShaderCaps;
 
     bool fNPOTTextureTileSupport                     : 1;
-    bool fMipMapSupport                              : 1;
+    bool fMipmapSupport                              : 1;
     bool fReuseScratchTextures                       : 1;
     bool fReuseScratchBuffers                        : 1;
     bool fGpuTracingSupport                          : 1;
@@ -460,6 +506,7 @@ protected:
     bool fMultisampleDisableSupport                  : 1;
     bool fDrawInstancedSupport                       : 1;
     bool fNativeDrawIndirectSupport                  : 1;
+    bool fUseClientSideIndirectBuffers               : 1;
     bool fMixedSamplesSupport                        : 1;
     bool fConservativeRasterSupport                  : 1;
     bool fWireframeSupport                           : 1;
@@ -483,10 +530,12 @@ protected:
     bool fWritePixelsRowBytesSupport                 : 1;
     bool fReadPixelsRowBytesSupport                  : 1;
     bool fShouldCollapseSrcOverToSrcWhenAble         : 1;
+    bool fMustSyncGpuDuringAbandon                   : 1;
 
     // Driver workaround
-    bool fDriverBlacklistCCPR                        : 1;
-    bool fDriverBlacklistMSAACCPR                    : 1;
+    bool fDriverDisableCCPR                          : 1;
+    bool fDriverDisableMSAACCPR                      : 1;
+    bool fDisableTessellationPathRenderer            : 1;
     bool fAvoidStencilBuffers                        : 1;
     bool fAvoidWritePixelsFastPath                   : 1;
     bool fRequiresManualFBBarrierAfterTessellatedStencilDraw : 1;
@@ -508,7 +557,7 @@ protected:
     bool fDynamicStateArrayGeometryProcessorTextureSupport : 1;
 
     BlendEquationSupport fBlendEquationSupport;
-    uint32_t fAdvBlendEqBlacklist;
+    uint32_t fAdvBlendEqDisableFlags;
     static_assert(kLast_GrBlendEquation < 32);
 
     uint32_t fMapBufferFlags;
@@ -518,9 +567,9 @@ protected:
     int fMaxPreferredRenderTargetSize;
     int fMaxVertexAttributes;
     int fMaxTextureSize;
-    int fMaxTileSize;
     int fMaxWindowRectangles;
     int fInternalMultisampleCount;
+    uint32_t fMaxPushConstantsSize = 0;
 
     GrDriverBugWorkarounds fDriverBugWorkarounds;
 
@@ -548,11 +597,16 @@ private:
 
     virtual GrSwizzle onGetReadSwizzle(const GrBackendFormat&, GrColorType) const = 0;
 
+    virtual GrDstSampleType onGetDstSampleTypeForProxy(const GrRenderTargetProxy*) const {
+        return GrDstSampleType::kAsTextureCopy;
+    }
 
     bool fSuppressPrints : 1;
     bool fWireframeMode  : 1;
 
-    typedef SkRefCnt INHERITED;
+    using INHERITED = SkRefCnt;
 };
+
+GR_MAKE_BITFIELD_CLASS_OPS(GrCaps::ProgramDescOverrideFlags);
 
 #endif

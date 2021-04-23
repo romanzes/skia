@@ -9,8 +9,7 @@
 #define YUVUtils_DEFINED
 
 #include "include/core/SkImage.h"
-#include "include/core/SkYUVAIndex.h"
-#include "include/core/SkYUVASizeInfo.h"
+#include "include/core/SkYUVAPixmaps.h"
 #include "include/gpu/GrBackendSurface.h"
 #include "src/core/SkAutoMalloc.h"
 
@@ -24,70 +23,38 @@ namespace sk_gpu_test {
 // the image if the context has changed, as in Viewer)
 class LazyYUVImage {
 public:
-    // Returns null if the data could not be extracted into YUVA8 planes
-    static std::unique_ptr<LazyYUVImage> Make(sk_sp<SkData> data);
+    // Returns null if the data could not be extracted into YUVA planes
+    static std::unique_ptr<LazyYUVImage> Make(sk_sp<SkData> data,
+                                              GrMipmapped = GrMipmapped::kNo,
+                                              sk_sp<SkColorSpace> = nullptr);
+    static std::unique_ptr<LazyYUVImage> Make(SkYUVAPixmaps,
+                                              GrMipmapped = GrMipmapped::kNo,
+                                              sk_sp<SkColorSpace> = nullptr);
 
-    sk_sp<SkImage> refImage(GrContext* context);
+    enum class Type { kFromPixmaps, kFromGenerator, kFromTextures };
 
-    const SkImage* getImage(GrContext* context);
+    SkISize dimensions() const { return fPixmaps.yuvaInfo().dimensions(); }
+
+    sk_sp<SkImage> refImage(GrRecordingContext* rContext, Type);
 
 private:
     // Decoded YUV data
-    SkYUVASizeInfo fSizeInfo;
-    SkYUVColorSpace fColorSpace;
-    SkYUVAIndex fComponents[SkYUVAIndex::kIndexCount];
-    SkAutoMalloc fPlaneData;
-    SkPixmap fPlanes[SkYUVASizeInfo::kMaxCount];
+    SkYUVAPixmaps fPixmaps;
 
-    // Memoized SkImage formed with planes
-    sk_sp<SkImage> fYUVImage;
-    uint32_t fOwningContextID;
+    GrMipmapped fMipmapped;
 
-    LazyYUVImage() : fOwningContextID(SK_InvalidGenID) {}
+    sk_sp<SkColorSpace> fColorSpace;
 
-    bool reset(sk_sp<SkData> data);
+    // Memoized SkImages formed with planes, one for each Type.
+    sk_sp<SkImage> fYUVImage[4];
 
-    bool ensureYUVImage(GrContext* context);
+    LazyYUVImage() = default;
+
+    bool reset(sk_sp<SkData> data, GrMipmapped, sk_sp<SkColorSpace>);
+    bool reset(SkYUVAPixmaps pixmaps, GrMipmapped, sk_sp<SkColorSpace>);
+
+    bool ensureYUVImage(GrRecordingContext* rContext, Type type);
 };
-
-// A helper for managing the lifetime of backend textures for YUVA images.
-class YUVABackendReleaseContext {
-public:
-    // A stock 'TextureReleaseProc' to use with this class
-    static void Release(void* releaseContext) {
-        auto beContext = reinterpret_cast<YUVABackendReleaseContext*>(releaseContext);
-
-        delete beContext;
-    }
-
-    // Given how and when backend textures are created, just deleting this object often
-    // isn't enough. This helper encapsulates the extra work needed.
-    static void Unwind(GrContext* context, YUVABackendReleaseContext* beContext);
-
-    YUVABackendReleaseContext(GrContext* context);
-    ~YUVABackendReleaseContext();
-
-    void set(int index, const GrBackendTexture& beTex) {
-        SkASSERT(index >= 0 && index < 4);
-        SkASSERT(!fBETextures[index].isValid());
-        SkASSERT(beTex.isValid());
-
-        fBETextures[index] = beTex;
-    }
-
-    const GrBackendTexture* beTextures() const { return fBETextures; }
-
-    const GrBackendTexture& beTexture(int index) {
-        SkASSERT(index >= 0 && index < 4);
-        SkASSERT(fBETextures[index].isValid());
-        return fBETextures[index];
-    }
-
-private:
-    GrContext*       fContext;
-    GrBackendTexture fBETextures[4];
-};
-
 
 } // namespace sk_gpu_test
 

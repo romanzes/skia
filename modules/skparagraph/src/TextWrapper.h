@@ -111,7 +111,7 @@ class TextWrapper {
         void trim() {
 
             if (fEnd.cluster() != nullptr &&
-                fEnd.cluster()->master() != nullptr &&
+                fEnd.cluster()->owner() != nullptr &&
                 fEnd.cluster()->run() != nullptr &&
                 fEnd.cluster()->run()->placeholderStyle() == nullptr &&
                 fWidth > 0) {
@@ -125,6 +125,7 @@ class TextWrapper {
                 fEnd.move(false);
                 fWidth -= cluster->width();
             } else {
+                fEnd.setPosition(fStart.position());
                 fWidth = 0;
             }
         }

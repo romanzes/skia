@@ -13,6 +13,8 @@
 #include "src/gpu/glsl/GrGLSLProgramDataManager.h"
 #include "src/gpu/glsl/GrGLSLUniformHandler.h"
 
+#include <vector>
+
 class GrGLSLFragmentProcessor;
 class GrGLSLPrimitiveProcessor;
 class GrGLSLXferProcessor;
@@ -56,15 +58,14 @@ public:
                                    const VaryingInfoArray&, // used for NVPR only currently
                                    std::unique_ptr<GrGLSLPrimitiveProcessor> geometryProcessor,
                                    std::unique_ptr<GrGLSLXferProcessor> xferProcessor,
-                                   std::unique_ptr<std::unique_ptr<GrGLSLFragmentProcessor>[]> fps,
-                                   int fragmentProcessorCnt,
+                                   std::vector<std::unique_ptr<GrGLSLFragmentProcessor>> fps,
                                    std::unique_ptr<Attribute[]>,
                                    int vertexAttributeCnt,
                                    int instanceAttributeCnt,
                                    int vertexStride,
                                    int instanceStride);
 
-    ~GrGLProgram();
+    ~GrGLProgram() override;
 
     /**
      * Call to abandon GL objects owned by this program.
@@ -149,8 +150,7 @@ private:
                 const VaryingInfoArray&, // used for NVPR only currently
                 std::unique_ptr<GrGLSLPrimitiveProcessor> geometryProcessor,
                 std::unique_ptr<GrGLSLXferProcessor> xferProcessor,
-                std::unique_ptr<std::unique_ptr<GrGLSLFragmentProcessor>[]> fps,
-                int fragmentProcessorCnt,
+                std::vector<std::unique_ptr<GrGLSLFragmentProcessor>> fpImpls,
                 std::unique_ptr<Attribute[]>,
                 int vertexAttributeCnt,
                 int instanceAttributeCnt,
@@ -168,8 +168,7 @@ private:
     // the installed effects
     std::unique_ptr<GrGLSLPrimitiveProcessor> fPrimitiveProcessor;
     std::unique_ptr<GrGLSLXferProcessor> fXferProcessor;
-    std::unique_ptr<std::unique_ptr<GrGLSLFragmentProcessor>[]> fFragmentProcessors;
-    int fFragmentProcessorCnt;
+    std::vector<std::unique_ptr<GrGLSLFragmentProcessor>> fFPImpls;
 
     std::unique_ptr<Attribute[]> fAttributes;
     int fVertexAttributeCnt;
@@ -182,7 +181,7 @@ private:
 
     int fNumTextureSamplers;
 
-    typedef SkRefCnt INHERITED;
+    using INHERITED = SkRefCnt;
 };
 
 #endif

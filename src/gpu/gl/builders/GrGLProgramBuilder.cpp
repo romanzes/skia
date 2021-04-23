@@ -7,15 +7,14 @@
 
 #include "src/gpu/gl/builders/GrGLProgramBuilder.h"
 
-#include "include/gpu/GrContext.h"
+#include "include/gpu/GrDirectContext.h"
 #include "src/core/SkATrace.h"
 #include "src/core/SkAutoMalloc.h"
 #include "src/core/SkReadBuffer.h"
 #include "src/core/SkTraceEvent.h"
 #include "src/core/SkWriteBuffer.h"
 #include "src/gpu/GrAutoLocaleSetter.h"
-#include "src/gpu/GrContextPriv.h"
-#include "src/gpu/GrCoordTransform.h"
+#include "src/gpu/GrDirectContextPriv.h"
 #include "src/gpu/GrPersistentCacheUtils.h"
 #include "src/gpu/GrProgramDesc.h"
 #include "src/gpu/GrShaderCaps.h"
@@ -24,6 +23,8 @@
 #include "src/gpu/gl/GrGLGpu.h"
 #include "src/gpu/gl/GrGLProgram.h"
 #include "src/gpu/gl/builders/GrGLProgramBuilder.h"
+
+#include <memory>
 #include "src/gpu/gl/builders/GrGLShaderStringBuilder.h"
 #include "src/gpu/glsl/GrGLSLFragmentProcessor.h"
 #include "src/gpu/glsl/GrGLSLGeometryProcessor.h"
@@ -51,7 +52,7 @@ sk_sp<GrGLProgram> GrGLProgramBuilder::CreateProgram(
                                                const GrProgramDesc& desc,
                                                const GrProgramInfo& programInfo,
                                                const GrGLPrecompiledProgram* precompiledProgram) {
-    ATRACE_ANDROID_FRAMEWORK_ALWAYS("shader_compile");
+    TRACE_EVENT0_ALWAYS("skia.gpu", "shader_compile");
     GrAutoLocaleSetter als("C");
 
     // create a builder.  This will be handed off to effects so they can use it to add
@@ -91,6 +92,10 @@ const GrCaps* GrGLProgramBuilder::caps() const {
     return fGpu->caps();
 }
 
+SkSL::Compiler* GrGLProgramBuilder::shaderCompiler() const {
+    return fGpu->shaderCompiler();
+}
+
 bool GrGLProgramBuilder::compileAndAttachShaders(const SkSL::String& glsl,
                                                  GrGLuint programId,
                                                  GrGLenum type,
@@ -116,8 +121,8 @@ void GrGLProgramBuilder::computeCountsAndStrides(GrGLuint programID,
                                                  bool bindAttribLocations) {
     fVertexAttributeCnt = primProc.numVertexAttributes();
     fInstanceAttributeCnt = primProc.numInstanceAttributes();
-    fAttributes.reset(
-            new GrGLProgram::Attribute[fVertexAttributeCnt + fInstanceAttributeCnt]);
+    fAttributes = std::make_unique<GrGLProgram::Attribute[]>(
+            fVertexAttributeCnt + fInstanceAttributeCnt);
     auto addAttr = [&](int i, const auto& a, size_t* stride) {
         fAttributes[i].fCPUType = a.cpuType();
         fAttributes[i].fGPUType = a.gpuType();
@@ -229,7 +234,6 @@ sk_sp<GrGLProgram> GrGLProgramBuilder::finalize(const GrGLPrecompiledProgram* pr
     auto errorHandler = this->gpu()->getContext()->priv().getShaderErrorHandler();
     const GrPrimitiveProcessor& primProc = this->primitiveProcessor();
     SkSL::Program::Settings settings;
-    settings.fCaps = this->gpu()->glCaps().shaderCaps();
     settings.fFlipY = this->origin() != kTopLeft_GrSurfaceOrigin;
     settings.fSharpenTextures =
                     this->gpu()->getContext()->priv().options().fSharpenMipmappedTextures;
@@ -256,7 +260,7 @@ sk_sp<GrGLProgram> GrGLProgramBuilder::finalize(const GrGLPrecompiledProgram* pr
         this->computeCountsAndStrides(programID, primProc, false);
         usedProgramBinaries = true;
     } else if (cached) {
-        ATRACE_ANDROID_FRAMEWORK_ALWAYS("cache_hit");
+        TRACE_EVENT0_ALWAYS("skia.gpu", "cache_hit");
         SkReadBuffer reader(fCached->data(), fCached->size());
         SkFourByteTag shaderType = GrPersistentCacheUtils::GetType(&reader);
 
@@ -318,7 +322,7 @@ sk_sp<GrGLProgram> GrGLProgramBuilder::finalize(const GrGLPrecompiledProgram* pr
         }
     }
     if (!usedProgramBinaries) {
-        ATRACE_ANDROID_FRAMEWORK_ALWAYS("cache_miss");
+        TRACE_EVENT0_ALWAYS("skia.gpu", "cache_miss");
         // Either a cache miss, or we got something other than binaries from the cache
 
         /*
@@ -329,8 +333,8 @@ sk_sp<GrGLProgram> GrGLProgramBuilder::finalize(const GrGLPrecompiledProgram* pr
             if (fFS.fForceHighPrecision) {
                 settings.fForceHighPrecision = true;
             }
-            std::unique_ptr<SkSL::Program> fs = GrSkSLtoGLSL(gpu()->glContext(),
-                                                             SkSL::Program::kFragment_Kind,
+            std::unique_ptr<SkSL::Program> fs = GrSkSLtoGLSL(this->gpu(),
+                                                             SkSL::ProgramKind::kFragment,
                                                              *sksl[kFragment_GrShaderType],
                                                              settings,
                                                              &glsl[kFragment_GrShaderType],
@@ -354,8 +358,8 @@ sk_sp<GrGLProgram> GrGLProgramBuilder::finalize(const GrGLPrecompiledProgram* pr
         */
         if (glsl[kVertex_GrShaderType].empty()) {
             // Don't have cached GLSL, need to compile SkSL->GLSL
-            std::unique_ptr<SkSL::Program> vs = GrSkSLtoGLSL(gpu()->glContext(),
-                                                             SkSL::Program::kVertex_Kind,
+            std::unique_ptr<SkSL::Program> vs = GrSkSLtoGLSL(this->gpu(),
+                                                             SkSL::ProgramKind::kVertex,
                                                              *sksl[kVertex_GrShaderType],
                                                              settings,
                                                              &glsl[kVertex_GrShaderType],
@@ -418,8 +422,8 @@ sk_sp<GrGLProgram> GrGLProgramBuilder::finalize(const GrGLPrecompiledProgram* pr
             if (glsl[kGeometry_GrShaderType].empty()) {
                 // Don't have cached GLSL, need to compile SkSL->GLSL
                 std::unique_ptr<SkSL::Program> gs;
-                gs = GrSkSLtoGLSL(gpu()->glContext(),
-                                  SkSL::Program::kGeometry_Kind,
+                gs = GrSkSLtoGLSL(this->gpu(),
+                                  SkSL::ProgramKind::kGeometry,
                                   *sksl[kGeometry_GrShaderType],
                                   settings,
                                   &glsl[kGeometry_GrShaderType],
@@ -438,11 +442,14 @@ sk_sp<GrGLProgram> GrGLProgramBuilder::finalize(const GrGLPrecompiledProgram* pr
         }
         this->bindProgramResourceLocations(programID);
 
-        GL_CALL(LinkProgram(programID));
-        if (checkLinked) {
-            if (!this->checkLinkStatus(programID, errorHandler, sksl, glsl)) {
-                cleanup_program(fGpu, programID, shadersToDelete);
-                return nullptr;
+        {
+            TRACE_EVENT0_ALWAYS("skia.gpu", "driver_link_program");
+            GL_CALL(LinkProgram(programID));
+            if (checkLinked) {
+                if (!this->checkLinkStatus(programID, errorHandler, sksl, glsl)) {
+                    cleanup_program(fGpu, programID, shadersToDelete);
+                    return nullptr;
+                }
             }
         }
     }
@@ -559,8 +566,7 @@ sk_sp<GrGLProgram> GrGLProgramBuilder::createProgram(GrGLuint programID) {
                              fVaryingHandler.fPathProcVaryingInfos,
                              std::move(fGeometryProcessor),
                              std::move(fXferProcessor),
-                             std::move(fFragmentProcessors),
-                             fFragmentProcessorCnt,
+                             std::move(fFPImpls),
                              std::move(fAttributes),
                              fVertexAttributeCnt,
                              fInstanceAttributeCnt,
@@ -582,8 +588,6 @@ bool GrGLProgramBuilder::PrecompileProgram(GrGLPrecompiledProgram* precompiledPr
     auto errorHandler = gpu->getContext()->priv().getShaderErrorHandler();
 
     SkSL::Program::Settings settings;
-    const GrGLCaps& caps = gpu->glCaps();
-    settings.fCaps = caps.shaderCaps();
     settings.fSharpenTextures = gpu->getContext()->priv().options().fSharpenMipmappedTextures;
     GrPersistentCacheUtils::ShaderMetadata meta;
     meta.fSettings = &settings;
@@ -602,9 +606,9 @@ bool GrGLProgramBuilder::PrecompileProgram(GrGLPrecompiledProgram* precompiledPr
 
     SkTDArray<GrGLuint> shadersToDelete;
 
-    auto compileShader = [&](SkSL::Program::Kind kind, const SkSL::String& sksl, GrGLenum type) {
+    auto compileShader = [&](SkSL::ProgramKind kind, const SkSL::String& sksl, GrGLenum type) {
         SkSL::String glsl;
-        auto program = GrSkSLtoGLSL(gpu->glContext(), kind, sksl, settings, &glsl, errorHandler);
+        auto program = GrSkSLtoGLSL(gpu, kind, sksl, settings, &glsl, errorHandler);
         if (!program) {
             return false;
         }
@@ -618,14 +622,14 @@ bool GrGLProgramBuilder::PrecompileProgram(GrGLPrecompiledProgram* precompiledPr
         }
     };
 
-    if (!compileShader(SkSL::Program::kFragment_Kind,
+    if (!compileShader(SkSL::ProgramKind::kFragment,
                        shaders[kFragment_GrShaderType],
                        GR_GL_FRAGMENT_SHADER) ||
-        !compileShader(SkSL::Program::kVertex_Kind,
+        !compileShader(SkSL::ProgramKind::kVertex,
                        shaders[kVertex_GrShaderType],
                        GR_GL_VERTEX_SHADER) ||
         (!shaders[kGeometry_GrShaderType].empty() &&
-         !compileShader(SkSL::Program::kGeometry_Kind,
+         !compileShader(SkSL::ProgramKind::kGeometry,
                        shaders[kGeometry_GrShaderType],
                        GR_GL_GEOMETRY_SHADER))) {
         cleanup_program(gpu, programID, shadersToDelete);
@@ -637,6 +641,7 @@ bool GrGLProgramBuilder::PrecompileProgram(GrGLPrecompiledProgram* precompiledPr
                                                           meta.fAttributeNames[i].c_str()));
     }
 
+    const GrGLCaps& caps = gpu->glCaps();
     if (meta.fHasCustomColorOutput && caps.bindFragDataLocationSupport()) {
         GR_GL_CALL(gpu->glInterface(), BindFragDataLocation(programID, 0,
                 GrGLSLFragmentShaderBuilder::DeclaredColorOutputName()));

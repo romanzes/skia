@@ -16,7 +16,6 @@
 #include "include/gpu/GrTypes.h"
 #include "include/private/GrSharedEnums.h"
 #include "include/private/SkImageInfoPriv.h"
-#include "include/private/SkWeakRefCnt.h"
 
 class GrBackendFormat;
 class GrCaps;
@@ -62,34 +61,10 @@ static constexpr bool GrIsPrimTypeLines(GrPrimitiveType type) {
     return GrPrimitiveType::kLines == type || GrPrimitiveType::kLineStrip == type;
 }
 
-static constexpr bool GrIsPrimTypeTris(GrPrimitiveType type) {
-    return GrPrimitiveType::kTriangles == type || GrPrimitiveType::kTriangleStrip == type;
-}
-
 enum class GrPrimitiveRestart : bool {
     kNo = false,
     kYes = true
 };
-
-struct GrDrawIndirectCommand {
-    uint32_t fVertexCount;
-    uint32_t fInstanceCount;
-    uint32_t fBaseVertex;
-    uint32_t fBaseInstance;
-};
-
-static_assert(sizeof(GrDrawIndirectCommand) == 16, "GrDrawIndirectCommand must be tightly packed");
-
-struct GrDrawIndexedIndirectCommand {
-    uint32_t fIndexCount;
-    uint32_t fInstanceCount;
-    uint32_t fBaseIndex;
-    int32_t fBaseVertex;
-    uint32_t fBaseInstance;
-};
-
-static_assert(sizeof(GrDrawIndexedIndirectCommand) == 20,
-              "GrDrawIndexedIndirectCommand must be tightly packed");
 
 /**
  * Should a created surface be texturable?
@@ -309,6 +284,9 @@ static inline GrQuadAAFlags SkToGrQuadAAFlags(unsigned flags) {
 enum GrSLType {
     kVoid_GrSLType,
     kBool_GrSLType,
+    kBool2_GrSLType,
+    kBool3_GrSLType,
+    kBool4_GrSLType,
     kByte_GrSLType,
     kByte2_GrSLType,
     kByte3_GrSLType,
@@ -345,13 +323,16 @@ enum GrSLType {
     kInt4_GrSLType,
     kUint_GrSLType,
     kUint2_GrSLType,
+    kUint3_GrSLType,
+    kUint4_GrSLType,
     kTexture2DSampler_GrSLType,
     kTextureExternalSampler_GrSLType,
     kTexture2DRectSampler_GrSLType,
     kTexture2D_GrSLType,
     kSampler_GrSLType,
+    kInput_GrSLType,
 
-    kLast_GrSLType = kSampler_GrSLType
+    kLast_GrSLType = kInput_GrSLType
 };
 static const int kGrSLTypeCount = kLast_GrSLType + 1;
 
@@ -411,6 +392,9 @@ static constexpr bool GrSLTypeIsFloatType(GrSLType type) {
         case kTextureExternalSampler_GrSLType:
         case kTexture2DRectSampler_GrSLType:
         case kBool_GrSLType:
+        case kBool2_GrSLType:
+        case kBool3_GrSLType:
+        case kBool4_GrSLType:
         case kByte_GrSLType:
         case kByte2_GrSLType:
         case kByte3_GrSLType:
@@ -433,8 +417,11 @@ static constexpr bool GrSLTypeIsFloatType(GrSLType type) {
         case kInt4_GrSLType:
         case kUint_GrSLType:
         case kUint2_GrSLType:
+        case kUint3_GrSLType:
+        case kUint4_GrSLType:
         case kTexture2D_GrSLType:
         case kSampler_GrSLType:
+        case kInput_GrSLType:
             return false;
     }
     SkUNREACHABLE;
@@ -456,6 +443,7 @@ static constexpr int GrSLTypeVecLength(GrSLType type) {
 
         case kFloat2_GrSLType:
         case kHalf2_GrSLType:
+        case kBool2_GrSLType:
         case kByte2_GrSLType:
         case kUByte2_GrSLType:
         case kShort2_GrSLType:
@@ -466,20 +454,24 @@ static constexpr int GrSLTypeVecLength(GrSLType type) {
 
         case kFloat3_GrSLType:
         case kHalf3_GrSLType:
+        case kBool3_GrSLType:
         case kByte3_GrSLType:
         case kUByte3_GrSLType:
         case kShort3_GrSLType:
         case kUShort3_GrSLType:
         case kInt3_GrSLType:
+        case kUint3_GrSLType:
             return 3;
 
         case kFloat4_GrSLType:
         case kHalf4_GrSLType:
+        case kBool4_GrSLType:
         case kByte4_GrSLType:
         case kUByte4_GrSLType:
         case kShort4_GrSLType:
         case kUShort4_GrSLType:
         case kInt4_GrSLType:
+        case kUint4_GrSLType:
             return 4;
 
         case kFloat2x2_GrSLType:
@@ -494,6 +486,7 @@ static constexpr int GrSLTypeVecLength(GrSLType type) {
         case kTexture2DRectSampler_GrSLType:
         case kTexture2D_GrSLType:
         case kSampler_GrSLType:
+        case kInput_GrSLType:
             return -1;
     }
     SkUNREACHABLE;
@@ -556,7 +549,12 @@ static constexpr bool GrSLTypeIsCombinedSamplerType(GrSLType type) {
         case kInt4_GrSLType:
         case kUint_GrSLType:
         case kUint2_GrSLType:
+        case kUint3_GrSLType:
+        case kUint4_GrSLType:
         case kBool_GrSLType:
+        case kBool2_GrSLType:
+        case kBool3_GrSLType:
+        case kBool4_GrSLType:
         case kByte_GrSLType:
         case kByte2_GrSLType:
         case kByte3_GrSLType:
@@ -575,6 +573,7 @@ static constexpr bool GrSLTypeIsCombinedSamplerType(GrSLType type) {
         case kUShort4_GrSLType:
         case kTexture2D_GrSLType:
         case kSampler_GrSLType:
+        case kInput_GrSLType:
             return false;
     }
     SkUNREACHABLE;
@@ -677,8 +676,9 @@ enum class GrGpuBufferType {
     kDrawIndirect,
     kXferCpuToGpu,
     kXferGpuToCpu,
+    kUniform,
 };
-static const int kGrGpuBufferTypeCount = static_cast<int>(GrGpuBufferType::kXferGpuToCpu) + 1;
+static const int kGrGpuBufferTypeCount = static_cast<int>(GrGpuBufferType::kUniform) + 1;
 
 /**
  * Provides a performance hint regarding the frequency at which a data store will be accessed.
@@ -717,6 +717,11 @@ enum class GrInternalSurfaceFlags {
     // This means the pixels in the render target are write-only. This is used for Dawn and Metal
     // swap chain targets which can be rendered to, but not read or copied.
     kFramebufferOnly                = 1 << 3,
+
+    // This is a Vulkan only flag. If set the surface can be used as an input attachment in a
+    // shader. This is used for doing in shader blending where we want to sample from the same
+    // image we are drawing to.
+    kVkRTSupportsInputAttachment    = 1 << 4,
 };
 
 GR_MAKE_BITFIELD_CLASS_OPS(GrInternalSurfaceFlags)
@@ -726,8 +731,16 @@ GR_MAKE_BITFIELD_CLASS_OPS(GrInternalSurfaceFlags)
 constexpr static int kGrInternalTextureFlagsMask = static_cast<int>(
         GrInternalSurfaceFlags::kReadOnly);
 
+// We don't include kVkRTSupportsInputAttachment in this mask since we check it manually. We don't
+// require that both the surface and proxy have matching values for this flag. Instead we require
+// if the proxy has it set then the surface must also have it set. All other flags listed here must
+// match on the proxy and surface.
+// TODO: Add back kFramebufferOnly flag here once we update SkSurfaceCharacterization to take it
+// as a flag. skbug.com/10672
 constexpr static int kGrInternalRenderTargetFlagsMask = static_cast<int>(
-        GrInternalSurfaceFlags::kGLRTFBOIDIs0 | GrInternalSurfaceFlags::kRequiresManualMSAAResolve);
+        GrInternalSurfaceFlags::kGLRTFBOIDIs0 |
+        GrInternalSurfaceFlags::kRequiresManualMSAAResolve/* |
+        GrInternalSurfaceFlags::kFramebufferOnly*/);
 
 constexpr static int kGrInternalTextureRenderTargetFlagsMask =
         kGrInternalTextureFlagsMask | kGrInternalRenderTargetFlagsMask;
@@ -768,13 +781,13 @@ enum class GpuPathRenderers {
     kAALinearizing     =   1 << 6,
     kSmall             =   1 << 7,
     kTriangulating     =   1 << 8,
-    kDefault           = ((1 << 9) - 1) & ~kTessellation  // All but kTessellation.
+    kDefault           = ((1 << 9) - 1)  // All path renderers.
 };
 
 /**
  * Used to describe the current state of Mips on a GrTexture
  */
-enum class  GrMipMapsStatus {
+enum class GrMipmapStatus {
     kNotAllocated, // Mips have not been allocated
     kDirty,        // Mips are allocated but the full mip tree does not have valid data
     kValid,        // All levels fully allocated and have valid data in them
@@ -804,6 +817,7 @@ enum class GrColorType {
     kRGBA_1010102,
     kBGRA_1010102,
     kGray_8,
+    kGrayAlpha_88,
     kAlpha_F16,
     kRGBA_F16,
     kRGBA_F16_Clamped,
@@ -828,6 +842,8 @@ enum class GrColorType {
     kR_16,
     kR_F16,
     kGray_F16,
+    kBGRA_4444,
+    kARGB_4444,
 
     kLast = kGray_F16
 };
@@ -849,6 +865,7 @@ static constexpr SkColorType GrColorTypeToSkColorType(GrColorType ct) {
         case GrColorType::kRGBA_1010102:     return kRGBA_1010102_SkColorType;
         case GrColorType::kBGRA_1010102:     return kBGRA_1010102_SkColorType;
         case GrColorType::kGray_8:           return kGray_8_SkColorType;
+        case GrColorType::kGrayAlpha_88:     return kUnknown_SkColorType;
         case GrColorType::kAlpha_F16:        return kA16_float_SkColorType;
         case GrColorType::kRGBA_F16:         return kRGBA_F16_SkColorType;
         case GrColorType::kRGBA_F16_Clamped: return kRGBA_F16Norm_SkColorType;
@@ -865,6 +882,8 @@ static constexpr SkColorType GrColorTypeToSkColorType(GrColorType ct) {
         case GrColorType::kR_16:             return kUnknown_SkColorType;
         case GrColorType::kR_F16:            return kUnknown_SkColorType;
         case GrColorType::kGray_F16:         return kUnknown_SkColorType;
+        case GrColorType::kARGB_4444:        return kUnknown_SkColorType;
+        case GrColorType::kBGRA_4444:        return kUnknown_SkColorType;
     }
     SkUNREACHABLE;
 }
@@ -916,6 +935,7 @@ static constexpr uint32_t GrColorTypeChannelFlags(GrColorType ct) {
         case GrColorType::kRGBA_1010102:     return kRGBA_SkColorChannelFlags;
         case GrColorType::kBGRA_1010102:     return kRGBA_SkColorChannelFlags;
         case GrColorType::kGray_8:           return kGray_SkColorChannelFlag;
+        case GrColorType::kGrayAlpha_88:     return kGrayAlpha_SkColorChannelFlags;
         case GrColorType::kAlpha_F16:        return kAlpha_SkColorChannelFlag;
         case GrColorType::kRGBA_F16:         return kRGBA_SkColorChannelFlags;
         case GrColorType::kRGBA_F16_Clamped: return kRGBA_SkColorChannelFlags;
@@ -932,6 +952,8 @@ static constexpr uint32_t GrColorTypeChannelFlags(GrColorType ct) {
         case GrColorType::kR_16:             return kRed_SkColorChannelFlag;
         case GrColorType::kR_F16:            return kRed_SkColorChannelFlag;
         case GrColorType::kGray_F16:         return kGray_SkColorChannelFlag;
+        case GrColorType::kARGB_4444:        return kRGBA_SkColorChannelFlags;
+        case GrColorType::kBGRA_4444:        return kRGBA_SkColorChannelFlags;
     }
     SkUNREACHABLE;
 }
@@ -985,6 +1007,10 @@ public:
 
     static constexpr GrColorTypeDesc MakeGray(int grayBits, GrColorTypeEncoding e) {
         return {0, 0, 0, 0, grayBits, e};
+    }
+
+    static constexpr GrColorTypeDesc MakeGrayAlpha(int grayAlpha, GrColorTypeEncoding e) {
+        return {0, 0, 0, 0, grayAlpha, e};
     }
 
     static constexpr GrColorTypeDesc MakeInvalid() { return {}; }
@@ -1051,6 +1077,8 @@ static constexpr GrColorTypeDesc GrGetColorTypeDesc(GrColorType ct) {
             return GrColorTypeDesc::MakeRGBA(10, 2, GrColorTypeEncoding::kUnorm);
         case GrColorType::kGray_8:
             return GrColorTypeDesc::MakeGray(8, GrColorTypeEncoding::kUnorm);
+        case GrColorType::kGrayAlpha_88:
+            return GrColorTypeDesc::MakeGrayAlpha(8, GrColorTypeEncoding::kUnorm);
         case GrColorType::kAlpha_F16:
             return GrColorTypeDesc::MakeAlpha(16, GrColorTypeEncoding::kFloat);
         case GrColorType::kRGBA_F16:
@@ -1083,6 +1111,10 @@ static constexpr GrColorTypeDesc GrGetColorTypeDesc(GrColorType ct) {
             return GrColorTypeDesc::MakeR(16, GrColorTypeEncoding::kFloat);
         case GrColorType::kGray_F16:
             return GrColorTypeDesc::MakeGray(16, GrColorTypeEncoding::kFloat);
+        case GrColorType::kARGB_4444:
+            return GrColorTypeDesc::MakeRGBA(4, GrColorTypeEncoding::kUnorm);
+        case GrColorType::kBGRA_4444:
+            return GrColorTypeDesc::MakeRGBA(4, GrColorTypeEncoding::kUnorm);
     }
     SkUNREACHABLE;
 }
@@ -1129,6 +1161,7 @@ static constexpr size_t GrColorTypeBytesPerPixel(GrColorType ct) {
         case GrColorType::kRGBA_1010102:     return 4;
         case GrColorType::kBGRA_1010102:     return 4;
         case GrColorType::kGray_8:           return 1;
+        case GrColorType::kGrayAlpha_88:     return 2;
         case GrColorType::kAlpha_F16:        return 2;
         case GrColorType::kRGBA_F16:         return 8;
         case GrColorType::kRGBA_F16_Clamped: return 8;
@@ -1145,6 +1178,8 @@ static constexpr size_t GrColorTypeBytesPerPixel(GrColorType ct) {
         case GrColorType::kR_16:             return 2;
         case GrColorType::kR_F16:            return 2;
         case GrColorType::kGray_F16:         return 2;
+        case GrColorType::kARGB_4444:        return 2;
+        case GrColorType::kBGRA_4444:        return 2;
     }
     SkUNREACHABLE;
 }
@@ -1177,24 +1212,68 @@ static constexpr GrColorType GrMaskFormatToColorType(GrMaskFormat format) {
 /**
  * Ref-counted object that calls a callback from its destructor.
  */
-class GrRefCntedCallback : public SkRefCnt {
+class GrRefCntedCallback : public SkNVRefCnt<GrRefCntedCallback> {
 public:
     using Context = void*;
     using Callback = void (*)(Context);
 
-    GrRefCntedCallback(Callback proc, Context ctx) : fReleaseProc(proc), fReleaseCtx(ctx) {
-        SkASSERT(proc);
+    static sk_sp<GrRefCntedCallback> Make(Callback proc, Context ctx) {
+        if (!proc) {
+            return nullptr;
+        }
+        return sk_sp<GrRefCntedCallback>(new GrRefCntedCallback(proc, ctx));
     }
-    ~GrRefCntedCallback() override { fReleaseProc ? fReleaseProc(fReleaseCtx) : void(); }
+
+    ~GrRefCntedCallback() { fReleaseProc(fReleaseCtx); }
 
     Context context() const { return fReleaseCtx; }
 
 private:
+    GrRefCntedCallback(Callback proc, Context ctx) : fReleaseProc(proc), fReleaseCtx(ctx) {}
+    GrRefCntedCallback(const GrRefCntedCallback&) = delete;
+    GrRefCntedCallback(GrRefCntedCallback&&) = delete;
+    GrRefCntedCallback& operator=(const GrRefCntedCallback&) = delete;
+    GrRefCntedCallback& operator=(GrRefCntedCallback&&) = delete;
+
     Callback fReleaseProc;
     Context fReleaseCtx;
 };
 
-#if GR_TEST_UTILS || defined(SK_ENABLE_DUMP_GPU)
+enum class GrDstSampleType {
+    kNone, // The dst value will not be sampled in the shader
+    kAsTextureCopy, // The dst value will be sampled from a copy of the dst
+    // The types below require a texture barrier
+    kAsSelfTexture, // The dst value is sampled directly from the dst itself as a texture.
+    kAsInputAttachment, // The dst value is sampled directly from the dst as an input attachment.
+};
+
+// Returns true if the sampling of the dst color in the shader is done by reading the dst directly.
+// Anything that directly reads the dst will need a barrier between draws.
+static constexpr bool GrDstSampleTypeDirectlySamplesDst(GrDstSampleType type) {
+    switch (type) {
+        case GrDstSampleType::kAsSelfTexture:  // fall through
+        case GrDstSampleType::kAsInputAttachment:
+            return true;
+        case GrDstSampleType::kNone:  // fall through
+        case GrDstSampleType::kAsTextureCopy:
+            return false;
+    }
+    SkUNREACHABLE;
+}
+
+static constexpr bool GrDstSampleTypeUsesTexture(GrDstSampleType type) {
+    switch (type) {
+        case GrDstSampleType::kAsSelfTexture:  // fall through
+        case GrDstSampleType::kAsTextureCopy:
+            return true;
+        case GrDstSampleType::kNone:  // fall through
+        case GrDstSampleType::kAsInputAttachment:
+            return false;
+    }
+    SkUNREACHABLE;
+}
+
+#if defined(SK_DEBUG) || GR_TEST_UTILS || defined(SK_ENABLE_DUMP_GPU)
 static constexpr const char* GrBackendApiToStr(GrBackendApi api) {
     switch (api) {
         case GrBackendApi::kOpenGL:   return "OpenGL";
@@ -1221,6 +1300,7 @@ static constexpr const char* GrColorTypeToStr(GrColorType ct) {
         case GrColorType::kRGBA_1010102:     return "kRGBA_1010102";
         case GrColorType::kBGRA_1010102:     return "kBGRA_1010102";
         case GrColorType::kGray_8:           return "kGray_8";
+        case GrColorType::kGrayAlpha_88:     return "kGrayAlpha_88";
         case GrColorType::kAlpha_F16:        return "kAlpha_F16";
         case GrColorType::kRGBA_F16:         return "kRGBA_F16";
         case GrColorType::kRGBA_F16_Clamped: return "kRGBA_F16_Clamped";
@@ -1237,6 +1317,8 @@ static constexpr const char* GrColorTypeToStr(GrColorType ct) {
         case GrColorType::kR_16:             return "kR_16";
         case GrColorType::kR_F16:            return "kR_F16";
         case GrColorType::kGray_F16:         return "kGray_F16";
+        case GrColorType::kARGB_4444:        return "kARGB_4444";
+        case GrColorType::kBGRA_4444:        return "kBGRA_4444";
     }
     SkUNREACHABLE;
 }

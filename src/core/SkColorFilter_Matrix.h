@@ -19,8 +19,8 @@ public:
     uint32_t onGetFlags() const override;
 
 #if SK_SUPPORT_GPU
-    std::unique_ptr<GrFragmentProcessor> asFragmentProcessor(GrRecordingContext*,
-                                                             const GrColorInfo&) const override;
+    GrFPResult asFragmentProcessor(std::unique_ptr<GrFragmentProcessor> inputFP,
+                                   GrRecordingContext*, const GrColorInfo&) const override;
 #endif
 
     static void RegisterFlattenables();
@@ -40,7 +40,7 @@ private:
     uint16_t    fFlags;
     Domain      fDomain;
 
-    typedef SkColorFilterBase INHERITED;
+    using INHERITED = SkColorFilterBase;
 };
 
 #endif

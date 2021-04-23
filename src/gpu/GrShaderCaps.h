@@ -15,7 +15,8 @@
 
 namespace SkSL {
 class ShaderCapsFactory;
-}
+class SharedCompiler;
+}  // namespace SkSL
 
 struct GrContextOptions;
 class SkJSONWriter;
@@ -30,9 +31,8 @@ public:
         kNotSupported_AdvBlendEqInteraction,     //<! No _blend_equation_advanced extension
         kAutomatic_AdvBlendEqInteraction,        //<! No interaction required
         kGeneralEnable_AdvBlendEqInteraction,    //<! layout(blend_support_all_equations) out
-        kSpecificEnables_AdvBlendEqInteraction,  //<! Specific layout qualifiers per equation
 
-        kLast_AdvBlendEqInteraction = kSpecificEnables_AdvBlendEqInteraction
+        kLast_AdvBlendEqInteraction = kGeneralEnable_AdvBlendEqInteraction
     };
 
     GrShaderCaps(const GrContextOptions&);
@@ -88,14 +88,12 @@ public:
     // SkSL only.
     bool builtinFMASupport() const { return fBuiltinFMASupport; }
 
+    bool builtinDeterminantSupport() const { return fBuiltinDeterminantSupport; }
+
     AdvBlendEqInteraction advBlendEqInteraction() const { return fAdvBlendEqInteraction; }
 
     bool mustEnableAdvBlendEqs() const {
         return fAdvBlendEqInteraction >= kGeneralEnable_AdvBlendEqInteraction;
-    }
-
-    bool mustEnableSpecificAdvBlendEqs() const {
-        return fAdvBlendEqInteraction == kSpecificEnables_AdvBlendEqInteraction;
     }
 
     bool mustDeclareFragmentShaderOutput() const { return fGLSLGeneration > k110_GrGLSLGeneration; }
@@ -177,6 +175,10 @@ public:
     // least some cases.
     bool canUseDoLoops() const { return fCanUseDoLoops; }
 
+    // By default, SkSL pools IR nodes per-program. To debug memory corruption, it is sometimes
+    // helpful to disable that feature.
+    bool useNodePools() const { return fUseNodePools; }
+
     // Returns the string of an extension that must be enabled in the shader to support
     // derivatives. If nullptr is returned then no extension needs to be enabled. Before calling
     // this function, the caller should check that shaderDerivativeSupport exists.
@@ -251,8 +253,6 @@ public:
 
     bool tessellationSupport() const { return SkToBool(fMaxTessellationSegments);}
 
-    bool textureSwizzleAppliedInShader() const { return fTextureSwizzleAppliedInShader; }
-
     GrGLSLGeneration generation() const { return fGLSLGeneration; }
 
 private:
@@ -280,10 +280,10 @@ private:
     bool fFloatIs32Bits                     : 1;
     bool fHalfIs32Bits                      : 1;
     bool fHasLowFragmentPrecision           : 1;
-    bool fTextureSwizzleAppliedInShader     : 1;
 
     // Used by SkSL to know when to generate polyfills.
     bool fBuiltinFMASupport : 1;
+    bool fBuiltinDeterminantSupport : 1;
 
     // Used for specific driver bug work arounds
     bool fCanUseAnyFunctionInShader                   : 1;
@@ -308,6 +308,9 @@ private:
     bool fCanOnlyUseSampleMaskWithStencil             : 1;
     bool fColorSpaceMathNeedsFloat                    : 1;
     bool fCanUseDoLoops                               : 1;
+
+    // This controls behavior of the SkSL compiler, not the code we generate
+    bool fUseNodePools : 1;
 
     const char* fVersionDeclString;
 
@@ -338,6 +341,7 @@ private:
     friend class GrMtlCaps;
     friend class GrVkCaps;
     friend class SkSL::ShaderCapsFactory;
+    friend class SkSL::SharedCompiler;
 };
 
 #endif
