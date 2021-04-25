@@ -22,12 +22,6 @@ class GrD3DRenderTarget;
 
 struct GrD3DTextureResourceInfo;
 
-#ifdef SK_BUILD_FOR_WIN
-// Windows gives bogus warnings about inheriting asTexture/asRenderTarget via dominance.
-#pragma warning(push)
-#pragma warning(disable: 4250)
-#endif
-
 class GrD3DRenderTarget: public GrRenderTarget, public virtual GrD3DTextureResource {
 public:
     static sk_sp<GrD3DRenderTarget> MakeWrappedRenderTarget(GrD3DGpu*, SkISize, int sampleCnt,
@@ -83,7 +77,7 @@ protected:
         }
         const GrCaps& caps = *this->getGpu()->caps();
         return GrSurface::ComputeSize(caps, this->backendFormat(), this->dimensions(),
-                                      numColorSamples, GrMipMapped::kNo);
+                                      numColorSamples, GrMipmapped::kNo);
     }
 
 private:

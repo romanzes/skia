@@ -309,6 +309,9 @@ public:
     /// Is there support for ES2 compatability?
     bool ES2CompatibilitySupport() const { return fES2CompatibilitySupport; }
 
+    /// Is there support for GL_ANGLE_base_vertex_base_instance?
+    bool ANGLEMultiDrawSupport() const { return fANGLEMultiDrawSupport; }
+
     /// Is there support for glMultiDraw*Indirect? Note that the baseInstance fields of indirect
     /// draw commands cannot be used unless we have base instance support.
     bool multiDrawIndirectSupport() const { return fMultiDrawIndirectSupport; }
@@ -338,7 +341,11 @@ public:
     /// Are textures with GL_TEXTURE_RECTANGLE type supported.
     bool rectangleTextureSupport() const { return fRectangleTextureSupport; }
 
-    bool mipMapLevelAndLodControlSupport() const { return fMipMapLevelAndLodControlSupport; }
+    /// Can set the BASE and MAX mip map level.
+    bool mipmapLevelControlSupport() const { return fMipmapLevelControlSupport; }
+
+    /// Can set the MIN/MAX LOD value.
+    bool mipmapLodControlSupport() const { return fMipmapLodControlSupport; }
 
     bool doManualMipmapping() const { return fDoManualMipmapping; }
 
@@ -396,8 +403,8 @@ public:
     bool neverDisableColorWrites() const { return fNeverDisableColorWrites; }
 
     // Texture parameters must be used to enable MIP mapping even when a sampler object is used.
-    bool mustSetTexParameterMinFilterToEnableMipMapping() const {
-        return fMustSetTexParameterMinFilterToEnableMipMapping;
+    bool mustSetAnyTexParameterToEnableMipmapping() const {
+        return fMustSetAnyTexParameterToEnableMipmapping;
     }
 
     // Returns the observed maximum number of instances the driver can handle in a single draw call
@@ -426,7 +433,16 @@ public:
     bool programBinarySupport() const { return fProgramBinarySupport; }
     bool programParameterSupport() const { return fProgramParameterSupport; }
 
+    /** Are sampler objects available in this GL? */
     bool samplerObjectSupport() const { return fSamplerObjectSupport; }
+
+    /**
+     * Are we using sampler objects in favor of texture parameters? (This will only be true if
+     * samplerObjectSupport()).
+     */
+    bool useSamplerObjects() const { return fUseSamplerObjects; }
+
+    bool textureSwizzleSupport() const { return fTextureSwizzleSupport; }
 
     bool tiledRenderingSupport() const { return fTiledRenderingSupport; }
 
@@ -444,7 +460,7 @@ public:
 
     uint64_t computeFormatKey(const GrBackendFormat&) const override;
 
-    GrProgramDesc makeDesc(const GrRenderTarget*, const GrProgramInfo&) const override;
+    GrProgramDesc makeDesc(GrRenderTarget*, const GrProgramInfo&) const override;
 
 #if GR_TEST_UTILS
     GrGLStandard standard() const { return fStandard; }
@@ -502,6 +518,8 @@ private:
 
     GrSwizzle onGetReadSwizzle(const GrBackendFormat&, GrColorType) const override;
 
+    GrDstSampleType onGetDstSampleTypeForProxy(const GrRenderTargetProxy*) const override;
+
     GrGLStandard fStandard = kNone_GrGLStandard;
 
     SkTArray<StencilFormat, true> fStencilFormats;
@@ -521,6 +539,7 @@ private:
     bool fDebugSupport : 1;
     bool fES2CompatibilitySupport : 1;
     bool fDrawRangeElementsSupport : 1;
+    bool fANGLEMultiDrawSupport : 1;
     bool fMultiDrawIndirectSupport : 1;
     bool fBaseVertexBaseInstanceSupport : 1;
     bool fUseNonVBOVertexAndIndexDynamicData : 1;
@@ -530,13 +549,16 @@ private:
     bool fPartialFBOReadIsSlow : 1;
     bool fBindUniformLocationSupport : 1;
     bool fRectangleTextureSupport : 1;
-    bool fMipMapLevelAndLodControlSupport : 1;
+    bool fMipmapLevelControlSupport : 1;
+    bool fMipmapLodControlSupport : 1;
     bool fRGBAToBGRAReadbackConversionsAreSlow : 1;
     bool fUseBufferDataNullHint                : 1;
     bool fClearTextureSupport : 1;
     bool fProgramBinarySupport : 1;
     bool fProgramParameterSupport : 1;
     bool fSamplerObjectSupport : 1;
+    bool fUseSamplerObjects : 1;
+    bool fTextureSwizzleSupport : 1;
     bool fTiledRenderingSupport : 1;
     bool fFBFetchRequiresEnablePerSample : 1;
     bool fSRGBWriteControl : 1;
@@ -552,7 +574,7 @@ private:
     bool fDetachStencilFromMSAABuffersBeforeReadPixels : 1;
     bool fDontSetBaseOrMaxLevelForExternalTextures : 1;
     bool fNeverDisableColorWrites : 1;
-    bool fMustSetTexParameterMinFilterToEnableMipMapping : 1;
+    bool fMustSetAnyTexParameterToEnableMipmapping : 1;
     int fMaxInstancesPerDrawWithoutCrashing = 0;
 
     uint32_t fBlitFramebufferFlags = kNoSupport_BlitFramebufferFlag;
@@ -728,7 +750,7 @@ private:
     GrGLFormat fColorTypeToFormatTable[kGrColorTypeCnt];
     void setColorTypeFormat(GrColorType, GrGLFormat);
 
-    typedef GrCaps INHERITED;
+    using INHERITED = GrCaps;
 };
 
 #endif

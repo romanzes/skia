@@ -13,7 +13,6 @@
 #include "src/core/SkBlitter.h"
 #include "src/core/SkBlurPriv.h"
 #include "src/core/SkCachedData.h"
-#include "src/core/SkCoverageModePriv.h"
 #include "src/core/SkDraw.h"
 #include "src/core/SkPathPriv.h"
 #include "src/core/SkRasterClip.h"
@@ -23,7 +22,6 @@
 #if SK_SUPPORT_GPU
 #include "src/gpu/GrFragmentProcessor.h"
 #include "src/gpu/GrTextureProxy.h"
-#include "src/gpu/effects/GrXfermodeFragmentProcessor.h"
 #include "src/gpu/text/GrSDFMaskFilter.h"
 #endif
 
@@ -262,6 +260,11 @@ bool SkMaskFilterBase::filterPath(const SkPath& devPath, const SkMatrix& matrix,
 
     SkMask  srcM, dstM;
 
+#if defined(SK_BUILD_FOR_FUZZER)
+    if (devPath.countVerbs() > 1000 || devPath.countPoints() > 1000) {
+        return false;
+    }
+#endif
     if (!SkDraw::DrawToMask(devPath, &clip.getBounds(), this, &matrix, &srcM,
                             SkMask::kComputeBoundsAndRenderImage_CreateMode,
                             style)) {

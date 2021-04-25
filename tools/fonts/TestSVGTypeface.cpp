@@ -80,7 +80,7 @@ void TestSVGTypeface::Glyph::withSVG(Fn&& fn) const {
             return;
         }
 
-        sk_sp<SkSVGDOM> svg = SkSVGDOM::MakeFromStream(*stream.get());
+        sk_sp<SkSVGDOM> svg = SkSVGDOM::MakeFromStream(*stream);
         if (!svg) {
             return;
         }
@@ -158,6 +158,8 @@ void TestSVGTypeface::onCharsToGlyphs(const SkUnichar uni[], int count, SkGlyphI
 }
 
 void TestSVGTypeface::onGetFamilyName(SkString* familyName) const { *familyName = fName; }
+
+bool TestSVGTypeface::onGetPostScriptName(SkString*) const { return false; }
 
 SkTypeface::LocalizedStrings* TestSVGTypeface::onCreateFamilyNameIterator() const {
     SkString familyName(fName);

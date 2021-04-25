@@ -38,7 +38,7 @@ class GrGLTextureParameters;
 class GrD3DResourceState;
 #endif
 
-#if GR_TEST_UTILS
+#if defined(SK_DEBUG) || GR_TEST_UTILS
 class SkString;
 #endif
 
@@ -172,7 +172,7 @@ public:
     // Returns true if the backend format has been initialized.
     bool isValid() const { return fValid; }
 
-#if GR_TEST_UTILS
+#if defined(SK_DEBUG) || GR_TEST_UTILS
     SkString toStr() const;
 #endif
 
@@ -231,7 +231,7 @@ public:
     // The GrGLTextureInfo must have a valid fFormat.
     GrBackendTexture(int width,
                      int height,
-                     GrMipMapped,
+                     GrMipmapped,
                      const GrGLTextureInfo& glInfo);
 
 #ifdef SK_VULKAN
@@ -243,7 +243,7 @@ public:
 #ifdef SK_METAL
     GrBackendTexture(int width,
                      int height,
-                     GrMipMapped,
+                     GrMipmapped,
                      const GrMtlTextureInfo& mtlInfo);
 #endif
 
@@ -261,7 +261,7 @@ public:
 
     GrBackendTexture(int width,
                      int height,
-                     GrMipMapped,
+                     GrMipmapped,
                      const GrMockTextureInfo& mockInfo);
 
     GrBackendTexture(const GrBackendTexture& that);
@@ -273,7 +273,9 @@ public:
     SkISize dimensions() const { return {fWidth, fHeight}; }
     int width() const { return fWidth; }
     int height() const { return fHeight; }
-    bool hasMipMaps() const { return GrMipMapped::kYes == fMipMapped; }
+    bool hasMipmaps() const { return fMipmapped == GrMipmapped::kYes; }
+    /** deprecated alias of hasMipmaps(). */
+    bool hasMipMaps() const { return this->hasMipmaps(); }
     GrBackendApi backend() const {return fBackend; }
 
     // If the backend API is GL, copies a snapshot of the GrGLTextureInfo struct into the passed in
@@ -352,7 +354,7 @@ private:
     friend class GrGLGpu;    // for getGLTextureParams
     GrBackendTexture(int width,
                      int height,
-                     GrMipMapped,
+                     GrMipmapped,
                      const GrGLTextureInfo,
                      sk_sp<GrGLTextureParameters>);
     sk_sp<GrGLTextureParameters> getGLTextureParams() const;
@@ -382,7 +384,7 @@ private:
     bool fIsValid;
     int fWidth;         //<! width in pixels
     int fHeight;        //<! height in pixels
-    GrMipMapped fMipMapped;
+    GrMipmapped fMipmapped;
     GrBackendApi fBackend;
 
     union {
@@ -426,16 +428,17 @@ public:
 #endif
 
 #ifdef SK_VULKAN
-    /** Deprecated, use version that does not take stencil bits. */
-    GrBackendRenderTarget(int width,
-                          int height,
-                          int sampleCnt,
-                          int stencilBits,
-                          const GrVkImageInfo& vkInfo);
+    /** Deprecated. Sample count is now part of GrVkImageInfo. */
     GrBackendRenderTarget(int width, int height, int sampleCnt, const GrVkImageInfo& vkInfo);
+
+    GrBackendRenderTarget(int width, int height, const GrVkImageInfo& vkInfo);
 #endif
 
 #ifdef SK_METAL
+    GrBackendRenderTarget(int width,
+                          int height,
+                          const GrMtlTextureInfo& mtlInfo);
+    /** Deprecated. Sample count is ignored and is instead retrieved from the MtlTexture. */
     GrBackendRenderTarget(int width,
                           int height,
                           int sampleCnt,
@@ -445,7 +448,6 @@ public:
 #ifdef SK_DIRECT3D
     GrBackendRenderTarget(int width,
                           int height,
-                          int sampleCnt,
                           const GrD3DTextureResourceInfo& d3dInfo);
 #endif
 
@@ -534,15 +536,19 @@ private:
 
 #ifdef SK_VULKAN
     friend class GrVkRenderTarget;
-    GrBackendRenderTarget(int width, int height, int sampleCnt, const GrVkImageInfo& vkInfo,
+    GrBackendRenderTarget(int width,
+                          int height,
+                          const GrVkImageInfo& vkInfo,
                           sk_sp<GrBackendSurfaceMutableStateImpl> mutableState);
 #endif
 
 #ifdef SK_DIRECT3D
     friend class GrD3DGpu;
     friend class GrD3DRenderTarget;
-    GrBackendRenderTarget(int width, int height, int sampleCnt,
-                          const GrD3DTextureResourceInfo& d3dInfo, sk_sp<GrD3DResourceState> state);
+    GrBackendRenderTarget(int width,
+                          int height,
+                          const GrD3DTextureResourceInfo& d3dInfo,
+                          sk_sp<GrD3DResourceState> state);
     sk_sp<GrD3DResourceState> getGrD3DResourceState() const;
 #endif
 

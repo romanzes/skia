@@ -27,11 +27,10 @@ var CanvasKit = {
   Color: function() {},
   Color4f: function() {},
   ColorAsInt: function() {},
-  /** @return {CanvasKit.SkRect} */
   LTRBRect: function() {},
-  /** @return {CanvasKit.SkRect} */
   XYWHRect: function() {},
-  /** @return {CanvasKit.SkRRect} */
+  LTRBiRect: function() {},
+  XYWHiRect: function() {},
   RRectXY: function() {},
   /** @return {ImageData} */
   ImageData: function() {},
@@ -60,8 +59,8 @@ var CanvasKit = {
   MakeSkVertices: function() {},
   MakeSurface: function() {},
   MakeWebGLCanvasSurface: function() {},
-  /** @return {TypedArray} */
   Malloc: function() {},
+  MallocGlyphIDs: function() {},
   Free: function() {},
   computeTonalColors: function() {},
   currentContext: function() {},
@@ -101,6 +100,13 @@ var CanvasKit = {
 
   // Objects and properties on CanvasKit
 
+  Animation: {
+    prototype: {
+      render: function() {},
+    },
+    _render: function() {},
+  },
+
   GrContext: {
     // public API (from C++ bindings)
     getResourceCacheLimitBytes: function() {},
@@ -111,8 +117,14 @@ var CanvasKit = {
 
   ManagedAnimation: {
     prototype: {
+      render: function() {},
+      seek: function() {},
+      seekFrame: function() {},
       setColor: function() {},
     },
+    _render: function() {},
+    _seek: function() {},
+    _seekFrame: function() {},
   },
 
   Paragraph: {
@@ -136,17 +148,21 @@ var CanvasKit = {
 
   ParagraphBuilder: {
     Make: function() {},
+    MakeFromFontProvider: function() {},
     addText: function() {},
     build: function() {},
     pop: function() {},
 
     prototype: {
       pushStyle: function() {},
+      pushPaintStyle: function() {},
     },
 
     // private API
     _Make: function() {},
+    _MakeFromFontProvider: function() {},
     _pushStyle: function() {},
+    _pushPaintStyle: function() {},
   },
 
   SkRuntimeEffect: {
@@ -164,8 +180,11 @@ var CanvasKit = {
   SkRectBuilder: function() {},
 
   ShapedText: {
-    // public API (from C++ bindings)
-    getBounds: function() {},
+    prototype: {
+      getBounds: function() {},
+    },
+    // private API (from C++ bindings)
+    _getBounds: function() {},
   },
 
   SkAnimatedImage: {
@@ -181,25 +200,16 @@ var CanvasKit = {
   SkCanvas: {
     // public API (from C++ bindings)
     clipPath: function() {},
-    clipRRect: function() {},
-    clipRect: function() {},
-    drawAnimatedImage: function() {},
-    drawArc: function() {},
     drawCircle: function() {},
     drawColorInt: function() {},
-    drawDRRect:  function() {},
     drawImage: function() {},
-    drawImageNine: function() {},
-    drawImageRect: function() {},
+    drawImageAtCurrentFrame: function() {},
     drawLine: function() {},
-    drawOval: function() {},
     drawPaint: function() {},
     drawParagraph: function() {},
     drawPath: function() {},
     drawPicture: function() {},
-    drawRRect:  function() {},
-    drawRect: function() {},
-    drawRoundRect: function() {},
+    drawRect4f: function() {},
     drawText: function() {},
     drawTextBlob: function() {},
     drawVertices: function() {},
@@ -212,32 +222,59 @@ var CanvasKit = {
     restoreToCount: function() {},
     rotate: function() {},
     save: function() {},
-    saveLayer: function() {},
     scale: function() {},
     skew: function() {},
     translate: function() {},
 
     prototype: {
       clear: function() {},
+      clipRRect: function() {},
+      clipRect: function() {},
+      concat44: function() {}, // deprecated
+      concat: function() {},
+      drawArc: function() {},
+      drawAtlas: function() {},
       drawColor: function() {},
       drawColorComponents: function() {},
+      drawDRRect:  function() {},
+      drawImageNine: function() {},
+      drawImageRect: function() {},
+      drawOval: function() {},
+      drawPoints: function() {},
+      drawRect: function() {},
+      drawRRect:  function() {},
       drawShadow: function() {},
+      drawText: function() {},
+      findMarkedCTM: function() {},
+      getLocalToDevice: function() {},
+      getTotalMatrix: function() {},
+      readPixels: function() {},
+      saveLayer: function() {},
+      writePixels : function() {},
     },
 
     // private API
     _clear: function() {},
+    _clipRRect: function() {},
+    _clipRect: function() {},
     _concat: function() {},
+    _drawArc: function() {},
     _drawAtlas: function() {},
     _drawColor: function() {},
+    _drawDRRect:  function() {},
+    _drawImageNine: function() {},
+    _drawImageRect: function() {},
+    _drawOval: function() {},
     _drawPoints: function() {},
+    _drawRect: function() {},
+    _drawRRect:  function() {},
     _drawShadow: function() {},
     _drawSimpleText: function() {},
-    _getLocalToCamera: function() {},
-    _getLocalToDevice: function() {},
-    _getLocalToWorld: function() {},
-    _getTotalMatrix: function() {},
     _findMarkedCTM: function() {},
+    _getLocalToDevice: function() {},
+    _getTotalMatrix: function() {},
     _readPixels: function() {},
+    _saveLayer: function() {},
     _writePixels: function() {},
     delete: function() {},
   },
@@ -299,7 +336,17 @@ var CanvasKit = {
     setSkewX: function() {},
     setSubpixel: function() {},
     setTypeface: function() {},
+
+    prototype: {
+      getGlyphBounds: function() {},
+      getGlyphIDs: function() {},
+      getGlyphWidths: function() {},
+      getWidths: function() {},
+    },
+
     // private API (from C++ bindings)
+    _getGlyphIDs: function() {},
+    _getGlyphWidthBounds: function() {},
     _getWidths: function() {},
   },
 
@@ -313,6 +360,15 @@ var CanvasKit = {
     // private API
     _makeTypefaceFromData: function() {},
     _fromData: function() {},
+  },
+
+  TypefaceFontProvider: {
+    // public API (from C++ and JS bindings)
+    Make: function() {},
+    registerFont: function() {},
+
+    // private API
+    _registerFont: function() {},
   },
 
   SkImage: {
@@ -339,6 +395,7 @@ var CanvasKit = {
   SkM44: {
     identity: function() {},
     invert: function() {},
+    mustInvert: function() {},
     multiply: function() {},
     rotatedUnitSinCos: function() {},
     rotated: function() {},
@@ -348,6 +405,7 @@ var CanvasKit = {
     perspective: function() {},
     rc: function() {},
     transpose: function() {},
+    setupCamera: function() {},
   },
 
   SkMatrix: {
@@ -454,18 +512,53 @@ var CanvasKit = {
     toCmds: function() {},
     toSVGString: function() {},
 
+    prototype: {
+      addArc: function() {},
+      addOval: function() {},
+      addPath: function() {},
+      addPoly: function() {},
+      addRect: function() {},
+      addRRect: function() {},
+      addVerbsPointsWeights: function() {},
+      arc: function() {},
+      arcToOval: function() {},
+      arcToRotated: function() {},
+      arcToTangent: function() {},
+      close: function() {},
+      conicTo: function() {},
+      cubicTo: function() {},
+      dash: function() {},
+      lineTo: function() {},
+      moveTo: function() {},
+      offset: function() {},
+      op: function() {},
+      quadTo: function() {},
+      rArcTo: function() {},
+      rConicTo: function() {},
+      rCubicTo: function() {},
+      rect: function() {},
+      rLineTo: function() {},
+      rMoveTo: function() {},
+      rQuadTo: function() {},
+      simplify: function() {},
+      stroke: function() {},
+      transform: function() {},
+      trim: function() {},
+    },
+
     // private API
     _MakeFromCmds: function() {},
     _MakeFromVerbsPointsWeights: function() {},
     _addArc: function() {},
     _addOval: function() {},
     _addPath: function() {},
-    _addRect: function() {},
     _addPoly: function() {},
-    _addRoundRect: function() {},
+    _addRect: function() {},
+    _addRRect: function() {},
     _addVerbsPointsWeights: function() {},
-    _arc: function() {},
-    _arcTo: function() {},
+    _arcToOval: function() {},
+    _arcToRotated: function() {},
+    _arcToTangent: function() {},
     _close: function() {},
     _conicTo: function() {},
     _cubicTo: function() {},
@@ -477,10 +570,10 @@ var CanvasKit = {
     _rArcTo: function() {},
     _rConicTo: function() {},
     _rCubicTo: function() {},
+    _rect: function() {},
     _rLineTo: function() {},
     _rMoveTo: function() {},
     _rQuadTo: function() {},
-    _rect: function() {},
     _simplify: function() {},
     _stroke: function() {},
     _transform: function() {},
@@ -503,27 +596,11 @@ var CanvasKit = {
   },
 
   SkPictureRecorder: {
-    beginRecording: function() {},
     finishRecordingAsPicture: function() {},
-  },
-
-  SkRect: {
-    fLeft: {},
-    fTop: {},
-    fRight: {},
-    fBottom: {},
-  },
-
-  SkRRect: {
-    rect: {},
-    rx1: {},
-    ry1: {},
-    rx2: {},
-    ry2: {},
-    rx3: {},
-    ry3: {},
-    rx4: {},
-    ry4: {},
+    prototype: {
+      beginRecording: function() {},
+    },
+    _beginRecording: function() {},
   },
 
   SkShader: {
@@ -545,26 +622,36 @@ var CanvasKit = {
     /** @return {CanvasKit.SkCanvas} */
     getCanvas: function() {},
     imageInfo: function() {},
-    /** @return {CanvasKit.SkImage} */
-    makeImageSnapshot: function() {},
+
     makeSurface: function() {},
     sampleCnt: function() {},
-    reportBackendType: function() {},
+    reportBackendTypeIsGPU: function() {},
     grContext: {},
+    openGLversion: {},
+
+    prototype: {
+      /** @return {CanvasKit.SkImage} */
+      makeImageSnapshot: function() {},
+    },
 
     // private API
     _flush: function() {},
     _getRasterN32PremulSurface: function() {},
+    _makeImageSnapshot: function() {},
     delete: function() {},
   },
 
   SkTextBlob: {
     // public API (both C++ and JS bindings)
+    MakeFromGlyphs: function() {},
     MakeFromRSXform: function() {},
+    MakeFromRSXformGlyphs: function() {},
     MakeFromText: function() {},
     MakeOnPath: function() {},
     // private API (from C++ bindings)
+    _MakeFromGlyphs: function() {},
     _MakeFromRSXform: function() {},
+    _MakeFromRSXformGlyphs: function() {},
     _MakeFromText: function() {},
   },
 
@@ -583,10 +670,14 @@ var CanvasKit = {
 
   SkVertices: {
     // public API (from C++ bindings)
-    bounds: function() {},
-    mode: function() {},
     uniqueID: function() {},
-    vertexCount: function() {},
+
+    prototype: {
+      bounds: function() {},
+    },
+    // private API (from C++ bindings)
+
+    _bounds: function() {},
   },
 
   _SkVerticesBuilder: {
@@ -869,36 +960,6 @@ var CanvasKit = {
 // unless they go on the prototype.
 CanvasKit.Paragraph.prototype.getRectsForRange = function() {};
 
-CanvasKit.SkPath.prototype.addArc = function() {};
-CanvasKit.SkPath.prototype.addOval = function() {};
-CanvasKit.SkPath.prototype.addPath = function() {};
-CanvasKit.SkPath.prototype.addPoly = function() {};
-CanvasKit.SkPath.prototype.addRect = function() {};
-CanvasKit.SkPath.prototype.addRoundRect = function() {};
-CanvasKit.SkPath.prototype.addVerbsPointsWeights = function() {};
-CanvasKit.SkPath.prototype.arc = function() {};
-CanvasKit.SkPath.prototype.arcTo = function() {};
-CanvasKit.SkPath.prototype.close = function() {};
-CanvasKit.SkPath.prototype.conicTo = function() {};
-CanvasKit.SkPath.prototype.cubicTo = function() {};
-CanvasKit.SkPath.prototype.dash = function() {};
-CanvasKit.SkPath.prototype.lineTo = function() {};
-CanvasKit.SkPath.prototype.moveTo = function() {};
-CanvasKit.SkPath.prototype.offset = function() {};
-CanvasKit.SkPath.prototype.op = function() {};
-CanvasKit.SkPath.prototype.quadTo = function() {};
-CanvasKit.SkPath.prototype.rArcTo = function() {};
-CanvasKit.SkPath.prototype.rConicTo = function() {};
-CanvasKit.SkPath.prototype.rCubicTo = function() {};
-CanvasKit.SkPath.prototype.rLineTo = function() {};
-CanvasKit.SkPath.prototype.rMoveTo = function() {};
-CanvasKit.SkPath.prototype.rQuadTo = function() {};
-CanvasKit.SkPath.prototype.rect = function() {};
-CanvasKit.SkPath.prototype.simplify = function() {};
-CanvasKit.SkPath.prototype.stroke = function() {};
-CanvasKit.SkPath.prototype.transform = function() {};
-CanvasKit.SkPath.prototype.trim = function() {};
-
 CanvasKit.SkPicture.prototype.saveAsFile = function() {};
 
 CanvasKit.SkSurface.prototype.dispose = function() {};
@@ -910,22 +971,7 @@ CanvasKit.SkSurface.prototype.captureFrameAsSkPicture = function() {};
 CanvasKit.SkImage.prototype.encodeToData = function() {};
 CanvasKit.SkImage.prototype.makeShader = function() {};
 
-CanvasKit.SkCanvas.prototype.concat = function() {};
-CanvasKit.SkCanvas.prototype.concat44 = function() {}; // deprecated
-CanvasKit.SkCanvas.prototype.drawAtlas = function() {};
-CanvasKit.SkCanvas.prototype.drawPoints = function() {};
-CanvasKit.SkCanvas.prototype.drawText = function() {};
-CanvasKit.SkCanvas.prototype.getLocalToCamera = function() {};
-CanvasKit.SkCanvas.prototype.getLocalToDevice = function() {};
-CanvasKit.SkCanvas.prototype.getLocalToWorld = function() {};
-CanvasKit.SkCanvas.prototype.getTotalMatrix = function() {};
-/** @return {Uint8Array} */
-CanvasKit.SkCanvas.prototype.readPixels = function() {};
-CanvasKit.SkCanvas.prototype.writePixels = function() {};
-
 CanvasKit.SkFontMgr.prototype.MakeTypefaceFromData = function() {};
-
-CanvasKit.SkFont.prototype.getWidths = function() {};
 
 CanvasKit.RSXFormBuilder.prototype.build = function() {};
 CanvasKit.RSXFormBuilder.prototype.delete = function() {};
@@ -1047,3 +1093,11 @@ var DOMMatrix = {
 
 // Not sure why this is needed - might be a bug in emsdk that this isn't properly declared.
 function loadWebAssemblyModule() {};
+
+// This is a part of emscripten's webgl glue code. Preserving this attribute is necessary
+// to override it in the puppeteer tests
+var LibraryEGL = {
+  contextAttributes: {
+    majorVersion: {}
+  }
+}

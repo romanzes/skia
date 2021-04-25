@@ -232,7 +232,6 @@ bool SkPixmap::scalePixels(const SkPixmap& actualDst, SkFilterQuality quality) c
         return false;
     }
     bitmap.setImmutable();        // Don't copy when we create an image.
-    bitmap.setIsVolatile(true);   // Disable any caching.
 
     SkMatrix scale = SkMatrix::MakeRectToRect(SkRect::Make(src.bounds()),
                                               SkRect::Make(dst.bounds()),
@@ -568,7 +567,7 @@ static bool draw_orientation(const SkPixmap& dst, const SkPixmap& src, SkEncoded
     SkBitmap bm;
     bm.installPixels(src);
 
-    SkMatrix m = SkEncodedOriginToMatrix(origin, src.width(), src.height());
+    SkMatrix m = SkEncodedOriginToMatrix(origin, dst.width(), dst.height());
 
     SkPaint p;
     p.setBlendMode(SkBlendMode::kSrc);

@@ -18,19 +18,17 @@ namespace SkSL {
  * collapsed down to their constant representations during the compilation process.
  */
 struct Setting : public Expression {
+    static constexpr Kind kExpressionKind = Kind::kSetting;
+
     Setting(int offset, String name, std::unique_ptr<Expression> value)
-    : INHERITED(offset, kSetting_Kind, value->fType)
+    : INHERITED(offset, kExpressionKind, &value->type())
     , fName(std::move(name))
     , fValue(std::move(value)) {
-        SkASSERT(fValue->isConstant());
+        SkASSERT(fValue->isCompileTimeConstant());
     }
 
     std::unique_ptr<Expression> constantPropagate(const IRGenerator& irGenerator,
                                                   const DefinitionMap& definitions) override;
-
-    int nodeCount() const override {
-        return 1;
-    }
 
     std::unique_ptr<Expression> clone() const override {
         return std::unique_ptr<Expression>(new Setting(fOffset, fName, fValue->clone()));
@@ -44,16 +42,16 @@ struct Setting : public Expression {
         return false;
     }
 
-    bool isConstant() const override {
+    bool isCompileTimeConstant() const override {
         return true;
     }
 
     const String fName;
     std::unique_ptr<Expression> fValue;
 
-    typedef Expression INHERITED;
+    using INHERITED = Expression;
 };
 
-} // namespace
+}  // namespace SkSL
 
 #endif

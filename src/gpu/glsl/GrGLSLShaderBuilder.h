@@ -10,7 +10,7 @@
 
 #include "include/private/SkTDArray.h"
 #include "src/gpu/GrShaderVar.h"
-#include "src/gpu/GrTAllocator.h"
+#include "src/gpu/GrTBlockList.h"
 #include "src/gpu/glsl/GrGLSLUniformHandler.h"
 #include "src/sksl/SkSLString.h"
 
@@ -47,6 +47,9 @@ public:
                                      SamplerHandle,
                                      const char* coordName,
                                      GrGLSLColorSpaceXformHelper* colorXformHelper = nullptr);
+
+    /** Appends a load of an input attachment into the shader code. */
+    void appendInputLoad(SamplerHandle);
 
     /** Adds a helper function to facilitate color gamut transformation, and produces code that
         returns the srcColor transformed into a new gamut (via multiplication by the xform from
@@ -123,7 +126,8 @@ public:
                       int argCnt,
                       const GrShaderVar* args,
                       const char* body,
-                      SkString* outName);
+                      SkString* outName,
+                      bool forceInline = false);
 
     /*
      * Combines the various parts of the shader to create a single finalized shader string.
@@ -153,7 +157,7 @@ public:
     };
 
 protected:
-    typedef GrTAllocator<GrShaderVar> VarArray;
+    typedef GrTBlockList<GrShaderVar> VarArray;
     void appendDecls(const VarArray& vars, SkString* out) const;
 
     /**
