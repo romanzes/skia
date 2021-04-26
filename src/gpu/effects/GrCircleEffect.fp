@@ -51,7 +51,7 @@ uniform float4 circle;
     }
 }
 
-void main() {
+half4 main() {
     // TODO: Right now the distance to circle calculation is performed in a space normalized to the
     // radius and then denormalized. This is to mitigate overflow on devices that don't have full
     // float.
@@ -62,12 +62,12 @@ void main() {
     } else {
         d = half((1.0 - length((circle.xy - sk_FragCoord.xy) *  circle.w)) * circle.z);
     }
-    half4 inputColor = sample(inputFP, sk_InColor);
+    half4 inputColor = sample(inputFP);
     @if (edgeType == GrClipEdgeType::kFillAA ||
          edgeType == GrClipEdgeType::kInverseFillAA) {
-        sk_OutColor = inputColor * saturate(d);
+        return inputColor * saturate(d);
     } else {
-        sk_OutColor = d > 0.5 ? inputColor : half4(0);
+        return d > 0.5 ? inputColor : half4(0);
     }
 }
 
@@ -77,10 +77,10 @@ void main() {
     center.fY = testData->fRandom->nextRangeScalar(0.f, 1000.f);
     SkScalar radius = testData->fRandom->nextRangeF(1.f, 1000.f);
     bool success;
-    std::unique_ptr<GrFragmentProcessor> fp;
+    std::unique_ptr<GrFragmentProcessor> fp = testData->inputFP();
     do {
         GrClipEdgeType et = (GrClipEdgeType)testData->fRandom->nextULessThan(kGrClipEdgeTypeCnt);
-        std::tie(success, fp) = GrCircleEffect::Make(/*inputFP=*/nullptr, et, center, radius);
+        std::tie(success, fp) = GrCircleEffect::Make(std::move(fp), et, center, radius);
     } while (!success);
     return fp;
 }

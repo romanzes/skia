@@ -46,10 +46,8 @@ private:
     class GLSLGP : public GrGLSLGeometryProcessor {
     public:
         void setData(const GrGLSLProgramDataManager& pdman,
-                     const GrPrimitiveProcessor& pp,
-                     const CoordTransformRange& transformRange) override {
+                     const GrPrimitiveProcessor& pp) override {
             const auto& gp = pp.cast<GP>();
-            this->setTransformDataHelper(pdman, transformRange);
             this->setTransform(pdman, fLocalMatrixUni, gp.fLocalMatrix);
         }
 
@@ -84,11 +82,11 @@ private:
 
 class TestRectOp final : public GrMeshDrawOp {
 public:
-    static std::unique_ptr<GrDrawOp> Make(GrRecordingContext*,
-                                          GrPaint&&,
-                                          const SkRect& drawRect,
-                                          const SkRect& localRect,
-                                          const SkMatrix& localM);
+    static GrOp::Owner Make(GrRecordingContext*,
+                            GrPaint&&,
+                            const SkRect& drawRect,
+                            const SkRect& localRect,
+                            const SkMatrix& localM);
 
     const char* name() const override { return "TestRectOp"; }
 
@@ -121,7 +119,8 @@ private:
                              SkArenaAlloc*,
                              const GrSurfaceProxyView* writeView,
                              GrAppliedClip&&,
-                             const GrXferProcessor::DstProxyView&) override;
+                             const GrXferProcessor::DstProxyView&,
+                             GrXferBarrierFlags renderPassXferBarriers) override;
 
     void onPrepareDraws(Target*) override;
     void onExecute(GrOpFlushState*, const SkRect& chainBounds) override;
@@ -137,17 +136,16 @@ private:
     GrProgramInfo* fProgramInfo = nullptr;
     GrSimpleMesh*  fMesh        = nullptr;
 
-    friend class ::GrOpMemoryPool;
+    friend class ::GrOp;
 };
 
-std::unique_ptr<GrDrawOp> TestRectOp::Make(GrRecordingContext* context,
-                                           GrPaint&& paint,
-                                           const SkRect& drawRect,
-                                           const SkRect& localRect,
-                                           const SkMatrix& localM) {
-    auto* pool = context->priv().opMemoryPool();
+GrOp::Owner TestRectOp::Make(GrRecordingContext* context,
+                             GrPaint&& paint,
+                             const SkRect& drawRect,
+                             const SkRect& localRect,
+                             const SkMatrix& localM) {
     const auto* caps = context->priv().caps();
-    return pool->allocate<TestRectOp>(caps, std::move(paint), drawRect, localRect, localM);
+    return GrOp::Make<TestRectOp>(context, caps, std::move(paint), drawRect, localRect, localM);
 }
 
 GrProcessorSet::Analysis TestRectOp::finalize(const GrCaps& caps,
@@ -181,7 +179,8 @@ void TestRectOp::onCreateProgramInfo(const GrCaps* caps,
                                      SkArenaAlloc* arena,
                                      const GrSurfaceProxyView* writeView,
                                      GrAppliedClip&& appliedClip,
-                                     const GrXferProcessor::DstProxyView& dstProxyView) {
+                                     const GrXferProcessor::DstProxyView& dstProxyView,
+                                     GrXferBarrierFlags renderPassXferBarriers) {
     fProgramInfo = GrSimpleMeshDrawOpHelper::CreateProgramInfo(caps,
                                                                arena,
                                                                writeView,
@@ -190,6 +189,7 @@ void TestRectOp::onCreateProgramInfo(const GrCaps* caps,
                                                                &fGP,
                                                                std::move(fProcessorSet),
                                                                GrPrimitiveType::kTriangles,
+                                                               renderPassXferBarriers,
                                                                GrPipeline::InputFlags::kNone);
 }
 
@@ -218,27 +218,27 @@ void TestRectOp::onExecute(GrOpFlushState* flushState, const SkRect& chainBounds
 
 namespace sk_gpu_test::test_ops {
 
-std::unique_ptr<GrDrawOp> MakeRect(GrRecordingContext* context,
-                                   GrPaint&& paint,
-                                   const SkRect& drawRect,
-                                   const SkRect& localRect,
-                                   const SkMatrix& localM) {
+GrOp::Owner MakeRect(GrRecordingContext* context,
+                     GrPaint&& paint,
+                     const SkRect& drawRect,
+                     const SkRect& localRect,
+                     const SkMatrix& localM) {
     return TestRectOp::Make(context, std::move(paint), drawRect, localRect, localM);
 }
 
-std::unique_ptr<GrDrawOp> MakeRect(GrRecordingContext* context,
-                                   std::unique_ptr<GrFragmentProcessor> fp,
-                                   const SkRect& drawRect,
-                                   const SkRect& localRect,
-                                   const SkMatrix& localM) {
+GrOp::Owner MakeRect(GrRecordingContext* context,
+                     std::unique_ptr<GrFragmentProcessor> fp,
+                     const SkRect& drawRect,
+                     const SkRect& localRect,
+                     const SkMatrix& localM) {
     GrPaint paint;
-    paint.addColorFragmentProcessor(std::move(fp));
+    paint.setColorFragmentProcessor(std::move(fp));
     return TestRectOp::Make(context, std::move(paint), drawRect, localRect, localM);
 }
 
-std::unique_ptr<GrDrawOp> MakeRect(GrRecordingContext* context,
-                                   GrPaint&& paint,
-                                   const SkRect& rect) {
+GrOp::Owner MakeRect(GrRecordingContext* context,
+                     GrPaint&& paint,
+                     const SkRect& rect) {
     return TestRectOp::Make(context, std::move(paint), rect, rect, SkMatrix::I());
 }
 

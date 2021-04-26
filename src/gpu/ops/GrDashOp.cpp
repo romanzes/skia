@@ -5,12 +5,11 @@
  * found in the LICENSE file.
  */
 
-#include "include/private/GrRecordingContext.h"
+#include "include/gpu/GrRecordingContext.h"
 #include "src/core/SkMatrixPriv.h"
 #include "src/core/SkPointPriv.h"
 #include "src/gpu/GrAppliedClip.h"
 #include "src/gpu/GrCaps.h"
-#include "src/gpu/GrCoordTransform.h"
 #include "src/gpu/GrDefaultGeoProcFactory.h"
 #include "src/gpu/GrDrawOpTest.h"
 #include "src/gpu/GrGeometryProcessor.h"
@@ -223,16 +222,14 @@ public:
         SkScalar fPerpendicularScale;
     };
 
-    static std::unique_ptr<GrDrawOp> Make(GrRecordingContext* context,
-                                          GrPaint&& paint,
-                                          const LineData& geometry,
-                                          SkPaint::Cap cap,
-                                          AAMode aaMode, bool fullDash,
-                                          const GrUserStencilSettings* stencilSettings) {
-        GrOpMemoryPool* pool = context->priv().opMemoryPool();
-
-        return pool->allocate<DashOp>(std::move(paint), geometry, cap,
-                                      aaMode, fullDash, stencilSettings);
+    static GrOp::Owner Make(GrRecordingContext* context,
+                            GrPaint&& paint,
+                            const LineData& geometry,
+                            SkPaint::Cap cap,
+                            AAMode aaMode, bool fullDash,
+                            const GrUserStencilSettings* stencilSettings) {
+        return GrOp::Make<DashOp>(context, std::move(paint), geometry, cap,
+                                  aaMode, fullDash, stencilSettings);
     }
 
     const char* name() const override { return "DashOp"; }
@@ -244,25 +241,6 @@ public:
             fProcessorSet.visitProxies(func);
         }
     }
-
-#ifdef SK_DEBUG
-    SkString dumpInfo() const override {
-        SkString string;
-        for (const auto& geo : fLines) {
-            string.appendf("Pt0: [%.2f, %.2f], Pt1: [%.2f, %.2f], Width: %.2f, Ival0: %.2f, "
-                           "Ival1 : %.2f, Phase: %.2f\n",
-                           geo.fPtsRot[0].fX, geo.fPtsRot[0].fY,
-                           geo.fPtsRot[1].fX, geo.fPtsRot[1].fY,
-                           geo.fSrcStrokeWidth,
-                           geo.fIntervals[0],
-                           geo.fIntervals[1],
-                           geo.fPhase);
-        }
-        string += fProcessorSet.dumpProcessors();
-        string += INHERITED::dumpInfo();
-        return string;
-    }
-#endif
 
     FixedFunctionFlags fixedFunctionFlags() const override {
         FixedFunctionFlags flags = FixedFunctionFlags::kNone;
@@ -287,7 +265,7 @@ public:
     }
 
 private:
-    friend class GrOpMemoryPool; // for ctor
+    friend class GrOp; // for ctor
 
     DashOp(GrPaint&& paint, const LineData& geometry, SkPaint::Cap cap, AAMode aaMode,
            bool fullDash, const GrUserStencilSettings* stencilSettings)
@@ -341,7 +319,8 @@ private:
                              SkArenaAlloc* arena,
                              const GrSurfaceProxyView* writeView,
                              GrAppliedClip&& appliedClip,
-                             const GrXferProcessor::DstProxyView& dstProxyView) override {
+                             const GrXferProcessor::DstProxyView& dstProxyView,
+                             GrXferBarrierFlags renderPassXferBarriers) override {
 
         DashCap capType = (this->cap() == SkPaint::kRound_Cap) ? kRound_DashCap : kNonRound_DashCap;
 
@@ -380,6 +359,7 @@ private:
                                                                    gp,
                                                                    std::move(fProcessorSet),
                                                                    GrPrimitiveType::kTriangles,
+                                                                   renderPassXferBarriers,
                                                                    pipelineFlags,
                                                                    fStencilSettings);
     }
@@ -565,7 +545,7 @@ private:
                 lineDone = true;
 
                 SkPoint devicePts[2];
-                args.fViewMatrix.mapPoints(devicePts, draw.fPtsRot, 2);
+                args.fSrcRotInv.mapPoints(devicePts, draw.fPtsRot, 2);
                 SkScalar lineLength = SkPoint::Distance(devicePts[0], devicePts[1]);
                 if (hasCap) {
                     lineLength += 2.f * halfDevStroke;
@@ -585,7 +565,7 @@ private:
 
             if (!lineDone) {
                 SkPoint devicePts[2];
-                args.fViewMatrix.mapPoints(devicePts, draw.fPtsRot, 2);
+                args.fSrcRotInv.mapPoints(devicePts, draw.fPtsRot, 2);
                 draw.fLineLength = SkPoint::Distance(devicePts[0], devicePts[1]);
                 if (hasCap) {
                     draw.fLineLength += 2.f * halfDevStroke;
@@ -683,8 +663,7 @@ private:
         flushState->drawMesh(*fMesh);
     }
 
-    CombineResult onCombineIfPossible(GrOp* t, GrRecordingContext::Arenas*,
-                                      const GrCaps& caps) override {
+    CombineResult onCombineIfPossible(GrOp* t, SkArenaAlloc*, const GrCaps& caps) override {
         DashOp* that = t->cast<DashOp>();
         if (fProcessorSet != that->fProcessorSet) {
             return CombineResult::kCannotCombine;
@@ -715,6 +694,24 @@ private:
         return CombineResult::kMerged;
     }
 
+#if GR_TEST_UTILS
+    SkString onDumpInfo() const override {
+        SkString string;
+        for (const auto& geo : fLines) {
+            string.appendf("Pt0: [%.2f, %.2f], Pt1: [%.2f, %.2f], Width: %.2f, Ival0: %.2f, "
+                           "Ival1 : %.2f, Phase: %.2f\n",
+                           geo.fPtsRot[0].fX, geo.fPtsRot[0].fY,
+                           geo.fPtsRot[1].fX, geo.fPtsRot[1].fY,
+                           geo.fSrcStrokeWidth,
+                           geo.fIntervals[0],
+                           geo.fIntervals[1],
+                           geo.fPhase);
+        }
+        string += fProcessorSet.dumpProcessors();
+        return string;
+    }
+#endif
+
     const SkPMColor4f& color() const { return fColor; }
     const SkMatrix& viewMatrix() const { return fLines[0].fViewMatrix; }
     AAMode aaMode() const { return fAAMode; }
@@ -737,16 +734,16 @@ private:
     GrSimpleMesh*  fMesh = nullptr;
     GrProgramInfo* fProgramInfo = nullptr;
 
-    typedef GrMeshDrawOp INHERITED;
+    using INHERITED = GrMeshDrawOp;
 };
 
-std::unique_ptr<GrDrawOp> GrDashOp::MakeDashLineOp(GrRecordingContext* context,
-                                                   GrPaint&& paint,
-                                                   const SkMatrix& viewMatrix,
-                                                   const SkPoint pts[2],
-                                                   AAMode aaMode,
-                                                   const GrStyle& style,
-                                                   const GrUserStencilSettings* stencilSettings) {
+GrOp::Owner GrDashOp::MakeDashLineOp(GrRecordingContext* context,
+                                     GrPaint&& paint,
+                                     const SkMatrix& viewMatrix,
+                                     const SkPoint pts[2],
+                                     AAMode aaMode,
+                                     const GrStyle& style,
+                                     const GrUserStencilSettings* stencilSettings) {
     SkASSERT(GrDashOp::CanDrawDashLine(pts, style, viewMatrix));
     const SkScalar* intervals = style.dashIntervals();
     SkScalar phase = style.dashPhase();
@@ -773,8 +770,7 @@ std::unique_ptr<GrDrawOp> GrDashOp::MakeDashLineOp(GrRecordingContext* context,
     }
 
     // Scale corrections of intervals and stroke from view matrix
-    calc_dash_scaling(&lineData.fParallelScale, &lineData.fPerpendicularScale, viewMatrix,
-                      lineData.fPtsRot);
+    calc_dash_scaling(&lineData.fParallelScale, &lineData.fPerpendicularScale, viewMatrix, pts);
     if (SkScalarNearlyZero(lineData.fParallelScale) ||
         SkScalarNearlyZero(lineData.fPerpendicularScale)) {
         return nullptr;
@@ -855,7 +851,7 @@ private:
 
     GR_DECLARE_GEOMETRY_PROCESSOR_TEST
 
-    typedef GrGeometryProcessor INHERITED;
+    using INHERITED = GrGeometryProcessor;
 };
 
 //////////////////////////////////////////////////////////////////////////////
@@ -870,8 +866,7 @@ public:
                               const GrShaderCaps&,
                               GrProcessorKeyBuilder*);
 
-    void setData(const GrGLSLProgramDataManager&, const GrPrimitiveProcessor&,
-                 const CoordTransformRange& transformRange) override;
+    void setData(const GrGLSLProgramDataManager&, const GrPrimitiveProcessor&) override;
 
 private:
     UniformHandle fParamUniform;
@@ -884,7 +879,7 @@ private:
     SkScalar      fPrevCenterX;
     SkScalar      fPrevIntervalLength;
 
-    typedef GrGLSLGeometryProcessor INHERITED;
+    using INHERITED = GrGLSLGeometryProcessor;
 };
 
 GLDashingCircleEffect::GLDashingCircleEffect() {
@@ -945,14 +940,12 @@ void GLDashingCircleEffect::onEmitCode(EmitArgs& args, GrGPArgs* gpArgs) {
 }
 
 void GLDashingCircleEffect::setData(const GrGLSLProgramDataManager& pdman,
-                                    const GrPrimitiveProcessor& processor,
-                                    const CoordTransformRange& transformRange) {
+                                    const GrPrimitiveProcessor& processor) {
     const DashingCircleEffect& dce = processor.cast<DashingCircleEffect>();
     if (dce.color() != fColor) {
         pdman.set4fv(fColorUniform, 1, dce.color().vec());
         fColor = dce.color();
     }
-    this->setTransformDataHelper(pdman, transformRange);
     this->setTransform(pdman, fLocalMatrixUniform, dce.localMatrix(), &fLocalMatrix);
 }
 
@@ -1068,7 +1061,7 @@ private:
 
     GR_DECLARE_GEOMETRY_PROCESSOR_TEST
 
-    typedef GrGeometryProcessor INHERITED;
+    using INHERITED = GrGeometryProcessor;
 };
 
 //////////////////////////////////////////////////////////////////////////////
@@ -1083,8 +1076,7 @@ public:
                               const GrShaderCaps&,
                               GrProcessorKeyBuilder*);
 
-    void setData(const GrGLSLProgramDataManager&, const GrPrimitiveProcessor&,
-                 const CoordTransformRange&) override;
+    void setData(const GrGLSLProgramDataManager&, const GrPrimitiveProcessor&) override;
 
 private:
     SkPMColor4f   fColor;
@@ -1093,7 +1085,7 @@ private:
     SkMatrix      fLocalMatrix;
     UniformHandle fLocalMatrixUniform;
 
-    typedef GrGLSLGeometryProcessor INHERITED;
+    using INHERITED = GrGLSLGeometryProcessor;
 };
 
 GLDashingLineEffect::GLDashingLineEffect() : fColor(SK_PMColor4fILLEGAL) {}
@@ -1174,14 +1166,12 @@ void GLDashingLineEffect::onEmitCode(EmitArgs& args, GrGPArgs* gpArgs) {
 }
 
 void GLDashingLineEffect::setData(const GrGLSLProgramDataManager& pdman,
-                                  const GrPrimitiveProcessor& processor,
-                                  const CoordTransformRange& transformRange) {
+                                  const GrPrimitiveProcessor& processor) {
     const DashingLineEffect& de = processor.cast<DashingLineEffect>();
     if (de.color() != fColor) {
         pdman.set4fv(fColorUniform, 1, de.color().vec());
         fColor = de.color();
     }
-    this->setTransformDataHelper(pdman, transformRange);
     this->setTransform(pdman, fLocalMatrixUniform, de.localMatrix(), &fLocalMatrix);
 }
 

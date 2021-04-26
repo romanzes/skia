@@ -44,13 +44,11 @@ public:
         fragBuilder->codeAppendf("%s = half4(factor);", args.fOutputCoverage);
     }
 
-    void setData(const GrGLSLProgramDataManager& pdman, const GrPrimitiveProcessor& proc,
-                 const CoordTransformRange& transformRange) override {
-        this->setTransformDataHelper(pdman, transformRange);
+    void setData(const GrGLSLProgramDataManager& pdman, const GrPrimitiveProcessor& proc) override {
     }
 
 private:
-    typedef GrGLSLGeometryProcessor INHERITED;
+    using INHERITED = GrGLSLGeometryProcessor;
 };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -63,7 +61,7 @@ GrRRectShadowGeoProc::GrRRectShadowGeoProc(const GrSurfaceProxyView& lutView)
     this->setVertexAttributes(&fInPosition, 3);
 
     SkASSERT(lutView.proxy());
-    fLUTTextureSampler.reset(GrSamplerState::Filter::kBilerp, lutView.proxy()->backendFormat(),
+    fLUTTextureSampler.reset(GrSamplerState::Filter::kLinear, lutView.proxy()->backendFormat(),
                              lutView.swizzle());
     this->setTextureSamplerCnt(1);
 }

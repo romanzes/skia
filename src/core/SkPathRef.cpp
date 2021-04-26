@@ -41,6 +41,14 @@ SkPathRef::Editor::Editor(sk_sp<SkPathRef>* pathRef,
 // allocations to just fit the current needs. makeSpace() will only grow, but never shrinks.
 //
 void SkPath::shrinkToFit() {
+    // Since this can relocate the allocated arrays, we have to defensively copy ourselves if
+    // we're not the only owner of the pathref... since relocating the arrays will invalidate
+    // any existing iterators.
+    if (!fPathRef->unique()) {
+        SkPathRef* pr = new SkPathRef;
+        pr->copy(*fPathRef, 0, 0);
+        fPathRef.reset(pr);
+    }
     fPathRef->fPoints.shrinkToFit();
     fPathRef->fVerbs.shrinkToFit();
     fPathRef->fConicWeights.shrinkToFit();
@@ -48,6 +56,13 @@ void SkPath::shrinkToFit() {
 }
 
 //////////////////////////////////////////////////////////////////////////////
+
+size_t SkPathRef::approximateBytesUsed() const {
+    return sizeof(SkPathRef)
+         + fPoints      .reserved() * sizeof(fPoints      [0])
+         + fVerbs       .reserved() * sizeof(fVerbs       [0])
+         + fConicWeights.reserved() * sizeof(fConicWeights[0]);
+}
 
 SkPathRef::~SkPathRef() {
     // Deliberately don't validate() this path ref, otherwise there's no way
@@ -308,21 +323,6 @@ void SkPathRef::copy(const SkPathRef& ref,
     fRRectOrOvalIsCCW = ref.fRRectOrOvalIsCCW;
     fRRectOrOvalStartIdx = ref.fRRectOrOvalStartIdx;
     SkDEBUGCODE(this->validate();)
-}
-
-unsigned SkPathRef::computeSegmentMask() const {
-    const uint8_t* verbs = fVerbs.begin();
-    unsigned mask = 0;
-    for (int i = 0; i < fVerbs.count(); ++i) {
-        switch (verbs[i]) {
-            case SkPath::kLine_Verb:  mask |= SkPath::kLine_SegmentMask; break;
-            case SkPath::kQuad_Verb:  mask |= SkPath::kQuad_SegmentMask; break;
-            case SkPath::kConic_Verb: mask |= SkPath::kConic_SegmentMask; break;
-            case SkPath::kCubic_Verb: mask |= SkPath::kCubic_SegmentMask; break;
-            default: break;
-        }
-    }
-    return mask;
 }
 
 void SkPathRef::interpolate(const SkPathRef& ending, SkScalar weight, SkPathRef* out) const {

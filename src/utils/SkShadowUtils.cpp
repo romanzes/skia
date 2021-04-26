@@ -15,6 +15,7 @@
 #include "include/core/SkVertices.h"
 #include "include/private/SkColorData.h"
 #include "include/private/SkIDChangeListener.h"
+#include "include/private/SkTPin.h"
 #include "include/utils/SkRandom.h"
 #include "src/core/SkBlurMask.h"
 #include "src/core/SkColorFilterBase.h"
@@ -46,8 +47,8 @@ public:
     SkGaussianColorFilter() : INHERITED() {}
 
 #if SK_SUPPORT_GPU
-    std::unique_ptr<GrFragmentProcessor> asFragmentProcessor(GrRecordingContext*,
-                                                             const GrColorInfo&) const override;
+    GrFPResult asFragmentProcessor(std::unique_ptr<GrFragmentProcessor> inputFP,
+                                   GrRecordingContext*, const GrColorInfo&) const override;
 #endif
 
 protected:
@@ -74,7 +75,7 @@ protected:
 private:
     SK_FLATTENABLE_HOOKS(SkGaussianColorFilter)
 
-    typedef SkColorFilterBase INHERITED;
+    using INHERITED = SkColorFilterBase;
 };
 
 sk_sp<SkFlattenable> SkGaussianColorFilter::CreateProc(SkReadBuffer&) {
@@ -83,10 +84,11 @@ sk_sp<SkFlattenable> SkGaussianColorFilter::CreateProc(SkReadBuffer&) {
 
 #if SK_SUPPORT_GPU
 
-std::unique_ptr<GrFragmentProcessor> SkGaussianColorFilter::asFragmentProcessor(
-        GrRecordingContext*, const GrColorInfo&) const {
-    return GrBlurredEdgeFragmentProcessor::Make(
-        /*inputFP=*/nullptr, GrBlurredEdgeFragmentProcessor::Mode::kGaussian);
+GrFPResult SkGaussianColorFilter::asFragmentProcessor(std::unique_ptr<GrFragmentProcessor> inputFP,
+                                                      GrRecordingContext*,
+                                                      const GrColorInfo&) const {
+    return GrFPSuccess(GrBlurredEdgeFragmentProcessor::Make(
+                std::move(inputFP), GrBlurredEdgeFragmentProcessor::Mode::kGaussian));
 }
 #endif
 
@@ -491,7 +493,7 @@ bool draw_shadow(const FACTORY& factory,
 
     return true;
 }
-}
+}  // namespace
 
 static bool tilted(const SkPoint3& zPlaneParams) {
     return !SkScalarNearlyZero(zPlaneParams.fX) || !SkScalarNearlyZero(zPlaneParams.fY);

@@ -32,7 +32,6 @@ public:
     void onGetGLSLProcessorKey(const GrShaderCaps&, GrProcessorKeyBuilder*) const override;
     bool onIsEqual(const GrFragmentProcessor&) const override;
     GrGLSLFragmentProcessor* onCreateGLSLInstance() const override;
-    bool hasInputFP() const;
 
 private:
     explicit GrCCClipProcessor(const GrCCClipProcessor&);
@@ -43,7 +42,7 @@ private:
 
     class Impl;
 
-    typedef GrFragmentProcessor INHERITED;
+    using INHERITED = GrFragmentProcessor;
 };
 
 #endif
