@@ -12,6 +12,7 @@
 #undef GetGlyphIndices
 
 #include "include/codec/SkCodec.h"
+#include "include/core/SkBitmap.h"
 #include "include/core/SkFontMetrics.h"
 #include "include/core/SkPath.h"
 #include "include/private/SkMutex.h"
@@ -380,10 +381,6 @@ SkScalerContext_DW::SkScalerContext_DW(sk_sp<DWriteFontTypeface> typefaceRef,
 }
 
 SkScalerContext_DW::~SkScalerContext_DW() {
-}
-
-unsigned SkScalerContext_DW::generateGlyphCount() {
-    return fGlyphCount;
 }
 
 bool SkScalerContext_DW::generateAdvance(SkGlyph* glyph) {
@@ -778,6 +775,14 @@ void SkScalerContext_DW::generateFontMetrics(SkFontMetrics* metrics) {
     metrics->fFlags |= SkFontMetrics::kStrikeoutThicknessIsValid_Flag;
     metrics->fFlags |= SkFontMetrics::kStrikeoutPositionIsValid_Flag;
 
+    SkTScopedComPtr<IDWriteFontFace5> fontFace5;
+    if (SUCCEEDED(this->getDWriteTypeface()->fDWriteFontFace->QueryInterface(&fontFace5))) {
+        if (fontFace5->HasVariations()) {
+            // The bounds are only valid for the default variation.
+            metrics->fFlags |= SkFontMetrics::kBoundsInvalid_Flag;
+        }
+    }
+
     if (this->getDWriteTypeface()->fDWriteFontFace1.get()) {
         DWRITE_FONT_METRICS1 dwfm1;
         this->getDWriteTypeface()->fDWriteFontFace1->GetMetrics(&dwfm1);
@@ -804,6 +809,8 @@ void SkScalerContext_DW::generateFontMetrics(SkFontMetrics* metrics) {
         return;
     }
 
+    // The real bounds weren't actually available.
+    metrics->fFlags |= SkFontMetrics::kBoundsInvalid_Flag;
     metrics->fTop = metrics->fAscent;
     metrics->fBottom = metrics->fDescent;
 }

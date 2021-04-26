@@ -9,8 +9,9 @@
 #define GrGLSLShaderBuilder_DEFINED
 
 #include "include/private/SkTDArray.h"
+#include "src/core/SkSpan.h"
 #include "src/gpu/GrShaderVar.h"
-#include "src/gpu/GrTAllocator.h"
+#include "src/gpu/GrTBlockList.h"
 #include "src/gpu/glsl/GrGLSLUniformHandler.h"
 #include "src/sksl/SkSLString.h"
 
@@ -47,6 +48,9 @@ public:
                                      SamplerHandle,
                                      const char* coordName,
                                      GrGLSLColorSpaceXformHelper* colorXformHelper = nullptr);
+
+    /** Appends a load of an input attachment into the shader code. */
+    void appendInputLoad(SamplerHandle);
 
     /** Adds a helper function to facilitate color gamut transformation, and produces code that
         returns the srcColor transformed into a new gamut (via multiplication by the xform from
@@ -92,8 +96,8 @@ public:
     }
 
     /**
-    * Called by GrGLSLProcessors to add code to one of the shaders.
-    */
+     * Called by GrGLSLProcessors to add code to one of the shaders.
+     */
     void codeAppendf(const char format[], ...) SK_PRINTF_LIKE(2, 3) {
        va_list args;
        va_start(args, format);
@@ -117,21 +121,32 @@ public:
      */
     void declAppend(const GrShaderVar& var);
 
+    /**
+     * Generates a mangled name for a helper function in the fragment shader. Will give consistent
+     * results if called more than once.
+     */
+    SkString getMangledFunctionName(const char* baseName);
+
+    /** Emits a prototype for a helper function outside of main() in the fragment shader. */
+    void emitFunctionPrototype(GrSLType returnType,
+                               const char* mangledName,
+                               SkSpan<const GrShaderVar> args,
+                               bool forceInline = false);
+
     /** Emits a helper function outside of main() in the fragment shader. */
     void emitFunction(GrSLType returnType,
-                      const char* name,
-                      int argCnt,
-                      const GrShaderVar* args,
+                      const char* mangledName,
+                      SkSpan<const GrShaderVar> args,
                       const char* body,
-                      SkString* outName);
+                      bool forceInline = false);
 
-    /*
+    /**
      * Combines the various parts of the shader to create a single finalized shader string.
      */
     void finalize(uint32_t visibility);
 
-    /*
-     * Get parent builder for adding uniforms
+    /**
+     * Get parent builder for adding uniforms.
      */
     GrGLSLProgramBuilder* getProgramBuilder() { return fProgramBuilder; }
 
@@ -153,8 +168,13 @@ public:
     };
 
 protected:
-    typedef GrTAllocator<GrShaderVar> VarArray;
+    typedef GrTBlockList<GrShaderVar> VarArray;
     void appendDecls(const VarArray& vars, SkString* out) const;
+
+    void appendFunctionDecl(GrSLType returnType,
+                            const char* mangledName,
+                            SkSpan<const GrShaderVar> args,
+                            bool forceInline);
 
     /**
      * Features that should only be enabled internally by the builders.

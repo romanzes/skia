@@ -9,18 +9,18 @@
 
 #include "include/core/SkBitmap.h"
 #include "include/core/SkRegion.h"
+#include "include/private/SkTPin.h"
 #include "src/core/SkImageFilter_Base.h"
 #include "src/core/SkReadBuffer.h"
 #include "src/core/SkSpecialImage.h"
 #include "src/core/SkWriteBuffer.h"
 
 #if SK_SUPPORT_GPU
-#include "include/gpu/GrContext.h"
-#include "include/private/GrRecordingContext.h"
+#include "include/gpu/GrRecordingContext.h"
 #include "src/gpu/GrCaps.h"
 #include "src/gpu/GrColorSpaceXform.h"
 #include "src/gpu/GrRecordingContextPriv.h"
-#include "src/gpu/GrRenderTargetContext.h"
+#include "src/gpu/GrSurfaceDrawContext.h"
 #include "src/gpu/GrTextureProxy.h"
 #include "src/gpu/effects/GrTextureEffect.h"
 #include "src/gpu/effects/generated/GrAlphaThresholdFragmentProcessor.h"
@@ -57,7 +57,7 @@ private:
     SkScalar fInnerThreshold;
     SkScalar fOuterThreshold;
 
-    typedef SkImageFilter_Base INHERITED;
+    using INHERITED = SkImageFilter_Base;
 };
 
 }; // end namespace
@@ -102,7 +102,7 @@ void SkAlphaThresholdFilterImpl::flatten(SkWriteBuffer& buffer) const {
 GrSurfaceProxyView SkAlphaThresholdFilterImpl::createMaskTexture(GrRecordingContext* context,
                                                                  const SkMatrix& inMatrix,
                                                                  const SkIRect& bounds) const {
-    auto rtContext = GrRenderTargetContext::MakeWithFallback(
+    auto rtContext = GrSurfaceDrawContext::MakeWithFallback(
             context, GrColorType::kAlpha_8, nullptr, SkBackingFit::kApprox, bounds.size());
     if (!rtContext) {
         return {};
@@ -168,8 +168,9 @@ sk_sp<SkSpecialImage> SkAlphaThresholdFilterImpl::onFilterImage(const Context& c
         auto textureFP = GrTextureEffect::Make(
                 std::move(inputView), input->alphaType(),
                 SkMatrix::Translate(input->subset().x(), input->subset().y()));
-        textureFP = GrColorSpaceXformEffect::Make(std::move(textureFP), input->getColorSpace(),
-                                                  input->alphaType(), ctx.colorSpace());
+        textureFP = GrColorSpaceXformEffect::Make(std::move(textureFP),
+                                                  input->getColorSpace(), input->alphaType(),
+                                                  ctx.colorSpace(), kPremul_SkAlphaType);
         if (!textureFP) {
             return nullptr;
         }

@@ -241,7 +241,7 @@ public:
                            int* actualVertexCount);
 
 private:
-    typedef GrBufferAllocPool INHERITED;
+    using INHERITED = GrBufferAllocPool;
 };
 
 /**
@@ -311,7 +311,7 @@ public:
                            int* actualIndexCount);
 
 private:
-    typedef GrBufferAllocPool INHERITED;
+    using INHERITED = GrBufferAllocPool;
 };
 
 class GrDrawIndirectBufferAllocPool : private GrBufferAllocPool {
@@ -324,10 +324,18 @@ public:
                 (size_t)drawCount * sizeof(GrDrawIndirectCommand), 4, buffer, offset));
     }
 
+    void putBack(int drawCount) {
+        this->GrBufferAllocPool::putBack((size_t)drawCount * sizeof(GrDrawIndirectCommand));
+    }
+
     GrDrawIndexedIndirectCommand* makeIndexedSpace(int drawCount, sk_sp<const GrBuffer>* buffer,
                                                    size_t* offset) {
         return static_cast<GrDrawIndexedIndirectCommand*>(this->GrBufferAllocPool::makeSpace(
                 (size_t)drawCount * sizeof(GrDrawIndexedIndirectCommand), 4, buffer, offset));
+    }
+
+    void putBackIndexed(int drawCount) {
+        this->GrBufferAllocPool::putBack((size_t)drawCount * sizeof(GrDrawIndexedIndirectCommand));
     }
 
     using GrBufferAllocPool::unmap;

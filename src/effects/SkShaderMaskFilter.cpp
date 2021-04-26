@@ -5,6 +5,7 @@
  * found in the LICENSE file.
  */
 
+#include "include/core/SkBitmap.h"
 #include "include/core/SkCanvas.h"
 #include "include/core/SkString.h"
 #include "include/effects/SkShaderMaskFilter.h"
@@ -43,7 +44,7 @@ private:
 
     friend class SkShaderMaskFilter;
 
-    typedef SkMaskFilter INHERITED;
+    using INHERITED = SkMaskFilter;
 };
 
 sk_sp<SkFlattenable> SkShaderMF::CreateProc(SkReadBuffer& buffer) {

@@ -14,7 +14,6 @@
 #include <unordered_set>
 
 #include "src/sksl/SkSLCodeGenerator.h"
-#include "src/sksl/SkSLMemoryLayout.h"
 #include "src/sksl/SkSLStringStream.h"
 #include "src/sksl/ir/SkSLBinaryExpression.h"
 #include "src/sksl/ir/SkSLBoolLiteral.h"
@@ -27,8 +26,10 @@
 #include "src/sksl/ir/SkSLFunctionCall.h"
 #include "src/sksl/ir/SkSLFunctionDeclaration.h"
 #include "src/sksl/ir/SkSLFunctionDefinition.h"
+#include "src/sksl/ir/SkSLFunctionPrototype.h"
 #include "src/sksl/ir/SkSLIfStatement.h"
 #include "src/sksl/ir/SkSLIndexExpression.h"
+#include "src/sksl/ir/SkSLInlineMarker.h"
 #include "src/sksl/ir/SkSLIntLiteral.h"
 #include "src/sksl/ir/SkSLInterfaceBlock.h"
 #include "src/sksl/ir/SkSLPostfixExpression.h"
@@ -41,13 +42,9 @@
 #include "src/sksl/ir/SkSLSwizzle.h"
 #include "src/sksl/ir/SkSLTernaryExpression.h"
 #include "src/sksl/ir/SkSLVarDeclarations.h"
-#include "src/sksl/ir/SkSLVarDeclarationsStatement.h"
 #include "src/sksl/ir/SkSLVariableReference.h"
-#include "src/sksl/ir/SkSLWhileStatement.h"
 
 namespace SkSL {
-
-#define kLast_Capability SpvCapabilityMultiViewport
 
 /**
  * Converts a Program into Metal code.
@@ -81,7 +78,7 @@ public:
     MetalCodeGenerator(const Context* context, const Program* program, ErrorReporter* errors,
                       OutputStream* out)
     : INHERITED(program, errors, out)
-    , fReservedWords({"atan2", "rsqrt", "dfdx", "dfdy", "vertex", "fragment"})
+    , fReservedWords({"atan2", "rsqrt", "rint", "dfdx", "dfdy", "vertex", "fragment"})
     , fLineEnding("\n")
     , fContext(*context) {
         this->setupIntrinsics();
@@ -99,23 +96,40 @@ protected:
     static constexpr Requirements kFragCoord_Requirement = 1 << 4;
 
     enum IntrinsicKind {
-        kSpecial_IntrinsicKind,
-        kMetal_IntrinsicKind,
+        kAtan_IntrinsicKind,
+        kBitcast_IntrinsicKind,
+        kBitCount_IntrinsicKind,
+        kCompareEqual_IntrinsicKind,
+        kCompareGreaterThan_IntrinsicKind,
+        kCompareGreaterThanEqual_IntrinsicKind,
+        kCompareLessThan_IntrinsicKind,
+        kCompareLessThanEqual_IntrinsicKind,
+        kCompareNotEqual_IntrinsicKind,
+        kDegrees_IntrinsicKind,
+        kDFdx_IntrinsicKind,
+        kDFdy_IntrinsicKind,
+        kDistance_IntrinsicKind,
+        kDot_IntrinsicKind,
+        kFaceforward_IntrinsicKind,
+        kFindLSB_IntrinsicKind,
+        kFindMSB_IntrinsicKind,
+        kInverse_IntrinsicKind,
+        kInversesqrt_IntrinsicKind,
+        kLength_IntrinsicKind,
+        kMatrixCompMult_IntrinsicKind,
+        kMod_IntrinsicKind,
+        kNormalize_IntrinsicKind,
+        kRadians_IntrinsicKind,
+        kReflect_IntrinsicKind,
+        kRefract_IntrinsicKind,
+        kRoundEven_IntrinsicKind,
+        kTexture_IntrinsicKind,
     };
 
-    enum SpecialIntrinsic {
-        kTexture_SpecialIntrinsic,
-        kMod_SpecialIntrinsic,
-    };
+    static const char* OperatorName(Token::Kind op);
 
-    enum MetalIntrinsic {
-        kEqual_MetalIntrinsic,
-        kNotEqual_MetalIntrinsic,
-        kLessThan_MetalIntrinsic,
-        kLessThanEqual_MetalIntrinsic,
-        kGreaterThan_MetalIntrinsic,
-        kGreaterThanEqual_MetalIntrinsic,
-    };
+    class GlobalStructVisitor;
+    void visitGlobalStruct(GlobalStructVisitor* visitor);
 
     void setupIntrinsics();
 
@@ -139,6 +153,8 @@ protected:
 
     void writeInterfaceBlocks();
 
+    void writeStructDefinitions();
+
     void writeFields(const std::vector<Type::Field>& fields, int parentOffset,
                      const InterfaceBlock* parentIntf = nullptr);
 
@@ -148,11 +164,19 @@ protected:
 
     void writeGlobalStruct();
 
+    void writeGlobalInit();
+
     void writePrecisionModifier();
 
     String typeName(const Type& type);
 
-    void writeType(const Type& type);
+    bool writeStructDefinition(const Type& type);
+
+    void disallowArrayTypes(const Type& type, int offset);
+
+    void writeBaseType(const Type& type);
+
+    void writeArrayDimensions(const Type& type);
 
     void writeExtension(const Extension& ext);
 
@@ -160,21 +184,26 @@ protected:
 
     void writeFunctionStart(const FunctionDeclaration& f);
 
-    void writeFunctionDeclaration(const FunctionDeclaration& f);
+    void writeFunctionRequirementParams(const FunctionDeclaration& f,
+                                        const char*& separator);
+
+    void writeFunctionRequirementArgs(const FunctionDeclaration& f, const char*& separator);
+
+    bool writeFunctionDeclaration(const FunctionDeclaration& f);
 
     void writeFunction(const FunctionDefinition& f);
+
+    void writeFunctionPrototype(const FunctionPrototype& f);
 
     void writeLayout(const Layout& layout);
 
     void writeModifiers(const Modifiers& modifiers, bool globalContext);
 
-    void writeGlobalVars(const VarDeclaration& vs);
-
     void writeVarInitializer(const Variable& var, const Expression& value);
 
     void writeName(const String& name);
 
-    void writeVarDeclarations(const VarDeclarations& decl, bool global);
+    void writeVarDeclaration(const VarDeclaration& decl, bool global);
 
     void writeFragCoord();
 
@@ -182,20 +211,33 @@ protected:
 
     void writeExpression(const Expression& expr, Precedence parentPrecedence);
 
-    void writeIntrinsicCall(const FunctionCall& c);
-
     void writeMinAbsHack(Expression& absExpr, Expression& otherExpr);
+
+    String getOutParamHelper(const FunctionCall& c,
+                             const ExpressionArray& arguments,
+                             const SkTArray<VariableReference*>& outVars);
+
+    String getInversePolyfill(const ExpressionArray& arguments);
+
+    String getBitcastIntrinsic(const Type& outType);
+
+    String getTempVariable(const Type& varType);
 
     void writeFunctionCall(const FunctionCall& c);
 
-    void writeInverseHack(const Expression& mat);
-
     bool matrixConstructHelperIsNeeded(const Constructor& c);
     String getMatrixConstructHelper(const Constructor& c);
+    void assembleMatrixFromMatrix(const Type& sourceMatrix, int rows, int columns);
+    void assembleMatrixFromExpressions(const ExpressionArray& args, int rows, int columns);
 
+    void writeMatrixCompMult();
     void writeMatrixTimesEqualHelper(const Type& left, const Type& right, const Type& result);
 
-    void writeSpecialIntrinsic(const FunctionCall& c, SpecialIntrinsic kind);
+    void writeArgumentList(const ExpressionArray& arguments);
+
+    void writeSimpleIntrinsic(const FunctionCall& c);
+
+    void writeIntrinsicCall(const FunctionCall& c, IntrinsicKind kind);
 
     bool canCoerce(const Type& t1, const Type& t2);
 
@@ -227,7 +269,7 @@ protected:
 
     void writeStatement(const Statement& s);
 
-    void writeStatements(const std::vector<std::unique_ptr<Statement>>& statements);
+    void writeStatements(const StatementArray& statements);
 
     void writeBlock(const Block& b);
 
@@ -235,11 +277,11 @@ protected:
 
     void writeForStatement(const ForStatement& f);
 
-    void writeWhileStatement(const WhileStatement& w);
-
     void writeDoStatement(const DoStatement& d);
 
     void writeSwitchStatement(const SwitchStatement& s);
+
+    void writeReturnStatementFromMain();
 
     void writeReturnStatement(const ReturnStatement& r);
 
@@ -251,19 +293,14 @@ protected:
 
     Requirements requirements(const Statement* s);
 
-    typedef std::pair<IntrinsicKind, int32_t> Intrinsic;
-    std::unordered_map<String, Intrinsic> fIntrinsicMap;
+    std::unordered_map<String, IntrinsicKind> fIntrinsicMap;
     std::unordered_set<String> fReservedWords;
-    std::vector<const VarDeclaration*> fInitNonConstGlobalVars;
-    std::vector<const Variable*> fTextures;
     std::unordered_map<const Type::Field*, const InterfaceBlock*> fInterfaceBlockMap;
     std::unordered_map<const InterfaceBlock*, String> fInterfaceBlockNameMap;
     int fAnonInterfaceCount = 0;
     int fPaddingCount = 0;
-    bool fNeedsGlobalStructInit = false;
     const char* fLineEnding;
     const Context& fContext;
-    StringStream fHeader;
     String fFunctionHeader;
     StringStream fExtraFunctions;
     Program::Kind fProgramKind;
@@ -283,10 +320,13 @@ protected:
     std::unordered_set<String> fHelpers;
     int fUniformBuffer = -1;
     String fRTHeightName;
+    const FunctionDeclaration* fCurrentFunction = nullptr;
+    int fSwizzleHelperCount = 0;
+    bool fIgnoreVariableReferenceModifiers = false;
 
-    typedef CodeGenerator INHERITED;
+    using INHERITED = CodeGenerator;
 };
 
-}
+}  // namespace SkSL
 
 #endif

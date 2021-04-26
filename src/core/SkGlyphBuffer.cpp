@@ -75,31 +75,25 @@ void SkDrawableGlyphBuffer::startGPUDevice(
     fInputSize = source.size();
     fDrawableSize = 0;
 
-    // Map the positions including subpixel position.
-    auto positions = source.get<1>();
-    SkMatrix matrix = viewMatrix;
-    matrix.preTranslate(origin.x(), origin.y());
-
-    // Q = [M][T](0,0).
-    SkPoint Q = matrix.mapXY(0, 0);
+    // Build up the mapping from source space to device space. Add the rounding constant
+    // halfSampleFreq so we just need to floor to get the device result.
+    SkMatrix device = viewMatrix;
     SkPoint halfSampleFreq = roundingSpec.halfAxisSampleFreq;
-    matrix.postTranslate(halfSampleFreq.x(), halfSampleFreq.y());
-    matrix.mapPoints(fPositions, positions.data(), positions.size());
+    device.postTranslate(halfSampleFreq.x(), halfSampleFreq.y());
+    device.preTranslate(origin.x(), origin.y());
 
-    // Mask for controlling axis alignment.
-    SkIPoint mask = roundingSpec.ignorePositionFieldMask;
+    auto positions = source.get<1>();
+    device.mapPoints(fPositions, positions.data(), positions.size());
 
-    // Convert glyph ids and positions to packed glyph ids.
-    SkZip<const SkGlyphID, const SkPoint> withMappedPos =
-            SkMakeZip(source.get<0>(), fPositions.get());
-    SkGlyphVariant* packedIDCursor = fMultiBuffer;
-    for (auto [glyphID, pos] : withMappedPos) {
-        *packedIDCursor++ = SkPackedGlyphID{glyphID, pos, mask};
-    }
+    auto floor = [](SkPoint pt) -> SkPoint {
+        return {SkScalarFloorToScalar(pt.x()), SkScalarFloorToScalar(pt.y())};
+    };
 
-    for (SkPoint& pos : SkSpan<SkPoint>(fPositions, source.size())) {
-        SkPoint P = SkPoint::Make(SkScalarFloorToScalar(pos.x()), SkScalarFloorToScalar(pos.y()));
-        pos = P - Q;
+    for (auto [packedGlyphID, glyphID, pos]
+            : SkMakeZip(fMultiBuffer.get(), source.get<0>(), fPositions.get())) {
+        packedGlyphID = SkPackedGlyphID{glyphID, pos, roundingSpec.ignorePositionFieldMask};
+        // Store rounded device coords back in pos.
+        pos = floor(pos);
     }
 
     SkDEBUGCODE(fPhase = kInput);

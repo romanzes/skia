@@ -60,7 +60,6 @@ public:
     ~GrConvexPolyEffect() override;
 
     const char* name() const override { return "ConvexPoly"; }
-
     std::unique_ptr<GrFragmentProcessor> clone() const override;
 
     GrClipEdgeType getEdgeType() const { return fEdgeType; }
@@ -68,8 +67,6 @@ public:
     int getEdgeCount() const { return fEdgeCount; }
 
     const SkScalar* getEdges() const { return fEdges; }
-
-    bool hasInputFP() const { return numChildProcessors() > 0; }
 
 private:
     GrConvexPolyEffect(std::unique_ptr<GrFragmentProcessor> inputFP,
@@ -89,7 +86,7 @@ private:
 
     GR_DECLARE_FRAGMENT_PROCESSOR_TEST
 
-    typedef GrFragmentProcessor INHERITED;
+    using INHERITED = GrFragmentProcessor;
 };
 
 

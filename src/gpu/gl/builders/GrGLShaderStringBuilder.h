@@ -11,11 +11,10 @@
 #include "include/core/SkTypes.h"
 #include "include/gpu/GrContextOptions.h"
 #include "src/gpu/GrGpu.h"
-#include "src/gpu/GrTAllocator.h"
 #include "src/gpu/gl/GrGLContext.h"
 #include "src/sksl/SkSLGLSLCodeGenerator.h"
 
-std::unique_ptr<SkSL::Program> GrSkSLtoGLSL(const GrGLContext& context,
+std::unique_ptr<SkSL::Program> GrSkSLtoGLSL(const GrGLGpu* gpu,
                                             SkSL::Program::Kind programKind,
                                             const SkSL::String& sksl,
                                             const SkSL::Program::Settings& settings,

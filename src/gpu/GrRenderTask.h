@@ -9,8 +9,8 @@
 #define GrRenderTask_DEFINED
 
 #include "include/core/SkRefCnt.h"
-#include "include/private/SkColorData.h"
-#include "include/private/SkTDArray.h"
+#include "include/private/SkTArray.h"
+#include "src/core/SkTInternalLList.h"
 #include "src/gpu/GrSurfaceProxyView.h"
 #include "src/gpu/GrTextureProxy.h"
 #include "src/gpu/GrTextureResolveManager.h"
@@ -37,6 +37,8 @@ public:
     void prepare(GrOpFlushState* flushState);
     bool execute(GrOpFlushState* flushState) { return this->onExecute(flushState); }
 
+    virtual bool requiresExplicitCleanup() const { return false; }
+
     // Called when this class will survive a flush and needs to truncate its ops and start over.
     // TODO: ultimately it should be invalid for an op list to survive a flush.
     // https://bugs.chromium.org/p/skia/issues/detail?id=7111
@@ -52,7 +54,7 @@ public:
     /*
      * Notify this GrRenderTask that it relies on the contents of 'dependedOn'
      */
-    void addDependency(GrDrawingManager*, GrSurfaceProxy* dependedOn, GrMipMapped,
+    void addDependency(GrDrawingManager*, GrSurfaceProxy* dependedOn, GrMipmapped,
                        GrTextureResolveManager, const GrCaps& caps);
 
     /*
@@ -66,8 +68,11 @@ public:
      */
     bool dependsOn(const GrRenderTask* dependedOn) const;
 
+    virtual void gatherIDs(SkSTArray<8, uint32_t, true>* idArray) const {
+        idArray->push_back(fUniqueID);
+    }
     uint32_t uniqueID() const { return fUniqueID; }
-    int numTargets() const { return fTargets.count(); }
+    virtual int numTargets() const { return fTargets.count(); }
     const GrSurfaceProxyView& target(int i) const { return fTargets[i]; }
 
     /*
@@ -75,30 +80,56 @@ public:
      */
     virtual GrOpsTask* asOpsTask() { return nullptr; }
 
-#ifdef SK_DEBUG
+#if GR_TEST_UTILS
     /*
      * Dump out the GrRenderTask dependency DAG
      */
-    virtual void dump(bool printDependencies) const;
+    virtual void dump(const SkString& label,
+                      SkString indent,
+                      bool printDependencies,
+                      bool close) const;
     virtual const char* name() const = 0;
+#endif
 
+#ifdef SK_DEBUG
     virtual int numClips() const { return 0; }
 
     virtual void visitProxies_debugOnly(const GrOp::VisitProxyFunc&) const = 0;
 
     void visitTargetAndSrcProxies_debugOnly(const GrOp::VisitProxyFunc& fn) const {
         this->visitProxies_debugOnly(fn);
-        for (int i = 0; i < this->numTargets(); ++i) {
-            fn(this->target(i).proxy(), GrMipMapped::kNo);
+       for (const GrSurfaceProxyView& target : fTargets) {
+            fn(target.proxy(), GrMipmapped::kNo);
         }
     }
 #endif
 
-protected:
+    bool isUsed(GrSurfaceProxy* proxy) const {
+        for (const GrSurfaceProxyView& target : fTargets) {
+            if (target.proxy() == proxy) {
+                return true;
+            }
+        }
+
+        return this->onIsUsed(proxy);
+    }
+
+    // Drops any pending operations that reference proxies that are not instantiated.
+    // NOTE: Derived classes don't need to check targets. That is handled when the
+    // drawingManager calls isInstantiated.
+    virtual void handleInternalAllocationFailure() = 0;
+
+    // Feed proxy usage intervals to the GrResourceAllocator class
+    virtual void gatherProxyIntervals(GrResourceAllocator*) const = 0;
+
     // In addition to just the GrSurface being allocated, has the stencil buffer been allocated (if
     // it is required)?
     bool isInstantiated() const;
 
+    // Used by GrTCluster.
+    SK_DECLARE_INTERNAL_LLIST_INTERFACE(GrRenderTask);
+
+protected:
     SkDEBUGCODE(bool deferredProxiesAreInstantiated() const;)
 
     // Add a target surface proxy to the list of targets for this task.
@@ -124,40 +155,6 @@ protected:
     // executing. Can this be replaced?
     SkTArray<GrTextureProxy*, true> fDeferredProxies;
 
-private:
-    // for resetFlag, TopoSortTraits, gatherProxyIntervals, handleInternalAllocationFailure
-    friend class GrDrawingManager;
-
-    // Drops any pending operations that reference proxies that are not instantiated.
-    // NOTE: Derived classes don't need to check targets. That is handled when the
-    // drawingManager calls isInstantiated.
-    virtual void handleInternalAllocationFailure() = 0;
-
-    // Derived classes can override to indicate usage of proxies _other than target proxies_.
-    // GrRenderTask itself will handle checking the target proxies.
-    virtual bool onIsUsed(GrSurfaceProxy*) const = 0;
-
-    bool isUsed(GrSurfaceProxy* proxy) const {
-        for (const GrSurfaceProxyView& target : fTargets) {
-            if (target.proxy() == proxy) {
-                return true;
-            }
-        }
-
-        return this->onIsUsed(proxy);
-    }
-
-    void addDependency(GrRenderTask* dependedOn);
-    void addDependent(GrRenderTask* dependent);
-    SkDEBUGCODE(bool isDependedent(const GrRenderTask* dependent) const;)
-    SkDEBUGCODE(void validate() const;)
-    void closeThoseWhoDependOnMe(const GrCaps&);
-
-    // Feed proxy usage intervals to the GrResourceAllocator class
-    virtual void gatherProxyIntervals(GrResourceAllocator*) const = 0;
-
-    static uint32_t CreateUniqueID();
-
     enum Flags {
         kClosed_Flag    = 0x01,   //!< This task can't accept any more dependencies.
         kDisowned_Flag  = 0x02,   //!< This task is disowned by its creating GrDrawingManager.
@@ -178,8 +175,39 @@ private:
         return SkToBool(fFlags & flag);
     }
 
+    void setIndex(uint32_t index) {
+        SkASSERT(!this->isSetFlag(kWasOutput_Flag));
+        SkASSERT(index < (1 << 28));
+        fFlags |= index << 4;
+    }
+
+    uint32_t getIndex() const {
+        SkASSERT(this->isSetFlag(kWasOutput_Flag));
+        return fFlags >> 4;
+    }
+
+private:
+    // for TopoSortTraits, fTextureResolveTask, closeThoseWhoDependOnMe, addDependency
+    friend class GrDrawingManager;
+
+    // Derived classes can override to indicate usage of proxies _other than target proxies_.
+    // GrRenderTask itself will handle checking the target proxies.
+    virtual bool onIsUsed(GrSurfaceProxy*) const = 0;
+
+    void addDependency(GrRenderTask* dependedOn);
+    void addDependent(GrRenderTask* dependent);
+    SkDEBUGCODE(bool isDependent(const GrRenderTask* dependent) const;)
+    SkDEBUGCODE(void validate() const;)
+    void closeThoseWhoDependOnMe(const GrCaps&);
+
+    static uint32_t CreateUniqueID();
+
     struct TopoSortTraits {
-        static void Output(GrRenderTask* renderTask, int /* index */) {
+        static uint32_t GetIndex(GrRenderTask* renderTask) {
+            return renderTask->getIndex();
+        }
+        static void Output(GrRenderTask* renderTask, uint32_t index) {
+            renderTask->setIndex(index);
             renderTask->setFlag(kWasOutput_Flag);
         }
         static bool WasOutput(const GrRenderTask* renderTask) {
@@ -202,9 +230,26 @@ private:
         }
     };
 
-    // Only the GrOpsTask currently overrides this virtual
-    virtual void onPrePrepare(GrRecordingContext*) {}
-    virtual void onPrepare(GrOpFlushState*) {} // Only the GrOpsTask overrides this virtual
+    struct ClusterTraits {
+        static int NumTargets(GrRenderTask* renderTask) {
+            return renderTask->numTargets();
+        }
+        static uint32_t GetTarget(GrRenderTask* renderTask, int index) {
+            return renderTask->target(index).proxy()->uniqueID().asUInt();
+        }
+        static int NumDependencies(const GrRenderTask* renderTask) {
+            return renderTask->fDependencies.count();
+        }
+        static GrRenderTask* Dependency(GrRenderTask* renderTask, int index) {
+            return renderTask->fDependencies[index];
+        }
+        static uint32_t GetID(GrRenderTask* renderTask) {
+            return renderTask->uniqueID();
+        }
+    };
+
+    virtual void onPrePrepare(GrRecordingContext*) {} // Only the GrOpsTask currently overrides this
+    virtual void onPrepare(GrOpFlushState*) {} // Only GrOpsTask and GrDDLTask override this virtual
     virtual bool onExecute(GrOpFlushState* flushState) = 0;
 
     const uint32_t         fUniqueID;
@@ -219,6 +264,8 @@ private:
     // (http://skbug.com/9406). To accomplish this, we make and reuse one single resolve task for
     // each render task, then add it as a dependency during makeClosed().
     GrTextureResolveRenderTask* fTextureResolveTask = nullptr;
+
+    SkDEBUGCODE(GrDrawingManager *fDrawingMgr = nullptr;)
 };
 
 #endif

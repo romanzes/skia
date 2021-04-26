@@ -92,9 +92,11 @@ public:
     void readPoint(SkPoint* point);
     SkPoint readPoint() { SkPoint p; this->readPoint(&p); return p; }
     void readPoint3(SkPoint3* point);
+    void read(SkM44*);
     void readMatrix(SkMatrix* matrix);
     void readIRect(SkIRect* rect);
     void readRect(SkRect* rect);
+    SkRect readRect();
     void readRRect(SkRRect* rrect);
     void readRegion(SkRegion* region);
 
@@ -195,12 +197,16 @@ public:
 
     SkFilterQuality checkFilterQuality();
 
+    SkSamplingOptions readSampling();
+
 private:
     const char* readString(size_t* length);
 
     void setInvalid();
     bool readArray(void* value, size_t size, size_t elementSize);
     bool isAvailable(size_t size) const { return size <= this->available(); }
+
+    sk_sp<SkImage> readImage_preV78();
 
     // These are always 4-byte aligned
     const char* fCurr = nullptr;  // current position within buffer

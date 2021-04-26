@@ -7,11 +7,15 @@
 
 #include "src/gpu/GrMemoryPool.h"
 
+#include "include/private/SkTPin.h"
+#include "src/core/SkASAN.h"
 #include "src/gpu/ops/GrOp.h"
 
 #ifdef SK_DEBUG
     #include <atomic>
 #endif
+
+#include <tuple>
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -33,21 +37,26 @@ GrMemoryPool::GrMemoryPool(size_t preallocSize, size_t minAllocSize)
 }
 
 GrMemoryPool::~GrMemoryPool() {
+    this->reportLeaks();
+    SkASSERT(0 == fAllocationCount);
+    SkASSERT(this->isEmpty());
+}
+
+void GrMemoryPool::reportLeaks() const {
 #ifdef SK_DEBUG
     int i = 0;
     int n = fAllocatedIDs.count();
-    fAllocatedIDs.foreach([&i, n] (int id) {
+    for (int id : fAllocatedIDs) {
         if (++i == 1) {
             SkDebugf("Leaked %d IDs (in no particular order): %d%s", n, id, (n == i) ? "\n" : "");
         } else if (i < 11) {
             SkDebugf(", %d%s", id, (n == i ? "\n" : ""));
         } else if (i == 11) {
             SkDebugf(", ...\n");
+            break;
         }
-    });
+    }
 #endif
-    SkASSERT(0 == fAllocationCount);
-    SkASSERT(this->isEmpty());
 }
 
 void* GrMemoryPool::allocate(size_t size) {
@@ -64,11 +73,16 @@ void* GrMemoryPool::allocate(size_t size) {
     // Update live count within the block
     alloc.fBlock->setMetadata(alloc.fBlock->metadata() + 1);
 
-#ifdef SK_DEBUG
+#if defined(SK_SANITIZE_ADDRESS)
+    sk_asan_poison_memory_region(&header->fSentinel, sizeof(header->fSentinel));
+#elif defined(SK_DEBUG)
     header->fSentinel = GrBlockAllocator::kAssignedMarker;
+#endif
+
+#if defined(SK_DEBUG)
     header->fID = []{
         static std::atomic<int> nextID{1};
-        return nextID++;
+        return nextID.fetch_add(1, std::memory_order_relaxed);
     }();
 
     // You can set a breakpoint here when a leaked ID is allocated to see the stack frame.
@@ -81,17 +95,29 @@ void* GrMemoryPool::allocate(size_t size) {
 }
 
 void GrMemoryPool::release(void* p) {
-    // NOTE: if we needed it, (p - block) would equal the original alignedOffset value returned by
-    // GrBlockAllocator::allocate()
     Header* header = reinterpret_cast<Header*>(reinterpret_cast<intptr_t>(p) - sizeof(Header));
+
+#if defined(SK_SANITIZE_ADDRESS)
+    sk_asan_unpoison_memory_region(&header->fSentinel, sizeof(header->fSentinel));
+#elif defined(SK_DEBUG)
     SkASSERT(GrBlockAllocator::kAssignedMarker == header->fSentinel);
+    header->fSentinel = GrBlockAllocator::kFreedMarker;
+#endif
+
+#if defined(SK_DEBUG)
+    fAllocatedIDs.remove(header->fID);
+    fAllocationCount--;
+#endif
 
     GrBlockAllocator::Block* block = fAllocator.owningBlock<kAlignment>(header, header->fStart);
 
-#ifdef SK_DEBUG
-    header->fSentinel = GrBlockAllocator::kFreedMarker;
-    fAllocatedIDs.remove(header->fID);
-    fAllocationCount--;
+#if defined(SK_DEBUG)
+    // (p - block) matches the original alignedOffset value from GrBlockAllocator::allocate().
+    intptr_t alignedOffset = (intptr_t)p - (intptr_t)block;
+    SkASSERT(p == block->ptr(alignedOffset));
+
+    // Scrub the block contents to prevent use-after-free errors.
+    memset(p, 0xDD, header->fEnd - alignedOffset);
 #endif
 
     int alive = block->metadata();
@@ -118,23 +144,3 @@ void GrMemoryPool::validate() const {
     SkASSERT(allocCount > 0 || this->isEmpty());
 }
 #endif
-
-///////////////////////////////////////////////////////////////////////////////////////////////////
-
-std::unique_ptr<GrOpMemoryPool> GrOpMemoryPool::Make(size_t preallocSize, size_t minAllocSize) {
-    static_assert(sizeof(GrOpMemoryPool) < GrMemoryPool::kMinAllocationSize);
-
-    preallocSize = SkTPin(preallocSize, GrMemoryPool::kMinAllocationSize,
-                          (size_t) GrBlockAllocator::kMaxAllocationSize);
-    minAllocSize = SkTPin(minAllocSize, GrMemoryPool::kMinAllocationSize,
-                          (size_t) GrBlockAllocator::kMaxAllocationSize);
-    void* mem = operator new(preallocSize);
-    return std::unique_ptr<GrOpMemoryPool>(new (mem) GrOpMemoryPool(preallocSize, minAllocSize));
-}
-
-void GrOpMemoryPool::release(std::unique_ptr<GrOp> op) {
-    GrOp* tmp = op.release();
-    SkASSERT(tmp);
-    tmp->~GrOp();
-    fPool.release(tmp);
-}

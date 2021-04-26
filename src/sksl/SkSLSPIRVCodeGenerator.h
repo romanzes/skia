@@ -12,6 +12,7 @@
 #include <tuple>
 #include <unordered_map>
 
+#include "src/core/SkOpts.h"
 #include "src/sksl/SkSLCodeGenerator.h"
 #include "src/sksl/SkSLMemoryLayout.h"
 #include "src/sksl/SkSLStringStream.h"
@@ -38,50 +39,53 @@
 #include "src/sksl/ir/SkSLSwizzle.h"
 #include "src/sksl/ir/SkSLTernaryExpression.h"
 #include "src/sksl/ir/SkSLVarDeclarations.h"
-#include "src/sksl/ir/SkSLVarDeclarationsStatement.h"
 #include "src/sksl/ir/SkSLVariableReference.h"
-#include "src/sksl/ir/SkSLWhileStatement.h"
 #include "src/sksl/spirv.h"
 
-union ConstantValue {
-    ConstantValue(int64_t i)
-        : fInt(i) {}
+namespace SkSL {
 
-    ConstantValue(double d)
-        : fDouble(d) {}
-
-    bool operator==(const ConstantValue& other) const {
-        return fInt == other.fInt;
+struct SPIRVNumberConstant {
+    bool operator==(const SPIRVNumberConstant& that) const {
+        return fValueBits == that.fValueBits &&
+               fKind      == that.fKind;
     }
-
-    int64_t fInt;
-    double fDouble;
+    int64_t fValueBits;  // contains either an SKSL_INT or zero-padded bits from an SKSL_FLOAT
+    SkSL::Type::NumberKind fKind;
 };
 
-enum class ConstantType {
-    kInt,
-    kUInt,
-    kShort,
-    kUShort,
-    kFloat,
-    kDouble,
-    kHalf,
+struct SPIRVVectorConstant {
+    bool operator==(const SPIRVVectorConstant& that) const {
+        return fTypeId     == that.fTypeId &&
+               fValueId[0] == that.fValueId[0] &&
+               fValueId[1] == that.fValueId[1] &&
+               fValueId[2] == that.fValueId[2] &&
+               fValueId[3] == that.fValueId[3];
+    }
+    SpvId fTypeId;
+    SpvId fValueId[4];
 };
+
+}  // namespace SkSL
 
 namespace std {
 
 template <>
-struct hash<std::pair<ConstantValue, ConstantType>> {
-    size_t operator()(const std::pair<ConstantValue, ConstantType>& key) const {
-        return key.first.fInt ^ (int) key.second;
+struct hash<SkSL::SPIRVNumberConstant> {
+    size_t operator()(const SkSL::SPIRVNumberConstant& key) const {
+        return key.fValueBits ^ (int)key.fKind;
     }
 };
 
-}
+template <>
+struct hash<SkSL::SPIRVVectorConstant> {
+    size_t operator()(const SkSL::SPIRVVectorConstant& key) const {
+        return SkOpts::hash(&key, sizeof(key));
+    }
+};
+
+}  // namespace std
 
 namespace SkSL {
-
-#define kLast_Capability SpvCapabilityMultiViewport
 
 /**
  * Converts a Program into a SPIR-V binary.
@@ -101,18 +105,20 @@ public:
         virtual void store(SpvId value, OutputStream& out) = 0;
     };
 
-    SPIRVCodeGenerator(const Context* context, const Program* program, ErrorReporter* errors,
+    SPIRVCodeGenerator(const Context* context,
+                       const Program* program,
+                       ErrorReporter* errors,
                        OutputStream* out)
-    : INHERITED(program, errors, out)
-    , fContext(*context)
-    , fDefaultLayout(MemoryLayout::k140_Standard)
-    , fCapabilities(0)
-    , fIdCount(1)
-    , fBoolTrue(0)
-    , fBoolFalse(0)
-    , fSetupFragPosition(false)
-    , fCurrentBlock(0)
-    , fSynthetics(nullptr, errors) {
+            : INHERITED(program, errors, out)
+            , fContext(*context)
+            , fDefaultLayout(MemoryLayout::k140_Standard)
+            , fCapabilities(0)
+            , fIdCount(1)
+            , fBoolTrue(0)
+            , fBoolFalse(0)
+            , fSetupFragPosition(false)
+            , fCurrentBlock(0)
+            , fSynthetics(errors, /*builtin=*/true) {
         this->setupIntrinsics();
     }
 
@@ -128,6 +134,7 @@ private:
     enum SpecialIntrinsic {
         kAtan_SpecialIntrinsic,
         kClamp_SpecialIntrinsic,
+        kMatrixCompMult_SpecialIntrinsic,
         kMax_SpecialIntrinsic,
         kMin_SpecialIntrinsic,
         kMix_SpecialIntrinsic,
@@ -135,6 +142,8 @@ private:
         kDFdy_SpecialIntrinsic,
         kSaturate_SpecialIntrinsic,
         kSampledImage_SpecialIntrinsic,
+        kSmoothStep_SpecialIntrinsic,
+        kStep_SpecialIntrinsic,
         kSubpassLoad_SpecialIntrinsic,
         kTexture_SpecialIntrinsic,
     };
@@ -148,7 +157,7 @@ private:
 
     SpvId nextId();
 
-    Type getActualType(const Type& type);
+    const Type& getActualType(const Type& type);
 
     SpvId getType(const Type& type);
 
@@ -185,9 +194,9 @@ private:
 
     SpvId writeFunction(const FunctionDefinition& f, OutputStream& out);
 
-    void writeGlobalVars(Program::Kind kind, const VarDeclarations& v, OutputStream& out);
+    void writeGlobalVar(Program::Kind kind, const VarDeclaration& v, OutputStream& out);
 
-    void writeVarDeclarations(const VarDeclarations& decl, OutputStream& out);
+    void writeVarDeclaration(const VarDeclaration& var, OutputStream& out);
 
     SpvId writeVariableReference(const VariableReference& ref, OutputStream& out);
 
@@ -210,8 +219,7 @@ private:
      * returns (vec2(float), vec2). It is an error to use mismatched vector sizes, e.g. (float,
      * vec2, vec3).
      */
-    std::vector<SpvId> vectorize(const std::vector<std::unique_ptr<Expression>>& args,
-                                 OutputStream& out);
+    std::vector<SpvId> vectorize(const ExpressionArray& args, OutputStream& out);
 
     SpvId writeSpecialIntrinsic(const FunctionCall& c, SpecialIntrinsic kind, OutputStream& out);
 
@@ -219,9 +227,18 @@ private:
 
     SpvId writeFloatConstructor(const Constructor& c, OutputStream& out);
 
+    SpvId castScalarToFloat(SpvId inputId, const Type& inputType, const Type& outputType,
+                            OutputStream& out);
+
     SpvId writeIntConstructor(const Constructor& c, OutputStream& out);
 
+    SpvId castScalarToSignedInt(SpvId inputId, const Type& inputType, const Type& outputType,
+                                OutputStream& out);
+
     SpvId writeUIntConstructor(const Constructor& c, OutputStream& out);
+
+    SpvId castScalarToUnsignedInt(SpvId inputId, const Type& inputType, const Type& outputType,
+                                  OutputStream& out);
 
     /**
      * Writes a matrix with the diagonal entries all equal to the provided expression, and all other
@@ -308,8 +325,6 @@ private:
 
     void writeForStatement(const ForStatement& f, OutputStream& out);
 
-    void writeWhileStatement(const WhileStatement& w, OutputStream& out);
-
     void writeDoStatement(const DoStatement& d, OutputStream& out);
 
     void writeSwitchStatement(const SwitchStatement& s, OutputStream& out);
@@ -386,9 +401,8 @@ private:
 
     SpvId fBoolTrue;
     SpvId fBoolFalse;
-    std::unordered_map<std::pair<ConstantValue, ConstantType>, SpvId> fNumberConstants;
-    // The constant float2(0, 1), used in swizzling
-    SpvId fConstantZeroOneVector = 0;
+    std::unordered_map<SPIRVNumberConstant, SpvId> fNumberConstants;
+    std::unordered_map<SPIRVVectorConstant, SpvId> fVectorConstants;
     bool fSetupFragPosition;
     // label of the current block, or 0 if we are not in a block
     SpvId fCurrentBlock;
@@ -396,6 +410,7 @@ private:
     std::stack<SpvId> fContinueTarget;
     SpvId fRTHeightStructId = (SpvId) -1;
     SpvId fRTHeightFieldIndex = (SpvId) -1;
+    SpvStorageClass_ fRTHeightStorageClass;
     // holds variables synthesized during output, for lifetime purposes
     SymbolTable fSynthetics;
     int fSkInCount = 1;
@@ -403,9 +418,9 @@ private:
     friend class PointerLValue;
     friend class SwizzleLValue;
 
-    typedef CodeGenerator INHERITED;
+    using INHERITED = CodeGenerator;
 };
 
-}
+}  // namespace SkSL
 
 #endif

@@ -14,7 +14,6 @@
 
 #include "src/sksl/SkSLByteCode.h"
 #include "src/sksl/SkSLCodeGenerator.h"
-#include "src/sksl/SkSLMemoryLayout.h"
 #include "src/sksl/ir/SkSLBinaryExpression.h"
 #include "src/sksl/ir/SkSLBlock.h"
 #include "src/sksl/ir/SkSLBoolLiteral.h"
@@ -24,7 +23,7 @@
 #include "src/sksl/ir/SkSLDoStatement.h"
 #include "src/sksl/ir/SkSLExpressionStatement.h"
 #include "src/sksl/ir/SkSLExternalFunctionCall.h"
-#include "src/sksl/ir/SkSLExternalValueReference.h"
+#include "src/sksl/ir/SkSLExternalFunctionReference.h"
 #include "src/sksl/ir/SkSLFieldAccess.h"
 #include "src/sksl/ir/SkSLFloatLiteral.h"
 #include "src/sksl/ir/SkSLForStatement.h"
@@ -35,7 +34,6 @@
 #include "src/sksl/ir/SkSLIndexExpression.h"
 #include "src/sksl/ir/SkSLIntLiteral.h"
 #include "src/sksl/ir/SkSLInterfaceBlock.h"
-#include "src/sksl/ir/SkSLNullLiteral.h"
 #include "src/sksl/ir/SkSLPostfixExpression.h"
 #include "src/sksl/ir/SkSLPrefixExpression.h"
 #include "src/sksl/ir/SkSLProgramElement.h"
@@ -45,9 +43,7 @@
 #include "src/sksl/ir/SkSLSwizzle.h"
 #include "src/sksl/ir/SkSLTernaryExpression.h"
 #include "src/sksl/ir/SkSLVarDeclarations.h"
-#include "src/sksl/ir/SkSLVarDeclarationsStatement.h"
 #include "src/sksl/ir/SkSLVariableReference.h"
-#include "src/sksl/ir/SkSLWhileStatement.h"
 #include "src/sksl/spirv.h"
 
 namespace SkSL {
@@ -140,23 +136,37 @@ private:
     enum class SpecialIntrinsic {
         kAll,
         kAny,
+        kATan,
         kClamp,
+        kDistance,
         kDot,
         kLength,
         kMax,
         kMin,
         kMix,
+        kMod,
         kNormalize,
         kSample,
         kSaturate,
+        kSmoothstep,
+        kStep,
     };
 
     struct Intrinsic {
         Intrinsic(SpecialIntrinsic    s) : is_special(true), special(s) {}
         Intrinsic(ByteCodeInstruction i) : Intrinsic(i, i, i) {}
+        // Workaround: We should be able to leave special uninitialized here, and were for a long
+        // time. Unrelated changes have made valgrind suddenly start complaining about us accessing
+        // uninitialized memory in the code:
+        //     if (intrin.is_special && intrin.special == SpecialIntrinsic::kSample)
+        // despite intrin.is_special being false at the time and therefore, one would think, not
+        // actually accessing intrin.special. I'm not sure whether this is a buggy optimization on
+        // clang's part or a false positive on valgrind's part, but either way initializing the
+        // field works around it.
         Intrinsic(ByteCodeInstruction f,
                   ByteCodeInstruction s,
-                  ByteCodeInstruction u) : is_special(false), inst_f(f), inst_s(s), inst_u(u) {}
+                  ByteCodeInstruction u) : is_special(false), special((SpecialIntrinsic) -1),
+                                           inst_f(f), inst_s(s), inst_u(u) {}
 
         bool                is_special;
         SpecialIntrinsic    special;
@@ -236,7 +246,7 @@ private:
 
     std::unique_ptr<ByteCodeFunction> writeFunction(const FunctionDefinition& f);
 
-    void writeVarDeclarations(const VarDeclarations& decl);
+    void writeVarDeclaration(const VarDeclaration& decl);
 
     void writeVariableExpression(const Expression& expr);
 
@@ -249,52 +259,31 @@ private:
     std::unique_ptr<LValue> getLValue(const Expression& expr);
 
     void writeIntrinsicCall(const FunctionCall& c);
-
     void writeFunctionCall(const FunctionCall& c);
-
     void writeConstructor(const Constructor& c);
-
     void writeExternalFunctionCall(const ExternalFunctionCall& c);
-
-    void writeExternalValue(const ExternalValueReference& r);
-
     void writeSwizzle(const Swizzle& swizzle);
-
     bool writeBinaryExpression(const BinaryExpression& b, bool discard);
-
     void writeTernaryExpression(const TernaryExpression& t);
-
-    void writeNullLiteral(const NullLiteral& n);
-
     bool writePrefixExpression(const PrefixExpression& p, bool discard);
-
     bool writePostfixExpression(const PostfixExpression& p, bool discard);
 
     void writeBoolLiteral(const BoolLiteral& b);
-
     void writeIntLiteral(const IntLiteral& i);
-
     void writeFloatLiteral(const FloatLiteral& f);
 
     void writeStatement(const Statement& s);
-
     void writeBlock(const Block& b);
-
     void writeBreakStatement(const BreakStatement& b);
-
     void writeContinueStatement(const ContinueStatement& c);
-
     void writeIfStatement(const IfStatement& stmt);
-
     void writeForStatement(const ForStatement& f);
-
-    void writeWhileStatement(const WhileStatement& w);
-
     void writeDoStatement(const DoStatement& d);
-
     void writeSwitchStatement(const SwitchStatement& s);
-
     void writeReturnStatement(const ReturnStatement& r);
+
+    // Some intrinsics are complex enough to warrant their own functions:
+    void writeSmoothstep(const ExpressionArray& args);
 
     // updates the current set of breaks to branch to the current location
     void setBreakTargets();
@@ -347,15 +336,18 @@ private:
     int fConditionCount;
     int fMaxConditionCount;
 
+    // Holds variables synthesized during output, for lifetime purposes
+    SymbolTable fSynthetics;
+
     const std::unordered_map<String, Intrinsic> fIntrinsics;
 
     friend class DeferredLocation;
     friend class ByteCodeExpressionLValue;
     friend class ByteCodeSwizzleLValue;
 
-    typedef CodeGenerator INHERITED;
+    using INHERITED = CodeGenerator;
 };
 
-}
+}  // namespace SkSL
 
 #endif

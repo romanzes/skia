@@ -10,34 +10,7 @@
 
 #include <cstdint>
 
-#ifdef SKSL_STANDALONE
-#if defined(_WIN32) || defined(__SYMBIAN32__)
-#define SKSL_BUILD_FOR_WIN
-#endif
-#else
-#ifdef SK_BUILD_FOR_WIN
-#define SKSL_BUILD_FOR_WIN
-#endif // SK_BUILD_FOR_WIN
-#endif // SKSL_STANDALONE
-
-#ifdef SKSL_STANDALONE
-#define SkASSERT(x) do { if (!(x)) abort(); } while (false)
-#define SkASSERTF(x, __VA_ARGS__) do { if (!(x)) { printf(__VA_ARGS__); abort(); } } while (false)
-#define SkDEBUGFAIL(x) do { printf("%s", x); abort(); } while (false)
-#define SkDEBUGFAILF(fmt, ...) do { printf(__VA_ARGS__); abort(); } while (false)
-#define SkAssertResult(x) do { if (!(x)) abort(); } while (false)
-#define SkDEBUGCODE(...) __VA_ARGS__
-#define SK_API
-#if !defined(SkUNREACHABLE)
-#  if defined(_MSC_VER) && !defined(__clang__)
-#    define SkUNREACHABLE __assume(false)
-#  else
-#    define SkUNREACHABLE __builtin_unreachable()
-#  endif
-#endif
-#else
 #include "include/core/SkTypes.h"
-#endif
 
 #if defined(__clang__) || defined(__GNUC__)
 #define SKSL_PRINTF_LIKE(A, B) __attribute__((format(printf, (A), (B))))
@@ -55,7 +28,14 @@
 #define NORETURN __attribute__((__noreturn__))
 #endif
 
-using SKSL_INT = int32_t;
+#if defined(SK_BUILD_FOR_IOS) && \
+        (!defined(__IPHONE_9_0) || __IPHONE_OS_VERSION_MIN_REQUIRED < __IPHONE_9_0)
+#define SKSL_USE_THREAD_LOCAL 0
+#else
+#define SKSL_USE_THREAD_LOCAL 1
+#endif
+
+using SKSL_INT = int64_t;
 using SKSL_FLOAT = float;
 
 #endif

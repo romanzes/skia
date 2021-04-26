@@ -25,10 +25,10 @@
 // [2] http://lolengine.net/blog/2013/07/27/rgb-to-hsv-in-glsl
 // [3] http://www.chilliant.com/rgb2hsv.html
 
-in fragmentProcessor? inputFP;
+in fragmentProcessor inputFP;
 
-void main() {
-    half4 c = sample(inputFP, sk_InColor);
+half4 main() {
+    half4 c = sample(inputFP);
     half4 p = (c.g < c.b) ? half4(c.bg, -1,  2/3.0)
                           : half4(c.gb,  0, -1/3.0);
     half4 q = (c.r < p.x) ? half4(p.x, c.r, p.yw)
@@ -46,7 +46,7 @@ void main() {
     half   S = pmC / (c.a + eps - abs(pmL * 2 - c.a));
     half   L = pmL / (c.a + eps);
 
-    sk_OutColor = half4(H, S, L, c.a);
+    return half4(H, S, L, c.a);
 }
 
 @optimizationFlags {
@@ -58,9 +58,7 @@ void main() {
     #include "include/private/SkColorData.h"
 
     SkPMColor4f constantOutputForConstantInput(const SkPMColor4f& inColor) const override {
-        SkPMColor4f c = this->numChildProcessors()
-                            ? ConstantOutputForConstantInput(this->childProcessor(0), inColor)
-                            : inColor;
+        SkPMColor4f c = ConstantOutputForConstantInput(this->childProcessor(0), inColor);
         const auto p = (c.fG < c.fB) ? SkPMColor4f{ c.fB, c.fG, -1,  2/3.f }
                                      : SkPMColor4f{ c.fG, c.fB,  0, -1/3.f },
                    q = (c.fR < p[0]) ? SkPMColor4f{ p[0], c.fR, p[1], p[3] }

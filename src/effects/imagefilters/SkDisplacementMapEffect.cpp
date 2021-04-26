@@ -15,12 +15,11 @@
 #include "src/core/SkSpecialImage.h"
 #include "src/core/SkWriteBuffer.h"
 #if SK_SUPPORT_GPU
-#include "include/private/GrRecordingContext.h"
+#include "include/gpu/GrRecordingContext.h"
 #include "src/gpu/GrCaps.h"
 #include "src/gpu/GrColorSpaceXform.h"
-#include "src/gpu/GrCoordTransform.h"
 #include "src/gpu/GrRecordingContextPriv.h"
-#include "src/gpu/GrRenderTargetContext.h"
+#include "src/gpu/GrSurfaceDrawContext.h"
 #include "src/gpu/GrTexture.h"
 #include "src/gpu/GrTextureProxy.h"
 #include "src/gpu/SkGr.h"
@@ -44,8 +43,8 @@ public:
 
     SkRect computeFastBounds(const SkRect& src) const override;
 
-    virtual SkIRect onFilterBounds(const SkIRect& src, const SkMatrix& ctm,
-                                   MapDirection, const SkIRect* inputRect) const override;
+    SkIRect onFilterBounds(const SkIRect& src, const SkMatrix& ctm,
+                           MapDirection, const SkIRect* inputRect) const override;
     SkIRect onFilterNodeBounds(const SkIRect&, const SkMatrix& ctm,
                                MapDirection, const SkIRect* inputRect) const override;
 
@@ -65,7 +64,7 @@ private:
     const SkImageFilter* getDisplacementInput() const { return getInput(0); }
     const SkImageFilter* getColorInput() const { return getInput(1); }
 
-    typedef SkImageFilter_Base INHERITED;
+    using INHERITED = SkImageFilter_Base;
 };
 
 // Shift values to extract channels from an SkColor (SkColorGetR, SkColorGetG, etc)
@@ -161,18 +160,9 @@ void SkDisplacementMapEffect::RegisterFlattenables() {
 sk_sp<SkFlattenable> SkDisplacementMapEffectImpl::CreateProc(SkReadBuffer& buffer) {
     SK_IMAGEFILTER_UNFLATTEN_COMMON(common, 2);
 
-    SkColorChannel xsel, ysel;
-    if (buffer.isVersionLT(SkPicturePriv::kCleanupImageFilterEnums_Version)) {
-        xsel = convert_channel_type(buffer.read32LE(
-                SkDisplacementMapEffect::kLast_ChannelSelectorType));
-        ysel = convert_channel_type(buffer.read32LE(
-                SkDisplacementMapEffect::kLast_ChannelSelectorType));
-    } else {
-        xsel = buffer.read32LE(SkColorChannel::kLastEnum);
-        ysel = buffer.read32LE(SkColorChannel::kLastEnum);
-    }
-
-    SkScalar scale = buffer.readScalar();
+    SkColorChannel xsel = buffer.read32LE(SkColorChannel::kLastEnum);
+    SkColorChannel ysel = buffer.read32LE(SkColorChannel::kLastEnum);
+    SkScalar      scale = buffer.readScalar();
 
     return SkDisplacementMapEffect::Make(xsel, ysel, scale, common.getInput(0), common.getInput(1),
                                          &common.cropRect());
@@ -230,14 +220,11 @@ private:
 
     GR_DECLARE_FRAGMENT_PROCESSOR_TEST
 
-    // We really just want the unaltered local coords, but the only way to get that right now is
-    // an identity coord transform.
-    GrCoordTransform fCoordTransform = {};
     SkColorChannel fXChannelSelector;
     SkColorChannel fYChannelSelector;
     SkVector fScale;
 
-    typedef GrFragmentProcessor INHERITED;
+    using INHERITED = GrFragmentProcessor;
 };
 
 }  // anonymous namespace
@@ -350,34 +337,36 @@ sk_sp<SkSpecialImage> SkDisplacementMapEffectImpl::onFilterImage(const Context& 
                                               std::move(colorView),
                                               color->subset(),
                                               *context->priv().caps());
-        fp = GrColorSpaceXformEffect::Make(std::move(fp), color->getColorSpace(),
-                                           color->alphaType(), ctx.colorSpace());
-
-        GrPaint paint;
-        paint.addColorFragmentProcessor(std::move(fp));
-        paint.setPorterDuffXPFactory(SkBlendMode::kSrc);
-        SkMatrix matrix;
-        matrix.setTranslate(-SkIntToScalar(colorBounds.x()), -SkIntToScalar(colorBounds.y()));
-
-        auto renderTargetContext = GrRenderTargetContext::Make(
-                context, ctx.grColorType(), ctx.refColorSpace(), SkBackingFit::kApprox,
-                bounds.size(), 1, GrMipMapped::kNo, isProtected, kBottomLeft_GrSurfaceOrigin);
-        if (!renderTargetContext) {
+        fp = GrColorSpaceXformEffect::Make(std::move(fp),
+                                           color->getColorSpace(), color->alphaType(),
+                                           ctx.colorSpace(), kPremul_SkAlphaType);
+        GrImageInfo info(ctx.grColorType(),
+                         kPremul_SkAlphaType,
+                         ctx.refColorSpace(),
+                         bounds.size());
+        auto surfaceFillContext = GrSurfaceFillContext::Make(context,
+                                                             info,
+                                                             SkBackingFit::kApprox,
+                                                             1,
+                                                             GrMipmapped::kNo,
+                                                             isProtected,
+                                                             kBottomLeft_GrSurfaceOrigin);
+        if (!surfaceFillContext) {
             return nullptr;
         }
 
-        renderTargetContext->drawRect(nullptr, std::move(paint), GrAA::kNo, matrix,
-                                      SkRect::Make(colorBounds));
+        surfaceFillContext->fillRectToRectWithFP(colorBounds,
+                                                 SkIRect::MakeSize(colorBounds.size()),
+                                                 std::move(fp));
 
         offset->fX = bounds.left();
         offset->fY = bounds.top();
-        return SkSpecialImage::MakeDeferredFromGpu(
-                context,
-                SkIRect::MakeWH(bounds.width(), bounds.height()),
-                kNeedNewImageUniqueID_SpecialImage,
-                renderTargetContext->readSurfaceView(),
-                renderTargetContext->colorInfo().colorType(),
-                renderTargetContext->colorInfo().refColorSpace());
+        return SkSpecialImage::MakeDeferredFromGpu(context,
+                                                   SkIRect::MakeWH(bounds.width(), bounds.height()),
+                                                   kNeedNewImageUniqueID_SpecialImage,
+                                                   surfaceFillContext->readSurfaceView(),
+                                                   surfaceFillContext->colorInfo().colorType(),
+                                                   surfaceFillContext->colorInfo().refColorSpace());
     }
 #endif
 
@@ -429,6 +418,9 @@ SkIRect SkDisplacementMapEffectImpl::onFilterNodeBounds(
 
 SkIRect SkDisplacementMapEffectImpl::onFilterBounds(
         const SkIRect& src, const SkMatrix& ctm, MapDirection dir, const SkIRect* inputRect) const {
+    if (kReverse_MapDirection == dir) {
+        return INHERITED::onFilterBounds(src, ctm, dir, inputRect);
+    }
     // Recurse only into color input.
     if (this->getColorInput()) {
         return this->getColorInput()->filterBounds(src, ctm, dir, inputRect);
@@ -453,7 +445,7 @@ private:
 
     UniformHandle fScaleUni;
 
-    typedef GrGLSLFragmentProcessor INHERITED;
+    using INHERITED = GrGLSLFragmentProcessor;
 };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -509,8 +501,8 @@ GrDisplacementMapEffect::GrDisplacementMapEffect(SkColorChannel xChannelSelector
         , fYChannelSelector(yChannelSelector)
         , fScale(scale) {
     this->registerChild(std::move(displacement));
-    this->registerExplicitlySampledChild(std::move(color));
-    this->addCoordTransform(&fCoordTransform);
+    this->registerChild(std::move(color), SkSL::SampleUsage::Explicit());
+    this->setUsesSampleCoordsDirectly();
 }
 
 GrDisplacementMapEffect::GrDisplacementMapEffect(const GrDisplacementMapEffect& that)
@@ -519,7 +511,7 @@ GrDisplacementMapEffect::GrDisplacementMapEffect(const GrDisplacementMapEffect& 
         , fYChannelSelector(that.fYChannelSelector)
         , fScale(that.fScale) {
     this->cloneAndRegisterAllChildProcessors(that);
-    this->addCoordTransform(&fCoordTransform);
+    this->setUsesSampleCoordsDirectly();
 }
 
 GrDisplacementMapEffect::~GrDisplacementMapEffect() {}
@@ -576,22 +568,11 @@ void GrDisplacementMapEffect::Impl::emitCode(EmitArgs& args) {
     fScaleUni = args.fUniformHandler->addUniform(&displacementMap, kFragment_GrShaderFlag,
                                                  kHalf2_GrSLType, "Scale");
     const char* scaleUni = args.fUniformHandler->getUniformCStr(fScaleUni);
-    static constexpr const char* dColor = "dColor";
-    static constexpr const char* cCoords = "cCoords";
-    static constexpr const char* nearZero = "1e-6";  // Since 6.10352e-5 is the smallest half float,
-                                                     // use a number smaller than that to
-                                                     // approximate 0, but leave room for 32-bit
-                                                     // float GPU rounding errors.
 
     GrGLSLFPFragmentBuilder* fragBuilder = args.fFragBuilder;
-    auto displacementSample = this->invokeChild(0, args);
-    fragBuilder->codeAppendf("half4 %s = %s;", dColor, displacementSample.c_str());
+    SkString displacementSample = this->invokeChild(/*childIndex=*/0, args);
+    fragBuilder->codeAppendf("half4 dColor = unpremul(%s);", displacementSample.c_str());
 
-    // Unpremultiply the displacement
-    fragBuilder->codeAppendf("%s.rgb = (%s.a < %s) ? half3(0.0) : saturate(%s.rgb / %s.a);",
-                             dColor, dColor, nearZero, dColor, dColor);
-    SkString coords2D = fragBuilder->ensureCoords2D(args.fTransformedCoords[0].fVaryingPoint,
-                                                    args.fFp.sampleMatrix());
     auto chanChar = [](SkColorChannel c) {
         switch(c) {
             case SkColorChannel::kR: return 'r';
@@ -601,14 +582,14 @@ void GrDisplacementMapEffect::Impl::emitCode(EmitArgs& args) {
             default: SkUNREACHABLE;
         }
     };
-    fragBuilder->codeAppendf("float2 %s = %s + %s*(%s.%c%c - half2(0.5));",
-                             cCoords, coords2D.c_str(), scaleUni, dColor,
+    fragBuilder->codeAppendf("float2 cCoords = %s + %s * (dColor.%c%c - half2(0.5));",
+                             args.fSampleCoord, scaleUni,
                              chanChar(displacementMap.xChannelSelector()),
                              chanChar(displacementMap.yChannelSelector()));
 
-    auto colorSample = this->invokeChild(1, args, cCoords);
+    SkString colorSample = this->invokeChild(/*childIndex=*/1, args, "cCoords");
 
-    fragBuilder->codeAppendf("%s = %s;", args.fOutputColor, colorSample.c_str());
+    fragBuilder->codeAppendf("return %s;", colorSample.c_str());
 }
 
 void GrDisplacementMapEffect::Impl::onSetData(const GrGLSLProgramDataManager& pdman,

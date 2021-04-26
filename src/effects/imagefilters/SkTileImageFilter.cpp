@@ -48,7 +48,7 @@ private:
     SkRect fSrcRect;
     SkRect fDstRect;
 
-    typedef SkImageFilter_Base INHERITED;
+    using INHERITED = SkImageFilter_Base;
 };
 
 } // end namespace
@@ -163,7 +163,8 @@ sk_sp<SkSpecialImage> SkTileImageFilterImpl::onFilterImage(const Context& ctx,
 
     SkPaint paint;
     paint.setBlendMode(SkBlendMode::kSrc);
-    paint.setShader(subset->makeShader(SkTileMode::kRepeat, SkTileMode::kRepeat));
+    paint.setShader(subset->makeShader(SkTileMode::kRepeat, SkTileMode::kRepeat,
+                                       SkSamplingOptions()));
     canvas->translate(-dstRect.fLeft, -dstRect.fTop);
     canvas->drawRect(dstRect, paint);
     offset->fX = dstIRect.fLeft;

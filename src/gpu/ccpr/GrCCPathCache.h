@@ -11,6 +11,7 @@
 #include "include/private/SkIDChangeListener.h"
 #include "include/private/SkTHash.h"
 #include "src/core/SkTInternalLList.h"
+#include "src/gpu/GrNonAtomicRef.h"
 #include "src/gpu/ccpr/GrCCAtlas.h"
 #include "src/gpu/ccpr/GrCCPathProcessor.h"
 #include "src/gpu/geometry/GrStyledShape.h"
@@ -118,7 +119,7 @@ public:
 
     // As we evict entries from our local path cache, we accumulate a list of invalidated atlas
     // textures. This call purges the invalidated atlas textures from the mainline GrResourceCache.
-    // This call is available with two different "provider" objects, to accomodate whatever might
+    // This call is available with two different "provider" objects, to accommodate whatever might
     // be available at the callsite.
     void purgeInvalidatedAtlasTextures(GrOnFlushResourceProvider*);
     void purgeInvalidatedAtlasTextures(GrProxyProvider*);

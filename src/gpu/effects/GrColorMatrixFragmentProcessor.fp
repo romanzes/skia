@@ -5,7 +5,7 @@
  * found in the LICENSE file.
  */
 
-in fragmentProcessor? inputFP;
+in fragmentProcessor inputFP;
 layout(ctype=SkM44, tracked) in uniform half4x4 m;
 layout(ctype=SkV4, tracked) in uniform half4 v;
 layout(key) in bool unpremulInput;
@@ -17,27 +17,26 @@ layout(key) in bool premulOutput;
     kConstantOutputForConstantInput_OptimizationFlag
 }
 
-void main() {
-    half4 inputColor = sample(inputFP, sk_InColor);
+half4 main() {
+    half4 color = sample(inputFP);
     @if (unpremulInput) {
-        inputColor = unpremul(inputColor);
+        color = unpremul(color);
     }
-    sk_OutColor = m * inputColor + v;
+    color = m * color + v;
     @if (clampRGBOutput) {
-        sk_OutColor = saturate(sk_OutColor);
+        color = saturate(color);
     } else {
-        sk_OutColor.a = saturate(sk_OutColor.a);
+        color.a = saturate(color.a);
     }
     @if (premulOutput) {
-        sk_OutColor.rgb *= sk_OutColor.a;
+        color.rgb *= color.a;
     }
+    return color;
 }
 
 @class {
     SkPMColor4f constantOutputForConstantInput(const SkPMColor4f& inColor) const override {
-        SkPMColor4f input = this->numChildProcessors()
-                            ? ConstantOutputForConstantInput(this->childProcessor(0), inColor)
-                            : inColor;
+        SkPMColor4f input = ConstantOutputForConstantInput(this->childProcessor(0), inColor);
         SkColor4f color;
         if (unpremulInput) {
             color = input.unpremul();
@@ -87,5 +86,5 @@ void main() {
     bool unpremul = d->fRandom->nextBool();
     bool clampRGB = d->fRandom->nextBool();
     bool premul = d->fRandom->nextBool();
-    return Make(/*inputFP=*/nullptr, m, unpremul, clampRGB, premul);
+    return Make(d->inputFP(), m, unpremul, clampRGB, premul);
 }

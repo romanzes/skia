@@ -39,8 +39,10 @@ public:
                                      const SkMatrix& localMatrix,
                                      bool localCoordsWillBeRead,
                                      uint8_t coverage) {
-        return arena->make<DefaultGeoProc>(gpTypeFlags, color, viewMatrix, localMatrix, coverage,
-                                           localCoordsWillBeRead);
+        return arena->make([&](void* ptr) {
+            return new (ptr) DefaultGeoProc(gpTypeFlags, color, viewMatrix, localMatrix, coverage,
+                                            localCoordsWillBeRead);
+        });
     }
 
     const char* name() const override { return "DefaultGeometryProcessor"; }
@@ -56,8 +58,8 @@ public:
     class GLSLProcessor : public GrGLSLGeometryProcessor {
     public:
         GLSLProcessor()
-            : fViewMatrix(SkMatrix::InvalidMatrix())
-            , fLocalMatrix(SkMatrix::InvalidMatrix())
+            : fViewMatrixPrev(SkMatrix::InvalidMatrix())
+            , fLocalMatrixPrev(SkMatrix::InvalidMatrix())
             , fColor(SK_PMColor4fILLEGAL)
             , fCoverage(0xff) {}
 
@@ -155,13 +157,11 @@ public:
         }
 
         void setData(const GrGLSLProgramDataManager& pdman,
-                     const GrPrimitiveProcessor& gp,
-                     const CoordTransformRange& transformRange) override {
+                     const GrPrimitiveProcessor& gp) override {
             const DefaultGeoProc& dgp = gp.cast<DefaultGeoProc>();
 
-            this->setTransform(pdman, fViewMatrixUniform, dgp.viewMatrix(), &fViewMatrix);
-            this->setTransform(pdman, fLocalMatrixUniform, dgp.localMatrix(), &fLocalMatrix);
-            this->setTransformDataHelper(pdman, transformRange);
+            this->setTransform(pdman, fViewMatrixUniform, dgp.viewMatrix(), &fViewMatrixPrev);
+            this->setTransform(pdman, fLocalMatrixUniform, dgp.localMatrix(), &fLocalMatrixPrev);
 
             if (!dgp.hasVertexColor() && dgp.color() != fColor) {
                 pdman.set4fv(fColorUniform, 1, dgp.color().vec());
@@ -175,8 +175,8 @@ public:
         }
 
     private:
-        SkMatrix fViewMatrix;
-        SkMatrix fLocalMatrix;
+        SkMatrix fViewMatrixPrev;
+        SkMatrix fLocalMatrixPrev;
         SkPMColor4f fColor;
         uint8_t fCoverage;
         UniformHandle fViewMatrixUniform;
@@ -184,7 +184,7 @@ public:
         UniformHandle fColorUniform;
         UniformHandle fCoverageUniform;
 
-        typedef GrGLSLGeometryProcessor INHERITED;
+        using INHERITED = GrGLSLGeometryProcessor;
     };
 
     void getGLSLProcessorKey(const GrShaderCaps& caps, GrProcessorKeyBuilder* b) const override {
@@ -196,8 +196,6 @@ public:
     }
 
 private:
-    friend class ::SkArenaAlloc; // for access to ctor
-
     DefaultGeoProc(uint32_t gpTypeFlags,
                    const SkPMColor4f& color,
                    const SkMatrix& viewMatrix,
@@ -239,7 +237,7 @@ private:
 
     GR_DECLARE_GEOMETRY_PROCESSOR_TEST
 
-    typedef GrGeometryProcessor INHERITED;
+    using INHERITED = GrGeometryProcessor;
 };
 
 GR_DEFINE_GEOMETRY_PROCESSOR_TEST(DefaultGeoProc);

@@ -20,34 +20,20 @@ public:
     DEFINE_OP_CLASS_ID
 
     // A fullscreen or scissored clear, depending on the clip and proxy dimensions
-    static std::unique_ptr<GrClearOp> MakeColor(GrRecordingContext* context,
-                                                const GrScissorState& scissor,
-                                                const SkPMColor4f& color);
+    static GrOp::Owner MakeColor(GrRecordingContext* context,
+                                 const GrScissorState& scissor,
+                                 std::array<float, 4> color);
 
-    static std::unique_ptr<GrClearOp> MakeStencilClip(GrRecordingContext* context,
-                                                      const GrScissorState& scissor,
-                                                      bool insideMask);
+    static GrOp::Owner MakeStencilClip(GrRecordingContext* context,
+                                       const GrScissorState& scissor,
+                                       bool insideMask);
 
     const char* name() const override { return "Clear"; }
 
-#ifdef SK_DEBUG
-    SkString dumpInfo() const override {
-        SkString string;
-        string.append(INHERITED::dumpInfo());
-        string.appendf("Scissor [ ");
-        if (fScissor.enabled()) {
-            const SkIRect& r = fScissor.rect();
-            string.appendf("L: %d, T: %d, R: %d, B: %d", r.fLeft, r.fTop, r.fRight, r.fBottom);
-        } else {
-            string.append("disabled");
-        }
-        string.appendf("], Color: 0x%08x\n", fColor.toBytes_RGBA());
-        return string;
-    }
-#endif
-
+    const std::array<float, 4>& color() const { return fColor; }
+    bool stencilInsideMask() const { return fStencilInsideMask; }
 private:
-    friend class GrOpMemoryPool; // for ctors
+    friend class GrOp; // for ctors
 
     enum class Buffer {
         kColor       = 0b01,
@@ -57,24 +43,40 @@ private:
     };
     GR_DECL_BITFIELD_CLASS_OPS_FRIENDS(Buffer);
 
-    GrClearOp(Buffer buffer, const GrScissorState& scissor, const SkPMColor4f& color, bool stencil);
+    GrClearOp(Buffer buffer,
+              const GrScissorState& scissor,
+              std::array<float, 4> color,
+              bool stencil);
 
-    CombineResult onCombineIfPossible(GrOp* t, GrRecordingContext::Arenas*,
-                                      const GrCaps& caps) override;
+    CombineResult onCombineIfPossible(GrOp* t, SkArenaAlloc*, const GrCaps& caps) override;
 
-    void onPrePrepare(GrRecordingContext*, const GrSurfaceProxyView* writeView, GrAppliedClip*,
-                      const GrXferProcessor::DstProxyView&) override {}
+    void onPrePrepare(GrRecordingContext*, const GrSurfaceProxyView& writeView, GrAppliedClip*,
+                      const GrXferProcessor::DstProxyView&,
+                      GrXferBarrierFlags renderPassXferBarriers, GrLoadOp colorLoadOp) override {}
 
     void onPrepare(GrOpFlushState*) override {}
 
     void onExecute(GrOpFlushState* state, const SkRect& chainBounds) override;
+#if GR_TEST_UTILS
+    SkString onDumpInfo() const override {
+        SkString string("Scissor [ ");
+        if (fScissor.enabled()) {
+            const SkIRect& r = fScissor.rect();
+            string.appendf("L: %d, T: %d, R: %d, B: %d", r.fLeft, r.fTop, r.fRight, r.fBottom);
+        } else {
+            string.append("disabled");
+        }
+        string.appendf("], Color: {%g, %g, %g, %g}\n", fColor[0], fColor[1], fColor[2], fColor[3]);
+        return string;
+    }
+#endif
 
-    GrScissorState fScissor;
-    SkPMColor4f    fColor;
-    bool           fStencilInsideMask;
-    Buffer         fBuffer;
+    GrScissorState       fScissor;
+    std::array<float, 4> fColor;
+    bool                 fStencilInsideMask;
+    Buffer               fBuffer;
 
-    typedef GrOp INHERITED;
+    using INHERITED = GrOp;
 };
 
 GR_MAKE_BITFIELD_CLASS_OPS(GrClearOp::Buffer)

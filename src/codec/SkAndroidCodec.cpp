@@ -60,7 +60,7 @@ static inline SkImageInfo adjust_info(SkCodec* codec,
         SkAndroidCodec::ExifOrientationBehavior orientationBehavior) {
     auto info = codec->getInfo();
     if (orientationBehavior == SkAndroidCodec::ExifOrientationBehavior::kIgnore
-            || !SkPixmapPriv::ShouldSwapWidthHeight(codec->getOrigin())) {
+            || !SkEncodedOriginSwapsWidthHeight(codec->getOrigin())) {
         return info;
     }
     return SkPixmapPriv::SwapWidthHeight(info);
@@ -96,6 +96,7 @@ std::unique_ptr<SkAndroidCodec> SkAndroidCodec::MakeFromCodec(std::unique_ptr<Sk
         case SkEncodedImageFormat::kBMP:
         case SkEncodedImageFormat::kWBMP:
         case SkEncodedImageFormat::kHEIF:
+        case SkEncodedImageFormat::kAVIF:
             return std::make_unique<SkSampledCodec>(codec.release(), orientationBehavior);
 #ifdef SK_HAS_WUFFS_LIBRARY
         case SkEncodedImageFormat::kGIF:
@@ -301,7 +302,7 @@ SkISize SkAndroidCodec::getSampledDimensions(int sampleSize) const {
 
     auto dims = this->onGetSampledDimensions(sampleSize);
     if (fOrientationBehavior == SkAndroidCodec::ExifOrientationBehavior::kIgnore
-            || !SkPixmapPriv::ShouldSwapWidthHeight(fCodec->getOrigin())) {
+            || !SkEncodedOriginSwapsWidthHeight(fCodec->getOrigin())) {
         return dims;
     }
 
@@ -364,26 +365,40 @@ SkCodec::Result SkAndroidCodec::getAndroidPixels(const SkImageInfo& requestInfo,
 
     SkImageInfo adjustedInfo = fInfo;
     if (ExifOrientationBehavior::kRespect == fOrientationBehavior
-            && SkPixmapPriv::ShouldSwapWidthHeight(fCodec->getOrigin())) {
+            && SkEncodedOriginSwapsWidthHeight(fCodec->getOrigin())) {
         adjustedInfo = SkPixmapPriv::SwapWidthHeight(adjustedInfo);
     }
 
     AndroidOptions defaultOptions;
     if (!options) {
         options = &defaultOptions;
-    } else if (options->fSubset) {
-        if (!is_valid_subset(*options->fSubset, adjustedInfo.dimensions())) {
-            return SkCodec::kInvalidParameters;
+    } else {
+        if (options->fSubset) {
+            if (!is_valid_subset(*options->fSubset, adjustedInfo.dimensions())) {
+                return SkCodec::kInvalidParameters;
+            }
+
+            if (SkIRect::MakeSize(adjustedInfo.dimensions()) == *options->fSubset) {
+                // The caller wants the whole thing, rather than a subset. Modify
+                // the AndroidOptions passed to onGetAndroidPixels to not specify
+                // a subset.
+                defaultOptions = *options;
+                defaultOptions.fSubset = nullptr;
+                options = &defaultOptions;
+            }
         }
 
-        if (SkIRect::MakeSize(adjustedInfo.dimensions()) == *options->fSubset) {
-            // The caller wants the whole thing, rather than a subset. Modify
-            // the AndroidOptions passed to onGetAndroidPixels to not specify
-            // a subset.
-            defaultOptions = *options;
-            defaultOptions.fSubset = nullptr;
-            options = &defaultOptions;
+        // To simplify frame compositing, force the client to use kIgnore and
+        // handle orientation themselves.
+        if (options->fFrameIndex != 0 && fOrientationBehavior == ExifOrientationBehavior::kRespect
+                && fCodec->getOrigin() != kDefault_SkEncodedOrigin) {
+            return SkCodec::kInvalidParameters;
         }
+    }
+
+    if (auto result = fCodec->handleFrameIndex(requestInfo, requestPixels, requestRowBytes,
+            *options, this); result != SkCodec::kSuccess) {
+        return result;
     }
 
     if (ExifOrientationBehavior::kIgnore == fOrientationBehavior) {

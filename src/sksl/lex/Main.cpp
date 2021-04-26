@@ -46,10 +46,11 @@ void writeH(const DFA& dfa, const char* lexer, const char* token,
     for (const std::string& t : tokens) {
         out << "        TK_" << t << ",\n";
     }
+    out << "        TK_NONE,\n";
     out << "    };\n";
     out << "\n";
     out << "    " << token << "()\n";
-    out << "    : fKind(Kind::TK_INVALID)\n";
+    out << "    : fKind(Kind::TK_NONE)\n";
     out << "    , fOffset(-1)\n";
     out << "    , fLength(-1) {}\n";
     out << "\n";
@@ -178,6 +179,12 @@ void process(const char* inPath, const char* lexer, const char* token, const cha
     std::string line;
     std::ifstream in(inPath);
     while (std::getline(in, line)) {
+        if (line.length() == 0) {
+            continue;
+        }
+        if (line.length() >= 2 && line[0] == '/' && line[1] == '/') {
+            continue;
+        }
         std::istringstream split(line);
         std::string name, delimiter, pattern;
         if (split >> name >> delimiter >> pattern) {

@@ -10,7 +10,6 @@
 #include "src/gpu/GrOnFlushResourceProvider.h"
 #include "src/gpu/GrOpsRenderPass.h"
 #include "src/gpu/GrTexture.h"
-#include "src/gpu/GrTexturePriv.h"
 #include "src/gpu/ccpr/GrCCPerFlushResources.h"
 #include "src/gpu/glsl/GrGLSLFragmentShaderBuilder.h"
 #include "src/gpu/glsl/GrGLSLGeometryProcessor.h"
@@ -108,13 +107,12 @@ public:
     }
 
 private:
-    void setData(const GrGLSLProgramDataManager& pdman, const GrPrimitiveProcessor& primProc,
-                 const CoordTransformRange& transformRange) override {
+    void setData(const GrGLSLProgramDataManager& pdman,
+                 const GrPrimitiveProcessor& primProc) override {
         const auto& proc = primProc.cast<GrCCPathProcessor>();
         pdman.set2f(fAtlasAdjustUniform,
                     1.0f / proc.fAtlasDimensions.fWidth,
                     1.0f / proc.fAtlasDimensions.fHeight);
-        this->setTransformDataHelper(pdman, transformRange);
         this->setTransform(pdman, fLocalMatrixUni, proc.fLocalMatrix, &fLocalMatrix);
     }
 
@@ -122,7 +120,7 @@ private:
     GrGLSLUniformHandler::UniformHandle fLocalMatrixUni;
     SkMatrix fLocalMatrix = SkMatrix::InvalidMatrix();
 
-    typedef GrGLSLGeometryProcessor INHERITED;
+    using INHERITED = GrGLSLGeometryProcessor;
 };
 
 void GrCCPathProcessor::getGLSLProcessorKey(const GrShaderCaps&, GrProcessorKeyBuilder* b) const  {
@@ -146,10 +144,9 @@ void GrCCPathProcessor::drawPaths(GrOpFlushState* flushState, const GrPipeline& 
                                         : SK_ARRAY_COUNT(kOctoIndicesAsTris);
     auto enablePrimitiveRestart = GrPrimitiveRestart(flushState->caps().usePrimitiveRestart());
 
-    GrRenderTargetProxy* rtProxy = flushState->proxy();
-    GrProgramInfo programInfo(rtProxy->numSamples(), rtProxy->numStencilSamples(),
-                              rtProxy->backendFormat(), flushState->writeView()->origin(),
-                              &pipeline, this, primitiveType);
+    GrProgramInfo programInfo(flushState->writeView(), &pipeline, &GrUserStencilSettings::kUnused,
+                              this, primitiveType, 0, flushState->renderPassBarriers(),
+                              flushState->colorLoadOp());
 
     flushState->bindPipelineAndScissorClip(programInfo, bounds);
     flushState->bindTextures(*this, atlasProxy, pipeline);

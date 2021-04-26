@@ -20,7 +20,7 @@ public:
 
     // Provides access to functions that aren't part of the public API.
     GrImageContextPriv priv();
-    const GrImageContextPriv priv() const;
+    const GrImageContextPriv priv() const;  // NOLINT(readability-const-return-type)
 
 protected:
     friend class GrImageContextPriv; // for hidden functions
@@ -43,10 +43,10 @@ private:
 
     // In debug builds we guard against improper thread handling
     // This guard is passed to the GrDrawingManager and, from there to all the
-    // GrRenderTargetContexts.  It is also passed to the GrResourceProvider and SkGpuDevice.
+    // GrSurfaceDrawContexts.  It is also passed to the GrResourceProvider and SkGpuDevice.
     mutable GrSingleOwner            fSingleOwner;
 
-    typedef GrContext_Base INHERITED;
+    using INHERITED = GrContext_Base;
 };
 
 #endif

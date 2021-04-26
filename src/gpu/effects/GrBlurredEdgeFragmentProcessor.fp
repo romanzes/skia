@@ -10,11 +10,11 @@ enum class Mode {
     kSmoothStep = 1
 };
 
-in fragmentProcessor? inputFP;
+in fragmentProcessor inputFP;
 layout(key) in Mode mode;
 
-void main() {
-    half inputAlpha = sample(inputFP, sk_InColor).a;
+half4 main() {
+    half inputAlpha = sample(inputFP).a;
     half factor = 1.0 - inputAlpha;
     @switch (mode) {
         case Mode::kGaussian:
@@ -24,5 +24,5 @@ void main() {
             factor = smoothstep(1.0, 0.0, factor);
             break;
     }
-    sk_OutColor = half4(factor);
+    return half4(factor);
 }

@@ -34,7 +34,6 @@ struct Token {
         TK_CONTINUE,
         TK_DISCARD,
         TK_RETURN,
-        TK_NULL_LITERAL,
         TK_IN,
         TK_OUT,
         TK_INOUT,
@@ -48,6 +47,7 @@ struct Token {
         TK_VOLATILE,
         TK_RESTRICT,
         TK_BUFFER,
+        TK_INLINE,
         TK_HASSIDEEFFECTS,
         TK_PLS,
         TK_PLSIN,
@@ -106,18 +106,16 @@ struct Token {
         TK_BITWISEOREQ,
         TK_BITWISEXOREQ,
         TK_BITWISEANDEQ,
-        TK_LOGICALOREQ,
-        TK_LOGICALXOREQ,
-        TK_LOGICALANDEQ,
         TK_SEMICOLON,
         TK_ARROW,
         TK_WHITESPACE,
         TK_LINE_COMMENT,
         TK_BLOCK_COMMENT,
         TK_INVALID,
+        TK_NONE,
     };
 
-    Token() : fKind(Kind::TK_INVALID), fOffset(-1), fLength(-1) {}
+    Token() : fKind(Kind::TK_NONE), fOffset(-1), fLength(-1) {}
 
     Token(Kind kind, int32_t offset, int32_t length)
             : fKind(kind), fOffset(offset), fLength(length) {}

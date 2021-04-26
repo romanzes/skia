@@ -25,6 +25,7 @@
 #include "src/sksl/ir/SkSLFunctionCall.h"
 #include "src/sksl/ir/SkSLFunctionDeclaration.h"
 #include "src/sksl/ir/SkSLFunctionDefinition.h"
+#include "src/sksl/ir/SkSLFunctionPrototype.h"
 #include "src/sksl/ir/SkSLIfStatement.h"
 #include "src/sksl/ir/SkSLIndexExpression.h"
 #include "src/sksl/ir/SkSLIntLiteral.h"
@@ -39,13 +40,9 @@
 #include "src/sksl/ir/SkSLSwizzle.h"
 #include "src/sksl/ir/SkSLTernaryExpression.h"
 #include "src/sksl/ir/SkSLVarDeclarations.h"
-#include "src/sksl/ir/SkSLVarDeclarationsStatement.h"
 #include "src/sksl/ir/SkSLVariableReference.h"
-#include "src/sksl/ir/SkSLWhileStatement.h"
 
 namespace SkSL {
-
-#define kLast_Capability SpvCapabilityMultiViewport
 
 /**
  * Converts a Program into GLSL code.
@@ -83,11 +80,6 @@ public:
     bool generateCode() override;
 
 protected:
-    enum class SwizzleOrder {
-        MASK_FIRST,
-        CONSTANTS_FIRST
-    };
-
     void write(const char* s);
 
     void writeLine();
@@ -106,6 +98,8 @@ protected:
 
     virtual String getTypeName(const Type& type);
 
+    bool writeStructDefinition(const Type& type);
+
     void writeType(const Type& type);
 
     void writeExtension(const String& name);
@@ -117,6 +111,8 @@ protected:
     void writeFunctionStart(const FunctionDeclaration& f);
 
     void writeFunctionDeclaration(const FunctionDeclaration& f);
+
+    void writeFunctionPrototype(const FunctionPrototype& f);
 
     virtual void writeFunction(const FunctionDefinition& f);
 
@@ -132,7 +128,7 @@ protected:
 
     void writeTypePrecision(const Type& type);
 
-    void writeVarDeclarations(const VarDeclarations& decl, bool global);
+    void writeVarDeclaration(const VarDeclaration& var, bool global);
 
     void writeFragCoord();
 
@@ -158,15 +154,6 @@ protected:
 
     virtual void writeFieldAccess(const FieldAccess& f);
 
-    void writeConstantSwizzle(const Swizzle& swizzle, const String& constants);
-
-    void writeSwizzleMask(const Swizzle& swizzle, const String& mask);
-
-    void writeSwizzleConstructor(const Swizzle& swizzle, const String& constants,
-                                 const String& mask, SwizzleOrder order);
-
-    void writeSwizzleConstructor(const Swizzle& swizzle, const String& constants,
-                                 const String& mask, const String& reswizzle);
     virtual void writeSwizzle(const Swizzle& swizzle);
 
     static Precedence GetBinaryPrecedence(Token::Kind op);
@@ -193,15 +180,11 @@ protected:
 
     void writeStatement(const Statement& s);
 
-    void writeStatements(const std::vector<std::unique_ptr<Statement>>& statements);
-
     void writeBlock(const Block& b);
 
     virtual void writeIfStatement(const IfStatement& stmt);
 
     void writeForStatement(const ForStatement& f);
-
-    void writeWhileStatement(const WhileStatement& w);
 
     void writeDoStatement(const DoStatement& d);
 
@@ -258,9 +241,9 @@ protected:
     };
     static std::unordered_map<StringFragment, FunctionClass>* fFunctionClasses;
 
-    typedef CodeGenerator INHERITED;
+    using INHERITED = CodeGenerator;
 };
 
-}
+}  // namespace SkSL
 
 #endif

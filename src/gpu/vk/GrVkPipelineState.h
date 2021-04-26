@@ -22,6 +22,7 @@ class GrVkDescriptorSet;
 class GrVkGpu;
 class GrVkImageView;
 class GrVkPipeline;
+class GrVkRenderTarget;
 class GrVkSampler;
 class GrVkTexture;
 class GrVkUniformBuffer;
@@ -39,7 +40,7 @@ public:
 
     GrVkPipelineState(
             GrVkGpu* gpu,
-            GrVkPipeline* pipeline,
+            sk_sp<const GrVkPipeline> pipeline,
             const GrVkDescriptorSetManager::Handle& samplerDSHandle,
             const GrGLSLBuiltinUniformHandles& builtinUniformHandles,
             const UniformInfoArray& uniforms,
@@ -47,8 +48,7 @@ public:
             const UniformInfoArray& samplers,
             std::unique_ptr<GrGLSLPrimitiveProcessor> geometryProcessor,
             std::unique_ptr<GrGLSLXferProcessor> xferProcessor,
-            std::unique_ptr<std::unique_ptr<GrGLSLFragmentProcessor>[]> fragmentProcessors,
-            int fFragmentProcessorCnt);
+            std::unique_ptr<std::unique_ptr<GrGLSLFragmentProcessor>[]> fragmentProcessors);
 
     ~GrVkPipelineState();
 
@@ -62,11 +62,11 @@ public:
                             const GrSurfaceProxy* const primitiveProcessorTextures[],
                             GrVkCommandBuffer*);
 
+    bool setAndBindInputAttachment(GrVkGpu*, GrVkRenderTarget* renderTarget, GrVkCommandBuffer*);
+
     void bindPipeline(const GrVkGpu* gpu, GrVkCommandBuffer* commandBuffer);
 
-    void addUniformResources(GrVkCommandBuffer&, GrVkSampler*[], GrVkTexture*[], int numTextures);
-
-    void freeGPUResources();
+    void freeGPUResources(GrVkGpu* gpu);
 
 private:
     /**
@@ -109,7 +109,7 @@ private:
     void setRenderTargetState(const GrRenderTarget*, GrSurfaceOrigin);
 
     // GrManagedResources
-    GrVkPipeline* fPipeline;
+    sk_sp<const GrVkPipeline> fPipeline;
 
     const GrVkDescriptorSetManager::Handle fSamplerDSHandle;
 
@@ -125,7 +125,6 @@ private:
     std::unique_ptr<GrGLSLPrimitiveProcessor> fGeometryProcessor;
     std::unique_ptr<GrGLSLXferProcessor> fXferProcessor;
     std::unique_ptr<std::unique_ptr<GrGLSLFragmentProcessor>[]> fFragmentProcessors;
-    int fFragmentProcessorCnt;
 
     GrVkPipelineStateDataManager fDataManager;
 

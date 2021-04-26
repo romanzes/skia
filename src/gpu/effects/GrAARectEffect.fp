@@ -5,7 +5,7 @@
  * found in the LICENSE file.
  */
 
-in fragmentProcessor? inputFP;
+in fragmentProcessor inputFP;
 layout(key) in GrClipEdgeType edgeType;
 layout(ctype=SkRect) in float4 rect;
 layout(ctype=SkRect) float4 prevRect = float4(-1);
@@ -13,10 +13,10 @@ uniform float4 rectUniform;
 
 @optimizationFlags {
     (inputFP ? ProcessorOptimizationFlags(inputFP.get()) : kAll_OptimizationFlags) &
-    kCompatibleWithCoverageAsAlpha_OptimizationFlag
+     kCompatibleWithCoverageAsAlpha_OptimizationFlag
 }
 
-void main() {
+half4 main() {
     half alpha;
     @switch (edgeType) {
         case GrClipEdgeType::kFillBW: // fall through
@@ -41,8 +41,7 @@ void main() {
     @if (edgeType == GrClipEdgeType::kInverseFillBW || edgeType == GrClipEdgeType::kInverseFillAA) {
         alpha = 1.0 - alpha;
     }
-    half4 inputColor = sample(inputFP, sk_InColor);
-    sk_OutColor = inputColor * alpha;
+    return sample(inputFP) * alpha;
 }
 
 @setData(pdman) {
@@ -59,12 +58,8 @@ void main() {
                                    d->fRandom->nextSScalar1(),
                                    d->fRandom->nextSScalar1(),
                                    d->fRandom->nextSScalar1());
-    std::unique_ptr<GrFragmentProcessor> fp;
-    do {
-        GrClipEdgeType edgeType = static_cast<GrClipEdgeType>(
-                d->fRandom->nextULessThan(kGrClipEdgeTypeCnt));
+    GrClipEdgeType edgeType = static_cast<GrClipEdgeType>(
+            d->fRandom->nextULessThan(kGrClipEdgeTypeCnt));
 
-        fp = GrAARectEffect::Make(/*inputFP=*/nullptr, edgeType, rect);
-    } while (nullptr == fp);
-    return fp;
+    return GrAARectEffect::Make(d->inputFP(), edgeType, rect);
 }
