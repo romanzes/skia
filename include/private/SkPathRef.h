@@ -26,6 +26,18 @@
 class SkRBuffer;
 class SkWBuffer;
 
+enum class SkPathConvexity {
+    kConvex,
+    kConcave,
+    kUnknown,
+};
+
+enum class SkPathFirstDirection {
+    kCW,         // == SkPathDirection::kCW
+    kCCW,        // == SkPathDirection::kCCW
+    kUnknown,
+};
+
 /**
  * Holds the path verbs and points. It is versioned by a generation ID. None of its public methods
  * modify the contents. To modify or append to the verbs/points wrap the SkPathRef in an
@@ -50,7 +62,7 @@ public:
         , fConicWeights(std::move(weights))
     {
         fBoundsIsDirty = true;    // this also invalidates fIsFinite
-        fGenerationID = kEmptyGenID;
+        fGenerationID = 0;        // recompute
         fSegmentMask = segmentMask;
         fIsOval = false;
         fIsRRect = false;
@@ -58,6 +70,8 @@ public:
         fRRectOrOvalIsCCW = false;
         fRRectOrOvalStartIdx = 0xAC;
         SkDEBUGCODE(fEditorsAttached.store(0);)
+
+        this->computeBounds();  // do this now, before we worry about multiple owners/threads
         SkDEBUGCODE(this->validate();)
     }
 
@@ -278,6 +292,8 @@ public:
     int countVerbs() const { return fVerbs.count(); }
     int countWeights() const { return fConicWeights.count(); }
 
+    size_t approximateBytesUsed() const;
+
     /**
      * Returns a pointer one beyond the first logical verb (last verb in memory order).
      */
@@ -358,9 +374,6 @@ private:
     }
 
     void copy(const SkPathRef& ref, int additionalReserveVerbs, int additionalReservePoints);
-
-    // Doesn't read fSegmentMask, but (re)computes it from the verbs array
-    unsigned computeSegmentMask() const;
 
     // Return true if the computed bounds are finite.
     static bool ComputePtBounds(SkRect* bounds, const SkPathRef& ref) {
@@ -506,6 +519,7 @@ private:
     friend class PathRefTest_Private;
     friend class ForceIsRRect_Private; // unit test isRRect
     friend class SkPath;
+    friend class SkPathBuilder;
     friend class SkPathPriv;
 };
 

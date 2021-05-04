@@ -102,7 +102,7 @@ SkStrikeSpec SkStrikeSpec::MakeCanonicalized(const SkFont& font, const SkPaint* 
 
     storage.commonSetup(*canonicalizedFont,
                         canonicalizedPaint,
-                        SkSurfaceProps(SkSurfaceProps::kLegacyFontHost_InitType),
+                        SkSurfaceProps(),
                         kFakeGammaAndBoostContrast,
                         SkMatrix::I());
     return storage;
@@ -118,7 +118,7 @@ SkStrikeSpec SkStrikeSpec::MakeWithNoDevice(const SkFont& font, const SkPaint* p
 
     storage.commonSetup(font,
                         setupPaint,
-                        SkSurfaceProps(SkSurfaceProps::kLegacyFontHost_InitType),
+                        SkSurfaceProps(),
                         kFakeGammaAndBoostContrast,
                         SkMatrix::I());
 
@@ -147,7 +147,7 @@ bool SkStrikeSpec::ShouldDrawAsPath(
     SkMatrix textMatrix = SkFontPriv::MakeTextMatrix(font);
     textMatrix.postConcat(viewMatrix);
 
-    // we have a self-imposed maximum, just for memory-usage sanity
+    // we have a self-imposed maximum, just to limit memory-usage
     SkScalar limit = std::min(SkGraphics::GetFontCachePointSizeLimit(), 1024);
     SkScalar maxSizeSquared = limit * limit;
 

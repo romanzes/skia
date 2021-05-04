@@ -7,13 +7,13 @@
 
 #include "src/gpu/mtl/GrMtlPipelineStateBuilder.h"
 
-#include "include/gpu/GrContext.h"
+#include "include/gpu/GrDirectContext.h"
 #include "src/core/SkReadBuffer.h"
 #include "src/core/SkTraceEvent.h"
 #include "src/gpu/GrAutoLocaleSetter.h"
-#include "src/gpu/GrContextPriv.h"
+#include "src/gpu/GrDirectContextPriv.h"
 #include "src/gpu/GrPersistentCacheUtils.h"
-#include "src/gpu/GrRenderTargetPriv.h"
+#include "src/gpu/GrRenderTarget.h"
 #include "src/gpu/GrShaderUtils.h"
 
 #include "src/gpu/mtl/GrMtlGpu.h"
@@ -393,7 +393,6 @@ GrMtlPipelineState* GrMtlPipelineStateBuilder::finalize(GrRenderTarget* renderTa
     this->finalizeShaders();
 
     SkSL::Program::Settings settings;
-    settings.fCaps = this->caps()->shaderCaps();
     settings.fFlipY = this->origin() != kTopLeft_GrSurfaceOrigin;
     settings.fSharpenTextures = fGpu->getContext()->priv().options().fSharpenMipmappedTextures;
     SkASSERT(!this->fragColorIsInOut());
@@ -496,11 +495,10 @@ GrMtlPipelineState* GrMtlPipelineStateBuilder::finalize(GrRenderTarget* renderTa
     pipelineDescriptor.colorAttachments[0] = create_color_attachment(pixelFormat,
                                                                      programInfo.pipeline());
     pipelineDescriptor.sampleCount = programInfo.numRasterSamples();
-    bool hasStencilAttachment = SkToBool(renderTarget->renderTargetPriv().getStencilAttachment());
+    bool hasStencilAttachment = SkToBool(renderTarget->getStencilAttachment());
     GrMtlCaps* mtlCaps = (GrMtlCaps*)this->caps();
     pipelineDescriptor.stencilAttachmentPixelFormat =
-        hasStencilAttachment ? mtlCaps->preferredStencilFormat().fInternalFormat
-                             : MTLPixelFormatInvalid;
+        hasStencilAttachment ? mtlCaps->preferredStencilFormat() : MTLPixelFormatInvalid;
 
     SkASSERT(pipelineDescriptor.vertexFunction);
     SkASSERT(pipelineDescriptor.fragmentFunction);
@@ -536,8 +534,7 @@ GrMtlPipelineState* GrMtlPipelineStateBuilder::finalize(GrRenderTarget* renderTa
                                   (uint32_t)fUniformHandler.numSamplers(),
                                   std::move(fGeometryProcessor),
                                   std::move(fXferProcessor),
-                                  std::move(fFragmentProcessors),
-                                  fFragmentProcessorCnt);
+                                  std::move(fFragmentProcessors));
 }
 
 //////////////////////////////////////////////////////////////////////////////

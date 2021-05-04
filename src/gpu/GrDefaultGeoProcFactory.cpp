@@ -155,13 +155,11 @@ public:
         }
 
         void setData(const GrGLSLProgramDataManager& pdman,
-                     const GrPrimitiveProcessor& gp,
-                     const CoordTransformRange& transformRange) override {
+                     const GrPrimitiveProcessor& gp) override {
             const DefaultGeoProc& dgp = gp.cast<DefaultGeoProc>();
 
             this->setTransform(pdman, fViewMatrixUniform, dgp.viewMatrix(), &fViewMatrix);
             this->setTransform(pdman, fLocalMatrixUniform, dgp.localMatrix(), &fLocalMatrix);
-            this->setTransformDataHelper(pdman, transformRange);
 
             if (!dgp.hasVertexColor() && dgp.color() != fColor) {
                 pdman.set4fv(fColorUniform, 1, dgp.color().vec());
@@ -184,7 +182,7 @@ public:
         UniformHandle fColorUniform;
         UniformHandle fCoverageUniform;
 
-        typedef GrGLSLGeometryProcessor INHERITED;
+        using INHERITED = GrGLSLGeometryProcessor;
     };
 
     void getGLSLProcessorKey(const GrShaderCaps& caps, GrProcessorKeyBuilder* b) const override {
@@ -239,7 +237,7 @@ private:
 
     GR_DECLARE_GEOMETRY_PROCESSOR_TEST
 
-    typedef GrGeometryProcessor INHERITED;
+    using INHERITED = GrGeometryProcessor;
 };
 
 GR_DEFINE_GEOMETRY_PROCESSOR_TEST(DefaultGeoProc);

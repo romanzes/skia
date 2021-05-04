@@ -10,6 +10,7 @@
 #include "include/core/SkString.h"
 #include "include/core/SkStrokeRec.h"
 #include "src/core/SkGeometry.h"
+#include "src/core/SkMatrixPriv.h"
 #include "src/core/SkTLazy.h"
 #include "src/core/SkTraceEvent.h"
 #include "src/gpu/GrAuditTrail.h"
@@ -343,16 +344,16 @@ private:
 public:
     DEFINE_OP_CLASS_ID
 
-    static std::unique_ptr<GrDrawOp> Make(GrRecordingContext* context,
-                                          GrPaint&& paint,
-                                          const SkPath& path,
-                                          SkScalar tolerance,
-                                          uint8_t coverage,
-                                          const SkMatrix& viewMatrix,
-                                          bool isHairline,
-                                          GrAAType aaType,
-                                          const SkRect& devBounds,
-                                          const GrUserStencilSettings* stencilSettings) {
+    static GrOp::Owner Make(GrRecordingContext* context,
+                            GrPaint&& paint,
+                            const SkPath& path,
+                            SkScalar tolerance,
+                            uint8_t coverage,
+                            const SkMatrix& viewMatrix,
+                            bool isHairline,
+                            GrAAType aaType,
+                            const SkRect& devBounds,
+                            const GrUserStencilSettings* stencilSettings) {
         return Helper::FactoryHelper<DefaultPathOp>(context, std::move(paint), path, tolerance,
                                                     coverage, viewMatrix, isHairline, aaType,
                                                     devBounds, stencilSettings);
@@ -368,25 +369,12 @@ public:
         }
     }
 
-#ifdef SK_DEBUG
-    SkString dumpInfo() const override {
-        SkString string;
-        string.appendf("Color: 0x%08x Count: %d\n", fColor.toBytes_RGBA(), fPaths.count());
-        for (const auto& path : fPaths) {
-            string.appendf("Tolerance: %.2f\n", path.fTolerance);
-        }
-        string += fHelper.dumpInfo();
-        string += INHERITED::dumpInfo();
-        return string;
-    }
-#endif
-
-    DefaultPathOp(const Helper::MakeArgs& helperArgs, const SkPMColor4f& color, const SkPath& path,
+    DefaultPathOp(GrProcessorSet* processorSet, const SkPMColor4f& color, const SkPath& path,
                   SkScalar tolerance, uint8_t coverage, const SkMatrix& viewMatrix, bool isHairline,
                   GrAAType aaType, const SkRect& devBounds,
                   const GrUserStencilSettings* stencilSettings)
             : INHERITED(ClassID())
-            , fHelper(helperArgs, aaType, stencilSettings)
+            , fHelper(processorSet, aaType, stencilSettings)
             , fColor(color)
             , fCoverage(coverage)
             , fViewMatrix(viewMatrix)
@@ -432,7 +420,8 @@ private:
                              SkArenaAlloc* arena,
                              const GrSurfaceProxyView* writeView,
                              GrAppliedClip&& appliedClip,
-                             const GrXferProcessor::DstProxyView& dstProxyView) override {
+                             const GrXferProcessor::DstProxyView& dstProxyView,
+                             GrXferBarrierFlags renderPassXferBarriers) override {
         GrGeometryProcessor* gp;
         {
             using namespace GrDefaultGeoProcFactory;
@@ -451,7 +440,8 @@ private:
 
         fProgramInfo =  fHelper.createProgramInfoWithStencil(caps, arena, writeView,
                                                              std::move(appliedClip),
-                                                             dstProxyView, gp, this->primType());
+                                                             dstProxyView, gp, this->primType(),
+                                                             renderPassXferBarriers);
 
     }
 
@@ -481,8 +471,7 @@ private:
         }
     }
 
-    CombineResult onCombineIfPossible(GrOp* t, GrRecordingContext::Arenas*,
-                                      const GrCaps& caps) override {
+    CombineResult onCombineIfPossible(GrOp* t, SkArenaAlloc*, const GrCaps& caps) override {
         DefaultPathOp* that = t->cast<DefaultPathOp>();
         if (!fHelper.isCompatible(that->fHelper, caps, this->bounds(), that->bounds())) {
             return CombineResult::kCannotCombine;
@@ -508,6 +497,18 @@ private:
         return CombineResult::kMerged;
     }
 
+#if GR_TEST_UTILS
+    SkString onDumpInfo() const override {
+        SkString string = SkStringPrintf("Color: 0x%08x Count: %d\n",
+                                         fColor.toBytes_RGBA(), fPaths.count());
+        for (const auto& path : fPaths) {
+            string.appendf("Tolerance: %.2f\n", path.fTolerance);
+        }
+        string += fHelper.dumpInfo();
+        return string;
+    }
+#endif
+
     const SkPMColor4f& color() const { return fColor; }
     uint8_t coverage() const { return fCoverage; }
     const SkMatrix& viewMatrix() const { return fViewMatrix; }
@@ -528,7 +529,7 @@ private:
     SkTDArray<GrSimpleMesh*> fMeshes;
     GrProgramInfo* fProgramInfo = nullptr;
 
-    typedef GrMeshDrawOp INHERITED;
+    using INHERITED = GrMeshDrawOp;
 };
 
 }  // anonymous namespace
@@ -659,7 +660,7 @@ bool GrDefaultPathRenderer::internalDrawPath(GrRenderTargetContext* renderTarget
                     GrAA(aaType == GrAAType::kMSAA), viewM, bounds, &localMatrix);
         } else {
             bool stencilPass = stencilOnly || passCount > 1;
-            std::unique_ptr<GrDrawOp> op;
+            GrOp::Owner op;
             if (stencilPass) {
                 GrPaint stencilPaint;
                 stencilPaint.setXPFactory(GrDisableColorXPFactory::Get());
@@ -733,7 +734,7 @@ GR_DRAW_OP_TEST_DEFINE(DefaultPathOp) {
     // For now just hairlines because the other types of draws require two ops.
     // TODO we should figure out a way to combine the stencil and cover steps into one op.
     GrStyle style(SkStrokeRec::kHairline_InitStyle);
-    SkPath path = GrTest::TestPath(random);
+    const SkPath& path = GrTest::TestPath(random);
 
     // Compute srcSpaceTol
     SkRect bounds = path.getBounds();

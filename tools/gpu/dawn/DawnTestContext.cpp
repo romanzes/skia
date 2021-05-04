@@ -21,7 +21,7 @@
 #ifdef SK_DAWN
 #include "dawn/webgpu.h"
 #include "dawn/dawn_proc.h"
-#include "include/gpu/GrContext.h"
+#include "include/gpu/GrDirectContext.h"
 #include "tools/AutoreleasePool.h"
 #if USE_OPENGL_BACKEND
 #include "dawn_native/OpenGLBackend.h"
@@ -142,8 +142,8 @@ public:
 
     void finish() override {}
 
-    sk_sp<GrContext> makeGrContext(const GrContextOptions& options) override {
-        return GrContext::MakeDawn(fDevice, options);
+    sk_sp<GrDirectContext> makeContext(const GrContextOptions& options) override {
+        return GrDirectContext::MakeDawn(fDevice, options);
     }
 
 protected:
@@ -162,7 +162,7 @@ private:
     void onPlatformMakeCurrent() const override {}
     std::function<void()> onPlatformGetAutoContextRestore() const override  { return nullptr; }
 
-    typedef sk_gpu_test::DawnTestContext INHERITED;
+    using INHERITED = sk_gpu_test::DawnTestContext;
 };
 }  // anonymous namespace
 
