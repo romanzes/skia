@@ -11,7 +11,7 @@ import("../third_party.gni")
 
 if (skia_use_system_libjpeg_turbo) {
   system("libjpeg") {
-    libs = [ "jpeg" ]
+    # libs = [ "jpeg" ]
   }
 } else {
   third_party("libjpeg") {
