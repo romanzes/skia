@@ -789,7 +789,6 @@ void ShaperHarfBuzz::shape(const char* utf8, size_t utf8Bytes,
                            SkScalar width,
                            RunHandler* handler) const
 {
-    SkDebugf("ShaperHarfBuzz::shape 1");
     SkBidiIterator::Level defaultLevel = leftToRight ? SkBidiIterator::kLTR : SkBidiIterator::kRTL;
     std::unique_ptr<BiDiRunIterator> bidi(MakeSkUnicodeBidiRunIterator(fUnicode.get(),
                                                                        utf8,
@@ -830,7 +829,6 @@ void ShaperHarfBuzz::shape(const char* utf8, size_t utf8Bytes,
                            SkScalar width,
                            RunHandler* handler) const
 {
-    SkDebugf("ShaperHarfBuzz::shape 2");
     this->shape(utf8, utf8Bytes, font, bidi, script, language, nullptr, 0, width, handler);
 }
 
@@ -843,7 +841,6 @@ void ShaperHarfBuzz::shape(const char* utf8, size_t utf8Bytes,
                            SkScalar width,
                            RunHandler* handler) const
 {
-    SkDebugf("ShaperHarfBuzz::shape 3");
     SkASSERT(handler);
     RunIteratorQueue runSegmenter;
     runSegmenter.insert(&font,     3); // The font iterator is always run last in case of tie.
@@ -865,6 +862,7 @@ void ShaperDrivenWrapper::wrap(char const * const utf8, size_t utf8Bytes,
                                SkScalar width,
                                RunHandler* handler) const
 {
+    SkDebugf("ShaperDrivenWrapper::wrap\n");
     ShapedLine line;
 
     const char* utf8Start = nullptr;
@@ -1009,6 +1007,7 @@ void ShapeThenWrap::wrap(char const * const utf8, size_t utf8Bytes,
 {
     SkTArray<ShapedRun> runs;
 {
+    SkDebugf("ShapeThenWrap::wrap\n");
     if (!fLineBreakIterator->setText(utf8, utf8Bytes)) {
         return;
     }
@@ -1219,6 +1218,7 @@ void ShapeDontWrapOrReorder::wrap(char const * const utf8, size_t utf8Bytes,
                                   SkScalar width,
                                   RunHandler* handler) const
 {
+    SkDebugf("ShapeDontWrapOrReorder::wrap\n");
     sk_ignore_unused_variable(width);
     SkTArray<ShapedRun> runs;
 
