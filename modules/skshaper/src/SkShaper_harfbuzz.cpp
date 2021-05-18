@@ -841,6 +841,7 @@ void ShaperHarfBuzz::shape(const char* utf8, size_t utf8Bytes,
                            SkScalar width,
                            RunHandler* handler) const
 {
+    SkDebugf("ShaperHarfBuzz::shape\n");
     SkASSERT(handler);
     RunIteratorQueue runSegmenter;
     runSegmenter.insert(&font,     3); // The font iterator is always run last in case of tie.
@@ -1218,7 +1219,6 @@ void ShapeDontWrapOrReorder::wrap(char const * const utf8, size_t utf8Bytes,
                                   SkScalar width,
                                   RunHandler* handler) const
 {
-    SkDebugf("ShapeDontWrapOrReorder::wrap\n");
     sk_ignore_unused_variable(width);
     SkTArray<ShapedRun> runs;
 
