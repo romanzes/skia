@@ -602,6 +602,7 @@ bool OneLineShaper::shape() {
                         continue;
                     }
                     auto unresolvedText = fParagraph->text(unresolvedRange);
+                    SkDebugf("unresolvedText: %s\n", unresolvedText);
 
                     SkShaper::TrivialFontRunIterator fontIter(font, unresolvedText.size());
                     LangIterator langIter(unresolvedText, blockSpan,
