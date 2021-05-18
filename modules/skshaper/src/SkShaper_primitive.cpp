@@ -130,6 +130,7 @@ void SkShaperPrimitive::shape(const char* utf8, size_t utf8Bytes,
                               SkScalar width,
                               RunHandler* handler) const
 {
+    SkDebugf("SkShaperPrimitive::shape 1");
     SkFont skfont;
     if (!font.atEnd()) {
         font.consume();
@@ -154,6 +155,7 @@ void SkShaperPrimitive::shape(const char* utf8, size_t utf8Bytes,
                               const Feature*, size_t,
                               SkScalar width,
                               RunHandler* handler) const {
+    SkDebugf("SkShaperPrimitive::shape 2");
     font.consume();
     SkASSERT(font.currentFont().getTypeface());
     bidi.consume();
@@ -166,6 +168,7 @@ void SkShaperPrimitive::shape(const char* utf8, size_t utf8Bytes,
                               bool leftToRight,
                               SkScalar width,
                               RunHandler* handler) const {
+    SkDebugf("SkShaperPrimitive::shape 3");
     sk_ignore_unused_variable(leftToRight);
 
     int glyphCount = font.countText(utf8, utf8Bytes, SkTextEncoding::kUTF8);

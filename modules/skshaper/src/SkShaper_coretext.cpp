@@ -67,6 +67,7 @@ void SkShaper_CoreText::shape(const char* utf8, size_t utf8Bytes,
                               SkScalar width,
                               RunHandler* handler) const
 {
+    SkDebugf("SkShaper_CoreText::shape 1");
     SkFont skfont;
     if (!font.atEnd()) {
         font.consume();
@@ -91,6 +92,7 @@ void SkShaper_CoreText::shape(const char* utf8, size_t utf8Bytes,
                               const Feature*, size_t,
                               SkScalar width,
                               RunHandler* handler) const {
+    SkDebugf("SkShaper_CoreText::shape 2");
     font.consume();
     SkASSERT(font.currentFont().getTypeface());
     bidi.consume();
@@ -201,6 +203,7 @@ void SkShaper_CoreText::shape(const char* utf8, size_t utf8Bytes,
                               bool /* leftToRight */,
                               SkScalar width,
                               RunHandler* handler) const {
+    SkDebugf("SkShaper_CoreText::shape 3");
     SkUniqueCFRef<CFStringRef> textString(
             CFStringCreateWithBytes(kCFAllocatorDefault, (const uint8_t*)utf8, utf8Bytes,
                                     kCFStringEncodingUTF8, false));
