@@ -569,7 +569,7 @@ bool OneLineShaper::shape() {
 
             matchResolvedFonts(block.fStyle, [&](sk_sp<SkTypeface> typeface) {
                 SkString familyName;
-                typeface->getFamilyName(*familyName);
+                typeface->getFamilyName(&familyName);
                 SkDebugf("familyName: %s\n", familyName.writable_str());
 
                 // Create one more font to try
