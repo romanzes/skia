@@ -862,6 +862,7 @@ void ShaperDrivenWrapper::wrap(char const * const utf8, size_t utf8Bytes,
                                SkScalar width,
                                RunHandler* handler) const
 {
+    SkDebugf("ShaperDrivenWrapper::wrap");
     ShapedLine line;
 
     const char* utf8Start = nullptr;
