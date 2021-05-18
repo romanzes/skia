@@ -407,6 +407,7 @@ void OneLineShaper::matchResolvedFonts(const TextStyle& textStyle,
 
     for (const auto& typeface : typefaces) {
         if (visitor(typeface) == Resolved::Everything) {
+            SkDebugf("OneLineShaper::Resolved everything\n");
             // Resolved everything
             return;
         }
