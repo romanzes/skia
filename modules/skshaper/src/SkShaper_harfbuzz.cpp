@@ -1226,7 +1226,9 @@ void ShapeDontWrapOrReorder::wrap(char const * const utf8, size_t utf8Bytes,
     const char* utf8End = utf8;
     while (runSegmenter.advanceRuns()) {
         utf8Start = utf8End;
-        utf8End = utf8 + runSegmenter.endOfCurrentRun();
+        auto endOfCurrentRun = runSegmenter.endOfCurrentRun();
+        SkDebugf("runSegmenter.endOfCurrentRun(): %i\n", endOfCurrentRun);
+        utf8End = utf8 + endOfCurrentRun;
 
         runs.emplace_back(shape(utf8, utf8Bytes,
                                 utf8Start, utf8End,
