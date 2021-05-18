@@ -402,12 +402,10 @@ void OneLineShaper::iterateThroughFontStyles(TextRange textRange,
 
 void OneLineShaper::matchResolvedFonts(const TextStyle& textStyle,
                                        const TypefaceVisitor& visitor) {
-    SkDebugf("OneLineShaper::matchResolvedFonts\n");
     std::vector<sk_sp<SkTypeface>> typefaces = fParagraph->fFontCollection->findTypefaces(textStyle.getFontFamilies(), textStyle.getFontStyle());
 
     for (const auto& typeface : typefaces) {
         if (visitor(typeface) == Resolved::Everything) {
-            SkDebugf("OneLineShaper::Resolved everything\n");
             // Resolved everything
             return;
         }
@@ -570,6 +568,9 @@ bool OneLineShaper::shape() {
             fUnresolvedBlocks.emplace_back(RunBlock(block.fRange));
 
             matchResolvedFonts(block.fStyle, [&](sk_sp<SkTypeface> typeface) {
+                SkString familyName;
+                typeface.getFamilyName(*familyName);
+                SkDebugf("familyName: %s\n", familyName);
 
                 // Create one more font to try
                 SkFont font(std::move(typeface), block.fStyle.getFontSize());
