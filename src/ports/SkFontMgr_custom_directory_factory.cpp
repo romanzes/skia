@@ -17,5 +17,6 @@
 #endif
 
 sk_sp<SkFontMgr> SkFontMgr::Factory() {
+    SkDebugf("SkFontMgr_custom_directory_factory\n");
     return SkFontMgr_New_Custom_Directory(SK_FONT_FILE_PREFIX);
 }

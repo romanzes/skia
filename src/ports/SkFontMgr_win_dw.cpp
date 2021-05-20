@@ -1291,12 +1291,14 @@ SkTypeface* SkFontStyleSet_DirectWrite::matchStyle(const SkFontStyle& pattern) {
 
 SK_API sk_sp<SkFontMgr> SkFontMgr_New_DirectWrite(IDWriteFactory* factory,
                                                   IDWriteFontCollection* collection) {
+    SkDebugf("SkFontMgr_win_dw (1)\n");
     return SkFontMgr_New_DirectWrite(factory, collection, nullptr);
 }
 
 SK_API sk_sp<SkFontMgr> SkFontMgr_New_DirectWrite(IDWriteFactory* factory,
                                                   IDWriteFontCollection* collection,
                                                   IDWriteFontFallback* fallback) {
+    SkDebugf("SkFontMgr_win_dw (2)\n");
     if (nullptr == factory) {
         factory = sk_get_dwrite_factory();
         if (nullptr == factory) {
@@ -1361,6 +1363,7 @@ SK_API sk_sp<SkFontMgr> SkFontMgr_New_DirectWrite(IDWriteFactory* factory,
 
 #include "include/ports/SkFontMgr_indirect.h"
 SK_API sk_sp<SkFontMgr> SkFontMgr_New_DirectWriteRenderer(sk_sp<SkRemotableFontMgr> proxy) {
+    SkDebugf("SkFontMgr_win_dw (3)\n");
     sk_sp<SkFontMgr> impl(SkFontMgr_New_DirectWrite());
     if (!impl) {
         return nullptr;

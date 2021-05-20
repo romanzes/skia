@@ -2330,6 +2330,9 @@ private:
 
 ///////////////////////////////////////////////////////////////////////////////
 
-sk_sp<SkFontMgr> SkFontMgr_New_GDI() { return sk_make_sp<SkFontMgrGDI>(); }
+sk_sp<SkFontMgr> SkFontMgr_New_GDI() {
+    SkDebugf("SkFontHost_win\n");
+    return sk_make_sp<SkFontMgrGDI>();
+}
 
 #endif//defined(SK_BUILD_FOR_WIN)

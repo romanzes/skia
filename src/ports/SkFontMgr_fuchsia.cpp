@@ -501,5 +501,6 @@ sk_sp<SkTypeface> SkFontMgr_Fuchsia::GetOrCreateTypeface(TypefaceId id,
 }
 
 SK_API sk_sp<SkFontMgr> SkFontMgr_New_Fuchsia(fuchsia::fonts::ProviderSyncPtr provider) {
+    SkDebugf("SkFontMgr_fuchsia\n");
     return sk_make_sp<SkFontMgr_Fuchsia>(std::move(provider));
 }

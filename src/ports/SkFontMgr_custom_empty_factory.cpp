@@ -9,5 +9,6 @@
 #include "include/ports/SkFontMgr_empty.h"
 
 sk_sp<SkFontMgr> SkFontMgr::Factory() {
+    SkDebugf("SkFontMgr_custom_empty_factory\n");
     return SkFontMgr_New_Custom_Empty();
 }

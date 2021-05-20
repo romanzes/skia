@@ -10,6 +10,7 @@
 #include "include/ports/SkFontMgr_FontConfigInterface.h"
 
 sk_sp<SkFontMgr> SkFontMgr::Factory() {
+    SkDebugf("SkFontMgr_FontConfigInterface_factory\n");
     sk_sp<SkFontConfigInterface> fci(SkFontConfigInterface::RefGlobal());
     if (!fci) {
         return nullptr;

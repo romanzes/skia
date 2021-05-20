@@ -100,5 +100,6 @@ private:
 };
 
 SK_API sk_sp<SkFontMgr> SkFontMgr_New_Custom_Directory(const char* dir) {
+    SkDebugf("SkFontMgr_custom_directory\n");
     return sk_make_sp<SkFontMgr_Custom>(DirectorySystemFontLoader(dir));
 }

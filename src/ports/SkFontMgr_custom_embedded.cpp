@@ -108,12 +108,14 @@ static void load_font_from_data(const SkTypeface_FreeType::Scanner& scanner,
 }
 
 sk_sp<SkFontMgr> SkFontMgr_New_Custom_Embedded(const SkEmbeddedResourceHeader* header) {
+    SkDebugf("SkFontMgr_custom_embedded (1)\n");
     return sk_make_sp<SkFontMgr_Custom>(EmbeddedSystemFontLoader(header));
 }
 
 // SkFontMgr_New_Custom_Data expects to be called with the data for n font files. datas and sizes
 // are parallel arrays of bytes and byte lengths.
 sk_sp<SkFontMgr> SkFontMgr_New_Custom_Data(const uint8_t** datas, const size_t* sizes, int n) {
+    SkDebugf("SkFontMgr_custom_embedded (2)\n");
     SkASSERT(datas != nullptr);
     SkASSERT(sizes != nullptr);
     SkASSERT(n > 0);

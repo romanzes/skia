@@ -12,6 +12,7 @@
 #include "include/ports/SkTypeface_win.h"
 
 sk_sp<SkFontMgr> SkFontMgr::Factory() {
+    SkDebugf("SkFontMgr_win_dw_factory\n");
     return SkFontMgr_New_DirectWrite();
 }
 

@@ -8,6 +8,7 @@
 #include "include/core/SkFontMgr.h"
 
 sk_sp<SkFontMgr> SkFontMgr::Factory() {
+    SkDebugf("SkFontMgr_empty_factory\n");
     // Always return nullptr, an empty SkFontMgr will be used.
     return nullptr;
 }

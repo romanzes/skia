@@ -1031,5 +1031,6 @@ protected:
 };
 
 SK_API sk_sp<SkFontMgr> SkFontMgr_New_FontConfig(FcConfig* fc) {
+    SkDebugf("SkFontMgr_fontconfig\n");
     return sk_make_sp<SkFontMgr_fontconfig>(fc);
 }

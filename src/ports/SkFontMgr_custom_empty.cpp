@@ -23,5 +23,6 @@ public:
 };
 
 SK_API sk_sp<SkFontMgr> SkFontMgr_New_Custom_Empty() {
+    SkDebugf("SkFontMgr_custom_empty\n");
     return sk_make_sp<SkFontMgr_Custom>(EmptyFontLoader());
 }

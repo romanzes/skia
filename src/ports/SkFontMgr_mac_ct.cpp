@@ -708,6 +708,7 @@ protected:
 };
 
 sk_sp<SkFontMgr> SkFontMgr_New_CoreText(CTFontCollectionRef fontCollection) {
+    SkDebugf("SkFontMgr_mac_ct\n");
     return sk_make_sp<SkFontMgr_Mac>(fontCollection);
 }
 

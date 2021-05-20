@@ -10,5 +10,6 @@
 #include "include/ports/SkFontMgr_fontconfig.h"
 
 sk_sp<SkFontMgr> SkFontMgr::Factory() {
+    SkDebugf("SkFontMgr_fontconfig_factory\n");
     return SkFontMgr_New_FontConfig(nullptr);
 }

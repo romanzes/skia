@@ -582,6 +582,7 @@ static char const * const gSystemFontUseStrings[] = {
 #endif
 
 sk_sp<SkFontMgr> SkFontMgr_New_Android(const SkFontMgr_Android_CustomFonts* custom) {
+    SkDebugf("SkFontMgr_android\n");
     if (custom) {
         SkASSERT(0 <= custom->fSystemFontUse);
         SkASSERT(custom->fSystemFontUse < SK_ARRAY_COUNT(gSystemFontUseStrings));

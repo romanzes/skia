@@ -11,6 +11,7 @@
 #include "include/ports/SkFontMgr_android.h"
 
 sk_sp<SkFontMgr> SkFontMgr::Factory() {
+    SkDebugf("SkFontMgr_android_factory\n");
     return SkFontMgr_New_Android(nullptr);
 }
 

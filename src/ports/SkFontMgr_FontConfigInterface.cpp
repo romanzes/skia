@@ -344,6 +344,7 @@ protected:
 };
 
 SK_API sk_sp<SkFontMgr> SkFontMgr_New_FCI(sk_sp<SkFontConfigInterface> fci) {
+    SkDebugf("SkFontMgr_FontConfigInterface\n");
     SkASSERT(fci);
     return sk_make_sp<SkFontMgr_FCI>(std::move(fci));
 }
