@@ -1070,6 +1070,7 @@ void TextLine::getRectsForRange(TextRange textRange0,
                     boxes.emplace_back(right);
                 }
             }
+            SkDebugf("trailingSpaces.width(): %g\n", trailingSpaces.width());
 
             return true;
         });
