@@ -975,6 +975,8 @@ void TextLine::getRectsForRange(TextRange textRange0,
 
             // Separate trailing spaces and move them in the default order of the paragraph
             // in case the run order and the paragraph order don't match
+            SkDebugf("textWithSpaces().end = %i\n", textWithSpaces().end);
+            SkDebugf("intersect.end = %i\n", intersect.end);
             SkRect trailingSpaces = SkRect::MakeEmpty();
             if (this->trimmedText().end < this->textWithSpaces().end && // Line has trailing spaces
                 this->textWithSpaces().end == intersect.end &&         // Range is at the end of the line
