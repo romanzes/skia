@@ -23,15 +23,15 @@ REVERT_CL_SUBJECT_PREFIX = 'Revert '
 
 # Please add the complete email address here (and not just 'xyz@' or 'xyz').
 PUBLIC_API_OWNERS = (
-    'mtklein@google.com',
-    'reed@chromium.org',
-    'reed@google.com',
-    'bsalomon@chromium.org',
+    'brianosman@google.com',
     'bsalomon@google.com',
     'djsollen@chromium.org',
     'djsollen@google.com',
     'hcm@chromium.org',
     'hcm@google.com',
+    'mtklein@google.com',
+    'reed@chromium.org',
+    'reed@google.com',
 )
 
 AUTHORS_FILE_NAME = 'AUTHORS'
@@ -191,6 +191,24 @@ def _CheckGNFormatted(input_api, output_api):
           '`%s` failed, try\n\t%s' % (' '.join(cmd), fix)))
   return results
 
+
+def _CheckGitConflictMarkers(input_api, output_api):
+  pattern = input_api.re.compile('^(?:<<<<<<<|>>>>>>>) |^=======$')
+  results = []
+  for f in input_api.AffectedFiles():
+    for line_num, line in f.ChangedContents():
+      if f.LocalPath().endswith('.md'):
+        # First-level headers in markdown look a lot like version control
+        # conflict markers. http://daringfireball.net/projects/markdown/basics
+        continue
+      if pattern.match(line):
+        results.append(
+            output_api.PresubmitError(
+                'Git conflict markers found in %s:%d %s' % (
+                    f.LocalPath(), line_num, line)))
+  return results
+
+
 def _CheckIncludesFormatted(input_api, output_api):
   """Make sure #includes in files we're changing have been formatted."""
   files = [str(f) for f in input_api.AffectedFiles() if f.Action() != 'D']
@@ -200,27 +218,6 @@ def _CheckIncludesFormatted(input_api, output_api):
   if 0 != subprocess.call(cmd):
     return [output_api.PresubmitError('`%s` failed' % ' '.join(cmd))]
   return []
-
-def _CheckCompileIsolate(input_api, output_api):
-  """Ensure that gen_compile_isolate.py does not change compile.isolate."""
-  # Only run the check if files were added or removed.
-  results = []
-  script = os.path.join('infra', 'bots', 'gen_compile_isolate.py')
-  isolate = os.path.join('infra', 'bots', 'compile.isolated')
-  for f in input_api.AffectedFiles():
-    if f.Action() in ('A', 'D', 'R'):
-      break
-    if f.LocalPath() in (script, isolate):
-      break
-  else:
-    return results
-
-  cmd = ['python', script, 'test']
-  try:
-    subprocess.check_output(cmd, stderr=subprocess.STDOUT)
-  except subprocess.CalledProcessError as e:
-    results.append(output_api.PresubmitError(e.output))
-  return results
 
 
 class _WarningsAsErrors():
@@ -276,10 +273,10 @@ def _CommonChecks(input_api, output_api):
   results.extend(_IfDefChecks(input_api, output_api))
   results.extend(_CopyrightChecks(input_api, output_api,
                                   source_file_filter=sources))
-  results.extend(_CheckCompileIsolate(input_api, output_api))
   results.extend(_CheckDEPSValid(input_api, output_api))
   results.extend(_CheckIncludesFormatted(input_api, output_api))
   results.extend(_CheckGNFormatted(input_api, output_api))
+  results.extend(_CheckGitConflictMarkers(input_api, output_api))
   return results
 
 
