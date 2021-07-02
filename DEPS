@@ -21,7 +21,7 @@ deps = {
   "third_party/externals/brotli"          : "https://skia.googlesource.com/external/github.com/google/brotli.git@e61745a6b7add50d380cfd7d3883dd6c62fc2c71",
 
   "../src": {
-    "url": "https://chromium.googlesource.com/chromium/src.git@5cd489ad4ec519b41cb976178c969971ca8cfd3a",
+    "url": "https://chromium.googlesource.com/chromium/src.git@1a1c57de9e5537985aff161c147d0e18dc978fd7",
     "condition": "checkout_chromium",
   },
 }
