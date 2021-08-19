@@ -663,12 +663,14 @@ std::vector<TextBox> ParagraphImpl::getRectsForRange(unsigned start,
             //SkDebugf("getRectsForRange(%d, %d): %f\n", start, end, fHeight);
             results.emplace_back(SkRect::MakeXYWH(0, 0, 0, fHeight), fParagraphStyle.getTextDirection());
         }
+        SkDebugf("getRectsForRange 1");
         return results;
     }
 
     ensureUTF16Mapping();
 
     if (start >= end || start > fUTF8IndexForUTF16Index.size() || end == 0) {
+        SkDebugf("getRectsForRange 2");
         return results;
     }
 
@@ -716,6 +718,7 @@ std::vector<TextBox> ParagraphImpl::getRectsForRange(unsigned start,
         SkDebugf("[%f:%f * %f:%f]\n", r.rect.fLeft, r.rect.fRight, r.rect.fTop, r.rect.fBottom);
     }
 */
+    SkDebugf("getRectsForRange 3");
     return results;
 }
 
