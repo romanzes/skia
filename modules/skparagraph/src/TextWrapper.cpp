@@ -122,6 +122,8 @@ void TextWrapper::lookAhead(SkScalar maxWidth, Cluster* endOfClusters) {
                 }
                 // If the word is too long we can break it right now and hope it's enough
                 fMinIntrinsicWidth = std::max(fMinIntrinsicWidth, nextWordLength);
+
+                // NON-SKIA-UPSTREAMED CHANGE
                 // By default, the words that are wider than the available width are wrapped in such
                 // a way that, when possible, a part of the long word remains on the previous line
                 // with a shorter word. Commenting out the section below makes the long words go to
@@ -140,6 +142,7 @@ void TextWrapper::lookAhead(SkScalar maxWidth, Cluster* endOfClusters) {
                     // Even if the word is too long there is a very little space on this line.
                     // let's deal with it on the next line.
                 } */
+                // END OF NON-SKIA-UPSTREAMED CHANGE
             }
 
             if (cluster->width() > maxWidth) {
