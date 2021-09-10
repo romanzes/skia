@@ -135,11 +135,14 @@ void ParagraphImpl::addUnresolvedCodepoints(TextRange textRange) {
 }
 
 void ParagraphImpl::layout(SkScalar rawWidth) {
+
+    // NON-SKIA-UPSTREAMED CHANGE
+    /*
     // TODO: This rounding is done to match Flutter tests. Must be removed...
+    auto floorWidth = SkScalarFloorToScalar(rawWidth);
+    */
     auto floorWidth = rawWidth;
-    if (getApplyRoundingHack()) {
-        floorWidth = SkScalarFloorToScalar(floorWidth);
-    }
+    // END OF NON-SKIA-UPSTREAMED CHANGE
 
     if ((!SkIsFinite(rawWidth) || fLongestLine <= floorWidth) &&
         fState >= kLineBroken &&
@@ -219,17 +222,18 @@ void ParagraphImpl::layout(SkScalar rawWidth) {
     this->fOldWidth = floorWidth;
     this->fOldHeight = this->fHeight;
 
-    if (getApplyRoundingHack()) {
-        // TODO: This rounding is done to match Flutter tests. Must be removed...
-        fMinIntrinsicWidth = littleRound(fMinIntrinsicWidth);
-        fMaxIntrinsicWidth = littleRound(fMaxIntrinsicWidth);
-    }
+    // NON-SKIA-UPSTREAMED CHANGE
+    /*
+    // TODO: This rounding is done to match Flutter tests. Must be removed...
+    fMinIntrinsicWidth = littleRound(fMinIntrinsicWidth);
+    fMaxIntrinsicWidth = littleRound(fMaxIntrinsicWidth);
 
     // TODO: This is strictly Flutter thing. Must be factored out into some flutter code
     if (fParagraphStyle.getMaxLines() == 1 ||
         (fParagraphStyle.unlimited_lines() && fParagraphStyle.ellipsized())) {
         fMinIntrinsicWidth = fMaxIntrinsicWidth;
-    }
+    } */
+    // END OF NON-SKIA-UPSTREAMED CHANGE
 
     // TODO: Since min and max are calculated differently it's possible to get a rounding error
     //  that would make min > max. Sort it out later, make it the same for now
