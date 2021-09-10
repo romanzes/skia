@@ -134,13 +134,27 @@ void TextWrapper::lookAhead(SkScalar maxWidth, Cluster* endOfClusters, bool appl
                 }
                 // If the word is too long we can break it right now and hope it's enough
                 fMinIntrinsicWidth = std::max(fMinIntrinsicWidth, nextWordLength);
-                if (fClusters.endPos() - fClusters.startPos() > 1 ||
+
+                // NON-SKIA-UPSTREAMED CHANGE
+                // By default, the words that are wider than the available width are wrapped in such
+                // a way that, when possible, a part of the long word remains on the previous line
+                // with a shorter word. Commenting out the section below makes the long words go to
+                // the next line, which matches Chrome behavior.
+                //
+                // Example ("Hey hippopotamus"):
+                //
+                // |Hey hippo|    |Hey      |
+                // |potamus  | -> |hippopota|
+                // |         |    |mus      |
+                //
+                /* if (fClusters.endPos() - fClusters.startPos() > 1 ||
                     fWords.empty()) {
                     fTooLongWord = true;
                 } else {
                     // Even if the word is too long there is a very little space on this line.
                     // let's deal with it on the next line.
-                }
+                } */
+                // END OF NON-SKIA-UPSTREAMED CHANGE
             }
 
             if (cluster->width() > maxWidth) {
