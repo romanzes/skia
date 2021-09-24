@@ -29,6 +29,7 @@ FontCollection::FontCollection()
 size_t FontCollection::getFontManagersCount() const { return this->getFontManagerOrder().size(); }
 
 void FontCollection::setAssetFontManager(sk_sp<SkFontMgr> font_manager) {
+    SkDebugf("FontCollection::setAssetFontManager\n");
     fAssetFontManager = font_manager;
 }
 
@@ -42,17 +43,20 @@ void FontCollection::setTestFontManager(sk_sp<SkFontMgr> font_manager) {
 
 void FontCollection::setDefaultFontManager(sk_sp<SkFontMgr> fontManager,
                                            const char defaultFamilyName[]) {
+    SkDebugf("FontCollection::setDefaultFontManager (1)\n");
     fDefaultFontManager = std::move(fontManager);
     fDefaultFamilyNames.emplace_back(defaultFamilyName);
 }
 
 void FontCollection::setDefaultFontManager(sk_sp<SkFontMgr> fontManager,
                                            const std::vector<SkString>& defaultFamilyNames) {
+    SkDebugf("FontCollection::setDefaultFontManager (2)\n");
     fDefaultFontManager = std::move(fontManager);
     fDefaultFamilyNames = defaultFamilyNames;
 }
 
 void FontCollection::setDefaultFontManager(sk_sp<SkFontMgr> fontManager) {
+    SkDebugf("FontCollection::setDefaultFontManager (3)\n");
     fDefaultFontManager = fontManager;
 }
 
