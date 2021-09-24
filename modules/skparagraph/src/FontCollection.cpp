@@ -58,6 +58,7 @@ void FontCollection::setDefaultFontManager(sk_sp<SkFontMgr> fontManager) {
 
 // Return the available font managers in the order they should be queried.
 std::vector<sk_sp<SkFontMgr>> FontCollection::getFontManagerOrder() const {
+    SkDebugf("FontCollection::getFontManagerOrder\n");
     std::vector<sk_sp<SkFontMgr>> order;
     if (fDynamicFontManager) {
         order.push_back(fDynamicFontManager);
@@ -75,6 +76,7 @@ std::vector<sk_sp<SkFontMgr>> FontCollection::getFontManagerOrder() const {
 }
 
 std::vector<sk_sp<SkTypeface>> FontCollection::findTypefaces(const std::vector<SkString>& familyNames, SkFontStyle fontStyle) {
+    SkDebugf("FontCollection::findTypefaces\n");
     // Look inside the font collections cache first
     FamilyKey familyKey(familyNames, fontStyle);
     auto found = fTypefaces.find(familyKey);
@@ -116,6 +118,7 @@ std::vector<sk_sp<SkTypeface>> FontCollection::findTypefaces(const std::vector<S
 }
 
 sk_sp<SkTypeface> FontCollection::matchTypeface(const SkString& familyName, SkFontStyle fontStyle) {
+    SkDebugf("FontCollection::matchTypeface\n");
     for (const auto& manager : this->getFontManagerOrder()) {
         sk_sp<SkFontStyleSet> set(manager->matchFamily(familyName.c_str()));
         if (!set || set->count() == 0) {
@@ -133,7 +136,7 @@ sk_sp<SkTypeface> FontCollection::matchTypeface(const SkString& familyName, SkFo
 
 // Find ANY font in available font managers that resolves the unicode codepoint
 sk_sp<SkTypeface> FontCollection::defaultFallback(SkUnichar unicode, SkFontStyle fontStyle, const SkString& locale) {
-
+    SkDebugf("FontCollection::defaultFallback (1)\n");
     for (const auto& manager : this->getFontManagerOrder()) {
         std::vector<const char*> bcp47;
         if (!locale.isEmpty()) {
@@ -150,6 +153,7 @@ sk_sp<SkTypeface> FontCollection::defaultFallback(SkUnichar unicode, SkFontStyle
 }
 
 sk_sp<SkTypeface> FontCollection::defaultFallback() {
+    SkDebugf("FontCollection::defaultFallback (2)\n");
     if (fDefaultFontManager == nullptr) {
         return nullptr;
     }
