@@ -150,7 +150,7 @@ sk_sp<SkTypeface> FontCollection::defaultFallback(SkUnichar unicode, SkFontStyle
                 nullptr, fontStyle, bcp47.data(), bcp47.size(), unicode));
         if (typeface != nullptr) {
             SkString name;
-            typeface->getFamilyName(&name)
+            typeface->getFamilyName(&name);
             SkDebugf("typeface name: %s\n", name);
             return typeface;
         }
