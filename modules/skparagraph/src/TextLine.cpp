@@ -137,6 +137,7 @@ TextLine::TextLine(ParagraphImpl* owner,
     for (auto runIndex = start.runIndex(); runIndex <= end.runIndex(); ++runIndex) {
         auto& run = fOwner->run(runIndex);
         runLevels[runLevelsIndex++] = run.fBidiLevel;
+        SkDebugf("run.fFontMetrics.fAscent: %g, run.fFontMetrics.fDescent: %g, run.fFontMetrics.fLeading: %g\n", run.fFontMetrics.fAscent, run.fFontMetrics.fDescent, run.fFontMetrics.fLeading);
         fMaxRunMetrics.add(
             InternalLineMetrics(run.fFontMetrics.fAscent, run.fFontMetrics.fDescent, run.fFontMetrics.fLeading));
     }
