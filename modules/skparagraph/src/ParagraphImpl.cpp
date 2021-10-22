@@ -797,6 +797,7 @@ SkRange<size_t> ParagraphImpl::getWordBoundary(unsigned offset) {
     int32_t end = 0;
     for (size_t i = 0; i < fWords.size(); ++i) {
         auto word = fWords[i];
+        SkDebugf("word: %s\n", word);
         if (word <= offset) {
             start = word;
             end = word;
