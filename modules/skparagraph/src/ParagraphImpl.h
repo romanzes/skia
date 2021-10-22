@@ -140,7 +140,12 @@ public:
     }
     SkSpan<TextLine> lines() { return SkSpan<TextLine>(fLines.data(), fLines.size()); }
     const ParagraphStyle& paragraphStyle() const { return fParagraphStyle; }
-    SkSpan<Cluster> clusters() { return SkSpan<Cluster>(fClusters.begin(), fClusters.size()); }
+    SkSpan<Cluster> clusters() {
+        for (auto& cluster : fClusters) {
+            SkDebugf("cluster start: %i, end: %i\n", cluster.startPos(), cluster.endPos());
+        }
+        return SkSpan<Cluster>(fClusters.begin(), fClusters.size());
+    }
     sk_sp<FontCollection> fontCollection() const { return fFontCollection; }
     void formatLines(SkScalar maxWidth);
     void ensureUTF16Mapping();

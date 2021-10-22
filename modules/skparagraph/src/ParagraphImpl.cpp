@@ -825,10 +825,6 @@ SkSpan<const char> ParagraphImpl::text(TextRange textRange) {
 }
 
 SkSpan<Cluster> ParagraphImpl::clusters(ClusterRange clusterRange) {
-    for (auto& cluster : fClusters) {
-        SkDebugf("cluster start: %i, end: %i\n", cluster.startPos(), cluster.endPos());
-    }
-
     SkASSERT(clusterRange.start < fClusters.size() && clusterRange.end <= fClusters.size());
     return SkSpan<Cluster>(&fClusters[clusterRange.start], clusterRange.width());
 }
