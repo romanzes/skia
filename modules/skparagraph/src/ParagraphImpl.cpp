@@ -797,7 +797,6 @@ SkRange<size_t> ParagraphImpl::getWordBoundary(unsigned offset) {
     int32_t end = 0;
     for (size_t i = 0; i < fWords.size(); ++i) {
         auto word = fWords[i];
-        SkDebugf("word: %s\n", word);
         if (word <= offset) {
             start = word;
             end = word;
@@ -825,6 +824,10 @@ SkSpan<const char> ParagraphImpl::text(TextRange textRange) {
 }
 
 SkSpan<Cluster> ParagraphImpl::clusters(ClusterRange clusterRange) {
+    for (auto& cluster : fClusters) {
+        SkDebugf("cluster start: %i, end: %i\n", cluster.startPos(), cluster.endPos());
+    }
+
     SkASSERT(clusterRange.start < fClusters.size() && clusterRange.end <= fClusters.size());
     return SkSpan<Cluster>(&fClusters[clusterRange.start], clusterRange.width());
 }
