@@ -110,6 +110,7 @@ int32_t ParagraphImpl::unresolvedGlyphs() {
 }
 
 void ParagraphImpl::layout(SkScalar rawWidth) {
+    SkDebugf("layout\n");
 
     // NON-SKIA-UPSTREAMED CHANGE
     /*
