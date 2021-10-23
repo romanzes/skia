@@ -57,14 +57,12 @@ void TextWrapper::lookAhead(SkScalar maxWidth, Cluster* endOfClusters) {
                 // It's the end of the word
                 fClusters.extend(cluster);
                 fMinIntrinsicWidth = std::max(fMinIntrinsicWidth, getClustersTrimmedWidth());
-                SkDebugf("fWords.extend (1)\n");
                 fWords.extend(fClusters);
                 break;
             } else if (cluster->run().isPlaceholder()) {
                 if (!fClusters.empty()) {
                     // Placeholder ends the previous word
                     fMinIntrinsicWidth = std::max(fMinIntrinsicWidth, getClustersTrimmedWidth());
-                    SkDebugf("fWords.extend (2)\n");
                     fWords.extend(fClusters);
                 }
 
@@ -114,7 +112,6 @@ void TextWrapper::lookAhead(SkScalar maxWidth, Cluster* endOfClusters) {
                         // We can add the short word to the existing line
                         fClusters = TextStretch(fClusters.startCluster(), nextNonBreakingSpace, fClusters.metrics().getForceStrut());
                         fMinIntrinsicWidth = std::max(fMinIntrinsicWidth, nextShortWordLength);
-                        SkDebugf("fWords.extend (3)\n");
                         fWords.extend(fClusters);
                     } else {
                         // We can place the short word on the next line
@@ -160,13 +157,11 @@ void TextWrapper::lookAhead(SkScalar maxWidth, Cluster* endOfClusters) {
             if (!fClusters.empty()) {
                 // Placeholder ends the previous word (placeholders are ignored in trimming)
                 fMinIntrinsicWidth = std::max(fMinIntrinsicWidth, getClustersTrimmedWidth());
-                SkDebugf("fWords.extend (4)\n");
                 fWords.extend(fClusters);
             }
 
             // Placeholder is separate word and its width now is counted in minIntrinsicWidth
             fMinIntrinsicWidth = std::max(fMinIntrinsicWidth, cluster->width());
-            SkDebugf("fWords.extend (5)\n");
             fWords.extend(cluster);
         } else {
             fClusters.extend(cluster);
@@ -174,7 +169,7 @@ void TextWrapper::lookAhead(SkScalar maxWidth, Cluster* endOfClusters) {
             // Keep adding clusters/words
             if (fClusters.endOfWord()) {
                 fMinIntrinsicWidth = std::max(fMinIntrinsicWidth, getClustersTrimmedWidth());
-                SkDebugf("fWords.extend (6)\n");
+                SkDebugf("fWords.extend: %i - %i\n", fClusters.startPos(), fClusters.endPos());
                 fWords.extend(fClusters);
             }
         }
