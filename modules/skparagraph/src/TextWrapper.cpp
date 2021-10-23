@@ -188,7 +188,6 @@ void TextWrapper::moveForward(bool hasEllipsis) {
     // it's the first word and it has an ellipsis attached to it.
     // If nothing fits we show the clipping.
     if (!fWords.empty()) {
-        SkDebugf("fWords.extend (7)\n");
         fEndLine.extend(fWords);
         if (!fTooLongWord || hasEllipsis) {
             return;
