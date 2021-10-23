@@ -110,8 +110,9 @@ int32_t ParagraphImpl::unresolvedGlyphs() {
 }
 
 void ParagraphImpl::layout(SkScalar rawWidth) {
-    SkDebugf("layout\n");
-
+    for (auto& word : fWords) {
+        SkDebugf("word: %i\n", word);
+    }
     // NON-SKIA-UPSTREAMED CHANGE
     /*
     // TODO: This rounding is done to match Flutter tests. Must be removed...
