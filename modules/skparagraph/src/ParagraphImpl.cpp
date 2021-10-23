@@ -110,9 +110,6 @@ int32_t ParagraphImpl::unresolvedGlyphs() {
 }
 
 void ParagraphImpl::layout(SkScalar rawWidth) {
-    for (auto& word : fWords) {
-        SkDebugf("word: %i\n", word);
-    }
     // NON-SKIA-UPSTREAMED CHANGE
     /*
     // TODO: This rounding is done to match Flutter tests. Must be removed...
@@ -216,6 +213,10 @@ void ParagraphImpl::layout(SkScalar rawWidth) {
     //  that would make min > max. Sort it out later, make it the same for now
     if (fMaxIntrinsicWidth < fMinIntrinsicWidth) {
         fMaxIntrinsicWidth = fMinIntrinsicWidth;
+    }
+
+    for (auto& word : fWords) {
+        SkDebugf("word: %i\n", word);
     }
 
     //SkDebugf("layout('%s', %f): %f %f\n", fText.c_str(), rawWidth, fMinIntrinsicWidth, fMaxIntrinsicWidth);
