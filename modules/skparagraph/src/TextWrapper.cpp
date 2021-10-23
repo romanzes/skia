@@ -169,7 +169,7 @@ void TextWrapper::lookAhead(SkScalar maxWidth, Cluster* endOfClusters) {
             // Keep adding clusters/words
             if (fClusters.endOfWord()) {
                 fMinIntrinsicWidth = std::max(fMinIntrinsicWidth, getClustersTrimmedWidth());
-                SkDebugf("fWords.extend: %i - %i\n", fClusters.startPos(), fClusters.endPos());
+                SkDebugf("is soft break at position %i: %s\n", fClusters.endPos(), cluster->isSoftBreak() ? "true" : "false");
                 fWords.extend(fClusters);
             }
         }
