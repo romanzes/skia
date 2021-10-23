@@ -215,10 +215,6 @@ void ParagraphImpl::layout(SkScalar rawWidth) {
         fMaxIntrinsicWidth = fMinIntrinsicWidth;
     }
 
-    for (auto& word : fWords) {
-        SkDebugf("word: %i\n", word);
-    }
-
     //SkDebugf("layout('%s', %f): %f %f\n", fText.c_str(), rawWidth, fMinIntrinsicWidth, fMaxIntrinsicWidth);
 }
 
