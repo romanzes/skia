@@ -167,7 +167,7 @@ void TextWrapper::lookAhead(SkScalar maxWidth, Cluster* endOfClusters) {
             fClusters.extend(cluster);
 
             // Keep adding clusters/words
-            if (fClusters.endOfWord() || cluster == endOfClusters) {
+            if (fClusters.endOfWord() || cluster + 1 == endOfClusters) {
                 fMinIntrinsicWidth = std::max(fMinIntrinsicWidth, getClustersTrimmedWidth());
                 fWords.extend(fClusters);
             }
