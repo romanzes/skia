@@ -167,9 +167,9 @@ void TextWrapper::lookAhead(SkScalar maxWidth, Cluster* endOfClusters) {
             fClusters.extend(cluster);
 
             // Keep adding clusters/words
-            SkDebugf("isWhitespaceBreak at position %d: %s\n", cluster, cluster->isWhitespaceBreak() ? "yes" : "no");
-            SkDebugf("isIntraWordBreak at position %d: %s\n", cluster, cluster->isIntraWordBreak() ? "yes" : "no");
-            SkDebugf("isGraphemeBreak at position %d: %s\n", cluster, cluster->isGraphemeBreak() ? "yes" : "no");
+            SkDebugf("isWhitespaceBreak at position %i: %s\n", fClusters.endPos(), cluster->isWhitespaceBreak() ? "yes" : "no");
+            SkDebugf("isIntraWordBreak at position %i: %s\n", fClusters.endPos(), cluster->isIntraWordBreak() ? "yes" : "no");
+            SkDebugf("isGraphemeBreak at position %i: %s\n", fClusters.endPos(), cluster->isGraphemeBreak() ? "yes" : "no");
             if (fClusters.endOfWord()) {
                 fMinIntrinsicWidth = std::max(fMinIntrinsicWidth, getClustersTrimmedWidth());
                 fWords.extend(fClusters);
