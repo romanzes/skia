@@ -59,7 +59,7 @@ class TextWrapper {
         bool endOfCluster() { return fEnd.position() == fEnd.cluster()->endPos(); }
         bool endOfWord() {
             return endOfCluster() &&
-                   (fEnd.cluster()->isHardBreak() || fEnd.cluster()->isSoftBreak() || fEnd.cluster()->isChromeBreak());
+                   (fEnd.cluster()->isHardBreak() || fEnd.cluster()->isWhitespaceBreak() || fEnd.cluster()->isChromeBreak());
         }
 
         void extend(TextStretch& stretch) {
