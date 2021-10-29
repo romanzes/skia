@@ -370,8 +370,7 @@ Cluster::Cluster(ParagraphImpl* owner,
     fIsWhiteSpaceBreak = whiteSpacesBreakLen == fTextRange.width();
     fIsIntraWordBreak = intraWordBreakLen == fTextRange.width();
     fIsHardBreak = fOwner->codeUnitHasProperty(fTextRange.end, CodeUnitFlags::kHardLineBreakBefore);
-    const char* last_char = text.end();
-    fIsChromeBreak = *(unsigned char*)last_char == 0x2D || *(unsigned char*)last_char == 0x3F;
+    fIsChromeBreak = *(unsigned char*)ch == 0x2D || *(unsigned char*)ch == 0x3F;
 }
 
 SkScalar Run::calculateWidth(size_t start, size_t end, bool clip) const {
