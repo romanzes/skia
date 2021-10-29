@@ -63,8 +63,9 @@ class TextWrapper {
             return endOfCluster() &&
                    (fEnd.cluster()->isHardBreak() || fEnd.cluster()->isSoftBreak());
             */
+            Cluster* end = fEnd.cluster();
             return endOfCluster() &&
-                   (fEnd.cluster()->isHardBreak() || fEnd.cluster()->isWhitespaceBreak());
+                    (end->isHardBreak() || end->isWhitespaceBreak() || end->isChromeBreak());
             // END OF NON-SKIA-UPSTREAMED CHANGE
         }
 
