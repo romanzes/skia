@@ -291,6 +291,7 @@ public:
     bool isWhitespaceBreak() const { return fIsWhiteSpaceBreak; }
     bool isIntraWordBreak() const { return fIsIntraWordBreak; }
     bool isHardBreak() const { return fIsHardBreak; }
+    bool isChromeBreak() const { return fIsChromeBreak; }
 
     bool isSoftBreak() const;
     bool isGraphemeBreak() const;
@@ -344,6 +345,7 @@ private:
     bool fIsWhiteSpaceBreak;
     bool fIsIntraWordBreak;
     bool fIsHardBreak;
+    bool fIsChromeBreak;
 };
 
 class InternalLineMetrics {
