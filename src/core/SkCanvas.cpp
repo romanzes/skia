@@ -2313,6 +2313,7 @@ void SkCanvas::drawTextBlob(const SkTextBlob* blob, SkScalar x, SkScalar y,
     SkTextBlob::Iter i(*blob);
     SkTextBlob::Iter::Run r;
     while (i.next(&r)) {
+        SkDebugf("Run glyphCount: %i\n", r.fGlyphCount);
         int glyphsLeft = kMaxGlyphCount - totalGlyphCount;
         RETURN_ON_FALSE(r.fGlyphCount <= glyphsLeft);
         totalGlyphCount += r.fGlyphCount;
