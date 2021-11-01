@@ -262,6 +262,7 @@ void OneLineShaper::addFullyResolved() {
                       this->fCurrentRun->fTextRange,
                       GlyphRange(0, this->fCurrentRun->size()),
                       this->fCurrentRun->size());
+    SkDebugf("OneLineShaper (4)\n");
     fResolvedBlocks.emplace_back(resolved);
 }
 
