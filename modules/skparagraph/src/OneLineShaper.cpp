@@ -123,7 +123,6 @@ void OneLineShaper::fillGaps(size_t startingCount) {
                     unresolved.fText.start = resolved.fText.start;
                 }
             } else {
-                SkDebugf("OneLineShaper (1)\n");
                 fResolvedBlocks.emplace_back(resolved);
             }
         }
@@ -141,7 +140,6 @@ void OneLineShaper::fillGaps(size_t startingCount) {
 
         GlyphRange resolvedGlyphs(resolvedGlyphsStart, fCurrentRun->size());
         RunBlock resolved(fCurrentRun, resolvedText, resolvedGlyphs, resolvedGlyphs.width());
-        SkDebugf("OneLineShaper (2)\n");
         fResolvedBlocks.emplace_back(resolved);
     }
 }
@@ -155,7 +153,6 @@ void OneLineShaper::finish(TextRange blockText, SkScalar height, SkScalar& advan
         if (unresolved.fText.width() == 0) {
             continue;
         }
-        SkDebugf("OneLineShaper (3)\n");
         fResolvedBlocks.emplace_back(unresolved);
         fUnresolvedGlyphs += unresolved.fGlyphs.width();
     }
@@ -262,7 +259,7 @@ void OneLineShaper::addFullyResolved() {
                       this->fCurrentRun->fTextRange,
                       GlyphRange(0, this->fCurrentRun->size()),
                       this->fCurrentRun->size());
-    SkDebugf("OneLineShaper (4)\n");
+    SkDebugf("OneLineShaper fCurrentRun->size() = %i\n", this->fCurrentRun->size());
     fResolvedBlocks.emplace_back(resolved);
 }
 
