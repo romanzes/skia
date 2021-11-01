@@ -303,6 +303,7 @@ SkScalar TextLine::metricsWithoutMultiplier(TextHeightBehavior correction) {
 }
 
 void TextLine::buildTextBlob(SkCanvas* canvas, SkScalar x, SkScalar y, TextRange textRange, const TextStyle& style, const ClipContext& context) {
+    SkDebugf("TextLine::buildTextBlob\n");
     if (context.run->placeholderStyle() != nullptr) {
         return;
     }
