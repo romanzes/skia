@@ -319,6 +319,7 @@ void TextLine::buildTextBlob(SkCanvas* canvas, SkScalar x, SkScalar y, TextRange
 
     // TODO: This is the change for flutter, must be removed later
     SkTextBlobBuilder builder;
+    SkDebugf("context.run->copyTo: context.size = %i\n", context.size);
     context.run->copyTo(builder, SkToU32(context.pos), context.size);
     record.fClippingNeeded = context.clippingNeeded;
     if (context.clippingNeeded) {
