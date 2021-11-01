@@ -197,6 +197,7 @@ SkRect TextLine::paint(SkCanvas* textCanvas, SkScalar x, SkScalar y) {
         this->iterateThroughVisualRuns(false,
                 [textCanvas, x, y, this]
                 (const Run* run, SkScalar runOffsetInLine, TextRange textRange, SkScalar* runWidthInLine) {
+                SkDebugf("run size: %i\n", run->size());
                 if (run->placeholderStyle() != nullptr) {
                     *runWidthInLine = run->advance().fX;
                     return true;
