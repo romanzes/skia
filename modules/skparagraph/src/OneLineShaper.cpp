@@ -187,6 +187,7 @@ void OneLineShaper::finish(TextRange blockText, SkScalar height, SkScalar& advan
         if (block.isFullyResolved()) {
             // Just move the entire run
             block.fRun->fIndex = this->fParagraph->fRuns.size();
+            SkDebugf("OneLineShaper (1)\n");
             this->fParagraph->fRuns.emplace_back(*block.fRun);
             block.fRun.reset();
             continue;
@@ -202,6 +203,7 @@ void OneLineShaper::finish(TextRange blockText, SkScalar height, SkScalar& advan
                 glyphs.width(),
                 SkShaper::RunHandler::Range(text.start - run->fClusterStart, text.width())
         };
+        SkDebugf("OneLineShaper (2)\n");
         this->fParagraph->fRuns.emplace_back(
                     this->fParagraph,
                     info,
@@ -594,6 +596,7 @@ bool OneLineShaper::iterateThroughShapingRegions(const ShapeVisitor& shape) {
             1,
             SkShaper::RunHandler::Range(placeholder.fRange.start, placeholder.fRange.width())
         };
+        SkDebugf("OneLineShaper (3)\n");
         auto& run = fParagraph->fRuns.emplace_back(this->fParagraph,
                                        runInfo,
                                        0,
