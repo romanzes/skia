@@ -502,7 +502,9 @@ struct ShapedRun {
               std::unique_ptr<ShapedGlyph[]> glyphs, size_t numGlyphs, SkVector advance = {0, 0})
         : fUtf8Range(utf8Range), fFont(font), fLevel(level)
         , fGlyphs(std::move(glyphs)), fNumGlyphs(numGlyphs), fAdvance(advance)
-    {}
+    {
+        SkDebugf("ShapedRun: numGlyphs: %i\n", numGlyphs);
+    }
 
     SkShaper::RunHandler::Range fUtf8Range;
     SkFont fFont;
