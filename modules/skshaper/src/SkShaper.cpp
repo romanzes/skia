@@ -223,6 +223,7 @@ void SkTextBlobBuilderRunHandler::commitRunInfo() {
 
 SkShaper::RunHandler::Buffer SkTextBlobBuilderRunHandler::runBuffer(const RunInfo& info) {
     int glyphCount = SkTFitsIn<int>(info.glyphCount) ? info.glyphCount : INT_MAX;
+    SkDebugf("SkShaper::RunHandler::Buffer: glyphCount: %i\n", glyphCount);
     int utf8RangeSize = SkTFitsIn<int>(info.utf8Range.size()) ? info.utf8Range.size() : INT_MAX;
 
     const auto& runBuffer = fBuilder.allocRunTextPos(info.fFont, glyphCount, utf8RangeSize);
