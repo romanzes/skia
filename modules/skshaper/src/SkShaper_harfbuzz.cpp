@@ -938,6 +938,7 @@ void ShaperDrivenWrapper::wrap(char const * const utf8, size_t utf8Bytes,
                 ShapedRun candidate = [&](const TextProps& props){
                     if (props.glyphLen) {
                         candidateUsesModelForGlyphs = true;
+                        SkDebugf("ShapedRun (1): %i\n", props.glyphLen - modelGlyphOffset);
                         return ShapedRun(RunHandler::Range(utf8Start - utf8, breakIteratorCurrent),
                                          font.currentFont(), bidi.currentLevel(),
                                          std::unique_ptr<ShapedGlyph[]>(),
@@ -1396,6 +1397,7 @@ ShapedRun ShaperHarfBuzz::shape(char const * const utf8,
     hb_glyph_info_t* info = hb_buffer_get_glyph_infos(buffer, nullptr);
     hb_glyph_position_t* pos = hb_buffer_get_glyph_positions(buffer, nullptr);
 
+    SkDebugf("ShapedRun (2): %i\n", len);
     run = ShapedRun(RunHandler::Range(utf8Start - utf8, utf8runLength),
                     font.currentFont(), bidi.currentLevel(),
                     std::unique_ptr<ShapedGlyph[]>(new ShapedGlyph[len]), len);
