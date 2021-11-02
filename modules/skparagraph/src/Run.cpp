@@ -32,6 +32,7 @@ Run::Run(ParagraphImpl* owner,
     fIndex = index;
     fUtf8Range = info.utf8Range;
     fOffset = SkVector::Make(offsetX, 0);
+    SkDebugf("Run::Run: info.glyphCount: %i\n", info.glyphCount);
     fGlyphs.push_back_n(info.glyphCount);
     fBounds.push_back_n(info.glyphCount);
     fPositions.push_back_n(info.glyphCount + 1);
