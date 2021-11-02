@@ -169,6 +169,7 @@ void SkShaperPrimitive::shape(const char* utf8, size_t utf8Bytes,
     sk_ignore_unused_variable(leftToRight);
 
     int glyphCount = font.countText(utf8, utf8Bytes, SkTextEncoding::kUTF8);
+    SkDebugf("SkShaper_primitive: glyphCount: %i\n", glyphCount);
     if (glyphCount <= 0) {
         return;
     }
