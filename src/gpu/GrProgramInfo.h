@@ -16,7 +16,9 @@ class GrStencilSettings;
 
 class GrProgramInfo {
 public:
-    GrProgramInfo(const GrSurfaceProxyView& targetView,
+    GrProgramInfo(const GrCaps& caps,
+                  const GrSurfaceProxyView& targetView,
+                  bool usesMSAASurface,
                   const GrPipeline* pipeline,
                   const GrUserStencilSettings* userStencilSettings,
                   const GrGeometryProcessor* geomProc,
@@ -24,50 +26,42 @@ public:
                   uint8_t tessellationPatchVertexCount,
                   GrXferBarrierFlags renderPassXferBarriers,
                   GrLoadOp colorLoadOp)
-            : fNumSamples(targetView.asRenderTargetProxy()->numSamples())
-            , fNumStencilSamples(targetView.asRenderTargetProxy()->numStencilSamples())
+            : fNeedsStencil(targetView.asRenderTargetProxy()->needsStencil())
             , fBackendFormat(targetView.proxy()->backendFormat())
             , fOrigin(targetView.origin())
-            , fTargetSupportsVkResolveLoad(
-                      targetView.asRenderTargetProxy()->numSamples() > 1 &&
-                      targetView.asTextureProxy() &&
-                      targetView.asRenderTargetProxy()->supportsVkInputAttachment())
+            , fTargetHasVkResolveAttachmentWithInput(
+                    targetView.asRenderTargetProxy()->supportsVkInputAttachment() &&
+                    ((targetView.asRenderTargetProxy()->numSamples() > 1 &&
+                     targetView.asTextureProxy()) ||
+                    targetView.asRenderTargetProxy()->numSamples() == 1))
+            , fTargetsNumSamples(targetView.asRenderTargetProxy()->numSamples())
             , fPipeline(pipeline)
             , fUserStencilSettings(userStencilSettings)
             , fGeomProc(geomProc)
             , fPrimitiveType(primitiveType)
             , fTessellationPatchVertexCount(tessellationPatchVertexCount)
             , fRenderPassXferBarriers(renderPassXferBarriers)
-            , fColorLoadOp(colorLoadOp)
-            , fIsMixedSampled(this->isStencilEnabled() && fNumStencilSamples > fNumSamples) {
-        SkASSERT(this->numRasterSamples() > 0);
+            , fColorLoadOp(colorLoadOp) {
+        SkASSERT(fTargetsNumSamples > 0);
+        fNumSamples = fTargetsNumSamples;
+        if (fNumSamples == 1 && usesMSAASurface) {
+            fNumSamples = caps.internalMultisampleCount(this->backendFormat());
+        }
         SkASSERT((GrPrimitiveType::kPatches == fPrimitiveType) ==
                  (fTessellationPatchVertexCount > 0));
-        fRequestedFeatures = fGeomProc->requestedFeatures();
-        for (int i = 0; i < fPipeline->numFragmentProcessors(); ++i) {
-            fRequestedFeatures |= fPipeline->getFragmentProcessor(i).requestedFeatures();
-        }
-        fRequestedFeatures |= fPipeline->getXferProcessor().requestedFeatures();
-
         SkDEBUGCODE(this->validate(false);)
     }
 
-    GrProcessor::CustomFeatures requestedFeatures() const { return fRequestedFeatures; }
-
     int numSamples() const { return fNumSamples; }
-    int numStencilSamples() const { return fNumStencilSamples; }
+    int needsStencil() const { return fNeedsStencil; }
     bool isStencilEnabled() const {
         return fUserStencilSettings != &GrUserStencilSettings::kUnused ||
                fPipeline->hasStencilClip();
     }
     const GrUserStencilSettings* userStencilSettings() const { return fUserStencilSettings; }
-    int numRasterSamples() const {
-        return this->isStencilEnabled() ? fNumStencilSamples : fNumSamples;
-    }
-    bool isMixedSampled() const { return fIsMixedSampled; }
     // The backend format of the destination render target [proxy]
     const GrBackendFormat& backendFormat() const { return fBackendFormat; }
-    GrSurfaceOrigin origin() const { return fOrigin;  }
+    GrSurfaceOrigin origin() const { return fOrigin; }
     const GrPipeline& pipeline() const { return *fPipeline; }
     const GrGeometryProcessor& geomProc() const { return *fGeomProc; }
 
@@ -77,7 +71,11 @@ public:
         return fTessellationPatchVertexCount;
     }
 
-    bool targetSupportsVkResolveLoad() const { return fTargetSupportsVkResolveLoad; }
+    bool targetHasVkResolveAttachmentWithInput() const {
+        return fTargetHasVkResolveAttachmentWithInput;
+    }
+
+    int targetsNumSamples() const { return fTargetsNumSamples; }
 
     GrXferBarrierFlags renderPassBarriers() const { return fRenderPassXferBarriers; }
 
@@ -93,7 +91,7 @@ public:
 
     // Invokes the visitor function on all FP proxies in the pipeline. The caller is responsible
     // to call the visitor on its own primProc proxies.
-    void visitFPProxies(const GrOp::VisitProxyFunc& func) const { fPipeline->visitProxies(func); }
+    void visitFPProxies(const GrVisitProxyFunc& func) const { fPipeline->visitProxies(func); }
 
 #ifdef SK_DEBUG
     void validate(bool flushTime) const;
@@ -102,20 +100,19 @@ public:
 #endif
 
 private:
-    const int                             fNumSamples;
-    const int                             fNumStencilSamples;
-    const GrBackendFormat                 fBackendFormat;
-    const GrSurfaceOrigin                 fOrigin;
-    const bool                            fTargetSupportsVkResolveLoad;
+    int                                   fNumSamples;
+    bool                                  fNeedsStencil;
+    GrBackendFormat                       fBackendFormat;
+    GrSurfaceOrigin                       fOrigin;
+    bool                                  fTargetHasVkResolveAttachmentWithInput;
+    int                                   fTargetsNumSamples;
     const GrPipeline*                     fPipeline;
     const GrUserStencilSettings*          fUserStencilSettings;
     const GrGeometryProcessor*            fGeomProc;
-    GrProcessor::CustomFeatures           fRequestedFeatures;
     GrPrimitiveType                       fPrimitiveType;
     uint8_t                               fTessellationPatchVertexCount;  // GrPrimType::kPatches.
     GrXferBarrierFlags                    fRenderPassXferBarriers;
     GrLoadOp                              fColorLoadOp;
-    const bool                            fIsMixedSampled;
 };
 
 #endif

@@ -1559,11 +1559,10 @@ bool SkScalerContext_GDI::generatePath(SkGlyphID glyph, SkPath* path) {
         SkGDIGeometrySink sink(path);
         sink.process(glyphbuf, total_size);
     } else {
-        //GDI only uses hinted outlines when axis aligned.
-        UINT format = GGO_NATIVE | GGO_GLYPH_INDEX;
-
         SkAutoSTMalloc<BUFFERSIZE, uint8_t> hintedGlyphbuf(BUFFERSIZE);
-        DWORD hinted_total_size = getGDIGlyphPath(glyph, format, &hintedGlyphbuf);
+        //GDI only uses hinted outlines when axis aligned.
+        DWORD hinted_total_size = getGDIGlyphPath(glyph, GGO_NATIVE | GGO_GLYPH_INDEX,
+                                                  &hintedGlyphbuf);
         if (0 == hinted_total_size) {
             return false;
         }
@@ -1722,7 +1721,7 @@ std::unique_ptr<SkAdvancedTypefaceMetrics> LogFontTypeface::onGetAdvancedMetrics
     return info;
 }
 
-//Dummy representation of a Base64 encoded GUID from create_unique_font_name.
+//Placeholder representation of a Base64 encoded GUID from create_unique_font_name.
 #define BASE64_GUID_ID "XXXXXXXXXXXXXXXXXXXXXXXX"
 //Length of GUID representation from create_id, including nullptr terminator.
 #define BASE64_GUID_ID_LEN SK_ARRAY_COUNT(BASE64_GUID_ID)
@@ -2269,14 +2268,6 @@ protected:
                                                     const char* bcp47[], int bcp47Count,
                                                     SkUnichar character) const override {
         return nullptr;
-    }
-
-    virtual SkTypeface* onMatchFaceStyle(const SkTypeface* familyMember,
-                                         const SkFontStyle& fontstyle) const override {
-        // could be in base impl
-        SkString familyName;
-        ((LogFontTypeface*)familyMember)->getFamilyName(&familyName);
-        return this->matchFamilyStyle(familyName.c_str(), fontstyle);
     }
 
     sk_sp<SkTypeface> onMakeFromStreamIndex(std::unique_ptr<SkStreamAsset> stream,

@@ -17,13 +17,15 @@
 #include "src/gpu/GrProgramDesc.h"
 #include "src/gpu/GrProxyProvider.h"
 #include "src/gpu/GrRecordingContextPriv.h"
-#include "src/gpu/GrSurfaceContext.h"
-#include "src/gpu/GrSurfaceDrawContext.h"
 #include "src/gpu/SkGr.h"
+#include "src/gpu/SurfaceContext.h"
 #include "src/gpu/effects/GrSkSLFP.h"
-#include "src/gpu/ops/GrAtlasTextOp.h"
 #include "src/gpu/text/GrTextBlob.h"
 #include "src/gpu/text/GrTextBlobCache.h"
+
+#if SK_GPU_V1
+#include "src/gpu/ops/AtlasTextOp.h"
+#endif
 
 GrRecordingContext::ProgramData::ProgramData(std::unique_ptr<const GrProgramDesc> desc,
                                              const GrProgramInfo* info)
@@ -46,7 +48,9 @@ GrRecordingContext::GrRecordingContext(sk_sp<GrContextThreadSafeProxy> proxy, bo
 }
 
 GrRecordingContext::~GrRecordingContext() {
-    GrAtlasTextOp::ClearCache();
+#if SK_GPU_V1
+    skgpu::v1::AtlasTextOp::ClearCache();
+#endif
 }
 
 int GrRecordingContext::maxSurfaceSampleCountForColorType(SkColorType colorType) const {
@@ -61,7 +65,8 @@ bool GrRecordingContext::init() {
         return false;
     }
 
-    GrPathRendererChain::Options prcOptions;
+#if SK_GPU_V1
+    skgpu::v1::PathRendererChain::Options prcOptions;
     prcOptions.fAllowPathMaskCaching = this->options().fAllowPathMaskCaching;
 #if GR_TEST_UTILS
     prcOptions.fGpuPathRenderers = this->options().fGpuPathRenderers;
@@ -70,15 +75,20 @@ bool GrRecordingContext::init() {
     if (this->options().fDisableDistanceFieldPaths) {
         prcOptions.fGpuPathRenderers &= ~GpuPathRenderers::kSmall;
     }
+#endif
 
-    bool reduceOpsTaskSplitting = false;
-    if (GrContextOptions::Enable::kYes == this->options().fReduceOpsTaskSplitting) {
+    bool reduceOpsTaskSplitting = true;
+    if (this->caps()->avoidReorderingRenderTasks()) {
+        reduceOpsTaskSplitting = false;
+    } else if (GrContextOptions::Enable::kYes == this->options().fReduceOpsTaskSplitting) {
         reduceOpsTaskSplitting = true;
     } else if (GrContextOptions::Enable::kNo == this->options().fReduceOpsTaskSplitting) {
         reduceOpsTaskSplitting = false;
     }
     fDrawingManager.reset(new GrDrawingManager(this,
+#if SK_GPU_V1
                                                prcOptions,
+#endif
                                                reduceOpsTaskSplitting));
     return true;
 }
@@ -168,15 +178,6 @@ bool GrRecordingContext::colorTypeSupportedAsImage(SkColorType colorType) const 
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
-sk_sp<const GrCaps> GrRecordingContextPriv::refCaps() const {
-    return fContext->refCaps();
-}
-
-void GrRecordingContextPriv::addOnFlushCallbackObject(GrOnFlushCallbackObject* onFlushCBObject) {
-    fContext->addOnFlushCallbackObject(onFlushCBObject);
-}
-
-///////////////////////////////////////////////////////////////////////////////////////////////////
 
 #ifdef SK_ENABLE_DUMP_GPU
 #include "src/utils/SkJSONWriter.h"
@@ -199,18 +200,51 @@ void GrRecordingContext::dumpJSON(SkJSONWriter*) const { }
 
 #if GR_GPU_STATS
 
-void GrRecordingContext::Stats::dump(SkString* out) {
+void GrRecordingContext::Stats::dump(SkString* out) const {
     out->appendf("Num Path Masks Generated: %d\n", fNumPathMasksGenerated);
     out->appendf("Num Path Mask Cache Hits: %d\n", fNumPathMaskCacheHits);
 }
 
 void GrRecordingContext::Stats::dumpKeyValuePairs(SkTArray<SkString>* keys,
-                                                  SkTArray<double>* values) {
+                                                  SkTArray<double>* values) const {
     keys->push_back(SkString("path_masks_generated"));
     values->push_back(fNumPathMasksGenerated);
 
     keys->push_back(SkString("path_mask_cache_hits"));
     values->push_back(fNumPathMaskCacheHits);
+}
+
+void GrRecordingContext::DMSAAStats::dumpKeyValuePairs(SkTArray<SkString>* keys,
+                                                       SkTArray<double>* values) const {
+    keys->push_back(SkString("dmsaa_render_passes"));
+    values->push_back(fNumRenderPasses);
+
+    keys->push_back(SkString("dmsaa_multisample_render_passes"));
+    values->push_back(fNumMultisampleRenderPasses);
+
+    for (const auto& [name, count] : fTriggerCounts) {
+        keys->push_back(SkStringPrintf("dmsaa_trigger_%s", name.c_str()));
+        values->push_back(count);
+    }
+}
+
+void GrRecordingContext::DMSAAStats::dump() const {
+    SkDebugf("DMSAA Render Passes: %d\n", fNumRenderPasses);
+    SkDebugf("DMSAA Multisample Render Passes: %d\n", fNumMultisampleRenderPasses);
+    if (!fTriggerCounts.empty()) {
+        SkDebugf("DMSAA Triggers:\n");
+        for (const auto& [name, count] : fTriggerCounts) {
+            SkDebugf("    %s: %d\n", name.c_str(), count);
+        }
+    }
+}
+
+void GrRecordingContext::DMSAAStats::merge(const DMSAAStats& stats) {
+    fNumRenderPasses += stats.fNumRenderPasses;
+    fNumMultisampleRenderPasses += stats.fNumMultisampleRenderPasses;
+    for (const auto& [name, count] : stats.fTriggerCounts) {
+        fTriggerCounts[name] += count;
+    }
 }
 
 #endif // GR_GPU_STATS

@@ -21,12 +21,10 @@
 bool gSkUseThreadLocalStrikeCaches_IAcknowledgeThisIsIncrediblyExperimental = false;
 
 SkStrikeCache* SkStrikeCache::GlobalStrikeCache() {
-#if !defined(SK_BUILD_FOR_IOS)
     if (gSkUseThreadLocalStrikeCaches_IAcknowledgeThisIsIncrediblyExperimental) {
         static thread_local auto* cache = new SkStrikeCache;
         return cache;
     }
-#endif
     static auto* cache = new SkStrikeCache;
     return cache;
 }
@@ -34,7 +32,7 @@ SkStrikeCache* SkStrikeCache::GlobalStrikeCache() {
 auto SkStrikeCache::findOrCreateStrike(const SkDescriptor& desc,
                                        const SkScalerContextEffects& effects,
                                        const SkTypeface& typeface) -> sk_sp<Strike> {
-    SkAutoSpinlock ac(fLock);
+    SkAutoMutexExclusive ac(fLock);
     sk_sp<Strike> strike = this->internalFindStrikeOrNull(desc);
     if (strike == nullptr) {
         auto scaler = typeface.createScalerContext(effects, &desc);
@@ -58,7 +56,7 @@ void SkStrikeCache::Dump() {
     SkDebugf("GlyphCache [     used    budget ]\n");
     SkDebugf("    bytes  [ %8zu  %8zu ]\n",
              SkGraphics::GetFontCacheUsed(), SkGraphics::GetFontCacheLimit());
-    SkDebugf("    count  [ %8zu  %8zu ]\n",
+    SkDebugf("    count  [ %8d  %8d ]\n",
              SkGraphics::GetFontCacheCountUsed(), SkGraphics::GetFontCacheCountLimit());
 
     int counter = 0;
@@ -120,7 +118,7 @@ void SkStrikeCache::DumpMemoryStatistics(SkTraceMemoryDump* dump) {
 }
 
 sk_sp<SkStrike> SkStrikeCache::findStrike(const SkDescriptor& desc) {
-    SkAutoSpinlock ac(fLock);
+    SkAutoMutexExclusive ac(fLock);
     sk_sp<SkStrike> result = this->internalFindStrikeOrNull(desc);
     this->internalPurge();
     return result;
@@ -157,7 +155,7 @@ sk_sp<SkStrike> SkStrikeCache::createStrike(
         std::unique_ptr<SkScalerContext> scaler,
         SkFontMetrics* maybeMetrics,
         std::unique_ptr<SkStrikePinner> pinner) {
-    SkAutoSpinlock ac(fLock);
+    SkAutoMutexExclusive ac(fLock);
     return this->internalCreateStrike(desc, std::move(scaler), maybeMetrics, std::move(pinner));
 }
 
@@ -173,27 +171,27 @@ auto SkStrikeCache::internalCreateStrike(
 }
 
 void SkStrikeCache::purgeAll() {
-    SkAutoSpinlock ac(fLock);
+    SkAutoMutexExclusive ac(fLock);
     this->internalPurge(fTotalMemoryUsed);
 }
 
 size_t SkStrikeCache::getTotalMemoryUsed() const {
-    SkAutoSpinlock ac(fLock);
+    SkAutoMutexExclusive ac(fLock);
     return fTotalMemoryUsed;
 }
 
 int SkStrikeCache::getCacheCountUsed() const {
-    SkAutoSpinlock ac(fLock);
+    SkAutoMutexExclusive ac(fLock);
     return fCacheCount;
 }
 
 int SkStrikeCache::getCacheCountLimit() const {
-    SkAutoSpinlock ac(fLock);
+    SkAutoMutexExclusive ac(fLock);
     return fCacheCountLimit;
 }
 
 size_t SkStrikeCache::setCacheSizeLimit(size_t newLimit) {
-    SkAutoSpinlock ac(fLock);
+    SkAutoMutexExclusive ac(fLock);
 
     size_t prevLimit = fCacheSizeLimit;
     fCacheSizeLimit = newLimit;
@@ -202,7 +200,7 @@ size_t SkStrikeCache::setCacheSizeLimit(size_t newLimit) {
 }
 
 size_t  SkStrikeCache::getCacheSizeLimit() const {
-    SkAutoSpinlock ac(fLock);
+    SkAutoMutexExclusive ac(fLock);
     return fCacheSizeLimit;
 }
 
@@ -211,7 +209,7 @@ int SkStrikeCache::setCacheCountLimit(int newCount) {
         newCount = 0;
     }
 
-    SkAutoSpinlock ac(fLock);
+    SkAutoMutexExclusive ac(fLock);
 
     int prevCount = fCacheCountLimit;
     fCacheCountLimit = newCount;
@@ -220,7 +218,7 @@ int SkStrikeCache::setCacheCountLimit(int newCount) {
 }
 
 void SkStrikeCache::forEachStrike(std::function<void(const Strike&)> visitor) const {
-    SkAutoSpinlock ac(fLock);
+    SkAutoMutexExclusive ac(fLock);
 
     this->validate();
 
@@ -342,7 +340,7 @@ void SkStrikeCache::validate() const {
         SK_ABORT("fCacheCount != computedCount");
     }
     if (fTotalMemoryUsed != computedBytes) {
-        SkDebugf("fTotalMemoryUsed: %d, computedBytes: %d", fTotalMemoryUsed, computedBytes);
+        SkDebugf("fTotalMemoryUsed: %zu, computedBytes: %zu", fTotalMemoryUsed, computedBytes);
         SK_ABORT("fTotalMemoryUsed == computedBytes");
     }
 #endif
@@ -350,7 +348,7 @@ void SkStrikeCache::validate() const {
 
 void SkStrikeCache::Strike::updateDelta(size_t increase) {
     if (increase != 0) {
-        SkAutoSpinlock lock{fStrikeCache->fLock};
+        SkAutoMutexExclusive lock{fStrikeCache->fLock};
         fMemoryUsed += increase;
         if (!fRemoved) {
             fStrikeCache->fTotalMemoryUsed += increase;

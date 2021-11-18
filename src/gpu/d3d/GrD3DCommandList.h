@@ -49,11 +49,18 @@ public:
     // GraphicsCommandList commands
     ////////////////////////////////////////////////////////////////////////////
 
-    // For the moment we only support Transition barriers
     // All barriers should reference subresources of managedResource
     void resourceBarrier(sk_sp<GrManagedResource> managedResource,
                          int numBarriers,
                          const D3D12_RESOURCE_TRANSITION_BARRIER* barriers);
+
+    void uavBarrier(sk_sp<GrManagedResource> managedResource,
+                    ID3D12Resource* uavResource);
+
+    void aliasingBarrier(sk_sp<GrManagedResource> beforeManagedResource,
+                         ID3D12Resource* beforeResource,
+                         sk_sp<GrManagedResource> afterManagedResource,
+                         ID3D12Resource* afterResource);
 
     // Helper method that calls copyTextureRegion multiple times, once for each subresource
     // The srcBuffer comes from a staging buffer so we don't need to take any refs to it. Instead,
@@ -79,6 +86,10 @@ public:
                                     const D3D12_TEXTURE_COPY_LOCATION* srcLocation,
                                     const D3D12_BOX* srcBox);
 
+     void copyTextureToTexture(const GrD3DTexture* dst,
+                               const GrD3DTexture* src,
+                               UINT subresourceIndex = -1);
+
     // We don't take a ref to the src buffer because we assume the src buffer is coming from a
     // staging buffer which will get ref'd during submit.
     void copyBufferToBuffer(sk_sp<GrD3DBuffer> dstBuffer, uint64_t dstOffset,
@@ -87,6 +98,12 @@ public:
 
     void addGrBuffer(sk_sp<const GrBuffer> buffer) {
         fTrackedGpuBuffers.push_back(std::move(buffer));
+    }
+
+    // Add ref-counted resource that will be tracked and released when this command buffer finishes
+    // execution. When it is released, it will signal that the resource can be recycled for reuse.
+    void addRecycledResource(sk_sp<GrRecycledResource> resource) {
+        fTrackedRecycledResources.push_back(std::move(resource));
     }
 
     void releaseResources();
@@ -106,15 +123,7 @@ protected:
     // execution
     void addResource(sk_sp<GrManagedResource> resource) {
         SkASSERT(resource);
-        resource->notifyQueuedForWorkOnGpu();
         fTrackedResources.push_back(std::move(resource));
-    }
-
-    // Add ref-counted resource that will be tracked and released when this command buffer finishes
-    // execution. When it is released, it will signal that the resource can be recycled for reuse.
-    void addRecycledResource(sk_sp<GrRecycledResource> resource) {
-        resource->notifyQueuedForWorkOnGpu();
-        fTrackedRecycledResources.push_back(std::move(resource));
     }
 
     void addingWork();
@@ -145,7 +154,7 @@ private:
 
 class GrD3DDirectCommandList : public GrD3DCommandList {
 public:
-    static std::unique_ptr<GrD3DDirectCommandList> Make(ID3D12Device* device);
+    static std::unique_ptr<GrD3DDirectCommandList> Make(GrD3DGpu* gpu);
 
     ~GrD3DDirectCommandList() override = default;
 
@@ -156,8 +165,6 @@ public:
     void setPrimitiveTopology(D3D12_PRIMITIVE_TOPOLOGY primitiveTopology);
     void setScissorRects(unsigned int numRects, const D3D12_RECT* rects);
     void setViewports(unsigned int numViewports, const D3D12_VIEWPORT* viewports);
-    void setCenteredSamplePositions(unsigned int numSamples);
-    void setDefaultSamplePositions();
     void setGraphicsRootSignature(const sk_sp<GrD3DRootSignature>& rootSignature);
     void setComputeRootSignature(const sk_sp<GrD3DRootSignature>& rootSignature);
     void setVertexBuffers(unsigned int startSlot,
@@ -194,16 +201,15 @@ public:
                                           D3D12_GPU_VIRTUAL_ADDRESS bufferLocation);
     void setComputeRootDescriptorTable(unsigned int rootParameterIndex,
                                        D3D12_GPU_DESCRIPTOR_HANDLE bufferLocation);
-    void setDescriptorHeaps(sk_sp<GrRecycledResource> srvCrvHeapResource,
-                            ID3D12DescriptorHeap* srvDescriptorHeap,
-                            sk_sp<GrRecycledResource> samplerHeapResource,
+    void setDescriptorHeaps(ID3D12DescriptorHeap* srvDescriptorHeap,
                             ID3D12DescriptorHeap* samplerDescriptorHeap);
 
     void addSampledTextureRef(GrD3DTexture*);
 
 private:
     GrD3DDirectCommandList(gr_cp<ID3D12CommandAllocator> allocator,
-                           gr_cp<ID3D12GraphicsCommandList> commandList);
+                           gr_cp<ID3D12GraphicsCommandList> commandList,
+                           bool resolveSubregionSupported);
 
     void onReset() override;
 
@@ -215,7 +221,6 @@ private:
     const GrBuffer* fCurrentInstanceBuffer = nullptr;
     size_t fCurrentInstanceStride = 0;
     const GrBuffer* fCurrentIndexBuffer = nullptr;
-    bool fUsingCenteredSamples = false;
 
     D3D12_GPU_VIRTUAL_ADDRESS fCurrentGraphicsConstantBufferAddress = 0;
     D3D12_GPU_VIRTUAL_ADDRESS fCurrentComputeConstantBufferAddress = 0;
@@ -223,11 +228,13 @@ private:
     D3D12_GPU_DESCRIPTOR_HANDLE fCurrentComputeRootDescTable[GrD3DRootSignature::kParamIndexCount];
     const ID3D12DescriptorHeap* fCurrentSRVCRVDescriptorHeap = nullptr;
     const ID3D12DescriptorHeap* fCurrentSamplerDescriptorHeap = nullptr;
+
+    bool fResolveSubregionSupported;
 };
 
 class GrD3DCopyCommandList : public GrD3DCommandList {
 public:
-    static std::unique_ptr<GrD3DCopyCommandList> Make(ID3D12Device* device);
+    static std::unique_ptr<GrD3DCopyCommandList> Make(GrD3DGpu* gpu);
 
 private:
     GrD3DCopyCommandList(gr_cp<ID3D12CommandAllocator> allocator,

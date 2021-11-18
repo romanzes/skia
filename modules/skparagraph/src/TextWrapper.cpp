@@ -58,7 +58,7 @@ void TextWrapper::lookAhead(SkScalar maxWidth, Cluster* endOfClusters) {
                 fClusters.extend(cluster);
                 fMinIntrinsicWidth = std::max(fMinIntrinsicWidth, getClustersTrimmedWidth());
                 fWords.extend(fClusters);
-                break;
+                continue;
             } else if (cluster->run().isPlaceholder()) {
                 if (!fClusters.empty()) {
                     // Placeholder ends the previous word
@@ -122,27 +122,13 @@ void TextWrapper::lookAhead(SkScalar maxWidth, Cluster* endOfClusters) {
                 }
                 // If the word is too long we can break it right now and hope it's enough
                 fMinIntrinsicWidth = std::max(fMinIntrinsicWidth, nextWordLength);
-
-                // NON-SKIA-UPSTREAMED CHANGE
-                // By default, the words that are wider than the available width are wrapped in such
-                // a way that, when possible, a part of the long word remains on the previous line
-                // with a shorter word. Commenting out the section below makes the long words go to
-                // the next line, which matches Chrome behavior.
-                //
-                // Example ("Hey hippopotamus"):
-                //
-                // |Hey hippo|    |Hey      |
-                // |potamus  | -> |hippopota|
-                // |         |    |mus      |
-                //
-                /* if (fClusters.endPos() - fClusters.startPos() > 1 ||
+                if (fClusters.endPos() - fClusters.startPos() > 1 ||
                     fWords.empty()) {
                     fTooLongWord = true;
                 } else {
                     // Even if the word is too long there is a very little space on this line.
                     // let's deal with it on the next line.
-                } */
-                // END OF NON-SKIA-UPSTREAMED CHANGE
+                }
             }
 
             if (cluster->width() > maxWidth) {
@@ -167,12 +153,7 @@ void TextWrapper::lookAhead(SkScalar maxWidth, Cluster* endOfClusters) {
             fClusters.extend(cluster);
 
             // Keep adding clusters/words
-            // NON-SKIA-UPSTREAMED CHANGE
-            /*
             if (fClusters.endOfWord()) {
-            */
-            if (fClusters.endOfWord() || cluster + 1 == endOfClusters) {
-            // END OF NON-SKIA-UPSTREAMED CHANGE
                 fMinIntrinsicWidth = std::max(fMinIntrinsicWidth, getClustersTrimmedWidth());
                 fWords.extend(fClusters);
             }
@@ -250,7 +231,7 @@ std::tuple<Cluster*, size_t, SkScalar> TextWrapper::trimStartSpaces(Cluster* end
         // End of line is always end of cluster, but need to skip \n
         auto width = fEndLine.width();
         auto cluster = fEndLine.endCluster() + 1;
-        while (cluster < fEndLine.breakCluster() && cluster->isWhitespaceBreak()) {
+        while (cluster < fEndLine.breakCluster() && cluster->isWhitespaceBreak())  {
             width += cluster->width();
             ++cluster;
         }
@@ -264,6 +245,13 @@ std::tuple<Cluster*, size_t, SkScalar> TextWrapper::trimStartSpaces(Cluster* end
     while (cluster < endOfClusters && cluster->isWhitespaceBreak()) {
         width += cluster->width();
         ++cluster;
+    }
+
+    if (fEndLine.breakCluster()->isWhitespaceBreak() && fEndLine.breakCluster() < endOfClusters) {
+        // In case of a soft line break by the whitespace
+        // fBreak should point to the beginning of the next line
+        // (it only matters when there are trailing spaces)
+        fEndLine.shiftBreak();
     }
 
     return std::make_tuple(cluster, 0, width);
@@ -354,10 +342,12 @@ void TextWrapper::breakTextIntoLines(ParagraphImpl* parent,
         }
 
         // TODO: keep start/end/break info for text and runs but in a better way that below
-        TextRange text(fEndLine.startCluster()->textRange().start, fEndLine.endCluster()->textRange().end);
-        TextRange textWithSpaces(fEndLine.startCluster()->textRange().start, startLine->textRange().start);
+        TextRange textExcludingSpaces(fEndLine.startCluster()->textRange().start, fEndLine.endCluster()->textRange().end);
+        TextRange text(fEndLine.startCluster()->textRange().start, fEndLine.breakCluster()->textRange().start);
+        TextRange textIncludingNewlines(fEndLine.startCluster()->textRange().start, startLine->textRange().start);
         if (startLine == end) {
-            textWithSpaces.end = parent->text().size();
+            textIncludingNewlines.end = parent->text().size();
+            text.end = parent->text().size();
         }
         ClusterRange clusters(fEndLine.startCluster() - start, fEndLine.endCluster() - start + 1);
         ClusterRange clustersWithGhosts(fEndLine.startCluster() - start, startLine - start);
@@ -374,11 +364,16 @@ void TextWrapper::breakTextIntoLines(ParagraphImpl* parent,
 
         if (fEndLine.empty()) {
             // Correct text and clusters (make it empty for an empty line)
-            text.end = text.start;
+            textExcludingSpaces.end = textExcludingSpaces.start;
             clusters.end = clusters.start;
         }
 
-        addLine(text, textWithSpaces, clusters, clustersWithGhosts, widthWithSpaces,
+        // In case of a force wrapping we don't have a break cluster and have to use the end cluster
+        text.end = std::max(text.end, textExcludingSpaces.end);
+
+        addLine(textExcludingSpaces,
+                text,
+                textIncludingNewlines, clusters, clustersWithGhosts, widthWithSpaces,
                 fEndLine.startPos(),
                 fEndLine.endPos(),
                 SkVector::Make(0, fHeight),
@@ -475,6 +470,7 @@ void TextWrapper::breakTextIntoLines(ParagraphImpl* parent,
 
         ClusterRange clusters(fEndLine.breakCluster() - start, fEndLine.endCluster() - start);
         addLine(fEndLine.breakCluster()->textRange(),
+                fEndLine.breakCluster()->textRange(),
                 fEndLine.endCluster()->textRange(),
                 clusters,
                 clusters,

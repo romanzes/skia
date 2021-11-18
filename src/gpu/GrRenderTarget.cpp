@@ -13,55 +13,53 @@
 #include "src/gpu/GrBackendUtils.h"
 #include "src/gpu/GrGpu.h"
 #include "src/gpu/GrStencilSettings.h"
-#include "src/gpu/GrSurfaceDrawContext.h"
 
 GrRenderTarget::GrRenderTarget(GrGpu* gpu,
                                const SkISize& dimensions,
                                int sampleCount,
                                GrProtected isProtected,
-                               GrAttachment* stencil)
+                               sk_sp<GrAttachment> stencil)
         : INHERITED(gpu, dimensions, isProtected)
-        , fStencilAttachment(stencil)
         , fSampleCnt(sampleCount) {
+    if (this->numSamples() > 1) {
+        fMSAAStencilAttachment = std::move(stencil);
+    } else {
+        fStencilAttachment = std::move(stencil);
+    }
 }
 
 GrRenderTarget::~GrRenderTarget() = default;
 
 void GrRenderTarget::onRelease() {
     fStencilAttachment = nullptr;
+    fMSAAStencilAttachment = nullptr;
 
     INHERITED::onRelease();
 }
 
 void GrRenderTarget::onAbandon() {
     fStencilAttachment = nullptr;
+    fMSAAStencilAttachment = nullptr;
 
     INHERITED::onAbandon();
 }
 
-void GrRenderTarget::attachStencilAttachment(sk_sp<GrAttachment> stencil) {
-#ifdef SK_DEBUG
-    if (fSampleCnt > 1) {
-        // Render targets with >1 color sample should never use mixed samples. (This would lead to
-        // different sample patterns, depending on stencil state.)
-        SkASSERT(!stencil || stencil->numSamples() == fSampleCnt);
-    }
-#endif
-
-    if (!stencil && !fStencilAttachment) {
+void GrRenderTarget::attachStencilAttachment(sk_sp<GrAttachment> stencil, bool useMSAASurface) {
+    auto stencilAttachment = (useMSAASurface) ? &GrRenderTarget::fMSAAStencilAttachment
+                                              : &GrRenderTarget::fStencilAttachment;
+    if (!stencil && !(this->*stencilAttachment)) {
         // No need to do any work since we currently don't have a stencil attachment and
         // we're not actually adding one.
         return;
     }
 
-    fStencilAttachment = std::move(stencil);
-    if (!this->completeStencilAttachment()) {
-        fStencilAttachment = nullptr;
+    if (!this->completeStencilAttachment(stencil.get(), useMSAASurface)) {
+        return;
     }
+
+    this->*stencilAttachment = std::move(stencil);
 }
 
-int GrRenderTarget::numStencilBits() const {
-    SkASSERT(this->getStencilAttachment());
-    return GrBackendFormatStencilBits(this->getStencilAttachment()->backendFormat());
+int GrRenderTarget::numStencilBits(bool useMSAASurface) const {
+    return GrBackendFormatStencilBits(this->getStencilAttachment(useMSAASurface)->backendFormat());
 }
-

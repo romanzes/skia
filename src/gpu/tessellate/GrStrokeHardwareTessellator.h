@@ -16,21 +16,18 @@
 // MSAA if antialiasing is desired.
 class GrStrokeHardwareTessellator : public GrStrokeTessellator {
 public:
-    GrStrokeHardwareTessellator(ShaderFlags shaderFlags, PathStrokeList* pathStrokeList,
-                                const GrShaderCaps&)
-            : GrStrokeTessellator(shaderFlags, std::move(pathStrokeList)) {
-    }
+    GrStrokeHardwareTessellator(const GrShaderCaps& shaderCaps, ShaderFlags shaderFlags,
+                                const SkMatrix& viewMatrix, PathStrokeList* pathStrokeList,
+                                std::array<float,2> matrixMinMaxScales,
+                                const SkRect& strokeCullBounds);
 
-    void prepare(GrMeshDrawOp::Target*, const SkMatrix& viewMatrix,
-                 int totalCombinedVerbCnt) override;
+    void prepare(GrMeshDrawTarget*, int totalCombinedVerbCnt) override;
+#if SK_GPU_V1
     void draw(GrOpFlushState*) const override;
+#endif
 
 private:
     GrVertexChunkArray fPatchChunks;
-
-public:
-    // This class is used to benchmark prepareBuffers().
-    class TestingOnly_Benchmark;
 };
 
 #endif

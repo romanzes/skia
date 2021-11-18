@@ -8,6 +8,7 @@
 #include "src/gpu/vk/GrVkPipelineStateBuilder.h"
 
 #include "include/gpu/GrDirectContext.h"
+#include "src/core/SkReadBuffer.h"
 #include "src/core/SkTraceEvent.h"
 #include "src/gpu/GrAutoLocaleSetter.h"
 #include "src/gpu/GrDirectContextPriv.h"
@@ -23,7 +24,6 @@
 
 GrVkPipelineState* GrVkPipelineStateBuilder::CreatePipelineState(
         GrVkGpu* gpu,
-        GrRenderTarget* renderTarget,
         const GrProgramDesc& desc,
         const GrProgramInfo& programInfo,
         VkRenderPass compatibleRenderPass,
@@ -38,7 +38,7 @@ GrVkPipelineState* GrVkPipelineStateBuilder::CreatePipelineState(
 
     // create a builder.  This will be handed off to effects so they can use it to add
     // uniforms, varyings, textures, etc
-    GrVkPipelineStateBuilder builder(gpu, renderTarget, desc, programInfo);
+    GrVkPipelineStateBuilder builder(gpu, desc, programInfo);
 
     if (!builder.emitAndInstallProcs()) {
         return nullptr;
@@ -48,10 +48,9 @@ GrVkPipelineState* GrVkPipelineStateBuilder::CreatePipelineState(
 }
 
 GrVkPipelineStateBuilder::GrVkPipelineStateBuilder(GrVkGpu* gpu,
-                                                   GrRenderTarget* renderTarget,
                                                    const GrProgramDesc& desc,
                                                    const GrProgramInfo& programInfo)
-        : INHERITED(renderTarget, desc, programInfo)
+        : INHERITED(desc, programInfo)
         , fGpu(gpu)
         , fVaryingHandler(this)
         , fUniformHandler(this) {}
@@ -83,8 +82,8 @@ bool GrVkPipelineStateBuilder::createVkShaderModule(VkShaderStageFlagBits stage,
                                  stageInfo, settings, outSPIRV, outInputs)) {
         return false;
     }
-    if (outInputs->fRTHeight) {
-        this->addRTHeightUniform(SKSL_RTHEIGHT_NAME);
+    if (outInputs->fUseFlipRTUniform) {
+        this->addRTFlipUniform(SKSL_RTFLIP_NAME);
     }
     return true;
 }
@@ -98,8 +97,8 @@ bool GrVkPipelineStateBuilder::installVkShaderModule(VkShaderStageFlagBits stage
     if (!GrInstallVkShaderModule(fGpu, spirv, stage, shaderModule, stageInfo)) {
         return false;
     }
-    if (inputs.fRTHeight) {
-        this->addRTHeightUniform(SKSL_RTHEIGHT_NAME);
+    if (inputs.fUseFlipRTUniform) {
+        this->addRTFlipUniform(SKSL_RTFLIP_NAME);
     }
     return true;
 }
@@ -131,15 +130,6 @@ int GrVkPipelineStateBuilder::loadShadersFromCache(SkReadBuffer* cached,
                                                      shaders[kFragment_GrShaderType],
                                                      inputs[kFragment_GrShaderType]);
 
-    if (!shaders[kGeometry_GrShaderType].empty()) {
-        success = success && this->installVkShaderModule(VK_SHADER_STAGE_GEOMETRY_BIT,
-                                                         fGS,
-                                                         &outShaderModules[kGeometry_GrShaderType],
-                                                         &outStageInfo[2],
-                                                         shaders[kGeometry_GrShaderType],
-                                                         inputs[kGeometry_GrShaderType]);
-    }
-
     if (!success) {
         for (int i = 0; i < kGrShaderTypeCount; ++i) {
             if (outShaderModules[i]) {
@@ -149,7 +139,7 @@ int GrVkPipelineStateBuilder::loadShadersFromCache(SkReadBuffer* cached,
         }
         return 0;
     }
-    return shaders[kGeometry_GrShaderType].empty() ? 2 : 3;
+    return 2;
 }
 
 void GrVkPipelineStateBuilder::storeShadersInCache(const SkSL::String shaders[],
@@ -178,7 +168,6 @@ GrVkPipelineState* GrVkPipelineStateBuilder::finalize(const GrProgramDesc& desc,
 
     VkDescriptorSetLayout dsLayout[GrVkUniformHandler::kDescSetCount];
     VkShaderModule shaderModules[kGrShaderTypeCount] = { VK_NULL_HANDLE,
-                                                         VK_NULL_HANDLE,
                                                          VK_NULL_HANDLE };
 
     GrVkResourceProvider& resourceProvider = fGpu->resourceProvider();
@@ -193,24 +182,16 @@ GrVkPipelineState* GrVkPipelineStateBuilder::finalize(const GrProgramDesc& desc,
 
     dsLayout[GrVkUniformHandler::kInputDescSet] = resourceProvider.getInputDSLayout();
 
-    // We need to enable the following extensions so that the compiler can correctly make spir-v
-    // from our glsl shaders.
-    fVS.extensions().appendf("#extension GL_ARB_separate_shader_objects : enable\n");
-    fFS.extensions().appendf("#extension GL_ARB_separate_shader_objects : enable\n");
-    fVS.extensions().appendf("#extension GL_ARB_shading_language_420pack : enable\n");
-    fFS.extensions().appendf("#extension GL_ARB_shading_language_420pack : enable\n");
-
     this->finalizeShaders();
 
     bool usePushConstants = fUniformHandler.usePushConstants();
     VkPipelineShaderStageCreateInfo shaderStageInfo[3];
     SkSL::Program::Settings settings;
-    settings.fRTHeightBinding = this->gpu()->vkCaps().getFragmentUniformBinding();
-    settings.fRTHeightSet = this->gpu()->vkCaps().getFragmentUniformSet();
-    settings.fFlipY = fUniformHandler.getFlipY();
+    settings.fRTFlipBinding = this->gpu()->vkCaps().getFragmentUniformBinding();
+    settings.fRTFlipSet = this->gpu()->vkCaps().getFragmentUniformSet();
     settings.fSharpenTextures =
                         this->gpu()->getContext()->priv().options().fSharpenMipmappedTextures;
-    settings.fRTHeightOffset = fUniformHandler.getRTHeightOffset();
+    settings.fRTFlipOffset = fUniformHandler.getRTFlipOffset();
     settings.fUsePushConstants = usePushConstants;
     if (fFS.fForceHighPrecision) {
         settings.fForceHighPrecision = true;
@@ -248,7 +229,6 @@ GrVkPipelineState* GrVkPipelineStateBuilder::finalize(const GrProgramDesc& desc,
 
         SkSL::String* sksl[kGrShaderTypeCount] = {
             &fVS.fCompilerString,
-            &fGS.fCompilerString,
             &fFS.fCompilerString,
         };
         SkSL::String cached_sksl[kGrShaderTypeCount];
@@ -276,17 +256,6 @@ GrVkPipelineState* GrVkPipelineStateBuilder::finalize(const GrProgramDesc& desc,
                                                         settings,
                                                         &shaders[kFragment_GrShaderType],
                                                         &inputs[kFragment_GrShaderType]);
-
-        if (this->geometryProcessor().willUseGeoShader()) {
-            success = success && this->createVkShaderModule(VK_SHADER_STAGE_GEOMETRY_BIT,
-                                                            *sksl[kGeometry_GrShaderType],
-                                                            &shaderModules[kGeometry_GrShaderType],
-                                                            &shaderStageInfo[2],
-                                                            settings,
-                                                            &shaders[kGeometry_GrShaderType],
-                                                            &inputs[kGeometry_GrShaderType]);
-            ++numShaderStages;
-        }
 
         if (!success) {
             for (int i = 0; i < kGrShaderTypeCount; ++i) {
@@ -350,8 +319,7 @@ GrVkPipelineState* GrVkPipelineStateBuilder::finalize(const GrProgramDesc& desc,
     uint32_t subpass = 0;
     if (overrideSubpassForResolveLoad ||
         (fProgramInfo.colorLoadOp() == GrLoadOp::kLoad &&
-         fProgramInfo.targetSupportsVkResolveLoad() &&
-         fGpu->vkCaps().preferDiscardableMSAAAttachment())) {
+         fGpu->vkCaps().programInfoWillUseDiscardableMSAA(fProgramInfo))) {
         subpass = 1;
     }
     sk_sp<const GrVkPipeline> pipeline = resourceProvider.makePipeline(
@@ -381,7 +349,7 @@ GrVkPipelineState* GrVkPipelineStateBuilder::finalize(const GrProgramDesc& desc,
                                  fUniformHandler.currentOffset(),
                                  fUniformHandler.usePushConstants(),
                                  fUniformHandler.fSamplers,
-                                 std::move(fGeometryProcessor),
-                                 std::move(fXferProcessor),
+                                 std::move(fGPImpl),
+                                 std::move(fXPImpl),
                                  std::move(fFPImpls));
 }

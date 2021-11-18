@@ -32,12 +32,14 @@ public:
     virtual const SkCommandLineConfigSvg* asConfigSvg() const { return nullptr; }
     const SkString&                       getTag() const { return fTag; }
     const SkString&                       getBackend() const { return fBackend; }
+    sk_sp<SkColorSpace>                   refColorSpace() const { return fColorSpace; }
     const SkTArray<SkString>&             getViaParts() const { return fViaParts; }
 
 private:
-    SkString           fTag;
-    SkString           fBackend;
-    SkTArray<SkString> fViaParts;
+    SkString            fTag;
+    SkString            fBackend;
+    sk_sp<SkColorSpace> fColorSpace;
+    SkTArray<SkString>  fViaParts;
 };
 
 // SkCommandLineConfigGpu is a SkCommandLineConfig that extracts information out of the backend
@@ -57,16 +59,16 @@ public:
                            bool                      fakeGLESVer2,
                            uint32_t                  surfaceFlags,
                            int                       samples,
-                           bool                      useDMSAA,
                            SkColorType               colorType,
                            SkAlphaType               alphaType,
-                           sk_sp<SkColorSpace>       colorSpace,
                            bool                      useStencilBuffers,
                            bool                      testThreading,
                            int                       testPersistentCache,
                            bool                      testPrecompile,
                            bool                      useDDLSink,
                            bool                      OOPRish,
+                           bool                      reducedShaders,
+                           bool                      useGraphite,
                            SurfType);
 
     const SkCommandLineConfigGpu* asConfigGpu() const override { return this; }
@@ -74,15 +76,15 @@ public:
     ContextOverrides              getContextOverrides() const { return fContextOverrides; }
     uint32_t      getSurfaceFlags() const { return fSurfaceFlags; }
     int           getSamples() const { return fSamples; }
-    bool          getUseDMSAA() const { return fUseDMSAA; }
     SkColorType   getColorType() const { return fColorType; }
     SkAlphaType   getAlphaType() const { return fAlphaType; }
-    SkColorSpace* getColorSpace() const { return fColorSpace.get(); }
     bool          getTestThreading() const { return fTestThreading; }
     int           getTestPersistentCache() const { return fTestPersistentCache; }
     bool          getTestPrecompile() const { return fTestPrecompile; }
     bool          getUseDDLSink() const { return fUseDDLSink; }
     bool          getOOPRish() const { return fOOPRish; }
+    bool          getReducedShaders() const { return fReducedShaders; }
+    bool          getUseGraphite() const { return fUseGraphite; }
     SurfType      getSurfType() const { return fSurfType; }
 
 private:
@@ -90,15 +92,15 @@ private:
     ContextOverrides    fContextOverrides;
     uint32_t            fSurfaceFlags;
     int                 fSamples;
-    bool                fUseDMSAA;
     SkColorType         fColorType;
     SkAlphaType         fAlphaType;
-    sk_sp<SkColorSpace> fColorSpace;
     bool                fTestThreading;
     int                 fTestPersistentCache;
     bool                fTestPrecompile;
     bool                fUseDDLSink;
     bool                fOOPRish;
+    bool                fReducedShaders;
+    bool                fUseGraphite;
     SurfType            fSurfType;
 };
 

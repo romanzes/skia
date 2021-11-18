@@ -25,7 +25,6 @@ struct Config {
     SkAlphaType alpha;
     sk_sp<SkColorSpace> colorSpace;
     int samples;
-    bool useDMSAA;
     sk_gpu_test::GrContextFactory::ContextType ctxType;
     sk_gpu_test::GrContextFactory::ContextOverrides ctxOverrides;
     uint32_t surfaceFlags;
@@ -67,9 +66,6 @@ struct Target {
     /** Stores any pixels drawn to the screen in the bitmap.
         Returns false on error. */
     virtual bool capturePixels(SkBitmap* bmp);
-
-    /** Writes any config-specific data to the log. */
-    virtual void fillOptions(NanoJSONResultsWriter& log) { }
 
     /** Writes gathered stats using SkDebugf. */
     virtual void dumpStats() {}

@@ -12,13 +12,16 @@
 #include "src/core/SkColorSpaceXformSteps.h"
 #include "src/core/SkCompressedDataUtils.h"
 #include "src/core/SkConvertPixels.h"
+#include "src/core/SkMathPriv.h"
 #include "src/core/SkMipmap.h"
 #include "src/core/SkTLazy.h"
 #include "src/core/SkTraceEvent.h"
 #include "src/core/SkUtils.h"
+#include "src/gpu/GrCaps.h"
 #include "src/gpu/GrColor.h"
 #include "src/gpu/GrImageInfo.h"
 #include "src/gpu/GrPixmap.h"
+#include "src/gpu/GrSwizzle.h"
 
 struct ETC1Block {
     uint32_t fHigh;
@@ -686,7 +689,7 @@ bool GrConvertPixels(const GrPixmap& dst, const GrCPixmap& src, bool flipY) {
     return true;
 }
 
-bool GrClearImage(const GrImageInfo& dstInfo, void* dst, size_t dstRB, SkColor4f color) {
+bool GrClearImage(const GrImageInfo& dstInfo, void* dst, size_t dstRB, std::array<float, 4> color) {
     TRACE_EVENT0("skia.gpu", TRACE_FUNC);
 
     if (!dstInfo.isValid()) {
@@ -700,7 +703,7 @@ bool GrClearImage(const GrImageInfo& dstInfo, void* dst, size_t dstRB, SkColor4f
     }
     if (dstInfo.colorType() == GrColorType::kRGB_888) {
         // SkRasterPipeline doesn't handle writing to RGB_888. So we handle that specially here.
-        uint32_t rgba = color.toBytes_RGBA();
+        uint32_t rgba = SkColor4f{color[0], color[1], color[2], color[3]}.toBytes_RGBA();
         for (int y = 0; y < dstInfo.height(); ++y) {
             char* d = static_cast<char*>(dst) + y * dstRB;
             for (int x = 0; x < dstInfo.width(); ++x, d += 3) {
@@ -719,7 +722,7 @@ bool GrClearImage(const GrImageInfo& dstInfo, void* dst, size_t dstRB, SkColor4f
     char block[64];
     SkArenaAlloc alloc(block, sizeof(block), 1024);
     SkRasterPipeline_<256> pipeline;
-    pipeline.append_constant_color(&alloc, color);
+    pipeline.append_constant_color(&alloc, color.data());
     switch (lumMode) {
         case LumMode::kNone:
             break;
@@ -743,19 +746,4 @@ bool GrClearImage(const GrImageInfo& dstInfo, void* dst, size_t dstRB, SkColor4f
     pipeline.run(0, 0, dstInfo.width(), dstInfo.height());
 
     return true;
-}
-
-GrColorType SkColorTypeAndFormatToGrColorType(const GrCaps* caps,
-                                              SkColorType skCT,
-                                              const GrBackendFormat& format) {
-    GrColorType grCT = SkColorTypeToGrColorType(skCT);
-    // Until we support SRGB in the SkColorType we have to do this manual check here to make sure
-    // we use the correct GrColorType.
-    if (caps->isFormatSRGB(format)) {
-        if (grCT != GrColorType::kRGBA_8888) {
-            return GrColorType::kUnknown;
-        }
-        grCT = GrColorType::kRGBA_8888_SRGB;
-    }
-    return grCT;
 }

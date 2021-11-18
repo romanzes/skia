@@ -7,7 +7,7 @@
 
 #include "src/gpu/GrShaderCaps.h"
 #include "src/sksl/SkSLCompiler.h"
-#include "src/sksl/SkSLPipelineStageCodeGenerator.h"
+#include "src/sksl/codegen/SkSLPipelineStageCodeGenerator.h"
 #include "src/sksl/ir/SkSLVarDeclarations.h"
 #include "src/sksl/ir/SkSLVariable.h"
 
@@ -18,7 +18,7 @@ bool FuzzSKSL2Pipeline(sk_sp<SkData> bytes) {
     SkSL::Compiler compiler(caps.get());
     SkSL::Program::Settings settings;
     std::unique_ptr<SkSL::Program> program = compiler.convertProgram(
-                                                    SkSL::ProgramKind::kRuntimeEffect,
+                                                    SkSL::ProgramKind::kRuntimeShader,
                                                     SkSL::String((const char*) bytes->data(),
                                                                  bytes->size()),
                                                     settings);
@@ -30,26 +30,29 @@ bool FuzzSKSL2Pipeline(sk_sp<SkData> bytes) {
         using String = SkSL::String;
 
         String declareUniform(const SkSL::VarDeclaration* decl) override {
-            return decl->var().name();
+            return String(decl->var().name());
         }
 
         void defineFunction(const char* /*decl*/, const char* /*body*/, bool /*isMain*/) override {}
+        void declareFunction(const char* /*decl*/) override {}
         void defineStruct(const char* /*definition*/) override {}
         void declareGlobal(const char* /*declaration*/) override {}
 
-        String sampleChild(int index, String coords) override {
-            return SkSL::String::printf("sample(%d%s%s)", index, coords.empty() ? "" : ", ",
-                                        coords.c_str());
+        String sampleShader(int index, String coords) override {
+            return "child_" + SkSL::to_string(index) + ".eval(" + coords + ")";
         }
 
-        String sampleChildWithMatrix(int index, String matrix) override {
-            return SkSL::String::printf("sample(%d%s%s)", index, matrix.empty() ? "" : ", ",
-                                        matrix.c_str());
+        String sampleColorFilter(int index, String color) override {
+            return "child_" + SkSL::to_string(index) + ".eval(" + color + ")";
+        }
+
+        String sampleBlender(int index, String src, String dst) override {
+            return "child_" + SkSL::to_string(index) + ".eval(" + src + ", " + dst + ")";
         }
     };
 
     Callbacks callbacks;
-    SkSL::PipelineStage::ConvertProgram(*program, "coords", &callbacks);
+    SkSL::PipelineStage::ConvertProgram(*program, "coords", "inColor", "half4(1)", &callbacks);
     return true;
 }
 

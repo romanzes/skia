@@ -12,9 +12,6 @@
 #include "src/shaders/SkBitmapProcShader.h"
 #include "src/shaders/SkShaderBase.h"
 
-// private subclass of SkStageUpdater
-class SkImageStageUpdater;
-
 class SkImageShader : public SkShaderBase {
 public:
     static sk_sp<SkShader> Make(sk_sp<SkImage>,
@@ -51,11 +48,19 @@ private:
     bool onAppendStages(const SkStageRec&) const override;
     SkStageUpdater* onAppendUpdatableStages(const SkStageRec&) const override;
 
+    SkUpdatableShader* onUpdatableShader(SkArenaAlloc* alloc) const override;
+
     skvm::Color onProgram(skvm::Builder*, skvm::Coord device, skvm::Coord local, skvm::Color paint,
                           const SkMatrixProvider&, const SkMatrix* localM, const SkColorInfo& dst,
                           skvm::Uniforms* uniforms, SkArenaAlloc*) const override;
 
-    bool doStages(const SkStageRec&, SkImageStageUpdater* = nullptr) const;
+    class TransformShader;
+    skvm::Color makeProgram(
+            skvm::Builder*, skvm::Coord device, skvm::Coord local, skvm::Color paint,
+            const SkMatrixProvider&, const SkMatrix* localM, const SkColorInfo& dst,
+            skvm::Uniforms* uniforms, const TransformShader* coordShader, SkArenaAlloc*) const;
+
+    bool doStages(const SkStageRec&, TransformShader* = nullptr) const;
 
     sk_sp<SkImage>          fImage;
     const SkSamplingOptions fSampling;
@@ -65,9 +70,6 @@ private:
 
     friend class SkShaderBase;
     using INHERITED = SkShaderBase;
-
-    // for legacy unflattening
-    static sk_sp<SkFlattenable> PreSamplingCreate(SkReadBuffer&);
 };
 
 #endif

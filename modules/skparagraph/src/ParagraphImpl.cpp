@@ -4,6 +4,7 @@
 #include "include/core/SkFontMetrics.h"
 #include "include/core/SkMatrix.h"
 #include "include/core/SkPictureRecorder.h"
+#include "include/core/SkSpan.h"
 #include "include/core/SkTypeface.h"
 #include "include/private/SkTFitsIn.h"
 #include "include/private/SkTo.h"
@@ -16,7 +17,6 @@
 #include "modules/skparagraph/src/Run.h"
 #include "modules/skparagraph/src/TextLine.h"
 #include "modules/skparagraph/src/TextWrapper.h"
-#include "src/core/SkSpan.h"
 #include "src/utils/SkUTF.h"
 #include <math.h>
 #include <algorithm>
@@ -111,13 +111,8 @@ int32_t ParagraphImpl::unresolvedGlyphs() {
 
 void ParagraphImpl::layout(SkScalar rawWidth) {
 
-    // NON-SKIA-UPSTREAMED CHANGE
-    /*
     // TODO: This rounding is done to match Flutter tests. Must be removed...
     auto floorWidth = SkScalarFloorToScalar(rawWidth);
-    */
-    auto floorWidth = rawWidth;
-    // END OF NON-SKIA-UPSTREAMED CHANGE
 
     if ((!SkScalarIsFinite(rawWidth) || fLongestLine <= floorWidth) &&
         fState >= kLineBroken &&
@@ -197,8 +192,6 @@ void ParagraphImpl::layout(SkScalar rawWidth) {
     this->fOldWidth = floorWidth;
     this->fOldHeight = this->fHeight;
 
-    // NON-SKIA-UPSTREAMED CHANGE
-    /*
     // TODO: This rounding is done to match Flutter tests. Must be removed...
     fMinIntrinsicWidth = littleRound(fMinIntrinsicWidth);
     fMaxIntrinsicWidth = littleRound(fMaxIntrinsicWidth);
@@ -207,8 +200,7 @@ void ParagraphImpl::layout(SkScalar rawWidth) {
     if (fParagraphStyle.getMaxLines() == 1 ||
         (fParagraphStyle.unlimited_lines() && fParagraphStyle.ellipsized())) {
         fMinIntrinsicWidth = fMaxIntrinsicWidth;
-    } */
-    // END OF NON-SKIA-UPSTREAMED CHANGE
+    }
 
     // TODO: Since min and max are calculated differently it's possible to get a rounding error
     //  that would make min > max. Sort it out later, make it the same for now
@@ -275,7 +267,7 @@ bool ParagraphImpl::computeCodeUnitProperties() {
 
     // Get all spaces
     fUnicode->forEachCodepoint(fText.c_str(), fText.size(),
-       [this](SkUnichar unichar, int32_t start, int32_t end) {
+       [this](SkUnichar unichar, int32_t start, int32_t end, int32_t count) {
             if (fUnicode->isWhitespace(unichar)) {
                 for (auto i = start; i < end; ++i) {
                     fCodeUnitProperties[i] |=  CodeUnitFlags::kPartOfWhiteSpaceBreak;
@@ -371,11 +363,6 @@ Cluster::Cluster(ParagraphImpl* owner,
     fIsWhiteSpaceBreak = whiteSpacesBreakLen == fTextRange.width();
     fIsIntraWordBreak = intraWordBreakLen == fTextRange.width();
     fIsHardBreak = fOwner->codeUnitHasProperty(fTextRange.end, CodeUnitFlags::kHardLineBreakBefore);
-    // NON-SKIA-UPSTREAMED CHANGE
-    // Chrome doesn't break words on soft breaks, except some characters:
-    fIsChromeBreak = *ch == 0x2D // Hyphen (-)
-                     || *ch == 0x3F; // Question mark (?)
-    // END OF NON-SKIA-UPSTREAMED CHANGE
 }
 
 SkScalar Run::calculateWidth(size_t start, size_t end, bool clip) const {
@@ -528,8 +515,9 @@ void ParagraphImpl::breakShapedTextIntoLines(SkScalar maxWidth) {
     textWrapper.breakTextIntoLines(
             this,
             maxWidth,
-            [&](TextRange text,
-                TextRange textWithSpaces,
+            [&](TextRange textExcludingSpaces,
+                TextRange text,
+                TextRange textWithNewlines,
                 ClusterRange clusters,
                 ClusterRange clustersWithGhosts,
                 SkScalar widthWithSpaces,
@@ -540,7 +528,7 @@ void ParagraphImpl::breakShapedTextIntoLines(SkScalar maxWidth) {
                 InternalLineMetrics metrics,
                 bool addEllipsis) {
                 // TODO: Take in account clipped edges
-                auto& line = this->addLine(offset, advance, text, textWithSpaces, clusters, clustersWithGhosts, widthWithSpaces, metrics);
+                auto& line = this->addLine(offset, advance, textExcludingSpaces, text, textWithNewlines, clusters, clustersWithGhosts, widthWithSpaces, metrics);
                 if (addEllipsis) {
                     line.createEllipsis(maxWidth, getEllipsis(), true);
                 }
@@ -652,15 +640,18 @@ BlockRange ParagraphImpl::findAllBlocks(TextRange textRange) {
 
 TextLine& ParagraphImpl::addLine(SkVector offset,
                                  SkVector advance,
+                                 TextRange textExcludingSpaces,
                                  TextRange text,
-                                 TextRange textWithSpaces,
+                                 TextRange textIncludingNewLines,
                                  ClusterRange clusters,
                                  ClusterRange clustersWithGhosts,
                                  SkScalar widthWithSpaces,
                                  InternalLineMetrics sizes) {
     // Define a list of styles that covers the line
-    auto blocks = findAllBlocks(text);
-    return fLines.emplace_back(this, offset, advance, blocks, text, textWithSpaces, clusters, clustersWithGhosts, widthWithSpaces, sizes);
+    auto blocks = findAllBlocks(textExcludingSpaces);
+    return fLines.emplace_back(this, offset, advance, blocks,
+                               textExcludingSpaces, text, textIncludingNewLines,
+                               clusters, clustersWithGhosts, widthWithSpaces, sizes);
 }
 
 // Returns a vector of bounding boxes that enclose all text between
@@ -711,7 +702,7 @@ std::vector<TextBox> ParagraphImpl::getRectsForRange(unsigned start,
     }
     //SkDebugf("getRectsForRange(%d,%d) -> (%d:%d)\n", start, end, text.start, text.end);
     for (auto& line : fLines) {
-        auto lineText = line.textWithSpaces();
+        auto lineText = line.textWithNewlines();
         auto intersect = lineText * text;
         if (intersect.empty() && lineText.start != text.start) {
             continue;
@@ -916,22 +907,34 @@ void ParagraphImpl::computeEmptyMetrics() {
     SkFont font(typeface, textStyle.getFontSize());
     fEmptyMetrics = InternalLineMetrics(font, paragraphStyle().getStrutStyle().getForceStrutHeight());
 
+    if (!paragraphStyle().getStrutStyle().getForceStrutHeight() &&
+        textStyle.getHeightOverride()) {
+        const auto intrinsicHeight = fEmptyMetrics.height();
+        const auto strutHeight = textStyle.getHeight() * textStyle.getFontSize();
+        if (paragraphStyle().getStrutStyle().getHalfLeading()) {
+            fEmptyMetrics.update(
+                fEmptyMetrics.ascent(),
+                fEmptyMetrics.descent(),
+                fEmptyMetrics.leading() + strutHeight - intrinsicHeight);
+        } else {
+            const auto multiplier = strutHeight / intrinsicHeight;
+            fEmptyMetrics.update(
+                fEmptyMetrics.ascent() * multiplier,
+                fEmptyMetrics.descent() * multiplier,
+                fEmptyMetrics.leading() * multiplier);
+        }
+    }
+
     if (emptyParagraph) {
         // For an empty text we apply both TextHeightBehaviour flags
         // In case of non-empty paragraph TextHeightBehaviour flags will be applied at the appropriate place
+        // We have to do it here because we skip wrapping for an empty text
         auto disableFirstAscent = (paragraphStyle().getTextHeightBehavior() & TextHeightBehavior::kDisableFirstAscent) == TextHeightBehavior::kDisableFirstAscent;
         auto disableLastDescent = (paragraphStyle().getTextHeightBehavior() & TextHeightBehavior::kDisableLastDescent) == TextHeightBehavior::kDisableLastDescent;
         fEmptyMetrics.update(
             disableFirstAscent ? fEmptyMetrics.rawAscent() : fEmptyMetrics.ascent(),
             disableLastDescent ? fEmptyMetrics.rawDescent() : fEmptyMetrics.descent(),
             fEmptyMetrics.leading());
-    } else if (!paragraphStyle().getStrutStyle().getForceStrutHeight() &&
-        textStyle.getHeightOverride()) {
-        auto multiplier = textStyle.getHeight() * textStyle.getFontSize() / fEmptyMetrics.height();
-        fEmptyMetrics.update(
-            fEmptyMetrics.ascent() * multiplier,
-            fEmptyMetrics.descent() * multiplier,
-            fEmptyMetrics.leading() * multiplier);
     }
 
     if (fParagraphStyle.getStrutStyle().getStrutEnabled()) {
@@ -1049,6 +1052,48 @@ void ParagraphImpl::ensureUTF16Mapping() {
     }
     fUTF16IndexForUTF8Index.emplace_back(fUTF8IndexForUTF16Index.size());
     fUTF8IndexForUTF16Index.emplace_back(fText.size());
+}
+
+void ParagraphImpl::visit(const Visitor& visitor) {
+    int lineNumber = 0;
+    for (auto& line : fLines) {
+        line.ensureTextBlobCachePopulated();
+        for (auto& rec : line.fTextBlobCache) {
+            SkTextBlob::Iter iter(*rec.fBlob);
+            SkTextBlob::Iter::ExperimentalRun run;
+
+            SkSTArray<128, uint32_t> clusterStorage;
+            const Run* R = rec.fVisitor_Run;
+            const uint32_t* clusterPtr = &R->fClusterIndexes[0];
+
+            if (R->fClusterStart > 0) {
+                int count = R->fClusterIndexes.count();
+                clusterStorage.reset(count);
+                for (int i = 0; i < count; ++i) {
+                    clusterStorage[i] = R->fClusterStart + R->fClusterIndexes[i];
+                }
+                clusterPtr = &clusterStorage[0];
+            }
+            clusterPtr += rec.fVisitor_Pos;
+
+            while (iter.experimentalNext(&run)) {
+                const Paragraph::VisitorInfo info = {
+                    run.font,
+                    rec.fOffset,
+                    rec.fClipRect.fRight,
+                    run.count,
+                    run.glyphs,
+                    run.positions,
+                    clusterPtr,
+                    0,  // flags
+                };
+                visitor(lineNumber, &info);
+                clusterPtr += run.count;
+            }
+        }
+        visitor(lineNumber, nullptr);   // signal end of line
+        lineNumber += 1;
+    }
 }
 
 }  // namespace textlayout

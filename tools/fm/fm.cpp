@@ -12,7 +12,6 @@
 #include "include/gpu/GrContextOptions.h"
 #include "include/gpu/GrDirectContext.h"
 #include "include/private/SkTHash.h"
-#include "modules/svg/include/SkSVGDOM.h"
 #include "src/core/SkColorSpacePriv.h"
 #include "src/core/SkMD5.h"
 #include "src/core/SkOSFile.h"
@@ -38,6 +37,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+#if defined(SK_ENABLE_SVG)
+#include "modules/svg/include/SkSVGDOM.h"
+#include "modules/svg/include/SkSVGNode.h"
+#endif
+
 #if defined(SK_ENABLE_SKOTTIE)
     #include "modules/skottie/include/Skottie.h"
     #include "modules/skresources/include/SkResources.h"
@@ -56,14 +60,16 @@ static DEFINE_string(at    , "premul", "The alpha type for any raster backend.")
 static DEFINE_string(gamut ,   "srgb", "The color gamut for any raster backend.");
 static DEFINE_string(tf    ,   "srgb", "The transfer function for any raster backend.");
 static DEFINE_bool  (legacy,    false, "Use a null SkColorSpace instead of --gamut and --tf?");
-static DEFINE_bool  (skvm  ,    false, "Use SkVMBlitter when supported?");
-static DEFINE_bool  (jit   ,     true, "JIT SkVM?");
-static DEFINE_bool  (dylib ,    false, "JIT SkVM via dylib?");
 
-static DEFINE_int   (samples ,         0, "Samples per pixel in GPU backends.");
-static DEFINE_bool  (stencils,      true, "If false, avoid stencil buffers in GPU backends.");
-static DEFINE_bool  (dit     ,     false, "Use device-independent text in GPU backends.");
-static DEFINE_string(surf    , "default", "Backing store for GPU backend surfaces.");
+static DEFINE_bool  (skvm ,    false, "Use SkVMBlitter when supported?");
+static DEFINE_bool  (jit  ,     true, "JIT SkVM?");
+static DEFINE_bool  (dylib,    false, "JIT SkVM via dylib?");
+
+static DEFINE_bool  (reducedshaders,    false, "Use reduced shader set for any GPU backend.");
+static DEFINE_int   (samples       ,         0, "Samples per pixel in GPU backends.");
+static DEFINE_bool  (stencils      ,      true, "If false, avoid stencil buffers in GPU backends.");
+static DEFINE_bool  (dit           ,     false, "Use device-independent text in GPU backends.");
+static DEFINE_string(surf          , "default", "Backing store for GPU backend surfaces.");
 
 static DEFINE_bool(       preAbandonGpuContext, false, "Abandon the GrContext before drawing.");
 static DEFINE_bool(          abandonGpuContext, false, "Abandon the GrContext after drawing.");
@@ -184,6 +190,7 @@ static void init(Source* source, std::shared_ptr<SkCodec> codec) {
     };
 }
 
+#if defined(SK_ENABLE_SVG)
 static void init(Source* source, sk_sp<SkSVGDOM> svg) {
     if (svg->containerSize().isEmpty()) {
         svg->setContainerSize({1000,1000});
@@ -194,6 +201,7 @@ static void init(Source* source, sk_sp<SkSVGDOM> svg) {
         return ok;
     };
 }
+#endif
 
 #if defined(SK_ENABLE_SKOTTIE)
 static void init(Source* source, sk_sp<skottie::Animation> animation) {
@@ -389,6 +397,7 @@ int main(int argc, char** argv) {
 
     GrContextOptions baseOptions;
     SetCtxOptionsFromCommonFlags(&baseOptions);
+    baseOptions.fReducedShaderVariations = FLAGS_reducedshaders;
 
     sk_gpu_test::MemoryCache memoryCache;
     if (!FLAGS_writeShaders.isEmpty()) {
@@ -451,13 +460,16 @@ int main(int argc, char** argv) {
                     init(source, pic);
                     continue;
                 }
-            } else if (name.endsWith(".svg")) {
+            }
+#if defined(SK_ENABLE_SVG)
+            else if (name.endsWith(".svg")) {
                 SkMemoryStream stream{blob};
                 if (sk_sp<SkSVGDOM> svg = SkSVGDOM::MakeFromStream(stream)) {
                     init(source, svg);
                     continue;
                 }
             }
+#endif
 #if defined(SK_ENABLE_SKOTTIE)
             else if (name.endsWith(".json")) {
                 const SkString dir  = SkOSPath::Dirname(name.c_str());
@@ -495,7 +507,8 @@ int main(int argc, char** argv) {
         { "angle_d3d11_es3", GrContextFactory::kANGLE_D3D11_ES3_ContextType },
         { "angle_gl_es2"   , GrContextFactory::kANGLE_GL_ES2_ContextType },
         { "angle_gl_es3"   , GrContextFactory::kANGLE_GL_ES3_ContextType },
-        { "commandbuffer"  , GrContextFactory::kCommandBuffer_ContextType },
+        { "cmdbuffer_es2"  , GrContextFactory::kCommandBuffer_ES2_ContextType },
+        { "cmdbuffer_es3"  , GrContextFactory::kCommandBuffer_ES3_ContextType },
         { "vk"             , GrContextFactory::kVulkan_ContextType },
         { "mtl"            , GrContextFactory::kMetal_ContextType },
         { "mock"           , GrContextFactory::kMock_ContextType },
@@ -516,6 +529,7 @@ int main(int argc, char** argv) {
         { "f32",                kRGBA_F32_SkColorType },
         { "rgba",              kRGBA_8888_SkColorType },
         { "bgra",              kBGRA_8888_SkColorType },
+        { "srgba",            kSRGBA_8888_SkColorType },
         { "16161616", kR16G16B16A16_unorm_SkColorType },
     };
     const FlagOption<SkAlphaType> kAlphaTypes[] = {
@@ -632,8 +646,8 @@ int main(int argc, char** argv) {
                 }
 
                 SkMD5::Digest digest = hash.finish();
-                for (int i = 0; i < 16; i++) {
-                    md5.appendf("%02x", digest.data[i]);
+                for (int j = 0; j < 16; j++) {
+                    md5.appendf("%02x", digest.data[j]);
                 }
             }
 

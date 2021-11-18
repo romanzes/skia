@@ -10,10 +10,10 @@
 
 #include "include/gpu/GrContextOptions.h"
 #include "include/private/SkImageInfoPriv.h"
-#include "src/core/SkScalerContext.h"
 #include "src/gpu/GrGpuBuffer.h"
 #include "src/gpu/GrResourceCache.h"
 
+class GrAttachment;
 class GrBackendRenderTarget;
 class GrBackendSemaphore;
 class GrBackendTexture;
@@ -24,7 +24,7 @@ class GrRenderTarget;
 class GrResourceProviderPriv;
 class GrSemaphore;
 class GrSingleOwner;
-class GrAttachment;
+struct GrVertexWriter;
 class GrTexture;
 struct GrVkDrawableInfo;
 
@@ -62,6 +62,7 @@ public:
      */
     sk_sp<GrTexture> createApproxTexture(SkISize dimensions,
                                          const GrBackendFormat& format,
+                                         GrTextureType textureType,
                                          GrRenderable renderable,
                                          int renderTargetSampleCnt,
                                          GrProtected isProtected);
@@ -69,6 +70,7 @@ public:
     /** Create an exact fit texture with no initial data to upload. */
     sk_sp<GrTexture> createTexture(SkISize dimensions,
                                    const GrBackendFormat& format,
+                                   GrTextureType textureType,
                                    GrRenderable renderable,
                                    int renderTargetSampleCnt,
                                    GrMipmapped mipMapped,
@@ -82,6 +84,7 @@ public:
      */
     sk_sp<GrTexture> createTexture(SkISize dimensions,
                                    const GrBackendFormat& format,
+                                   GrTextureType textureType,
                                    GrColorType colorType,
                                    GrRenderable renderable,
                                    int renderTargetSampleCnt,
@@ -97,6 +100,7 @@ public:
      */
     sk_sp<GrTexture> createTexture(SkISize dimensions,
                                    const GrBackendFormat&,
+                                   GrTextureType textureType,
                                    GrColorType srcColorType,
                                    GrRenderable,
                                    int renderTargetSampleCnt,
@@ -104,6 +108,19 @@ public:
                                    SkBackingFit,
                                    GrProtected,
                                    const GrMipLevel& mipLevel);
+
+    /**
+     * Search the cache for a scratch texture matching the provided arguments. Failing that
+     * it returns null. If non-null, the resulting texture is always budgeted.
+     */
+    sk_sp<GrTexture> findAndRefScratchTexture(const GrScratchKey&);
+    sk_sp<GrTexture> findAndRefScratchTexture(SkISize dimensions,
+                                              const GrBackendFormat&,
+                                              GrTextureType textureType,
+                                              GrRenderable,
+                                              int renderTargetSampleCnt,
+                                              GrMipmapped,
+                                              GrProtected);
 
     /**
      * Creates a compressed texture. The GrGpu must support the SkImageImage::Compression type.
@@ -166,6 +183,21 @@ public:
     static const int kMinScratchTextureSize;
 
     /**
+     * Either finds and refs a buffer with the given unique key, or creates a new new, fills its
+     * contents with the InitializeBufferDataFn() callback, and assigns it the unique key.
+     *
+     * @param intendedType        hint to the graphics subsystem about how the buffer will be used.
+     * @param size                minimum size of buffer to return.
+     * @param key                 Key to be assigned to the buffer.
+     * @param InitializeBufferFn  callback with which to initialize the buffer.
+     *
+     * @return The buffer if successful, otherwise nullptr.
+     */
+    using InitializeBufferFn = void(*)(GrVertexWriter, size_t bufferSize);
+    sk_sp<const GrGpuBuffer> findOrMakeStaticBuffer(GrGpuBufferType intendedType, size_t size,
+                                                    const GrUniqueKey& key, InitializeBufferFn);
+
+    /**
      * Either finds and refs, or creates a static buffer with the given parameters and contents.
      *
      * @param intendedType    hint to the graphics subsystem about what the buffer will be used for.
@@ -176,7 +208,7 @@ public:
      * @return The buffer if successful, otherwise nullptr.
      */
     sk_sp<const GrGpuBuffer> findOrMakeStaticBuffer(GrGpuBufferType intendedType, size_t size,
-                                                    const void* data, const GrUniqueKey& key);
+                                                    const void* staticData, const GrUniqueKey& key);
 
     /**
      * Either finds and refs, or creates an index buffer with a repeating pattern for drawing
@@ -255,15 +287,28 @@ public:
                                     const void* data = nullptr);
 
     /**
-     * If passed in render target already has a stencil buffer with at least "numSamples" samples,
-     * return true. Otherwise attempt to attach one and return true on success.
+     * If passed in render target already has a stencil buffer on the specified surface, return
+     * true. Otherwise attempt to attach one and return true on success.
      */
-    bool attachStencilAttachment(GrRenderTarget* rt, int numStencilSamples);
+    bool attachStencilAttachment(GrRenderTarget* rt, bool useMSAASurface);
 
     sk_sp<GrAttachment> makeMSAAAttachment(SkISize dimensions,
                                            const GrBackendFormat& format,
                                            int sampleCnt,
-                                           GrProtected isProtected);
+                                           GrProtected isProtected,
+                                           GrMemoryless isMemoryless);
+
+    /**
+     * Gets a GrAttachment that can be used for MSAA rendering. This attachment may be shared by
+     * other users. Thus any renderpass that uses the attachment should not assume any specific
+     * data at the start and should not try to save written data at the end. Ideally the render pass
+     * should discard the data at the end.
+     */
+    sk_sp<GrAttachment> getDiscardableMSAAAttachment(SkISize dimensions,
+                                                     const GrBackendFormat& format,
+                                                     int sampleCnt,
+                                                     GrProtected isProtected,
+                                                     GrMemoryless memoryless);
 
     /**
      * Assigns a unique key to a resource. If the key is associated with another resource that
@@ -273,13 +318,8 @@ public:
 
     std::unique_ptr<GrSemaphore> SK_WARN_UNUSED_RESULT makeSemaphore(bool isOwned = true);
 
-    enum class SemaphoreWrapType {
-        kWillSignal,
-        kWillWait,
-    };
-
     std::unique_ptr<GrSemaphore> wrapBackendSemaphore(const GrBackendSemaphore&,
-                                                      SemaphoreWrapType wrapType,
+                                                      GrSemaphoreWrapType,
                                                       GrWrapOwnership = kBorrow_GrWrapOwnership);
 
     void abandon() {
@@ -299,21 +339,13 @@ public:
 private:
     sk_sp<GrGpuResource> findResourceByUniqueKey(const GrUniqueKey&);
 
-    // Attempts to find a resource in the cache that exactly matches the SkISize. Failing that
-    // it returns null. If non-null, the resulting texture is always budgeted.
-    sk_sp<GrTexture> refScratchTexture(SkISize dimensions,
-                                       const GrBackendFormat&,
-                                       GrRenderable,
-                                       int renderTargetSampleCnt,
-                                       GrMipmapped,
-                                       GrProtected);
-
     /*
      * Try to find an existing scratch texture that exactly matches 'desc'. If successful
      * update the budgeting accordingly.
      */
     sk_sp<GrTexture> getExactScratch(SkISize dimensions,
                                      const GrBackendFormat&,
+                                     GrTextureType,
                                      GrRenderable,
                                      int renderTargetSampleCnt,
                                      SkBudgeted,
@@ -325,7 +357,8 @@ private:
     sk_sp<GrAttachment> refScratchMSAAAttachment(SkISize dimensions,
                                                  const GrBackendFormat&,
                                                  int sampleCnt,
-                                                 GrProtected);
+                                                 GrProtected,
+                                                 GrMemoryless memoryless);
 
     // Used to perform any conversions necessary to texel data before creating a texture with
     // existing data or uploading to a scratch texture.

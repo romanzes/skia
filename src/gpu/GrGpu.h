@@ -9,17 +9,16 @@
 #define GrGpu_DEFINED
 
 #include "include/core/SkPath.h"
+#include "include/core/SkSpan.h"
 #include "include/core/SkSurface.h"
 #include "include/gpu/GrTypes.h"
 #include "include/private/SkTArray.h"
-#include "src/core/SkSpan.h"
 #include "src/core/SkTInternalLList.h"
 #include "src/gpu/GrAttachment.h"
 #include "src/gpu/GrCaps.h"
 #include "src/gpu/GrOpsRenderPass.h"
 #include "src/gpu/GrPixmap.h"
 #include "src/gpu/GrSwizzle.h"
-#include "src/gpu/GrTextureProducer.h"
 #include "src/gpu/GrXferProcessor.h"
 
 class GrAttachment;
@@ -42,6 +41,7 @@ class GrStencilSettings;
 class GrSurface;
 class GrTexture;
 class GrThreadSafePipelineBuilder;
+struct GrVkDrawableInfo;
 class SkJSONWriter;
 
 namespace SkSL {
@@ -131,6 +131,7 @@ public:
      */
     sk_sp<GrTexture> createTexture(SkISize dimensions,
                                    const GrBackendFormat& format,
+                                   GrTextureType textureType,
                                    GrRenderable renderable,
                                    int renderTargetSampleCnt,
                                    SkBudgeted budgeted,
@@ -145,6 +146,7 @@ public:
      */
     sk_sp<GrTexture> createTexture(SkISize dimensions,
                                    const GrBackendFormat& format,
+                                   GrTextureType textureType,
                                    GrRenderable renderable,
                                    int renderTargetSampleCnt,
                                    GrMipmapped mipMapped,
@@ -220,11 +222,8 @@ public:
     /**
      * Reads a rectangle of pixels from a render target. No sRGB/linear conversions are performed.
      *
-     * @param surface           The surface to read from
-     * @param left              left edge of the rectangle to read (inclusive)
-     * @param top               top edge of the rectangle to read (inclusive)
-     * @param width             width of rectangle to read in pixels.
-     * @param height            height of rectangle to read in pixels.
+     * @param surface           the surface to read from
+     * @param rect              the rectangle of pixels to read
      * @param surfaceColorType  the color type for this use of the surface.
      * @param dstColorType      the color type of the destination buffer.
      * @param buffer            memory to read the rectangle into.
@@ -237,18 +236,18 @@ public:
      *              is not allowed for the format of the surface or if the rectangle
      *              read is not contained in the surface.
      */
-    bool readPixels(GrSurface* surface, int left, int top, int width, int height,
-                    GrColorType surfaceColorType, GrColorType dstColorType, void* buffer,
+    bool readPixels(GrSurface* surface,
+                    SkIRect rect,
+                    GrColorType surfaceColorType,
+                    GrColorType dstColorType,
+                    void* buffer,
                     size_t rowBytes);
 
     /**
      * Updates the pixels in a rectangle of a surface.  No sRGB/linear conversions are performed.
      *
-     * @param surface            The surface to write to.
-     * @param left               left edge of the rectangle to write (inclusive)
-     * @param top                top edge of the rectangle to write (inclusive)
-     * @param width              width of rectangle to write in pixels.
-     * @param height             height of rectangle to write in pixels.
+     * @param surface            the surface to write to.
+     * @param rect               the rectangle of pixels to overwrite
      * @param surfaceColorType   the color type for this use of the surface.
      * @param srcColorType       the color type of the source buffer.
      * @param texels             array of mipmap levels containing texture data. Row bytes must be a
@@ -259,7 +258,7 @@ public:
      *                           sampling. This is currently only used by Vulkan for inline uploads
      *                           to set that layout back to sampled after doing the upload. Inline
      *                           uploads currently can happen between draws in a single op so it is
-     *                           not trivial to break up the GrOpsTask into two tasks when we see
+     *                           not trivial to break up the OpsTask into two tasks when we see
      *                           an inline upload. However, once we are able to support doing that
      *                           we can remove this parameter.
      *
@@ -268,41 +267,55 @@ public:
      *              the color type is not allowed for the format of the surface or
      *              if the rectangle written is not contained in the surface.
      */
-    bool writePixels(GrSurface* surface, int left, int top, int width, int height,
-                     GrColorType surfaceColorType, GrColorType srcColorType,
-                     const GrMipLevel texels[], int mipLevelCount, bool prepForTexSampling = false);
+    bool writePixels(GrSurface* surface,
+                     SkIRect rect,
+                     GrColorType surfaceColorType,
+                     GrColorType srcColorType,
+                     const GrMipLevel texels[],
+                     int mipLevelCount,
+                     bool prepForTexSampling = false);
 
     /**
      * Helper for the case of a single level.
      */
-    bool writePixels(GrSurface* surface, int left, int top, int width, int height,
-                     GrColorType surfaceColorType, GrColorType srcColorType, const void* buffer,
-                     size_t rowBytes, bool prepForTexSampling = false) {
+    bool writePixels(GrSurface* surface,
+                     SkIRect rect,
+                     GrColorType surfaceColorType,
+                     GrColorType srcColorType,
+                     const void* buffer,
+                     size_t rowBytes,
+                     bool prepForTexSampling = false) {
         GrMipLevel mipLevel = {buffer, rowBytes, nullptr};
-        return this->writePixels(surface, left, top, width, height, surfaceColorType, srcColorType,
-                                 &mipLevel, 1, prepForTexSampling);
+        return this->writePixels(surface,
+                                 rect,
+                                 surfaceColorType,
+                                 srcColorType,
+                                 &mipLevel,
+                                 1,
+                                 prepForTexSampling);
     }
 
     /**
      * Updates the pixels in a rectangle of a texture using a buffer. If the texture is MIP mapped,
      * the base level is written to.
      *
-     * @param texture          The texture to write to.
-     * @param left             left edge of the rectangle to write (inclusive)
-     * @param top              top edge of the rectangle to write (inclusive)
-     * @param width            width of rectangle to write in pixels.
-     * @param height           height of rectangle to write in pixels.
+     * @param texture          the texture to write to.
+     * @param rect             the rectangle of pixels in the texture to overwrite
      * @param textureColorType the color type for this use of the surface.
      * @param bufferColorType  the color type of the transfer buffer's pixel data
      * @param transferBuffer   GrBuffer to read pixels from (type must be "kXferCpuToGpu")
      * @param offset           offset from the start of the buffer
      * @param rowBytes         number of bytes between consecutive rows in the buffer. Must be a
-     *                         multiple of bufferColorType's bytes-per-pixel. Must be tight to width
-     *                         if !caps->writePixelsRowBytesSupport().
+     *                         multiple of bufferColorType's bytes-per-pixel. Must be tight to
+     *                         rect.width() if !caps->writePixelsRowBytesSupport().
      */
-    bool transferPixelsTo(GrTexture* texture, int left, int top, int width, int height,
-                          GrColorType textureColorType, GrColorType bufferColorType,
-                          sk_sp<GrGpuBuffer> transferBuffer, size_t offset, size_t rowBytes);
+    bool transferPixelsTo(GrTexture* texture,
+                          SkIRect rect,
+                          GrColorType textureColorType,
+                          GrColorType bufferColorType,
+                          sk_sp<GrGpuBuffer> transferBuffer,
+                          size_t offset,
+                          size_t rowBytes);
 
     /**
      * Reads the pixels from a rectangle of a surface into a buffer. Use
@@ -310,24 +323,24 @@ public:
      * the buffer offset alignment. If the surface is a MIP mapped texture, the base level is read.
      *
      * If successful the row bytes in the buffer is always:
-     *   GrColorTypeBytesPerPixel(bufferColorType) * width
+     *   GrColorTypeBytesPerPixel(bufferColorType) * rect.width()
      *
      * Asserts that the caller has passed a properly aligned offset and that the buffer is
      * large enough to hold the result
      *
-     * @param surface          The surface to read from.
-     * @param left             left edge of the rectangle to read (inclusive)
-     * @param top              top edge of the rectangle to read (inclusive)
-     * @param width            width of rectangle to read in pixels.
-     * @param height           height of rectangle to read in pixels.
+     * @param surface          the surface to read from.
+     * @param rect             the rectangle of pixels to read
      * @param surfaceColorType the color type for this use of the surface.
      * @param bufferColorType  the color type of the transfer buffer's pixel data
      * @param transferBuffer   GrBuffer to write pixels to (type must be "kXferGpuToCpu")
      * @param offset           offset from the start of the buffer
      */
-    bool transferPixelsFrom(GrSurface* surface, int left, int top, int width, int height,
-                            GrColorType surfaceColorType, GrColorType bufferColorType,
-                            sk_sp<GrGpuBuffer> transferBuffer, size_t offset);
+    bool transferPixelsFrom(GrSurface* surface,
+                            SkIRect rect,
+                            GrColorType surfaceColorType,
+                            GrColorType bufferColorType,
+                            sk_sp<GrGpuBuffer> transferBuffer,
+                            size_t offset);
 
     // Called to perform a surface to surface copy. Fallbacks to issuing a draw from the src to dst
     // take place at higher levels and this function implement faster copy paths. The rect
@@ -338,12 +351,13 @@ public:
     bool copySurface(GrSurface* dst, GrSurface* src, const SkIRect& srcRect,
                      const SkIPoint& dstPoint);
 
-    // Returns a GrOpsRenderPass which GrOpsTasks send draw commands to instead of directly
+    // Returns a GrOpsRenderPass which OpsTasks send draw commands to instead of directly
     // to the Gpu object. The 'bounds' rect is the content rect of the renderTarget.
     // If a 'stencil' is provided it will be the one bound to 'renderTarget'. If one is not
     // provided but 'renderTarget' has a stencil buffer then that is a signal that the
     // render target's stencil buffer should be ignored.
     GrOpsRenderPass* getOpsRenderPass(GrRenderTarget* renderTarget,
+                                      bool useMSAASurface,
                                       GrAttachment* stencil,
                                       GrSurfaceOrigin,
                                       const SkIRect& bounds,
@@ -371,8 +385,9 @@ public:
 
     virtual std::unique_ptr<GrSemaphore> SK_WARN_UNUSED_RESULT makeSemaphore(
             bool isOwned = true) = 0;
-    virtual std::unique_ptr<GrSemaphore> wrapBackendSemaphore(const GrBackendSemaphore& semaphore,
-            GrResourceProvider::SemaphoreWrapType wrapType, GrWrapOwnership ownership) = 0;
+    virtual std::unique_ptr<GrSemaphore> wrapBackendSemaphore(const GrBackendSemaphore&,
+                                                              GrSemaphoreWrapType,
+                                                              GrWrapOwnership) = 0;
     virtual void insertSemaphore(GrSemaphore* semaphore) = 0;
     virtual void waitSemaphore(GrSemaphore* semaphore) = 0;
 
@@ -450,6 +465,9 @@ public:
         int renderPasses() const { return fRenderPasses; }
         void incRenderPasses() { fRenderPasses++; }
 
+        int numReorderedDAGsOverBudget() const { return fNumReorderedDAGsOverBudget; }
+        void incNumReorderedDAGsOverBudget() { fNumReorderedDAGsOverBudget++; }
+
 #if GR_TEST_UTILS
         void dump(SkString*);
         void dumpKeyValuePairs(SkTArray<SkString>* keys, SkTArray<double>* values);
@@ -467,6 +485,7 @@ public:
         int fNumScratchTexturesReused = 0;
         int fNumScratchMSAAAttachmentsReused = 0;
         int fRenderPasses = 0;
+        int fNumReorderedDAGsOverBudget = 0;
 
 #else  // !GR_GPU_STATS
 
@@ -486,64 +505,13 @@ public:
         void incNumScratchTexturesReused() {}
         void incNumScratchMSAAAttachmentsReused() {}
         void incRenderPasses() {}
+        void incNumReorderedDAGsOverBudget() {}
 #endif
     };
 
     Stats* stats() { return &fStats; }
     void dumpJSON(SkJSONWriter*) const;
 
-    /** Used to initialize a backend texture with either a constant color, pixmaps or
-     *  compressed data.
-     */
-    class BackendTextureData {
-    public:
-        enum class Type { kColor, kPixmaps, kCompressed };
-        BackendTextureData() = default;
-        BackendTextureData(const SkColor4f& color) : fType(Type::kColor), fColor(color) {}
-        BackendTextureData(const GrPixmap pixmaps[]) : fType(Type::kPixmaps), fPixmaps(pixmaps) {
-            SkASSERT(pixmaps);
-        }
-        BackendTextureData(const void* data, size_t size) : fType(Type::kCompressed) {
-            SkASSERT(data);
-            fCompressed.fData = data;
-            fCompressed.fSize = size;
-        }
-
-        Type type() const { return fType; }
-        SkColor4f color() const {
-            SkASSERT(this->type() == Type::kColor);
-            return fColor;
-        }
-
-        const GrPixmap& pixmap(int i) const {
-            SkASSERT(this->type() == Type::kPixmaps);
-            return fPixmaps[i];
-        }
-        const GrPixmap* pixmaps() const {
-            SkASSERT(this->type() == Type::kPixmaps);
-            return fPixmaps;
-        }
-
-        const void* compressedData() const {
-            SkASSERT(this->type() == Type::kCompressed);
-            return fCompressed.fData;
-        }
-        size_t compressedSize() const {
-            SkASSERT(this->type() == Type::kCompressed);
-            return fCompressed.fSize;
-        }
-
-    private:
-        Type fType = Type::kColor;
-        union {
-            SkColor4f fColor = {0, 0, 0, 0};
-            const GrPixmap* fPixmaps;
-            struct {
-                const void*  fData;
-                size_t       fSize;
-            } fCompressed;
-        };
-    };
 
     /**
      * Creates a texture directly in the backend API without wrapping it in a GrTexture.
@@ -565,9 +533,9 @@ public:
                                           GrMipmapped,
                                           GrProtected);
 
-    bool updateBackendTexture(const GrBackendTexture&,
-                              sk_sp<GrRefCntedCallback> finishedCallback,
-                              const BackendTextureData*);
+    bool clearBackendTexture(const GrBackendTexture&,
+                             sk_sp<GrRefCntedCallback> finishedCallback,
+                             std::array<float, 4> color);
 
     /**
      * Same as the createBackendTexture case except compressed backend textures can
@@ -580,7 +548,8 @@ public:
 
     bool updateCompressedBackendTexture(const GrBackendTexture&,
                                         sk_sp<GrRefCntedCallback> finishedCallback,
-                                        const BackendTextureData*);
+                                        const void* data,
+                                        size_t length);
 
     virtual bool setBackendTextureState(const GrBackendTexture&,
                                         const GrBackendSurfaceMutableState&,
@@ -650,9 +619,9 @@ public:
     // width and height may be larger than rt (if underlying API allows it).
     // Returns nullptr if compatible sb could not be created, otherwise the caller owns the ref on
     // the GrAttachment.
-    virtual sk_sp<GrAttachment> makeStencilAttachmentForRenderTarget(const GrRenderTarget*,
-                                                                     SkISize dimensions,
-                                                                     int numStencilSamples) = 0;
+    virtual sk_sp<GrAttachment> makeStencilAttachment(const GrBackendFormat& colorFormat,
+                                                      SkISize dimensions,
+                                                      int numStencilSamples) = 0;
 
     virtual GrBackendFormat getPreferredStencilFormat(const GrBackendFormat&) = 0;
 
@@ -660,7 +629,8 @@ public:
     virtual sk_sp<GrAttachment> makeMSAAAttachment(SkISize dimensions,
                                                    const GrBackendFormat& format,
                                                    int numSamples,
-                                                   GrProtected isProtected) = 0;
+                                                   GrProtected isProtected,
+                                                   GrMemoryless isMemoryless) = 0;
 
     void handleDirtyContext() {
         if (fResetBits) {
@@ -680,9 +650,11 @@ public:
     virtual void xferBarrier(GrRenderTarget*, GrXferBarrierType) = 0;
 
 protected:
-    static bool MipMapsAreCorrect(SkISize dimensions, GrMipmapped, const BackendTextureData*);
-    static bool CompressedDataIsCorrect(SkISize dimensions, SkImage::CompressionType,
-                                        GrMipmapped, const BackendTextureData*);
+    static bool CompressedDataIsCorrect(SkISize dimensions,
+                                        SkImage::CompressionType,
+                                        GrMipmapped,
+                                        const void* data,
+                                        size_t length);
 
     // Handles cases where a surface will be updated without a call to flushRenderTarget.
     void didWriteToSurface(GrSurface* surface, GrSurfaceOrigin origin, const SkIRect* bounds,
@@ -705,13 +677,14 @@ private:
     virtual GrBackendTexture onCreateCompressedBackendTexture(
             SkISize dimensions, const GrBackendFormat&, GrMipmapped, GrProtected) = 0;
 
-    virtual bool onUpdateBackendTexture(const GrBackendTexture&,
-                                        sk_sp<GrRefCntedCallback> finishedCallback,
-                                        const BackendTextureData*) = 0;
+    virtual bool onClearBackendTexture(const GrBackendTexture&,
+                                       sk_sp<GrRefCntedCallback> finishedCallback,
+                                       std::array<float, 4> color) = 0;
 
     virtual bool onUpdateCompressedBackendTexture(const GrBackendTexture&,
                                                   sk_sp<GrRefCntedCallback> finishedCallback,
-                                                  const BackendTextureData*) = 0;
+                                                  const void* data,
+                                                  size_t length) = 0;
 
     // called when the 3D context state is unknown. Subclass should emit any
     // assumed 3D context state and dirty any state cache.
@@ -759,24 +732,36 @@ private:
                                               GrAccessPattern, const void* data) = 0;
 
     // overridden by backend-specific derived class to perform the surface read
-    virtual bool onReadPixels(GrSurface*, int left, int top, int width, int height,
-                              GrColorType surfaceColorType, GrColorType dstColorType, void* buffer,
+    virtual bool onReadPixels(GrSurface*,
+                              SkIRect,
+                              GrColorType surfaceColorType,
+                              GrColorType dstColorType,
+                              void*,
                               size_t rowBytes) = 0;
 
     // overridden by backend-specific derived class to perform the surface write
-    virtual bool onWritePixels(GrSurface*, int left, int top, int width, int height,
-                               GrColorType surfaceColorType, GrColorType srcColorType,
-                               const GrMipLevel texels[], int mipLevelCount,
+    virtual bool onWritePixels(GrSurface*,
+                               SkIRect,
+                               GrColorType surfaceColorType,
+                               GrColorType srcColorType,
+                               const GrMipLevel[],
+                               int mipLevelCount,
                                bool prepForTexSampling) = 0;
 
     // overridden by backend-specific derived class to perform the texture transfer
-    virtual bool onTransferPixelsTo(GrTexture*, int left, int top, int width, int height,
-                                    GrColorType textiueColorType, GrColorType bufferColorType,
-                                    sk_sp<GrGpuBuffer> transferBuffer, size_t offset,
+    virtual bool onTransferPixelsTo(GrTexture*,
+                                    SkIRect,
+                                    GrColorType textiueColorType,
+                                    GrColorType bufferColorType,
+                                    sk_sp<GrGpuBuffer> transferBuffer,
+                                    size_t offset,
                                     size_t rowBytes) = 0;
+
     // overridden by backend-specific derived class to perform the surface transfer
-    virtual bool onTransferPixelsFrom(GrSurface*, int left, int top, int width, int height,
-                                      GrColorType surfaceColorType, GrColorType bufferColorType,
+    virtual bool onTransferPixelsFrom(GrSurface*,
+                                      SkIRect,
+                                      GrColorType surfaceColorType,
+                                      GrColorType bufferColorType,
                                       sk_sp<GrGpuBuffer> transferBuffer,
                                       size_t offset) = 0;
 
@@ -792,6 +777,7 @@ private:
 
     virtual GrOpsRenderPass* onGetOpsRenderPass(
             GrRenderTarget* renderTarget,
+            bool useMSAASurface,
             GrAttachment* stencil,
             GrSurfaceOrigin,
             const SkIRect& bounds,
@@ -816,6 +802,7 @@ private:
 
     sk_sp<GrTexture> createTextureCommon(SkISize,
                                          const GrBackendFormat&,
+                                         GrTextureType textureType,
                                          GrRenderable,
                                          int renderTargetSampleCnt,
                                          SkBudgeted,
