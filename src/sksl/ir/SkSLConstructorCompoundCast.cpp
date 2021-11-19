@@ -7,6 +7,7 @@
 
 #include "src/sksl/ir/SkSLConstructorCompoundCast.h"
 
+#include "src/sksl/SkSLConstantFolder.h"
 #include "src/sksl/ir/SkSLConstructor.h"
 #include "src/sksl/ir/SkSLConstructorCompound.h"
 #include "src/sksl/ir/SkSLConstructorDiagonalMatrix.h"
@@ -51,16 +52,16 @@ static std::unique_ptr<Expression> cast_constant_composite(const Context& contex
                                                                std::move(arg)));
         } else {
             // Convert inner constant-composites recursively.
-            SkASSERT(argType.isVector());
+            SkASSERT(argType.isVector() || (argType.isMatrix() && argType.slotCount() == 4));
             typecastArgs.push_back(cast_constant_composite(
                     context,
-                    scalarType.toCompound(context, /*columns=*/argType.columns(), /*rows=*/1),
+                    scalarType.toCompound(context, /*columns=*/argType.slotCount(), /*rows=*/1),
                     std::move(arg)));
         }
     }
 
     return ConstructorCompound::Make(context, constCtor->fOffset, destType,
-                                      std::move(typecastArgs));
+                                     std::move(typecastArgs));
 }
 
 std::unique_ptr<Expression> ConstructorCompoundCast::Make(const Context& context,
@@ -77,6 +78,12 @@ std::unique_ptr<Expression> ConstructorCompoundCast::Make(const Context& context
     // If this is a no-op cast, return the expression as-is.
     if (type == arg->type()) {
         return arg;
+    }
+    // When optimization is on, look up the value of constant variables. This allows expressions
+    // like `int4(colorGreen)` to be replaced with the compile-time constant `int4(0, 1, 0, 1)`,
+    // which is eligible for constant folding.
+    if (context.fConfig->fSettings.fOptimize) {
+        arg = ConstantFolder::MakeConstantValueForVariable(std::move(arg));
     }
     // We can cast a vector of compile-time constants at compile-time.
     if (arg->isCompileTimeConstant()) {

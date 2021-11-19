@@ -10,10 +10,10 @@
 #include "src/core/SkMathPriv.h"
 #include "src/gpu/GrCaps.h"
 #include "src/gpu/GrGpuResourcePriv.h"
-#include "src/gpu/GrOpsTask.h"
 #include "src/gpu/GrRenderTarget.h"
 #include "src/gpu/GrResourceProvider.h"
 #include "src/gpu/GrSurface.h"
+#include "src/gpu/GrSurfaceProxyPriv.h"
 #include "src/gpu/GrTextureRenderTargetProxy.h"
 
 #ifdef SK_DEBUG
@@ -89,15 +89,6 @@ bool GrRenderTargetProxy::instantiate(GrResourceProvider* resourceProvider) {
     return true;
 }
 
-bool GrRenderTargetProxy::canChangeStencilAttachment() const {
-    if (!fTarget) {
-        // If we aren't instantiated, then we definitely are an internal render target. Ganesh is
-        // free to change stencil attachments on internal render targets.
-        return true;
-    }
-    return fTarget->asRenderTarget()->canAttemptStencilAttachment();
-}
-
 bool GrRenderTargetProxy::canUseStencil(const GrCaps& caps) const {
     if (caps.avoidStencilBuffers() || this->wrapsVkSecondaryCB()) {
         return false;
@@ -118,7 +109,11 @@ bool GrRenderTargetProxy::canUseStencil(const GrCaps& caps) const {
     }
     // Just ask the actual target if we can use stencil.
     GrRenderTarget* rt = this->peekRenderTarget();
-    return rt->getStencilAttachment() || rt->canAttemptStencilAttachment();
+    // The dmsaa attachment (if any) always supports stencil. The real question is whether the
+    // non-dmsaa attachment supports stencil.
+    bool useMSAASurface = rt->numSamples() > 1;
+    return rt->getStencilAttachment(useMSAASurface) ||
+           rt->canAttemptStencilAttachment(useMSAASurface);
 }
 
 sk_sp<GrSurface> GrRenderTargetProxy::createSurface(GrResourceProvider* resourceProvider) const {

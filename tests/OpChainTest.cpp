@@ -127,7 +127,7 @@ private:
     void onPrePrepare(GrRecordingContext*,
                       const GrSurfaceProxyView& writeView,
                       GrAppliedClip*,
-                      const GrXferProcessor::DstProxyView&,
+                      const GrDstProxyView&,
                       GrXferBarrierFlags renderPassXferBarriers,
                       GrLoadOp colorLoadOp) override {}
 
@@ -205,6 +205,7 @@ DEF_GPUTEST(OpChainTest, reporter, /*ctxInfo*/) {
     bool repeat = false;
     Combinable combinable;
     GrDrawingManager* drawingMgr = dContext->priv().drawingManager();
+    sk_sp<GrArenas> arenas = sk_make_sp<GrArenas>();
     for (int p = 0; p < kNumPermutations; ++p) {
         for (int i = 0; i < kNumOps - 2 && !repeat; ++i) {
             // The current implementation of nextULessThan() is biased. :(
@@ -221,7 +222,8 @@ DEF_GPUTEST(OpChainTest, reporter, /*ctxInfo*/) {
                                           &tracker);
                 GrOpsTask opsTask(drawingMgr,
                                   GrSurfaceProxyView(proxy, kOrigin, writeSwizzle),
-                                  dContext->priv().auditTrail());
+                                  dContext->priv().auditTrail(),
+                                  arenas);
                 // This assumes the particular values of kRanges.
                 std::fill_n(result, result_width(), -1);
                 std::fill_n(validResult, result_width(), -1);
@@ -240,7 +242,7 @@ DEF_GPUTEST(OpChainTest, reporter, /*ctxInfo*/) {
                                   GrTextureResolveManager(dContext->priv().drawingManager()),
                                   *caps);
                 }
-                opsTask.makeClosed(*caps);
+                opsTask.makeClosed(dContext.get());
                 opsTask.prepare(&flushState);
                 opsTask.execute(&flushState);
                 opsTask.endFlush(drawingMgr);
