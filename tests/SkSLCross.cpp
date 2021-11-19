@@ -9,6 +9,7 @@
 
 #include "src/gpu/GrSurfaceDrawContext.h"
 #include "src/gpu/glsl/GrGLSLFragmentProcessor.h"
+#include "src/gpu/glsl/GrGLSLFragmentShaderBuilder.h"
 
 static void run_test(skiatest::Reporter*, GrDirectContext*,
                      GrSurfaceDrawContext*, SkVector a,
@@ -19,7 +20,7 @@ static void run_test(skiatest::Reporter*, GrDirectContext*,
 DEF_GPUTEST_FOR_RENDERING_CONTEXTS(SkSLCross, reporter, ctxInfo) {
     GrDirectContext* directContext = ctxInfo.directContext();
     auto rtc = GrSurfaceDrawContext::Make(directContext, GrColorType::kRGBA_8888, nullptr,
-                                          SkBackingFit::kExact, {1, 1});
+                                          SkBackingFit::kExact, {1, 1}, SkSurfaceProps());
     if (!rtc) {
         ERRORF(reporter, "could not create render target context.");
         return;

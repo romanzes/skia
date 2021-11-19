@@ -8,6 +8,7 @@
 #ifndef SKSL_DSL_CORE
 #define SKSL_DSL_CORE
 
+#include "include/private/SkSLProgramKind.h"
 #include "include/private/SkTArray.h"
 #include "include/sksl/DSLBlock.h"
 #include "include/sksl/DSLCase.h"
@@ -17,10 +18,13 @@
 #include "include/sksl/DSLStatement.h"
 #include "include/sksl/DSLType.h"
 #include "include/sksl/DSLVar.h"
+#include "include/sksl/DSLWrapper.h"
 
 namespace SkSL {
 
 class Compiler;
+struct Program;
+struct ProgramSettings;
 
 namespace dsl {
 
@@ -34,7 +38,9 @@ using namespace SkSL::SwizzleComponent;
  * Starts DSL output on the current thread using the specified compiler. This must be called
  * prior to any other DSL functions.
  */
-void Start(SkSL::Compiler* compiler);
+void Start(SkSL::Compiler* compiler, SkSL::ProgramKind kind = SkSL::ProgramKind::kFragment);
+
+void Start(SkSL::Compiler* compiler, SkSL::ProgramKind kind, const SkSL::ProgramSettings& settings);
 
 /**
  * Signals the end of DSL output. This must be called sometime between a call to Start() and the
@@ -43,14 +49,21 @@ void Start(SkSL::Compiler* compiler);
 void End();
 
 /**
+ * Returns all global elements (functions and global variables) as a self-contained Program.
+ */
+std::unique_ptr<SkSL::Program> ReleaseProgram();
+
+/**
  * Installs an ErrorHandler which will be notified of any errors that occur during DSL calls. If
  * no ErrorHandler is installed, any errors will be fatal.
  */
 void SetErrorHandler(ErrorHandler* errorHandler);
 
-DSLVar sk_FragColor();
+DSLGlobalVar sk_FragColor();
 
-DSLVar sk_FragCoord();
+DSLGlobalVar sk_FragCoord();
+
+DSLExpression sk_Position();
 
 /**
  * break;
@@ -63,9 +76,14 @@ DSLStatement Break();
 DSLStatement Continue();
 
 /**
- * Creates a variable declaration statement.
+ * Creates a local variable declaration statement.
  */
 DSLStatement Declare(DSLVar& var, PositionInfo pos = PositionInfo());
+
+/**
+ * Declares a global variable.
+ */
+void Declare(DSLGlobalVar& var, PositionInfo pos = PositionInfo());
 
 /**
  * default: statements
@@ -97,6 +115,10 @@ DSLStatement For(DSLStatement initializer, DSLExpression test, DSLExpression nex
 DSLStatement If(DSLExpression test, DSLStatement ifTrue, DSLStatement ifFalse = DSLStatement(),
                 PositionInfo pos = PositionInfo());
 
+DSLGlobalVar InterfaceBlock(DSLModifiers modifiers,  skstd::string_view typeName,
+                            SkTArray<DSLField> fields, skstd::string_view varName = "",
+                            int arraySize = 0, PositionInfo pos = PositionInfo());
+
 /**
  * return [value];
  */
@@ -108,25 +130,33 @@ DSLStatement Return(DSLExpression value = DSLExpression(), PositionInfo pos = Po
 DSLExpression Select(DSLExpression test, DSLExpression ifTrue, DSLExpression ifFalse,
                      PositionInfo info = PositionInfo());
 
-DSLPossibleStatement Switch(DSLExpression value, SkSL::ExpressionArray values,
-                            SkTArray<StatementArray> statements);
+DSLStatement StaticIf(DSLExpression test, DSLStatement ifTrue,
+                      DSLStatement ifFalse = DSLStatement(), PositionInfo pos = PositionInfo());
+
+DSLPossibleStatement StaticSwitch(DSLExpression value, SkTArray<DSLCase> cases);
+
+/**
+ * @switch (value) { cases }
+ */
+template<class... Cases>
+DSLPossibleStatement StaticSwitch(DSLExpression value, Cases... cases) {
+    SkTArray<DSLCase> caseArray;
+    caseArray.reserve_back(sizeof...(cases));
+    (caseArray.push_back(std::move(cases)), ...);
+    return StaticSwitch(std::move(value), std::move(caseArray));
+}
+
+DSLPossibleStatement Switch(DSLExpression value, SkTArray<DSLCase> cases);
 
 /**
  * switch (value) { cases }
  */
 template<class... Cases>
 DSLPossibleStatement Switch(DSLExpression value, Cases... cases) {
-    SkSL::ExpressionArray caseValues;
-    SkTArray<StatementArray> caseStatements;
-    caseValues.reserve_back(sizeof...(cases));
-    caseStatements.reserve_back(sizeof...(cases));
-    // yet more workarounds until we can rely on C++17 support
-    int unused1[] = {0, (static_cast<void>(caseValues.push_back(cases.fValue.release())), 0)...};
-    static_cast<void>(unused1);
-    int unused2[] = {0, (static_cast<void>(caseStatements.push_back(std::move(cases.fStatements))),
-                         0)...};
-    static_cast<void>(unused2);
-    return Switch(std::move(value), std::move(caseValues), std::move(caseStatements));
+    SkTArray<DSLCase> caseArray;
+    caseArray.reserve_back(sizeof...(cases));
+    (caseArray.push_back(std::move(cases)), ...);
+    return Switch(std::move(value), std::move(caseArray));
 }
 
 /**
@@ -173,6 +203,12 @@ DSLExpression All(DSLExpression x, PositionInfo pos = PositionInfo());
  * Returns true if any of the components of boolean vector x are true.
  */
 DSLExpression Any(DSLExpression x, PositionInfo pos = PositionInfo());
+
+/**
+ * Returns the arctangent of y over x. Operates componentwise on vectors.
+ */
+DSLExpression Atan(DSLExpression y_over_x, PositionInfo pos = PositionInfo());
+DSLExpression Atan(DSLExpression y, DSLExpression x, PositionInfo pos = PositionInfo());
 
 /**
  * Returns x rounded towards positive infinity. If x is a vector, operates componentwise.
@@ -349,6 +385,25 @@ DSLExpression Reflect(DSLExpression i, DSLExpression n, PositionInfo pos = Posit
  */
 DSLExpression Refract(DSLExpression i, DSLExpression n, DSLExpression eta,
                       PositionInfo pos = PositionInfo());
+
+/**
+ * Samples the child processor at the current coordinates.
+ */
+DSLExpression Sample(DSLExpression fp, PositionInfo pos = PositionInfo());
+
+/**
+ * Implements the following functions:
+ *     half4 sample(fragmentProcessor fp, float2 coords);
+ *     half4 sample(fragmentProcessor fp, half4 input);
+ */
+DSLExpression Sample(DSLExpression target, DSLExpression x, PositionInfo pos = PositionInfo());
+
+/**
+ * Implements the following functions:
+ *     half4 sample(fragmentProcessor fp, float2 coords, half4 input);
+ */
+DSLExpression Sample(DSLExpression childProcessor, DSLExpression x, DSLExpression y,
+                     PositionInfo pos = PositionInfo());
 
 /**
  * Returns x clamped to the range [0, 1]. If x is a vector, operates componentwise.

@@ -68,12 +68,10 @@ bool GrSimpleMeshDrawOpHelper::isCompatible(const GrSimpleMeshDrawOpHelper& that
 }
 
 GrProcessorSet::Analysis GrSimpleMeshDrawOpHelper::finalizeProcessors(
-        const GrCaps& caps, const GrAppliedClip* clip, bool hasMixedSampledCoverage,
-        GrClampType clampType, GrProcessorAnalysisCoverage geometryCoverage,
-        SkPMColor4f* geometryColor, bool* wideColor) {
+        const GrCaps& caps, const GrAppliedClip* clip, GrClampType clampType,
+        GrProcessorAnalysisCoverage geometryCoverage, SkPMColor4f* geometryColor, bool* wideColor) {
     GrProcessorAnalysisColor color = *geometryColor;
-    auto result = this->finalizeProcessors(
-            caps, clip, hasMixedSampledCoverage, clampType, geometryCoverage, &color);
+    auto result = this->finalizeProcessors(caps, clip, clampType, geometryCoverage, &color);
     color.isConstant(geometryColor);
     if (wideColor) {
         *wideColor = !geometryColor->fitsInBytes();
@@ -83,20 +81,20 @@ GrProcessorSet::Analysis GrSimpleMeshDrawOpHelper::finalizeProcessors(
 
 GrProcessorSet::Analysis GrSimpleMeshDrawOpHelper::finalizeProcessors(
         const GrCaps& caps, const GrAppliedClip* clip, const GrUserStencilSettings* userStencil,
-        bool hasMixedSampledCoverage, GrClampType clampType,
-        GrProcessorAnalysisCoverage geometryCoverage, GrProcessorAnalysisColor* geometryColor) {
+        GrClampType clampType, GrProcessorAnalysisCoverage geometryCoverage,
+        GrProcessorAnalysisColor* geometryColor) {
     SkDEBUGCODE(fDidAnalysis = true);
     GrProcessorSet::Analysis analysis;
     if (fProcessors) {
         GrProcessorAnalysisCoverage coverage = geometryCoverage;
         if (GrProcessorAnalysisCoverage::kNone == coverage) {
-            coverage = clip->hasCoverageFragmentProcessor()
+            coverage = (clip && clip->hasCoverageFragmentProcessor())
                                ? GrProcessorAnalysisCoverage::kSingleChannel
                                : GrProcessorAnalysisCoverage::kNone;
         }
         SkPMColor4f overrideColor;
-        analysis = fProcessors->finalize(*geometryColor, coverage, clip, userStencil,
-                                         hasMixedSampledCoverage, caps, clampType, &overrideColor);
+        analysis = fProcessors->finalize(*geometryColor, coverage, clip, userStencil, caps,
+                                         clampType, &overrideColor);
         if (analysis.inputColorIsOverridden()) {
             *geometryColor = overrideColor;
         }
@@ -113,7 +111,7 @@ const GrPipeline* GrSimpleMeshDrawOpHelper::CreatePipeline(
                                                 SkArenaAlloc* arena,
                                                 GrSwizzle writeViewSwizzle,
                                                 GrAppliedClip&& appliedClip,
-                                                const GrXferProcessor::DstProxyView& dstProxyView,
+                                                const GrDstProxyView& dstProxyView,
                                                 GrProcessorSet&& processorSet,
                                                 GrPipeline::InputFlags pipelineFlags) {
     GrPipeline::InitArgs pipelineArgs;
@@ -156,7 +154,7 @@ const GrPipeline* GrSimpleMeshDrawOpHelper::createPipeline(
         SkArenaAlloc* arena,
         GrSwizzle writeViewSwizzle,
         GrAppliedClip&& appliedClip,
-        const GrXferProcessor::DstProxyView& dstProxyView) {
+        const GrDstProxyView& dstProxyView) {
     return GrSimpleMeshDrawOpHelper::CreatePipeline(caps,
                                                     arena,
                                                     writeViewSwizzle,
@@ -171,7 +169,7 @@ GrProgramInfo* GrSimpleMeshDrawOpHelper::CreateProgramInfo(
             SkArenaAlloc* arena,
             const GrSurfaceProxyView& writeView,
             GrAppliedClip&& appliedClip,
-            const GrXferProcessor::DstProxyView& dstProxyView,
+            const GrDstProxyView& dstProxyView,
             GrGeometryProcessor* geometryProcessor,
             GrProcessorSet&& processorSet,
             GrPrimitiveType primitiveType,
@@ -215,7 +213,7 @@ GrProgramInfo* GrSimpleMeshDrawOpHelper::createProgramInfo(
                                             SkArenaAlloc* arena,
                                             const GrSurfaceProxyView& writeView,
                                             GrAppliedClip&& appliedClip,
-                                            const GrXferProcessor::DstProxyView& dstProxyView,
+                                            const GrDstProxyView& dstProxyView,
                                             GrGeometryProcessor* gp,
                                             GrPrimitiveType primType,
                                             GrXferBarrierFlags renderPassXferBarriers,

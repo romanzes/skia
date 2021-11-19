@@ -11,9 +11,9 @@
 
 #include "include/core/SkTypeface.h"
 #include "include/core/SkTypes.h"
-#include "include/private/SkMutex.h"
 #include "src/core/SkGlyph.h"
 #include "src/core/SkScalerContext.h"
+#include "src/core/SkSharedMutex.h"
 #include "src/utils/SkCharToGlyphCache.h"
 
 #include "include/core/SkFontMgr.h"
@@ -24,11 +24,10 @@ typedef struct FT_FaceRec_* FT_Face;
 typedef struct FT_StreamRec_* FT_Stream;
 typedef signed long FT_Pos;
 
-
 #ifdef SK_DEBUG
 const char* SkTraceFtrGetError(int);
 #define SK_TRACEFTR(ERR, MSG, ...) \
-    SkDebugf("%s:%lu:1: error: 0x%x '%s' " MSG "\n", __FILE__, __LINE__, ERR, \
+    SkDebugf("%s:%d:1: error: 0x%x '%s' " MSG "\n", __FILE__, __LINE__, ERR, \
             SkTraceFtrGetError((int)(ERR)), __VA_ARGS__)
 #else
 #define SK_TRACEFTR(ERR, ...) do { sk_ignore_unused_variable(ERR); } while (false)
@@ -94,11 +93,12 @@ public:
      *  Return the font data, or nullptr on failure.
      */
     std::unique_ptr<SkFontData> makeFontData() const;
+    class FaceRec;
+    FaceRec* getFaceRec() const;
 
 protected:
-    SkTypeface_FreeType(const SkFontStyle& style, bool isFixedPitch)
-        : INHERITED(style, isFixedPitch)
-    {}
+    SkTypeface_FreeType(const SkFontStyle& style, bool isFixedPitch);
+    ~SkTypeface_FreeType() override;
 
     std::unique_ptr<SkFontData> cloneFontData(const SkFontArguments&) const;
     std::unique_ptr<SkScalerContext> onCreateScalerContext(const SkScalerContextEffects&,
@@ -128,7 +128,10 @@ protected:
     virtual std::unique_ptr<SkFontData> onMakeFontData() const = 0;
 
 private:
-    mutable SkMutex fC2GCacheMutex;
+    mutable SkOnce fFTFaceOnce;
+    mutable std::unique_ptr<FaceRec> fFaceRec;
+
+    mutable SkSharedMutex fC2GCacheMutex;
     mutable SkCharToGlyphCache fC2GCache;
 
     using INHERITED = SkTypeface;

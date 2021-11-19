@@ -10,6 +10,62 @@ This page includes a list of high level updates for each milestone release.
 
 * * *
 
+Milestone 92
+------------
+  * Hides SkPathEffect::computeFastBounds() from public API; external subclasses of SkPathEffect
+    must implement onComputeFastBounds() but can return false to signal it's not computable.
+    https://review.skia.org/406140
+
+  * Add SkM44::RectToRect constructor (SkM44's equivalent to SkMatrix::RectToRect)
+    https://review.skia.org/402957
+
+  * Metal support has been removed for versions of iOS older than 10.0 and MacOS older than 10.14.
+    https://review.skia.org/401816
+
+  * Removed custom attributes from SkVertices and the corresponding `varying` feature from
+    SkRuntimeEffect.
+    https://review.skia.org/398222
+
+  * Dropped support for mixed samples. Mixed samples is no longer relevant for Ganesh. DMSAA and the
+    new Ganesh architecture both rely on full MSAA, and any platform where mixed samples is
+    supported will ultimately not use the old architecture.
+
+  * SkRuntimeEffect::Make has been removed. It is replaced by MakeForShader and MakeForColorFilter.
+    These functions do stricter error checking on the SkSL, to ensure it is valid for a particular
+    stage of the Skia pipeline.
+    https://review.skia.org/402156
+
+* * *
+
+Milestone 91
+------------
+  * The SkSL DSL API has been moved into public headers, although it is still under active
+    development and isn't quite ready for prime time yet.
+    https://review.skia.org/378496
+
+  * Skia's GPU backend no longer supports NVPR. Our more recent path renderers are more
+    performant and are not limited to nVidia hardware.
+
+  * SkRuntimeEffect now supports uniforms of type int, int2, int3, and int4. Per the OpenGL ES
+    Shading Language Version 1.00 specification, there are few guarantees about the representation
+    or range of integral types, and operations that assume integral representation (eg, bitwise),
+    are not supported.
+    https://review.skia.org/391856
+
+  * SkRuntimeEffect requires that 'shader' variables be declared as 'uniform'. The deprecated
+    syntax of 'in shader' is no longer supported.
+    https://review.skia.org/393081
+
+  * SkRuntimeEffect now enforces stricter rules on the signature of main, and arguments to sample().
+    main must be declared to return a color ('half4', 'float4', or 'vec4'). The first argument must
+    be coordinates ('float2' or 'vec2'). The second argument is optional, but if present, it must
+    be the incoming color ('half4', 'float4', or 'vec4').
+    Calls to sample a shader must be of the form 'sample(child, coords)', where 'child' is a uniform
+    shader, and 'coords' is of type 'float2' or 'vec2'.
+    https://review.skia.org/399077
+
+* * *
+
 Milestone 90
 ------------
   * Renamed use of sk_cf_obj in external Metal types to sk_cfp.

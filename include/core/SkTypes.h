@@ -334,6 +334,14 @@
 #  endif
 #endif
 
+#if !defined(SK_MAYBE_UNUSED)
+#  if defined(__clang__) || defined(__GNUC__)
+#    define SK_MAYBE_UNUSED [[maybe_unused]]
+#  else
+#    define SK_MAYBE_UNUSED
+#  endif
+#endif
+
 /**
  * If your judgment is better than the compiler's (i.e. you've profiled it),
  * you can use SK_ALWAYS_INLINE to force inlining. E.g.
@@ -388,6 +396,14 @@
 #  define GR_TEST_UTILS 0
 #endif
 
+#ifndef SK_GPU_V2
+#  define SK_GPU_V2 0
+#endif
+
+#ifndef SK_GPU_V1
+#  define SK_GPU_V1 1
+#endif
+
 #if defined(SK_HISTOGRAM_ENUMERATION)  || \
     defined(SK_HISTOGRAM_BOOLEAN)      || \
     defined(SK_HISTOGRAM_EXACT_LINEAR) || \
@@ -437,10 +453,15 @@
 [[noreturn]] SK_API extern void sk_abort_no_print(void);
 
 #ifndef SkDebugf
-    SK_API void SkDebugf(const char format[], ...);
+    #if SKIA_IMPLEMENTATION
+        SK_API void SkDebugf(const char format[], ...) SK_PRINTF_LIKE(1, 2);
+    #else
+        // TODO(johnstiles): fix external code which misuses format specifiers
+        SK_API void SkDebugf(const char format[], ...);
+    #endif
 #endif
 #if defined(SK_BUILD_FOR_LIBFUZZER)
-    SK_API inline void SkDebugf(const char format[], ...) {}
+    SK_API SK_PRINTF_LIKE(1, 2) inline void SkDebugf(const char format[], ...) {}
 #endif
 
 // SkASSERT, SkASSERTF and SkASSERT_RELEASE can be used as stand alone assertion expressions, e.g.

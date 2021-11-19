@@ -16,11 +16,11 @@
 #include "src/core/SkReadBuffer.h"
 #include "src/core/SkSpecialImage.h"
 #include "src/core/SkWriteBuffer.h"
-#include "src/gpu/SkGr.h"
 
 #if SK_SUPPORT_GPU
 #include "src/gpu/GrRecordingContextPriv.h"
 #include "src/gpu/GrTextureProxy.h"
+#include "src/gpu/SkGr.h"
 #include "src/gpu/effects/GrMatrixConvolutionEffect.h"
 #endif
 
@@ -366,7 +366,8 @@ sk_sp<SkSpecialImage> SkMatrixConvolutionImageFilter::onFilterImage(const Contex
         // called pad_image to account for our dilation of bounds, so the result will already be
         // moved to the destination color space. If a filter DAG avoids that, then we use this
         // fall-back, which saves us from having to do the xform during the filter itself.
-        input = ImageToColorSpace(input.get(), ctx.colorType(), ctx.colorSpace());
+        input = ImageToColorSpace(input.get(), ctx.colorType(), ctx.colorSpace(),
+                                  ctx.surfaceProps());
 
         GrSurfaceProxyView inputView = input->view(context);
         SkASSERT(inputView.asTextureProxy());
@@ -403,7 +404,7 @@ sk_sp<SkSpecialImage> SkMatrixConvolutionImageFilter::onFilterImage(const Contex
         // evaluating the FP, and the dst rect just uses the size of dstBounds.
         dstBounds.offset(input->subset().x(), input->subset().y());
         return DrawWithFP(context, std::move(fp), dstBounds, ctx.colorType(), ctx.colorSpace(),
-                          isProtected);
+                          ctx.surfaceProps(), isProtected);
     }
 #endif
 
@@ -470,7 +471,7 @@ sk_sp<SkSpecialImage> SkMatrixConvolutionImageFilter::onFilterImage(const Contex
     this->filterBorderPixels(inputBM, &dst, dstContentOffset, bottom, srcBounds);
 
     return SkSpecialImage::MakeFromRaster(SkIRect::MakeWH(dstBounds.width(), dstBounds.height()),
-                                          dst);
+                                          dst, ctx.surfaceProps());
 }
 
 SkIRect SkMatrixConvolutionImageFilter::onFilterNodeBounds(

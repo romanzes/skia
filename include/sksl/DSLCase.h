@@ -36,17 +36,23 @@ public:
         static_cast<void>(unused);
     }
 
-    DSLCase(DSLCase&&);
+    DSLCase(DSLExpression value, SkTArray<DSLStatement> statements);
 
     DSLCase(DSLExpression value, SkSL::StatementArray statements);
 
+    DSLCase(DSLCase&&);
+
     ~DSLCase();
+
+    DSLCase& operator=(DSLCase&&);
 
     void append(DSLStatement stmt);
 
 private:
     DSLExpression fValue;
     SkSL::StatementArray fStatements;
+
+    friend class DSLCore;
 
     template<class... Cases>
     friend DSLPossibleStatement Switch(DSLExpression value, Cases... cases);

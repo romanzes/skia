@@ -7,12 +7,12 @@
 #include "include/core/SkPoint.h"
 #include "include/core/SkRect.h"
 #include "include/core/SkScalar.h"
+#include "include/core/SkSpan.h"
 #include "include/core/SkTypes.h"
 #include "include/private/SkTArray.h"
 #include "modules/skparagraph/include/DartTypes.h"
 #include "modules/skparagraph/include/TextStyle.h"
 #include "modules/skshaper/include/SkShaper.h"
-#include "src/core/SkSpan.h"
 
 #include <math.h>
 #include <algorithm>
@@ -58,6 +58,7 @@ public:
         const SkShaper::RunHandler::RunInfo& info,
         size_t firstChar,
         SkScalar heightMultiplier,
+        bool useHalfLeading,
         size_t index,
         SkScalar shiftX);
     Run(const Run&) = default;
@@ -95,6 +96,7 @@ public:
     TextDirection getTextDirection() const { return leftToRight() ? TextDirection::kLtr : TextDirection::kRtl; }
     size_t index() const { return fIndex; }
     SkScalar heightMultiplier() const { return fHeightMultiplier; }
+    bool useHalfLeading() const { return fUseHalfLeading; }
     PlaceholderStyle* placeholderStyle() const;
     bool isPlaceholder() const { return fPlaceholderIndex != std::numeric_limits<size_t>::max(); }
     size_t clusterIndex(size_t pos) const { return fClusterIndexes[pos]; }
@@ -190,6 +192,7 @@ private:
 
     SkFontMetrics fFontMetrics;
     const SkScalar fHeightMultiplier;
+    const bool fUseHalfLeading;
     SkScalar fCorrectAscent;
     SkScalar fCorrectDescent;
     SkScalar fCorrectLeading;
@@ -276,6 +279,7 @@ public:
 
     Cluster(TextRange textRange) : fTextRange(textRange), fGraphemeRange(EMPTY_RANGE) { }
 
+    Cluster(const Cluster&) = default;
     ~Cluster() = default;
 
     SkScalar sizeToChar(TextIndex ch) const;
@@ -291,9 +295,6 @@ public:
     bool isWhitespaceBreak() const { return fIsWhiteSpaceBreak; }
     bool isIntraWordBreak() const { return fIsIntraWordBreak; }
     bool isHardBreak() const { return fIsHardBreak; }
-    // NON-SKIA-UPSTREAMED CHANGE
-    bool isChromeBreak() const { return fIsChromeBreak; }
-    // END OF NON-SKIA-UPSTREAMED CHANGE
 
     bool isSoftBreak() const;
     bool isGraphemeBreak() const;
@@ -347,9 +348,6 @@ private:
     bool fIsWhiteSpaceBreak;
     bool fIsIntraWordBreak;
     bool fIsHardBreak;
-    // NON-SKIA-UPSTREAMED CHANGE
-    bool fIsChromeBreak;
-    // END OF NON-SKIA-UPSTREAMED CHANGE
 };
 
 class InternalLineMetrics {
@@ -388,7 +386,6 @@ public:
     }
 
     void add(Run* run) {
-
         if (fForceStrut) {
             return;
         }
@@ -412,11 +409,11 @@ public:
     }
 
     void clean() {
-        fAscent = 0;
-        fDescent = 0;
+        fAscent = SK_ScalarMax;
+        fDescent = SK_ScalarMin;
         fLeading = 0;
-        fRawAscent = 0;
-        fRawDescent = 0;
+        fRawAscent = SK_ScalarMax;
+        fRawDescent = SK_ScalarMin;
         fRawLeading = 0;
     }
 

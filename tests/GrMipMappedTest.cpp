@@ -12,6 +12,10 @@
 #include "include/core/SkSurface.h"
 #include "include/gpu/GrBackendSurface.h"
 #include "include/gpu/GrDirectContext.h"
+#ifdef SK_DIRECT3D
+#include "include/gpu/d3d/GrD3DTypes.h"
+#endif
+#include "src/gpu/BaseDevice.h"
 #include "src/gpu/GrBackendTextureImageGenerator.h"
 #include "src/gpu/GrDirectContextPriv.h"
 #include "src/gpu/GrDrawingManager.h"
@@ -23,7 +27,6 @@
 #include "src/gpu/GrSurfaceProxyPriv.h"
 #include "src/gpu/GrTexture.h"
 #include "src/gpu/GrTextureProxy.h"
-#include "src/gpu/SkGpuDevice.h"
 #include "src/image/SkImage_Base.h"
 #include "src/image/SkSurface_Gpu.h"
 #include "tests/Test.h"
@@ -75,8 +78,8 @@ DEF_GPUTEST_FOR_RENDERING_CONTEXTS(GrWrappedMipMappedTest, reporter, ctxInfo) {
                         sk_gpu_test::ManagedBackendTexture::ReleaseProc,
                         mbet->releaseContext());
 
-                SkGpuDevice* device = ((SkSurface_Gpu*)surface.get())->getDevice();
-                proxy = device->surfaceDrawContext()->asTextureProxyRef();
+                auto device = ((SkSurface_Gpu*)surface.get())->getDevice();
+                proxy = device->readSurfaceView().asTextureProxyRef();
             } else {
                 image = SkImage::MakeFromTexture(dContext,
                                                  mbet->texture(),
@@ -232,6 +235,24 @@ DEF_GPUTEST_FOR_RENDERING_CONTEXTS(GrBackendTextureImageMipMappedTest, reporter,
                     ERRORF(reporter, "Failed to get GrMtlTextureInfo");
                 }
 #endif
+#ifdef SK_DIRECT3D
+            } else if (GrBackendApi::kDirect3D == genBackendTex.backend()) {
+                GrD3DTextureResourceInfo genImageInfo;
+                GrD3DTextureResourceInfo origImageInfo;
+                if (genBackendTex.getD3DTextureResourceInfo(&genImageInfo) &&
+                    backendTex.getD3DTextureResourceInfo(&origImageInfo)) {
+                    if (requestMipmapped == GrMipmapped::kYes && betMipmapped == GrMipmapped::kNo) {
+                        // We did a copy so the texture resources should be different
+                        REPORTER_ASSERT(reporter,
+                                        origImageInfo.fResource != genImageInfo.fResource);
+                    } else {
+                        REPORTER_ASSERT(reporter,
+                                        origImageInfo.fResource == genImageInfo.fResource);
+                    }
+                } else {
+                    ERRORF(reporter, "Failed to get GrMtlTextureInfo");
+                }
+#endif
 #ifdef SK_DAWN
             } else if (GrBackendApi::kDawn == genBackendTex.backend()) {
                 GrDawnTextureInfo genImageInfo;
@@ -289,8 +310,8 @@ DEF_GPUTEST_FOR_RENDERING_CONTEXTS(GrImageSnapshotMipMappedTest, reporter, ctxIn
                                                       willUseMips);
             }
             REPORTER_ASSERT(reporter, surface);
-            SkGpuDevice* device = ((SkSurface_Gpu*)surface.get())->getDevice();
-            GrTextureProxy* texProxy = device->surfaceDrawContext()->asTextureProxy();
+            auto device = ((SkSurface_Gpu*)surface.get())->getDevice();
+            GrTextureProxy* texProxy = device->readSurfaceView().asTextureProxy();
             REPORTER_ASSERT(reporter, mipmapped == texProxy->mipmapped());
 
             texProxy->instantiate(resourceProvider);
@@ -364,10 +385,11 @@ static std::unique_ptr<GrSurfaceDrawContext> draw_mipmap_into_new_render_target(
 
     auto rtc = GrSurfaceDrawContext::Make(rContext,
                                           colorType,
-                                          nullptr,
                                           std::move(renderTarget),
+                                          nullptr,
                                           kTopLeft_GrSurfaceOrigin,
-                                          nullptr);
+                                          SkSurfaceProps(),
+                                          false);
 
     rtc->drawTexture(nullptr,
                      std::move(mipmapView),
@@ -424,7 +446,8 @@ DEF_GPUTEST(GrManyDependentsMipMappedTest, reporter, /* options */) {
         mipmapProxy->markMipmapsClean();
 
         auto mipmapRTC = GrSurfaceDrawContext::Make(
-            dContext.get(), colorType, nullptr, mipmapProxy, kTopLeft_GrSurfaceOrigin, nullptr);
+            dContext.get(), colorType, mipmapProxy, nullptr, kTopLeft_GrSurfaceOrigin,
+            SkSurfaceProps(), false);
 
         mipmapRTC->clear(SkPMColor4f{.1f, .2f, .3f, .4f});
         REPORTER_ASSERT(reporter, drawingManager->getLastRenderTask(mipmapProxy.get()));

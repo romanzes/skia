@@ -47,6 +47,7 @@ class SkDrawable;
 struct SkDrawShadowRec;
 class SkFont;
 class SkGlyphRunBuilder;
+class SkGlyphRunList;
 class SkImage;
 class SkImageFilter;
 class SkMarkerStack;
@@ -61,6 +62,13 @@ class SkSurface;
 class SkSurface_Base;
 class SkTextBlob;
 class SkVertices;
+
+// This declaration must match the one in SkDeferredDisplayList.h
+#if SK_SUPPORT_GPU
+class GrRenderTargetProxy;
+#else
+using GrRenderTargetProxy = SkRefCnt;
+#endif
 
 /** \class SkCanvas
     SkCanvas provides an interface for drawing, and how the drawing is clipped and transformed.
@@ -1737,6 +1745,75 @@ public:
         this->drawSimpleText(str.c_str(), str.size(), SkTextEncoding::kUTF8, x, y, font, paint);
     }
 
+    /** Draws count glyphs, at positions relative to origin styled with font and paint with
+        supporting utf8 and cluster information.
+
+       This function draw glyphs at the given positions relative to the given origin.
+       It does not perform typeface fallback for glyphs not found in the SkTypeface in font.
+
+       The drawing obeys the current transform matrix and clipping.
+
+       All elements of paint: SkPathEffect, SkMaskFilter, SkShader,
+       SkColorFilter, and SkImageFilter; apply to text. By
+       default, draws filled black glyphs.
+
+       @param count           number of glyphs to draw
+       @param glyphs          the array of glyphIDs to draw
+       @param positions       where to draw each glyph relative to origin
+       @param clusters        array of size count of cluster information
+       @param textByteCount   size of the utf8text
+       @param utf8text        utf8text supporting information for the glyphs
+       @param origin          the origin of all the positions
+       @param font            typeface, text size and so, used to describe the text
+       @param paint           blend, color, and so on, used to draw
+    */
+    void drawGlyphs(int count, const SkGlyphID glyphs[], const SkPoint positions[],
+                    const uint32_t clusters[], int textByteCount, const char utf8text[],
+                    SkPoint origin, const SkFont& font, const SkPaint& paint);
+
+    /** Draws count glyphs, at positions relative to origin styled with font and paint.
+
+        This function draw glyphs at the given positions relative to the given origin.
+        It does not perform typeface fallback for glyphs not found in the SkTypeface in font.
+
+        The drawing obeys the current transform matrix and clipping.
+
+        All elements of paint: SkPathEffect, SkMaskFilter, SkShader,
+        SkColorFilter, and SkImageFilter; apply to text. By
+        default, draws filled black glyphs.
+
+        @param count       number of glyphs to draw
+        @param glyphs      the array of glyphIDs to draw
+        @param positions   where to draw each glyph relative to origin
+        @param origin      the origin of all the positions
+        @param font        typeface, text size and so, used to describe the text
+        @param paint       blend, color, and so on, used to draw
+    */
+    void drawGlyphs(int count, const SkGlyphID glyphs[], const SkPoint positions[],
+                    SkPoint origin, const SkFont& font, const SkPaint& paint);
+
+    /** Draws count glyphs, at positions relative to origin styled with font and paint.
+
+        This function draw glyphs using the given scaling and rotations. They are positioned
+        relative to the given origin. It does not perform typeface fallback for glyphs not found
+        in the SkTypeface in font.
+
+        The drawing obeys the current transform matrix and clipping.
+
+        All elements of paint: SkPathEffect, SkMaskFilter, SkShader,
+        SkColorFilter, and SkImageFilter; apply to text. By
+        default, draws filled black glyphs.
+
+        @param count    number of glyphs to draw
+        @param glyphs   the array of glyphIDs to draw
+        @param xforms   where to draw and orient each glyph
+        @param origin   the origin of all the positions
+        @param font     typeface, text size and so, used to describe the text
+        @param paint    blend, color, and so on, used to draw
+    */
+    void drawGlyphs(int count, const SkGlyphID glyphs[], const SkRSXform xforms[],
+                    SkPoint origin, const SkFont& font, const SkPaint& paint);
+
     /** Draws SkTextBlob blob at (x, y), using clip, SkMatrix, and SkPaint paint.
 
         blob contains glyphs, their positions, and paint attributes specific to text:
@@ -1949,7 +2026,7 @@ public:
         to draw, if present. For each entry in the array, SkRect tex locates sprite in
         atlas, and SkRSXform xform transforms it into destination space.
 
-        xform, text, and colors if present, must contain count entries.
+        xform, tex, and colors if present, must contain count entries.
         Optional colors are applied for each sprite using SkBlendMode mode, treating
         sprite as source and colors as destination.
         Optional cullRect is a conservative bounds of all transformed sprites.
@@ -2147,6 +2224,8 @@ protected:
     virtual void onDrawTextBlob(const SkTextBlob* blob, SkScalar x, SkScalar y,
                                 const SkPaint& paint);
 
+    virtual void onDrawGlyphRunList(const SkGlyphRunList& glyphRunList, const SkPaint& paint);
+
     virtual void onDrawPatch(const SkPoint cubics[12], const SkColor colors[4],
                            const SkPoint texCoords[4], SkBlendMode mode, const SkPaint& paint);
     virtual void onDrawPoints(PointMode mode, size_t count, const SkPoint pts[],
@@ -2192,17 +2271,7 @@ protected:
 
     virtual void onDiscard();
 
-    // Clip rectangle bounds. Called internally by saveLayer.
-    // returns false if the entire rectangle is entirely clipped out
-    // If non-NULL, The imageFilter parameter will be used to expand the clip
-    // and offscreen bounds for any margin required by the filter DAG.
-    bool clipRectBounds(const SkRect* bounds, SkIRect* intersection,
-                        const SkImageFilter* imageFilter = nullptr);
-
 private:
-    static void DrawDeviceWithFilter(SkBaseDevice* src, const SkImageFilter* filter,
-                                     SkBaseDevice* dst, const SkIPoint& dstOrigin,
-                                     const SkMatrix& ctm);
 
     enum ShaderOverrideOpacity {
         kNone_ShaderOverrideOpacity,        //!< there is no overriding shader (bitmap or image)
@@ -2226,6 +2295,7 @@ private:
     // operations should route to this device.
     SkBaseDevice* topDevice() const;
     virtual GrSurfaceDrawContext* topDeviceSurfaceDrawContext();
+    virtual GrRenderTargetProxy* topDeviceTargetProxy();
 
     class MCRec;
 
@@ -2268,6 +2338,7 @@ private:
     friend class AutoLayerForImageFilter;
     friend class SkSurface_Raster;  // needs getDevice()
     friend class SkNoDrawCanvas;    // needs resetForNextPicture()
+    friend class SkNWayCanvas;
     friend class SkPictureRecord;   // predrawNotify (why does it need it? <reed>)
     friend class SkOverdrawCanvas;
     friend class SkRasterHandleAllocator;
@@ -2314,13 +2385,30 @@ private:
     void internalDrawPaint(const SkPaint& paint);
     void internalSaveLayer(const SaveLayerRec&, SaveLayerStrategy);
     void internalSaveBehind(const SkRect*);
-    void internalDrawDevice(SkBaseDevice*, const SkSamplingOptions&, const SkPaint*);
 
     void internalConcat44(const SkM44&);
 
     // shared by save() and saveLayer()
     void internalSave();
     void internalRestore();
+
+    enum class DeviceCompatibleWithFilter : bool {
+        // Check the src device's local-to-device matrix for compatibility with the filter, and if
+        // it is not compatible, introduce an intermediate image and transformation that allows the
+        // filter to be evaluated on the modified src content.
+        kUnknown = false,
+        // Assume that the src device's local-to-device matrix is compatible with the filter.
+        kYes     = true
+    };
+    /**
+     * Filters the contents of 'src' and draws the result into 'dst'. The filter is evaluated
+     * relative to the current canvas matrix, and src is drawn to dst using their relative transform
+     * 'paint' is applied after the filter and must not have a mask or image filter of its own.
+     * A null 'filter' behaves as if the identity filter were used.
+     */
+    void internalDrawDeviceWithFilter(SkBaseDevice* src, SkBaseDevice* dst,
+                                      const SkImageFilter* filter, const SkPaint& paint,
+                                      DeviceCompatibleWithFilter compat);
 
     /*
      *  Returns true if drawing the specified rect (or all if it is null) with the specified
@@ -2350,16 +2438,13 @@ private:
 
     virtual SkPaintFilterCanvas* internal_private_asPaintFilterCanvas() const { return nullptr; }
 
-    /**
-     *  Keep track of the device clip bounds and if the matrix is scale-translate.  This allows
-     *  us to do a fast quick reject in the common case.
-     */
-    bool   fIsScaleTranslate;
+    // Keep track of the device clip bounds in the canvas' global space to reject draws before
+    // invoking the top-level device.
     SkRect fQuickRejectBounds;
 
     // Compute the clip's bounds based on all clipped SkDevice's reported device bounds transformed
     // into the canvas' global space.
-    SkRect computeDeviceClipBounds() const;
+    SkRect computeDeviceClipBounds(bool outsetForAA=true) const;
 
     class AutoUpdateQRBounds;
     void validateClip() const;

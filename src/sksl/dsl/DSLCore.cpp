@@ -8,6 +8,8 @@
 #include "include/sksl/DSLCore.h"
 
 #include "include/private/SkSLDefines.h"
+#include "include/sksl/DSLSymbols.h"
+#include "include/sksl/DSLVar.h"
 #include "src/sksl/SkSLCompiler.h"
 #include "src/sksl/SkSLIRGenerator.h"
 #include "src/sksl/dsl/priv/DSLWriter.h"
@@ -18,6 +20,7 @@
 #include "src/sksl/ir/SkSLForStatement.h"
 #include "src/sksl/ir/SkSLIfStatement.h"
 #include "src/sksl/ir/SkSLReturnStatement.h"
+#include "src/sksl/ir/SkSLStructDefinition.h"
 #include "src/sksl/ir/SkSLSwizzle.h"
 #include "src/sksl/ir/SkSLTernaryExpression.h"
 
@@ -25,9 +28,20 @@ namespace SkSL {
 
 namespace dsl {
 
-#if SK_SUPPORT_GPU && !defined(SKSL_STANDALONE)
-void Start(SkSL::Compiler* compiler) {
-    DSLWriter::SetInstance(std::make_unique<DSLWriter>(compiler));
+void Start(SkSL::Compiler* compiler, ProgramKind kind) {
+    Start(compiler, kind, ProgramSettings());
+}
+
+void Start(SkSL::Compiler* compiler, ProgramKind kind, const ProgramSettings& settings) {
+    DSLWriter::SetInstance(std::make_unique<DSLWriter>(compiler, kind, settings,
+                                                       compiler->moduleForProgramKind(kind),
+                                                       /*isModule=*/false));
+}
+
+void StartModule(SkSL::Compiler* compiler, ProgramKind kind, const ProgramSettings& settings,
+                 SkSL::ParsedModule module) {
+    DSLWriter::SetInstance(std::make_unique<DSLWriter>(compiler, kind, settings, module,
+                                                       /*isModule=*/true));
 }
 
 void End() {
@@ -35,7 +49,6 @@ void End() {
               "more calls to StartFragmentProcessor than to EndFragmentProcessor");
     DSLWriter::SetInstance(nullptr);
 }
-#endif // SK_SUPPORT_GPU && !defined(SKSL_STANDALONE)
 
 void SetErrorHandler(ErrorHandler* errorHandler) {
     DSLWriter::SetErrorHandler(errorHandler);
@@ -43,12 +56,51 @@ void SetErrorHandler(ErrorHandler* errorHandler) {
 
 class DSLCore {
 public:
-    static DSLVar sk_FragColor() {
-        return DSLVar("sk_FragColor");
+    static std::unique_ptr<SkSL::Program> ReleaseProgram() {
+        DSLWriter& instance = DSLWriter::Instance();
+        SkSL::IRGenerator& ir = DSLWriter::IRGenerator();
+        IRGenerator::IRBundle bundle = ir.finish();
+        Pool* pool = DSLWriter::Instance().fPool.get();
+        auto result = std::make_unique<SkSL::Program>(/*source=*/nullptr,
+                                                      std::move(instance.fConfig),
+                                                      DSLWriter::Instance().fCompiler->fContext,
+                                                      std::move(bundle.fElements),
+                                                      std::move(bundle.fSharedElements),
+                                                      std::move(instance.fModifiersPool),
+                                                      std::move(bundle.fSymbolTable),
+                                                      std::move(instance.fPool),
+                                                      bundle.fInputs);
+        bool success = false;
+        if (DSLWriter::Compiler().errorCount() || DSLWriter::Instance().fEncounteredErrors) {
+            // Make sure that if we encountered any compiler errors, we reported them through the
+            // DSL error handling side of things.
+            SkASSERT(!DSLWriter::Compiler().errorCount() ||
+                     DSLWriter::Instance().fEncounteredErrors);
+            // Do not return programs that failed to compile.
+        } else if (!DSLWriter::Compiler().optimize(*result)) {
+            // Do not return programs that failed to optimize.
+        } else {
+            // We have a successful program!
+            success = true;
+        }
+        if (pool) {
+            pool->detachFromThread();
+        }
+        SkASSERT(DSLWriter::ProgramElements().empty());
+        SkASSERT(!DSLWriter::SymbolTable());
+        return success ? std::move(result) : nullptr;
     }
 
-    static DSLVar sk_FragCoord() {
-        return DSLVar("sk_FragCoord");
+    static DSLGlobalVar sk_FragColor() {
+        return DSLGlobalVar("sk_FragColor");
+    }
+
+    static DSLGlobalVar sk_FragCoord() {
+        return DSLGlobalVar("sk_FragCoord");
+    }
+
+    static DSLExpression sk_Position() {
+        return DSLExpression(Symbol("sk_Position"));
     }
 
     template <typename... Args>
@@ -81,6 +133,26 @@ public:
         return DSLWriter::Declaration(var);
     }
 
+    static void Declare(DSLGlobalVar& var, PositionInfo pos) {
+        if (var.fDeclared) {
+            DSLWriter::ReportError("error: variable has already been declared\n", &pos);
+        }
+        var.fDeclared = true;
+        std::unique_ptr<SkSL::Statement> stmt = DSLWriter::Declaration(var);
+        if (stmt) {
+            DSLWriter::ProgramElements().push_back(std::make_unique<SkSL::GlobalVarDeclaration>(
+                    std::move(stmt)));
+        } else if (var.fName == SkSL::Compiler::FRAGCOLOR_NAME) {
+            // sk_FragColor can end up with a null declaration despite no error occurring due to
+            // specific treatment in the compiler. Ignore the null and just grab the existing
+            // variable from the symbol table.
+            const SkSL::Symbol* alreadyDeclared = (*DSLWriter::SymbolTable())[var.fName];
+            if (alreadyDeclared && alreadyDeclared->is<Variable>()) {
+                var.fVar = &alreadyDeclared->as<Variable>();
+            }
+        }
+    }
+
     static DSLStatement Discard() {
         return SkSL::DiscardStatement::Make(/*offset=*/-1);
     }
@@ -90,15 +162,39 @@ public:
     }
 
     static DSLPossibleStatement For(DSLStatement initializer, DSLExpression test,
-                                    DSLExpression next, DSLStatement stmt) {
-        return ForStatement::Convert(DSLWriter::Context(), /*offset=*/-1, initializer.release(),
-                                     test.release(), next.release(), stmt.release(),
+                                    DSLExpression next, DSLStatement stmt, PositionInfo pos) {
+        return ForStatement::Convert(DSLWriter::Context(), /*offset=*/-1,
+                                     initializer.releaseIfValid(), test.releaseIfValid(),
+                                     next.releaseIfValid(), stmt.release(),
                                      DSLWriter::SymbolTable());
     }
 
-    static DSLPossibleStatement If(DSLExpression test, DSLStatement ifTrue, DSLStatement ifFalse) {
-        return IfStatement::Convert(DSLWriter::Context(), /*offset=*/-1, /*isStatic=*/false,
-                                    test.release(), ifTrue.release(), ifFalse.release());
+    static DSLPossibleStatement If(DSLExpression test, DSLStatement ifTrue, DSLStatement ifFalse,
+                                   bool isStatic) {
+        return IfStatement::Convert(DSLWriter::Context(), /*offset=*/-1, isStatic, test.release(),
+                                    ifTrue.release(), ifFalse.releaseIfValid());
+    }
+
+    static DSLGlobalVar InterfaceBlock(DSLModifiers modifiers, skstd::string_view typeName,
+                                 SkTArray<DSLField> fields, skstd::string_view varName,
+                                 int arraySize, PositionInfo pos) {
+        // We need to create a new struct type for the interface block, but we don't want it in the
+        // symbol table. Since dsl::Struct automatically sticks it in the symbol table, we create it
+        // the old fashioned way with MakeStructType.
+        std::vector<SkSL::Type::Field> skslFields;
+        skslFields.reserve(fields.count());
+        for (const DSLField& field : fields) {
+            skslFields.push_back(SkSL::Type::Field(SkSL::Modifiers(), field.fName,
+                                                   &field.fType.skslType()));
+        }
+        const SkSL::Type* structType = DSLWriter::SymbolTable()->takeOwnershipOfSymbol(
+                SkSL::Type::MakeStructType(/*offset=*/-1, String(typeName), std::move(skslFields)));
+        DSLType varType = arraySize > 0 ? Array(structType, arraySize) : DSLType(structType);
+        DSLGlobalVar var(modifiers, varType, !varName.empty() ? varName : typeName);
+        DSLWriter::ProgramElements().push_back(std::make_unique<SkSL::InterfaceBlock>(/*offset=*/-1,
+                DSLWriter::Var(var), String(typeName), String(varName), arraySize,
+                DSLWriter::SymbolTable()));
+        return var;
     }
 
     static DSLPossibleStatement Return(DSLExpression value, PositionInfo pos) {
@@ -106,7 +202,7 @@ public:
         // this point we do not know the function's return type. We therefore do not check for
         // errors, or coerce the value to the correct type, until the return statement is actually
         // added to a function. (This is done in IRGenerator::finalizeFunction.)
-        return SkSL::ReturnStatement::Make(/*offset=*/-1, value.release());
+        return SkSL::ReturnStatement::Make(/*offset=*/-1, value.releaseIfValid());
     }
 
     static DSLExpression Swizzle(DSLExpression base, SkSL::SwizzleComponent::Type a,
@@ -152,9 +248,18 @@ public:
                                           ifTrue.release(), ifFalse.release());
     }
 
-    static DSLPossibleStatement Switch(DSLExpression value, SkSL::ExpressionArray values,
-                                       SkTArray<StatementArray> statements) {
-        return DSLWriter::ConvertSwitch(value.release(), std::move(values), std::move(statements));
+    static DSLPossibleStatement Switch(DSLExpression value, SkTArray<DSLCase> cases,
+                                       bool isStatic) {
+        ExpressionArray values;
+        values.reserve_back(cases.count());
+        SkTArray<StatementArray> statements;
+        statements.reserve_back(cases.count());
+        for (DSLCase& c : cases) {
+            values.push_back(c.fValue.releaseIfValid());
+            statements.push_back(std::move(c.fStatements));
+        }
+        return DSLWriter::ConvertSwitch(value.release(), std::move(values), std::move(statements),
+                                        isStatic);
     }
 
     static DSLPossibleStatement While(DSLExpression test, DSLStatement stmt) {
@@ -163,12 +268,20 @@ public:
     }
 };
 
-DSLVar sk_FragColor() {
+std::unique_ptr<SkSL::Program> ReleaseProgram() {
+    return DSLCore::ReleaseProgram();
+}
+
+DSLGlobalVar sk_FragColor() {
     return DSLCore::sk_FragColor();
 }
 
-DSLVar sk_FragCoord() {
+DSLGlobalVar sk_FragCoord() {
     return DSLCore::sk_FragCoord();
+}
+
+DSLExpression sk_Position() {
+    return DSLCore::sk_Position();
 }
 
 DSLStatement Break() {
@@ -179,7 +292,23 @@ DSLStatement Continue() {
     return DSLCore::Continue();
 }
 
+// Logically, we'd want the variable's initial value to appear on here in Declare, since that
+// matches how we actually write code (and in fact that was what our first attempt looked like).
+// Unfortunately, C++ doesn't guarantee execution order between arguments, and Declare() can appear
+// as a function argument in constructs like Block(Declare(x, 0), foo(x)). If these are executed out
+// of order, we will evaluate the reference to x before we evaluate Declare(x, 0), and thus the
+// variable's initial value is unknown at the point of reference. There are probably some other
+// issues with this as well, but it is particularly dangerous when x is const, since SkSL will
+// expect its value to be known when it is referenced and will end up asserting, dereferencing a
+// null pointer, or possibly doing something else awful.
+//
+// So, we put the initial value onto the Var itself instead of the Declare to guarantee that it is
+// always executed in the correct order.
 DSLStatement Declare(DSLVar& var, PositionInfo pos) {
+    return DSLCore::Declare(var, pos);
+}
+
+void Declare(DSLGlobalVar& var, PositionInfo pos) {
     return DSLCore::Declare(var, pos);
 }
 
@@ -194,11 +323,19 @@ DSLStatement Do(DSLStatement stmt, DSLExpression test, PositionInfo pos) {
 DSLStatement For(DSLStatement initializer, DSLExpression test, DSLExpression next,
                  DSLStatement stmt, PositionInfo pos) {
     return DSLStatement(DSLCore::For(std::move(initializer), std::move(test), std::move(next),
-                                     std::move(stmt)), pos);
+                                     std::move(stmt), pos), pos);
 }
 
 DSLStatement If(DSLExpression test, DSLStatement ifTrue, DSLStatement ifFalse, PositionInfo pos) {
-    return DSLStatement(DSLCore::If(std::move(test), std::move(ifTrue), std::move(ifFalse)), pos);
+    return DSLStatement(DSLCore::If(std::move(test), std::move(ifTrue), std::move(ifFalse),
+                                    /*isStatic=*/false),
+                        pos);
+}
+
+DSLGlobalVar InterfaceBlock(DSLModifiers modifiers,  skstd::string_view typeName,
+                            SkTArray<DSLField> fields, skstd::string_view varName, int arraySize,
+                            PositionInfo pos) {
+    return DSLCore::InterfaceBlock(modifiers, typeName, std::move(fields), varName, arraySize, pos);
 }
 
 DSLStatement Return(DSLExpression expr, PositionInfo pos) {
@@ -211,9 +348,19 @@ DSLExpression Select(DSLExpression test, DSLExpression ifTrue, DSLExpression ifF
                          pos);
 }
 
-DSLPossibleStatement Switch(DSLExpression value, SkSL::ExpressionArray values,
-                            SkTArray<StatementArray> statements) {
-    return DSLCore::Switch(std::move(value), std::move(values), std::move(statements));
+DSLStatement StaticIf(DSLExpression test, DSLStatement ifTrue, DSLStatement ifFalse,
+                      PositionInfo pos) {
+    return DSLStatement(DSLCore::If(std::move(test), std::move(ifTrue), std::move(ifFalse),
+                                    /*isStatic=*/true),
+                         pos);
+}
+
+DSLPossibleStatement StaticSwitch(DSLExpression value, SkTArray<DSLCase> cases) {
+    return DSLCore::Switch(std::move(value), std::move(cases), /*isStatic=*/true);
+}
+
+DSLPossibleStatement Switch(DSLExpression value, SkTArray<DSLCase> cases) {
+    return DSLCore::Switch(std::move(value), std::move(cases), /*isStatic=*/false);
 }
 
 DSLStatement While(DSLExpression test, DSLStatement stmt, PositionInfo pos) {
@@ -230,6 +377,14 @@ DSLExpression All(DSLExpression x, PositionInfo pos) {
 
 DSLExpression Any(DSLExpression x, PositionInfo pos) {
     return DSLExpression(DSLCore::Call("any", std::move(x)), pos);
+}
+
+DSLExpression Atan(DSLExpression y_over_x, PositionInfo pos) {
+    return DSLExpression(DSLCore::Call("atan", std::move(y_over_x)), pos);
+}
+
+DSLExpression Atan(DSLExpression y, DSLExpression x, PositionInfo pos) {
+    return DSLExpression(DSLCore::Call("atan", std::move(y), std::move(x)), pos);
 }
 
 DSLExpression Ceil(DSLExpression x, PositionInfo pos) {
@@ -359,6 +514,20 @@ DSLExpression Reflect(DSLExpression i, DSLExpression n, PositionInfo pos) {
 
 DSLExpression Refract(DSLExpression i, DSLExpression n, DSLExpression eta, PositionInfo pos) {
     return DSLExpression(DSLCore::Call("refract", std::move(i), std::move(n), std::move(eta)), pos);
+}
+
+DSLExpression Sample(DSLExpression target, PositionInfo pos) {
+    return DSLExpression(DSLCore::Call("sample", std::move(target)), pos);
+}
+
+
+DSLExpression Sample(DSLExpression target, DSLExpression x, PositionInfo pos) {
+    return DSLExpression(DSLCore::Call("sample", std::move(target), std::move(x)), pos);
+}
+
+DSLExpression Sample(DSLExpression target, DSLExpression x, DSLExpression y, PositionInfo pos) {
+    return DSLExpression(DSLCore::Call("sample", std::move(target), std::move(x), std::move(y)),
+                         pos);
 }
 
 DSLExpression Saturate(DSLExpression x, PositionInfo pos) {

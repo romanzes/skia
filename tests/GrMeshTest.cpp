@@ -64,7 +64,7 @@ public:
     }
     template<typename T> sk_sp<const GrBuffer> makeVertexBuffer(const T* data, int count);
 
-    GrMeshDrawOp::Target* target() { return fState; }
+    GrMeshDrawTarget* target() { return fState; }
 
     sk_sp<const GrBuffer> fIndexBuffer;
     sk_sp<const GrBuffer> fIndexBuffer2;
@@ -112,7 +112,7 @@ DEF_GPUTEST_FOR_RENDERING_CONTEXTS(GrMeshTest, reporter, ctxInfo) {
 
     auto rtc = GrSurfaceDrawContext::Make(
             dContext, GrColorType::kRGBA_8888, nullptr, SkBackingFit::kExact,
-            {kImageWidth, kImageHeight});
+            {kImageWidth, kImageHeight}, SkSurfaceProps());
     if (!rtc) {
         ERRORF(reporter, "could not create render target context.");
         return;
@@ -328,22 +328,22 @@ DEF_GPUTEST_FOR_RENDERING_CONTEXTS(GrMeshTest, reporter, ctxInfo) {
                      GrDrawIndexedIndirectWriter indexedIndirectWriter;
                      if (indexed) {
                          // Make helper->fDrawIndirectBufferOffset nonzero.
-                         sk_sp<const GrBuffer> dummyBuff;
-                         size_t dummyOffset;
+                         sk_sp<const GrBuffer> ignoredBuff;
+                         size_t ignoredOffset;
                          // Make a superfluous call to makeDrawIndirectSpace in order to test
                          // "offsetInBytes!=0" for the actual call to makeDrawIndexedIndirectSpace.
-                         helper->target()->makeDrawIndirectSpace(29, &dummyBuff, &dummyOffset);
+                         helper->target()->makeDrawIndirectSpace(29, &ignoredBuff, &ignoredOffset);
                          indexedIndirectWriter = helper->target()->makeDrawIndexedIndirectSpace(
                                  kBoxCountY, &helper->fDrawIndirectBuffer,
                                  &helper->fDrawIndirectBufferOffset);
                      } else {
                          // Make helper->fDrawIndirectBufferOffset nonzero.
-                         sk_sp<const GrBuffer> dummyBuff;
-                         size_t dummyOffset;
+                         sk_sp<const GrBuffer> ignoredBuff;
+                         size_t ignoredOffset;
                          // Make a superfluous call to makeDrawIndexedIndirectSpace in order to test
                          // "offsetInBytes!=0" for the actual call to makeDrawIndirectSpace.
-                         helper->target()->makeDrawIndexedIndirectSpace(7, &dummyBuff,
-                                                                        &dummyOffset);
+                         helper->target()->makeDrawIndexedIndirectSpace(7, &ignoredBuff,
+                                                                        &ignoredOffset);
                          indirectWriter = helper->target()->makeDrawIndirectSpace(
                                  kBoxCountY, &helper->fDrawIndirectBuffer,
                                  &helper->fDrawIndirectBufferOffset);
@@ -417,15 +417,14 @@ private:
 
     const char* name() const override { return "GrMeshTestOp"; }
     FixedFunctionFlags fixedFunctionFlags() const override { return FixedFunctionFlags::kNone; }
-    GrProcessorSet::Analysis finalize(const GrCaps&, const GrAppliedClip*,
-                                      bool hasMixedSampledCoverage, GrClampType) override {
+    GrProcessorSet::Analysis finalize(const GrCaps&, const GrAppliedClip*, GrClampType) override {
         return GrProcessorSet::EmptySetAnalysis();
     }
 
     void onPrePrepare(GrRecordingContext*,
                       const GrSurfaceProxyView& writeView,
                       GrAppliedClip*,
-                      const GrXferProcessor::DstProxyView&,
+                      const GrDstProxyView&,
                       GrXferBarrierFlags renderPassXferBarriers,
                       GrLoadOp colorLoadOp) override {}
     void onPrepare(GrOpFlushState* state) override {
@@ -494,7 +493,9 @@ private:
 };
 
 class GLSLMeshTestProcessor : public GrGLSLGeometryProcessor {
-    void setData(const GrGLSLProgramDataManager&, const GrGeometryProcessor&) final {}
+    void setData(const GrGLSLProgramDataManager&,
+                 const GrShaderCaps&,
+                 const GrGeometryProcessor&) final {}
 
     void onEmitCode(EmitArgs& args, GrGPArgs* gpArgs) final {
         const GrMeshTestProcessor& mp = args.fGeomProc.cast<GrMeshTestProcessor>();
@@ -556,7 +557,6 @@ GrOpsRenderPass* DrawMeshHelper::bindPipeline(GrPrimitiveType primitiveType, boo
                           GrProcessorAnalysisCoverage::kNone,
                           fState->appliedClip(),
                           nullptr,
-                          false,
                           fState->caps(),
                           GrClampType::kAuto,
                           &overrideColor);

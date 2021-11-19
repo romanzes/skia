@@ -16,6 +16,7 @@
 #include "src/gpu/GrImageInfo.h"
 #include "src/gpu/GrSurfaceContext.h"
 #include "src/gpu/GrSurfaceDrawContext.h"
+#include "src/gpu/effects/GrTextureEffect.h"
 #include "tests/Test.h"
 #include "tests/TestUtils.h"
 #include "tools/ToolUtils.h"
@@ -600,10 +601,6 @@ DEF_GPUTEST_FOR_RENDERING_CONTEXTS(SurfaceAsyncReadPixels, reporter, ctxInfo) {
     for (GrSurfaceOrigin origin : {kTopLeft_GrSurfaceOrigin, kBottomLeft_GrSurfaceOrigin}) {
         auto factory = std::function<GpuSrcFactory<Surface>>(
                 [context = ctxInfo.directContext(), origin](const SkPixmap& src) {
-                    // skbug.com/8862
-                    if (src.colorType() == kRGB_888x_SkColorType) {
-                        return Surface();
-                    }
                     auto surf = SkSurface::MakeRenderTarget(context,
                                                             SkBudgeted::kYes,
                                                             src.info(),
@@ -679,10 +676,6 @@ DEF_GPUTEST_FOR_RENDERING_CONTEXTS(ImageAsyncReadPixels, reporter, ctxInfo) {
     for (auto origin : {kTopLeft_GrSurfaceOrigin, kBottomLeft_GrSurfaceOrigin}) {
         for (auto renderable : {GrRenderable::kNo, GrRenderable::kYes}) {
             auto factory = std::function<GpuSrcFactory<Image>>([&](const SkPixmap& src) {
-                // skbug.com/8862
-                if (src.colorType() == kRGB_888x_SkColorType) {
-                    return Image();
-                }
                 return sk_gpu_test::MakeBackendTextureImage(ctxInfo.directContext(), src,
                                                             renderable, origin);
             });
@@ -715,9 +708,10 @@ DEF_GPUTEST(AsyncReadPixelsContextShutdown, reporter, options) {
                               ShutdownSequence::kAbandon_FreeResult_DestroyContext,
                               ShutdownSequence::kReleaseAndAbandon_DestroyContext_FreeResult,
                               ShutdownSequence::kAbandon_DestroyContext_FreeResult}) {
-            // Vulkan context abandoning without resource release has issues outside of the scope of
-            // this test.
-            if (type == sk_gpu_test::GrContextFactory::kVulkan_ContextType &&
+            // Vulkan and D3D context abandoning without resource release has issues outside of the
+            // scope of this test.
+            if ((type == sk_gpu_test::GrContextFactory::kVulkan_ContextType ||
+                 type == sk_gpu_test::GrContextFactory::kDirect3D_ContextType) &&
                 (sequence == ShutdownSequence::kFreeResult_ReleaseAndAbandon_DestroyContext ||
                  sequence == ShutdownSequence::kFreeResult_Abandon_DestroyContext ||
                  sequence == ShutdownSequence::kReleaseAndAbandon_FreeResult_DestroyContext ||
@@ -1123,10 +1117,6 @@ DEF_GPUTEST_FOR_RENDERING_CONTEXTS(SurfaceContextWritePixelsMipped, reporter, ct
 
     for (int c = 0; c < kGrColorTypeCnt; ++c) {
         auto ct = static_cast<GrColorType>(c);
-        // skbug.com/8862
-        if (ct == GrColorType::kRGB_888x) {
-            continue;
-        }
         // Below we use rendering to read the level pixels back.
         auto format = direct->priv().caps()->getDefaultBackendFormat(ct, GrRenderable::kYes);
         if (!format.isValid()) {
@@ -1192,7 +1182,8 @@ DEF_GPUTEST_FOR_RENDERING_CONTEXTS(SurfaceContextWritePixelsMipped, reporter, ct
                                                           info.colorType(),
                                                           info.refColorSpace(),
                                                           SkBackingFit::kExact,
-                                                          info.dimensions());
+                                                          info.dimensions(),
+                                                          SkSurfaceProps());
                     SkASSERT(dst);
                     GrSamplerState sampler(SkFilterMode::kNearest, SkMipmapMode::kNearest);
                     for (int i = 1; i <= 1; ++i) {
@@ -1248,4 +1239,60 @@ DEF_GPUTEST_FOR_RENDERING_CONTEXTS(SurfaceContextWritePixelsMipped, reporter, ct
             }
         }
     }
+}
+
+// Tests a bug found in OOP-R canvas2d in Chrome. The GPU backend would incorrectly not bind
+// buffer 0 to GL_PIXEL_PACK_BUFFER before a glReadPixels() that was supposed to read into
+// client memory if a GrDirectContext::resetContext() occurred.
+DEF_GPUTEST_FOR_GL_RENDERING_CONTEXTS(GLReadPixelsUnbindPBO, reporter, ctxInfo) {
+    // Start with a async read so that we bind to GL_PIXEL_PACK_BUFFER.
+    auto info = SkImageInfo::Make(16, 16, kRGBA_8888_SkColorType, kPremul_SkAlphaType);
+    SkAutoPixmapStorage pmap = make_ref_data(info, /*forceOpaque=*/false);
+    auto image = SkImage::MakeFromRaster(pmap, nullptr, nullptr);
+    image = image->makeTextureImage(ctxInfo.directContext());
+    if (!image) {
+        ERRORF(reporter, "Couldn't make texture image.");
+        return;
+    }
+
+    AsyncContext asyncContext;
+    image->asyncRescaleAndReadPixels(info,
+                                     SkIRect::MakeSize(info.dimensions()),
+                                     SkImage::RescaleGamma::kSrc,
+                                     SkImage::RescaleMode::kNearest,
+                                     async_callback,
+                                     &asyncContext);
+
+    // This will force the async readback to finish.
+    ctxInfo.directContext()->flushAndSubmit(true);
+    if (!asyncContext.fCalled) {
+        ERRORF(reporter, "async_callback not called.");
+    }
+    if (!asyncContext.fResult) {
+        ERRORF(reporter, "async read failed.");
+    }
+
+    SkPixmap asyncResult(info, asyncContext.fResult->data(0), asyncContext.fResult->rowBytes(0));
+
+    // Bug was that this would cause GrGLGpu to think no buffer was left bound to
+    // GL_PIXEL_PACK_BUFFER even though async transfer did leave one bound. So the sync read
+    // wouldn't bind buffer 0.
+    ctxInfo.directContext()->resetContext();
+
+    SkBitmap syncResult;
+    syncResult.allocPixels(info);
+    syncResult.eraseARGB(0xFF, 0xFF, 0xFF, 0xFF);
+
+    image->readPixels(ctxInfo.directContext(), syncResult.pixmap(), 0, 0);
+
+    float tol[4] = {};  // expect exactly same pixels, no conversions.
+    auto error = std::function<ComparePixmapsErrorReporter>([&](int x, int y,
+                                                                const float diffs[4]) {
+      SkASSERT(x >= 0 && y >= 0);
+      ERRORF(reporter, "Expect sync and async read to be the same. "
+             "Error at %d, %d. Diff in floats: (%f, %f, %f, %f)",
+             x, y, diffs[0], diffs[1], diffs[2], diffs[3]);
+    });
+
+    ComparePixels(syncResult.pixmap(), asyncResult, tol, error);
 }

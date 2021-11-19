@@ -27,11 +27,8 @@
 #include "src/gpu/vk/GrVkCaps.h"
 #endif
 
-// name of the render target width uniform
-#define SKSL_RTWIDTH_NAME "u_skRTWidth"
-
-// name of the render target height uniform
-#define SKSL_RTHEIGHT_NAME "u_skRTHeight"
+// name of the uniform used to handle features that are sensitive to whether Y is flipped.
+#define SKSL_RTFLIP_NAME "u_skRTFlip"
 
 namespace SkSL {
 
@@ -70,25 +67,11 @@ struct Program {
     using Settings = ProgramSettings;
 
     struct Inputs {
-        // if true, this program requires the render target width uniform to be defined
-        bool fRTWidth;
-
-        // if true, this program requires the render target height uniform to be defined
-        bool fRTHeight;
-
-        // if true, this program must be recompiled if the flipY setting changes. If false, the
-        // program will compile to the same code regardless of the flipY setting.
-        bool fFlipY;
-
-        void reset() {
-            fRTWidth = false;
-            fRTHeight = false;
-            fFlipY = false;
+        bool fUseFlipRTUniform = false;
+        bool operator==(const Inputs& that) const {
+            return fUseFlipRTUniform == that.fUseFlipRTUniform;
         }
-
-        bool isEmpty() {
-            return !fRTWidth && !fRTHeight && !fFlipY;
-        }
+        bool operator!=(const Inputs& that) const { return !(*this == that); }
     };
 
     Program(std::unique_ptr<String> source,
@@ -197,6 +180,16 @@ struct Program {
     // The iterator's value type is 'std::unique_ptr<ProgramElement>', and mutation is allowed.
     std::vector<std::unique_ptr<ProgramElement>>& ownedElements() { return fElements; }
     const std::vector<std::unique_ptr<ProgramElement>>& ownedElements() const { return fElements; }
+
+    String description() const {
+        String result;
+        for (const ProgramElement* e : this->elements()) {
+            result += e->description();
+        }
+        return result;
+    }
+
+    const ProgramUsage* usage() const { return fUsage.get(); }
 
     std::unique_ptr<String> fSource;
     std::unique_ptr<ProgramConfig> fConfig;

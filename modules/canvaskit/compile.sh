@@ -103,13 +103,13 @@ if [[ $@ == *no_skottie* ]]; then
   SKOTTIE_BINDINGS=""
 fi
 
-GN_VIEWER="skia_use_expat=false skia_enable_ccpr=false"
+GN_VIEWER="skia_use_expat=false skia_enable_skgpu_v2=false"
 VIEWER_BINDINGS=""
 VIEWER_LIB=""
 
 if [[ $@ == *viewer* ]]; then
   echo "Including viewer"
-  GN_VIEWER="skia_use_expat=true skia_enable_ccpr=true"
+  GN_VIEWER="skia_use_expat=true skia_enable_skgpu_v2=false"
   VIEWER_BINDINGS="$BASE_DIR/viewer_bindings.cpp"
   VIEWER_LIB="$BUILD_DIR/libviewer_wasm.a"
   IS_OFFICIAL_BUILD="false"
@@ -223,7 +223,8 @@ fi
 PARAGRAPH_JS="--pre-js $BASE_DIR/paragraph.js"
 PARAGRAPH_LIB="$BUILD_DIR/libskparagraph.a"
 PARAGRAPH_BINDINGS="-DSK_INCLUDE_PARAGRAPH=1 \
-  $BASE_DIR/paragraph_bindings.cpp"
+  $BASE_DIR/paragraph_bindings.cpp \
+  $BASE_DIR/paragraph_bindings_gen.cpp"
 
 if [[ $@ == *no_paragraph* ]] || [[ $@ == *primitive_shaper* ]] || [[ $@ == *no_font* ]]; then
   echo "Omitting paragraph (must have fonts and non-primitive shaper)"
@@ -368,7 +369,6 @@ EMCC_DEBUG=1 ${EMCXX} \
     --pre-js $BASE_DIR/preamble.js \
     --pre-js $BASE_DIR/color.js \
     --pre-js $BASE_DIR/memory.js \
-    --pre-js $BASE_DIR/helper.js \
     --pre-js $BASE_DIR/util.js \
     --pre-js $BASE_DIR/interface.js \
     $MATRIX_HELPER_JS \

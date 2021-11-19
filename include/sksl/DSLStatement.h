@@ -46,7 +46,12 @@ public:
 
     ~DSLStatement();
 
+    DSLStatement& operator=(DSLStatement&& other) = default;
+
+    bool valid() { return fStatement != nullptr; }
+
     std::unique_ptr<SkSL::Statement> release() {
+        SkASSERT(this->valid());
         return std::move(fStatement);
     }
 
@@ -55,6 +60,10 @@ private:
 
     DSLStatement(std::unique_ptr<SkSL::Expression> expr);
 
+    std::unique_ptr<SkSL::Statement> releaseIfValid() {
+        return std::move(fStatement);
+    }
+
     std::unique_ptr<SkSL::Statement> fStatement;
 
     friend class DSLBlock;
@@ -62,6 +71,7 @@ private:
     friend class DSLExpression;
     friend class DSLPossibleStatement;
     friend class DSLWriter;
+    friend DSLStatement operator,(DSLStatement left, DSLStatement right);
 };
 
 /**
@@ -80,8 +90,10 @@ public:
 
     ~DSLPossibleStatement();
 
+    bool valid() { return fStatement != nullptr; }
+
     std::unique_ptr<SkSL::Statement> release() {
-        return std::move(fStatement);
+        return DSLStatement(std::move(*this)).release();
     }
 
 private:
@@ -89,6 +101,8 @@ private:
 
     friend class DSLStatement;
 };
+
+DSLStatement operator,(DSLStatement left, DSLStatement right);
 
 } // namespace dsl
 

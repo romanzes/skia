@@ -19,6 +19,7 @@
 #include "src/gpu/GrOpFlushState.h"
 #include "src/gpu/GrProxyProvider.h"
 #include "src/gpu/GrRecordingContextPriv.h"
+#include "src/gpu/GrResourceProvider.h"
 #include "src/gpu/GrStyle.h"
 #include "src/gpu/GrSurfaceDrawContext.h"
 #include "src/gpu/GrThreadSafeCache.h"
@@ -42,6 +43,7 @@ static std::unique_ptr<GrSurfaceDrawContext> new_RTC(GrRecordingContext* rContex
                                       nullptr,
                                       SkBackingFit::kExact,
                                       {wh, wh},
+                                      SkSurfaceProps(),
                                       1,
                                       GrMipMapped::kNo,
                                       GrProtected::kNo,
@@ -446,8 +448,7 @@ private:
 
     const char* name() const override { return "GrThreadSafeVertexTestOp"; }
     FixedFunctionFlags fixedFunctionFlags() const override { return FixedFunctionFlags::kNone; }
-    GrProcessorSet::Analysis finalize(const GrCaps&, const GrAppliedClip*,
-                                      bool hasMixedSampledCoverage, GrClampType) override {
+    GrProcessorSet::Analysis finalize(const GrCaps&, const GrAppliedClip*, GrClampType) override {
         return GrProcessorSet::EmptySetAnalysis();
     }
 
@@ -455,7 +456,7 @@ private:
                                      SkArenaAlloc* arena,
                                      const GrSurfaceProxyView& writeView,
                                      GrAppliedClip&& appliedClip,
-                                     const GrXferProcessor::DstProxyView& dstProxyView,
+                                     const GrDstProxyView& dstProxyView,
                                      GrXferBarrierFlags renderPassXferBarriers,
                                      GrLoadOp colorLoadOp) const {
         using namespace GrDefaultGeoProcFactory;
@@ -547,7 +548,7 @@ private:
     void onPrePrepare(GrRecordingContext* rContext,
                       const GrSurfaceProxyView& writeView,
                       GrAppliedClip* clip,
-                      const GrXferProcessor::DstProxyView& dstProxyView,
+                      const GrDstProxyView& dstProxyView,
                       GrXferBarrierFlags renderPassXferBarriers,
                       GrLoadOp colorLoadOp) override {
         SkArenaAlloc* arena = rContext->priv().recordTimeAllocator();

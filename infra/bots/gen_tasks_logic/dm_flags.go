@@ -152,10 +152,6 @@ func (b *taskBuilder) dmFlags(internalHardwareLabel string) {
 		args = append(args, "--randomProcessorTest")
 	}
 
-	if b.model("Pixel3", "Pixel3a") && b.extraConfig("Vulkan") {
-		args = append(args, "--dontReduceOpsTaskSplitting")
-	}
-
 	threadLimit := -1
 	const MAIN_THREAD_ONLY = 0
 
@@ -183,7 +179,6 @@ func (b *taskBuilder) dmFlags(internalHardwareLabel string) {
 	glPrefix := ""
 	if b.extraConfig("SwiftShader") {
 		configs = append(configs, "gles", "glesdft")
-		args = append(args, "--disableDriverCorrectnessWorkarounds")
 	} else if b.cpu() {
 		args = append(args, "--nogpu")
 
@@ -221,7 +216,8 @@ func (b *taskBuilder) dmFlags(internalHardwareLabel string) {
 		if b.os("Android", "iOS") {
 			glPrefix = "gles"
 			// MSAA is disabled on Pixel3a (https://b.corp.google.com/issues/143074513).
-			if b.model("Pixel3a") {
+			// MSAA is disabled on Pixel5 (https://skbug.com/11152).
+			if b.model("Pixel3a", "Pixel5") {
 				sampleCount = 0
 			}
 		} else if b.matchGpu("Intel") {
@@ -237,6 +233,10 @@ func (b *taskBuilder) dmFlags(internalHardwareLabel string) {
 			configs = append(configs, glPrefix, glPrefix+"dft", glPrefix+"srgb")
 			if sampleCount > 0 {
 				configs = append(configs, fmt.Sprintf("%smsaa%d", glPrefix, sampleCount))
+				// Temporarily limit the bots we test dynamic MSAA on.
+				if b.gpu("QuadroP400", "MaliG77", "AppleM1") {
+					configs = append(configs, fmt.Sprintf("%sdmsaa", glPrefix))
+				}
 			}
 		}
 
@@ -275,9 +275,12 @@ func (b *taskBuilder) dmFlags(internalHardwareLabel string) {
 			skip("gltestthreading gm _ draw_image_set")
 		}
 
-		// CommandBuffer bot *only* runs the command_buffer config.
+		// CommandBuffer bot *only* runs the cmdbuffer_es2 configs.
 		if b.extraConfig("CommandBuffer") {
-			configs = []string{"commandbuffer"}
+			configs = []string{"cmdbuffer_es2"}
+			if sampleCount > 0 {
+				configs = append(configs, "cmdbuffer_es2_dmsaa")
+			}
 		}
 
 		// Dawn bot *only* runs the dawn config
@@ -312,12 +315,6 @@ func (b *taskBuilder) dmFlags(internalHardwareLabel string) {
 			}
 		}
 
-		if b.model("Pixelbook") {
-			// skbug.com/10232
-			skip("_ test _ ProcessorCloneTest")
-
-		}
-
 		if b.model("AndroidOne", "GalaxyS6", "Nexus5", "Nexus7") {
 			// skbug.com/9019
 			skip("_ test _ ProcessorCloneTest")
@@ -335,16 +332,14 @@ func (b *taskBuilder) dmFlags(internalHardwareLabel string) {
 			skip("_ test _ Programs")
 		}
 
+		if b.model("Spin513") {
+			// skbug.com/11876
+			skip("_ test _ Programs")
+		}
+
 		if b.extraConfig("CommandBuffer") {
 			// skbug.com/10412
 			skip("_ test _ GLBackendAllocationTest")
-		}
-
-		// skbug.com/9033 - these devices run out of memory on this test
-		// when opList splitting reduction is enabled
-		if b.gpu() && (b.model("Nexus7", "NVIDIA_Shield", "Nexus5x") ||
-			(b.os("Win10") && b.gpu("GTX660") && b.extraConfig("Vulkan"))) {
-			skip("_", "gm", "_", "savelayer_clipmask")
 		}
 
 		// skbug.com/9043 - these devices render this test incorrectly
@@ -417,30 +412,43 @@ func (b *taskBuilder) dmFlags(internalHardwareLabel string) {
 			skip("mtltestprecompile gm _ atlastext")
 			skip("mtltestprecompile gm _ circular_arcs_hairline")
 			skip("mtltestprecompile gm _ dftext")
+			skip("mtltestprecompile gm _ fontmgr_bounds")
 			skip("mtltestprecompile gm _ fontmgr_bounds_1_-0.25")
 			skip("mtltestprecompile gm _ glyph_pos_h_b")
 			skip("mtltestprecompile gm _ glyph_pos_h_f")
 			skip("mtltestprecompile gm _ glyph_pos_n_f")
+			skip("mtltestprecompile gm _ strokedlines")
 			skip("mtltestprecompile gm _ strokes3")
 			skip("mtltestprecompile gm _ texel_subset_linear_mipmap_nearest_down")
 			skip("mtltestprecompile gm _ texel_subset_linear_mipmap_linear_down")
+			skip("mtltestprecompile gm _ textblobmixedsizes_df")
 			skip("mtltestprecompile svg _ A_large_blank_world_map_with_oceans_marked_in_blue.svg")
 			skip("mtltestprecompile svg _ Chalkboard.svg")
 			skip("mtltestprecompile svg _ Ghostscript_Tiger.svg")
+			skip("mtltestprecompile svg _ Seal_of_Illinois.svg")
+		}
+		// Test reduced shader mode on iPhone 11 as representative iOS device
+		if b.model("iPhone11") && b.extraConfig("Metal") {
+			configs = append(configs, "mtlreducedshaders")
 		}
 
 		if b.gpu("AppleM1") && !b.extraConfig("Metal") {
-			skip("_ test _ TransferPixelsFromTextureTest")  // skia:11814
+			skip("_ test _ TransferPixelsFromTextureTest") // skia:11814
 		}
 
-		if b.model(REDUCE_OPS_TASK_SPLITTING_MODELS...) {
-			args = append(args, "--reduceOpsTaskSplitting", "true")
+		if b.model(DONT_REDUCE_OPS_TASK_SPLITTING_MODELS...) {
+			args = append(args, "--dontReduceOpsTaskSplitting", "true")
+		}
+
+		// Test reduceOpsTaskSplitting fallback when over budget.
+		if b.model("NUC7i5BNK") && b.extraConfig("ASAN") {
+			args = append(args, "--gpuResourceCacheLimit", "16777216")
 		}
 
 		// Test rendering to wrapped dsts on a few bots
 		// Also test "glenarrow", which hits F16 surfaces and F16 vertex colors.
 		if b.extraConfig("BonusConfigs") {
-			configs = []string{"glbetex", "glbert", "glenarrow"}
+			configs = []string{"glbetex", "glbert", "glenarrow", "glreducedshaders"}
 		}
 
 		if b.os("ChromeOS") {
@@ -451,13 +459,10 @@ func (b *taskBuilder) dmFlags(internalHardwareLabel string) {
 		// Test GPU tessellation path renderer.
 		if b.extraConfig("GpuTess") {
 			configs = []string{glPrefix + "msaa4"}
-			args = append(args, "--hwtess", "--pr", "tess")
-		}
-
-		// Test dynamic MSAA.
-		if b.extraConfig("DMSAA") {
-			configs = []string{glPrefix + "dmsaa"}
-			args = append(args, "--hwtess")
+			// Use hardware tessellation as much as possible for testing. Use 16 segments max to
+			// verify the chopping logic.
+			args = append(args,
+				"--pr", "tess", "--hwtess", "--alwaysHwTess", "--maxTessellationSegments", "16")
 		}
 
 		// DDL is a GPU-only feature
@@ -735,6 +740,7 @@ func (b *taskBuilder) dmFlags(internalHardwareLabel string) {
 	badSerializeGMs = append(badSerializeGMs, "compositor_quads_shader")
 	badSerializeGMs = append(badSerializeGMs, "wacky_yuv_formats_qtr")
 	badSerializeGMs = append(badSerializeGMs, "runtime_effect_image")
+	badSerializeGMs = append(badSerializeGMs, "ctmpatheffect")
 
 	// This GM forces a path to be convex. That property doesn't survive
 	// serialization.
@@ -842,8 +848,14 @@ func (b *taskBuilder) dmFlags(internalHardwareLabel string) {
 		}
 	}
 
-	if b.matchGpu("Adreno[56][0-9][0-9]") { // skia:11308 - disable on Adreno 5xx/6xx
-		skip("_", "tests", "_", "SkSLMatrixEquality_GPU")
+	if b.matchGpu("Adreno[3456][0-9][0-9]") { // disable broken tests on Adreno 3/4/5/6xx
+		skip("_", "tests", "_", "DSLFPTest_SwitchStatement")  // skia:11891
+		skip("_", "tests", "_", "SkSLMatrixToVectorCast_GPU") // skia:12192
+		skip("_", "tests", "_", "SkSLStructsInFunctions_GPU") // skia:11929
+	}
+
+	if b.gpu("IntelIris6100", "IntelHD4400") && b.matchOs("Win") && !b.extraConfig("Vulkan") {
+		skip("_", "tests", "_", "SkSLVectorToMatrixCast_GPU") // skia:12179
 	}
 
 	match := []string{}
@@ -939,13 +951,9 @@ func (b *taskBuilder) dmFlags(internalHardwareLabel string) {
 		match = append(match, "~SurfacePartialDraw_Gpu")
 	}
 
-	if b.extraConfig("Direct3D") {
-		// skia:9935
-		match = append(match, "~^DDLSkSurfaceFlush$")
-		match = append(match, "~^GrBackendTextureImageMipMappedTest$")
-		match = append(match, "~^GrTextureMipMapInvalidationTest$")
-		match = append(match, "~^SkImage_makeTextureImage$")
-		match = append(match, "~^TextureIdleStateTest$")
+	if b.extraConfig("Metal") && b.gpu("PowerVRGX6450") && b.matchOs("iOS") {
+		// skbug.com/11885
+		match = append(match, "~flight_animated_image")
 	}
 
 	if b.extraConfig("ANGLE") {

@@ -181,7 +181,7 @@ static SkTCopyOnFirstWrite<SkPaint> clean_paint(const SkPaint& srcPaint) {
     SkTCopyOnFirstWrite<SkPaint> paint(srcPaint);
     // If the paint will definitely draw opaquely, replace kSrc with
     // kSrcOver.  http://crbug.com/473572
-    if (SkBlendMode::kSrcOver != paint->getBlendMode() &&
+    if (!paint->isSrcOver() &&
         kSrcOver_SkXfermodeInterpretation == SkInterpretXfermode(*paint, false))
     {
         paint.writable()->setBlendMode(SkBlendMode::kSrcOver);
@@ -241,7 +241,7 @@ public:
             NOT_IMPLEMENTED(!matrix.hasPerspective(), false);
             return;
         }
-        fBlendMode = paint.getBlendMode();
+        fBlendMode = paint.getBlendMode_or(SkBlendMode::kSrcOver);
         fContentStream =
             fDevice->setUpContentEntry(clipStack, matrix, paint, textScale, &fDstFormXObject);
     }
@@ -333,7 +333,7 @@ void SkPDFDevice::drawAnnotation(const SkRect& rect, const char key[], SkData* v
     }
     // Annotations are specified in absolute coordinates, so the page xform maps from device space
     // to the global space, and applies the document transform.
-    SkMatrix pageXform = this->deviceToGlobal();
+    SkMatrix pageXform = this->deviceToGlobal().asM33();
     pageXform.postConcat(fDocument->currentPageTransform());
     if (rect.isEmpty()) {
         if (!strcmp(key, SkPDFGetNodeIdKey())) {
@@ -950,7 +950,8 @@ void SkPDFDevice::internalDrawGlyphRun(
     }
 }
 
-void SkPDFDevice::drawGlyphRunList(const SkGlyphRunList& glyphRunList, const SkPaint& paint) {
+void SkPDFDevice::onDrawGlyphRunList(const SkGlyphRunList& glyphRunList, const SkPaint& paint) {
+    SkASSERT(!glyphRunList.hasRSXForm());
     for (const SkGlyphRun& glyphRun : glyphRunList) {
         this->internalDrawGlyphRun(glyphRun, glyphRunList.origin(), paint);
     }
@@ -1154,6 +1155,8 @@ static void populate_graphic_state_entry_from_paint(
     // PDF treats a shader as a color, so we only set one or the other.
     SkShader* shader = paint.getShader();
     if (shader) {
+        // note: we always present the alpha as 1 for the shader, knowing that it will be
+        //       accounted for when we create our newGraphicsState (below)
         if (SkShader::kColor_GradientType == shader->asAGradient(nullptr)) {
             // We don't have to set a shader just for a color.
             SkShader::GradientInfo gradientInfo;
@@ -1182,8 +1185,9 @@ static void populate_graphic_state_entry_from_paint(
             SkIRect bounds;
             clipStackBounds.roundOut(&bounds);
 
-            SkPDFIndirectReference pdfShader
-                = SkPDFMakeShader(doc, shader, transform, bounds, paint.getColor4f());
+            auto c = paint.getColor4f();
+            SkPDFIndirectReference pdfShader = SkPDFMakeShader(doc, shader, transform, bounds,
+                                                               {c.fR, c.fG, c.fB, 1.0f});
 
             if (pdfShader) {
                 // pdfShader has been canonicalized so we can directly compare pointers.
@@ -1210,7 +1214,7 @@ SkDynamicMemoryWStream* SkPDFDevice::setUpContentEntry(const SkClipStack* clipSt
                                                        SkScalar textScale,
                                                        SkPDFIndirectReference* dst) {
     SkASSERT(!*dst);
-    SkBlendMode blendMode = paint.getBlendMode();
+    SkBlendMode blendMode = paint.getBlendMode_or(SkBlendMode::kSrcOver);
 
     // Dst xfer mode doesn't draw source at all.
     if (blendMode == SkBlendMode::kDst) {
@@ -1471,7 +1475,7 @@ void SkPDFDevice::internalDrawImageRect(SkKeyedImage imageSubset,
     // If the image is opaque and the paint's alpha is too, replace
     // kSrc blendmode with kSrcOver.  http://crbug.com/473572
     SkTCopyOnFirstWrite<SkPaint> paint(srcPaint);
-    if (SkBlendMode::kSrcOver != paint->getBlendMode() &&
+    if (!paint->isSrcOver() &&
         imageSubset.image()->isOpaque() &&
         kSrcOver_SkXfermodeInterpretation == SkInterpretXfermode(*paint, false))
     {
@@ -1726,11 +1730,12 @@ void SkPDFDevice::drawSpecial(SkSpecialImage* srcImg, const SkMatrix& localToDev
 }
 
 sk_sp<SkSpecialImage> SkPDFDevice::makeSpecial(const SkBitmap& bitmap) {
-    return SkSpecialImage::MakeFromRaster(bitmap.bounds(), bitmap);
+    return SkSpecialImage::MakeFromRaster(bitmap.bounds(), bitmap, this->surfaceProps());
 }
 
 sk_sp<SkSpecialImage> SkPDFDevice::makeSpecial(const SkImage* image) {
-    return SkSpecialImage::MakeFromImage(nullptr, image->bounds(), image->makeNonTextureImage());
+    return SkSpecialImage::MakeFromImage(nullptr, image->bounds(), image->makeNonTextureImage(),
+                                         this->surfaceProps());
 }
 
 SkImageFilterCache* SkPDFDevice::getImageFilterCache() {
