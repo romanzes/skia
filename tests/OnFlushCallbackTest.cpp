@@ -68,7 +68,7 @@ public:
 
     const char* name() const override { return "NonAARectOp"; }
 
-    void visitProxies(const VisitProxyFunc& func) const override {
+    void visitProxies(const GrVisitProxyFunc& func) const override {
         if (fProgramInfo) {
             fProgramInfo->visitFPProxies(func);
         } else {
@@ -79,14 +79,13 @@ public:
     FixedFunctionFlags fixedFunctionFlags() const override { return FixedFunctionFlags::kNone; }
 
     GrProcessorSet::Analysis finalize(
-            const GrCaps& caps, const GrAppliedClip*, bool hasMixedSampledCoverage,
-            GrClampType clampType) override {
+            const GrCaps& caps, const GrAppliedClip*, GrClampType clampType) override {
         // Set the color to unknown because the subclass may change the color later.
         GrProcessorAnalysisColor gpColor;
         gpColor.setToUnknown();
         // We ignore the clip so pass this rather than the GrAppliedClip param.
         static GrAppliedClip kNoClip = GrAppliedClip::Disabled();
-        return fHelper.finalizeProcessors(caps, &kNoClip, hasMixedSampledCoverage, clampType,
+        return fHelper.finalizeProcessors(caps, &kNoClip, clampType,
                                           GrProcessorAnalysisCoverage::kNone, &gpColor);
     }
 
@@ -102,8 +101,9 @@ private:
     void onCreateProgramInfo(const GrCaps* caps,
                              SkArenaAlloc* arena,
                              const GrSurfaceProxyView& writeView,
+                             bool usesMSAASurface,
                              GrAppliedClip&& appliedClip,
-                             const GrXferProcessor::DstProxyView& dstProxyView,
+                             const GrDstProxyView& dstProxyView,
                              GrXferBarrierFlags renderPassXferBarriers,
                              GrLoadOp colorLoadOp) override {
         using namespace GrDefaultGeoProcFactory;
@@ -125,7 +125,7 @@ private:
                                                  renderPassXferBarriers, colorLoadOp);
     }
 
-    void onPrepareDraws(Target* target) override {
+    void onPrepareDraws(GrMeshDrawTarget* target) override {
 
         // The vertex attrib order is always pos, color, local coords.
         static const int kColorOffset = sizeof(SkPoint);
@@ -389,9 +389,9 @@ public:
         //    9 refs from the 9 AtlasedRectOps
         // The backing GrSurface should have only 1 though bc there is only one proxy
         CheckSingleThreadedProxyRefs(fReporter, fAtlasView.proxy(), 10, 1);
-        auto rtc = resourceProvider->makeRenderTargetContext(
+        auto rtc = resourceProvider->makeSurfaceDrawContext(
                 fAtlasView.refProxy(), fAtlasView.origin(), GrColorType::kRGBA_8888, nullptr,
-                nullptr);
+                SkSurfaceProps());
 
         // clear the atlas
         rtc->clear(SK_PMColor4fTRANSPARENT);
@@ -469,7 +469,7 @@ static GrSurfaceProxyView make_upstream_image(GrRecordingContext* rContext,
                                               SkAlphaType atlasAlphaType) {
     auto rtc = GrSurfaceDrawContext::Make(
             rContext, GrColorType::kRGBA_8888, nullptr,
-            SkBackingFit::kApprox, {3 * kDrawnTileSize, kDrawnTileSize});
+            SkBackingFit::kApprox, {3 * kDrawnTileSize, kDrawnTileSize}, SkSurfaceProps());
 
     rtc->clear(SkPMColor4f{1, 0, 0, 1});
 
@@ -581,7 +581,7 @@ DEF_GPUTEST_FOR_GL_RENDERING_CONTEXTS(OnFlushCallbackTest, reporter, ctxInfo) {
 
     auto rtc = GrSurfaceDrawContext::Make(
             dContext, GrColorType::kRGBA_8888, nullptr, SkBackingFit::kApprox,
-            {kFinalWidth, kFinalHeight});
+            {kFinalWidth, kFinalHeight}, SkSurfaceProps());
 
     rtc->clear(SK_PMColor4fWHITE);
 

@@ -71,19 +71,22 @@ public:
         return this->uniformHandler()->inputSamplerSwizzle(handle);
     }
 
-    // Used to add a uniform for the RenderTarget width (used for sk_Width) without mangling
-    // the name of the uniform inside of a stage.
-    void addRTWidthUniform(const char* name);
-
-    // Used to add a uniform for the RenderTarget height (used for sk_Height and frag position)
+    // Used to add a uniform for render target flip (used for dFdy, sk_Clockwise, and sk_FragCoord)
     // without mangling the name of the uniform inside of a stage.
-    void addRTHeightUniform(const char* name);
+    void addRTFlipUniform(const char* name);
 
     // Generates a name for a variable. The generated string will be name prefixed by the prefix
     // char (unless the prefix is '\0'). It also will mangle the name to be stage-specific unless
     // explicitly asked not to. `nameVariable` can also be used to generate names for functions or
     // other types of symbols where unique names are important.
     SkString nameVariable(char prefix, const char* name, bool mangle = true);
+
+    /**
+     * If computation of a FP's input coords have been lifted to the vertex shader, this method
+     * retrieves the name of the coords varying in the FS. The FP code should read this directly
+     * rather than writing a function that takes a float2 coord.
+     */
+    GrShaderVar varyingCoordsForFragmentProcessor(const GrFragmentProcessor*);
 
     virtual GrGLSLUniformHandler* uniformHandler() = 0;
     virtual const GrGLSLUniformHandler* uniformHandler() const = 0;
@@ -103,7 +106,6 @@ public:
 
     int fStageIndex;
 
-    GrRenderTarget*              fRenderTarget; // TODO: remove this
     const GrProgramDesc&         fDesc;
     const GrProgramInfo&         fProgramInfo;
 
@@ -113,8 +115,11 @@ public:
     std::unique_ptr<GrGLSLXferProcessor>     fXferProcessor;
     std::vector<std::unique_ptr<GrGLSLFragmentProcessor>> fFPImpls;
 
+    SamplerHandle fDstTextureSamplerHandle;
+    GrSurfaceOrigin fDstTextureOrigin;
+
 protected:
-    explicit GrGLSLProgramBuilder(GrRenderTarget*, const GrProgramDesc&, const GrProgramInfo&);
+    explicit GrGLSLProgramBuilder(const GrProgramDesc&, const GrProgramInfo&);
 
     void addFeature(GrShaderFlags shaders, uint32_t featureBit, const char* extensionName);
 
@@ -150,14 +155,14 @@ private:
     // Generates a possibly mangled name for a stage variable and writes it to the fragment shader.
     void nameExpression(SkString*, const char* baseName);
 
-    void emitAndInstallPrimProc(SkString* outputColor, SkString* outputCoverage);
-    void emitAndInstallFragProcs(SkString* colorInOut, SkString* coverageInOut);
+    bool emitAndInstallPrimProc(SkString* outputColor, SkString* outputCoverage);
+    bool emitAndInstallDstTexture();
+    bool emitAndInstallFragProcs(SkString* colorInOut, SkString* coverageInOut);
     SkString emitFragProc(const GrFragmentProcessor&,
                           GrGLSLFragmentProcessor&,
-                          int transformedCoordVarsIdx,
                           const SkString& input,
                           SkString output);
-    void emitAndInstallXferProc(const SkString& colorIn, const SkString& coverageIn);
+    bool emitAndInstallXferProc(const SkString& colorIn, const SkString& coverageIn);
     SamplerHandle emitSampler(const GrBackendFormat&, GrSamplerState, const GrSwizzle&,
                               const char* name);
     SamplerHandle emitInputSampler(const GrSwizzle& swizzle, const char* name);
@@ -171,7 +176,7 @@ private:
 
     // These are used to check that we don't excede the allowable number of resources in a shader.
     int fNumFragmentSamplers;
-    SkSTArray<4, GrShaderVar> fTransformedCoordVars;
+    GrGLSLGeometryProcessor::FPToVaryingCoordsMap fFPCoordVaryings;
 };
 
 #endif

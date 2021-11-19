@@ -5,7 +5,7 @@
  * found in the LICENSE file.
  */
 
-// This is a GPU-backend specific test. It relies on static intializers to work
+// This is a GPU-backend specific test. It relies on static initializers to work
 
 #include <memory>
 
@@ -33,7 +33,7 @@ class Op : public GrMeshDrawOp {
 public:
     DEFINE_OP_CLASS_ID
 
-    const char* name() const override { return "Dummy Op"; }
+    const char* name() const override { return "Test Op"; }
 
     static GrOp::Owner Make(GrRecordingContext* rContext, int numAttribs) {
         return GrOp::Make<Op>(rContext, numAttribs);
@@ -43,8 +43,7 @@ public:
         return FixedFunctionFlags::kNone;
     }
 
-    GrProcessorSet::Analysis finalize(const GrCaps&, const GrAppliedClip*,
-                                      bool hasMixedSampledCoverage, GrClampType) override {
+    GrProcessorSet::Analysis finalize(const GrCaps&, const GrAppliedClip*, GrClampType) override {
         return GrProcessorSet::EmptySetAnalysis();
     }
 
@@ -60,8 +59,9 @@ private:
     void onCreateProgramInfo(const GrCaps* caps,
                              SkArenaAlloc* arena,
                              const GrSurfaceProxyView& writeView,
+                             bool usesMSAASurface,
                              GrAppliedClip&& appliedClip,
-                             const GrXferProcessor::DstProxyView& dstProxyView,
+                             const GrDstProxyView& dstProxyView,
                              GrXferBarrierFlags renderPassXferBarriers,
                              GrLoadOp colorLoadOp) override {
         class GP : public GrGeometryProcessor {
@@ -72,7 +72,7 @@ private:
                 });
             }
 
-            const char* name() const override { return "Dummy GP"; }
+            const char* name() const override { return "Test GP"; }
 
             GrGLSLGeometryProcessor* createGLSLInstance(const GrShaderCaps&) const override {
                 class GLSLGP : public GrGLSLGeometryProcessor {
@@ -80,14 +80,14 @@ private:
                     void onEmitCode(EmitArgs& args, GrGPArgs* gpArgs) override {
                         const GP& gp = args.fGeomProc.cast<GP>();
                         args.fVaryingHandler->emitAttributes(gp);
-                        this->writeOutputPosition(args.fVertBuilder, gpArgs,
-                                                  gp.fAttributes[0].name());
+                        WriteOutputPosition(args.fVertBuilder, gpArgs, gp.fAttributes[0].name());
                         GrGLSLFPFragmentBuilder* fragBuilder = args.fFragBuilder;
                         fragBuilder->codeAppendf("const half4 %s = half4(1);", args.fOutputColor);
                         fragBuilder->codeAppendf("const half4 %s = half4(1);",
                                                  args.fOutputCoverage);
                     }
                     void setData(const GrGLSLProgramDataManager&,
+                                 const GrShaderCaps&,
                                  const GrGeometryProcessor&) override {}
                 };
                 return new GLSLGP();
@@ -139,7 +139,7 @@ private:
                                                                    GrPipeline::InputFlags::kNone);
     }
 
-    void onPrepareDraws(Target* target) override {
+    void onPrepareDraws(GrMeshDrawTarget* target) override {
         if (!fProgramInfo) {
             this->createProgramInfo(target);
         }
@@ -175,8 +175,9 @@ DEF_GPUTEST_FOR_ALL_CONTEXTS(VertexAttributeCount, reporter, ctxInfo) {
     GrGpu* gpu = context->priv().getGpu();
 #endif
 
-    auto surfaceDrawContext = GrSurfaceDrawContext::Make(
-            context, GrColorType::kRGBA_8888, nullptr, SkBackingFit::kApprox, {1, 1});
+    auto surfaceDrawContext = GrSurfaceDrawContext::Make(context, GrColorType::kRGBA_8888, nullptr,
+                                                         SkBackingFit::kApprox, {1, 1},
+                                                         SkSurfaceProps());
     if (!surfaceDrawContext) {
         ERRORF(reporter, "Could not create render target context.");
         return;

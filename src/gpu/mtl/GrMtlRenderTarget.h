@@ -12,6 +12,7 @@
 
 #include "include/gpu/GrBackendSurface.h"
 #include "src/gpu/GrGpu.h"
+#include "src/gpu/mtl/GrMtlAttachment.h"
 
 #import <Metal/Metal.h>
 
@@ -28,12 +29,15 @@ public:
 
     ~GrMtlRenderTarget() override;
 
-    bool canAttemptStencilAttachment() const override {
+    bool canAttemptStencilAttachment(bool useMSAASurface) const override {
+        SkASSERT(useMSAASurface == (this->numSamples() > 1));
         return true;
     }
 
-    id<MTLTexture> mtlColorTexture() const { return fColorTexture; }
-    id<MTLTexture> mtlResolveTexture() const { return fResolveTexture; }
+    GrMtlAttachment* colorAttachment() const { return fColorAttachment.get(); }
+    id<MTLTexture> colorMTLTexture() const { return fColorAttachment->mtlTexture(); }
+    GrMtlAttachment* resolveAttachment() const { return fResolveAttachment.get(); }
+    id<MTLTexture> resolveMTLTexture() const { return fResolveAttachment->mtlTexture(); }
 
     GrBackendRenderTarget getBackendRenderTarget() const override;
 
@@ -42,11 +46,8 @@ public:
 protected:
     GrMtlRenderTarget(GrMtlGpu* gpu,
                       SkISize,
-                      int sampleCnt,
-                      id<MTLTexture> colorTexture,
-                      id<MTLTexture> resolveTexture);
-
-    GrMtlRenderTarget(GrMtlGpu* gpu, SkISize, id<MTLTexture> colorTexture);
+                      sk_sp<GrMtlAttachment> colorAttachment,
+                      sk_sp<GrMtlAttachment> resolveAttachment);
 
     GrMtlGpu* getMtlGpu() const;
 
@@ -66,21 +67,19 @@ protected:
                                       numColorSamples, GrMipmapped::kNo);
     }
 
-    id<MTLTexture> fColorTexture;
-    id<MTLTexture> fResolveTexture;
+    sk_sp<GrMtlAttachment> fColorAttachment;
+    sk_sp<GrMtlAttachment> fResolveAttachment;
 
 private:
     // Extra param to disambiguate from constructor used by subclasses.
     enum Wrapped { kWrapped };
     GrMtlRenderTarget(GrMtlGpu* gpu,
                       SkISize,
-                      int sampleCnt,
-                      id<MTLTexture> colorTexture,
-                      id<MTLTexture> resolveTexture,
+                      sk_sp<GrMtlAttachment> colorAttachment,
+                      sk_sp<GrMtlAttachment> resolveAttachment,
                       Wrapped);
-    GrMtlRenderTarget(GrMtlGpu* gpu, SkISize, id<MTLTexture> colorTexture, Wrapped);
 
-    bool completeStencilAttachment() override;
+    bool completeStencilAttachment(GrAttachment* stencil, bool useMSAASurface) override;
 
     using INHERITED = GrRenderTarget;
 };

@@ -21,7 +21,6 @@
 #include "include/core/SkString.h"
 #include "include/core/SkTypes.h"
 #include "include/gpu/GrRecordingContext.h"
-#include "include/private/GrSharedEnums.h"
 #include "include/private/GrTypesPriv.h"
 #include "include/private/SkColorData.h"
 #include "include/utils/SkRandom.h"
@@ -60,14 +59,13 @@ public:
     FixedFunctionFlags fixedFunctionFlags() const override { return FixedFunctionFlags::kNone; }
 
     GrProcessorSet::Analysis finalize(
-            const GrCaps& caps, const GrAppliedClip* clip, bool hasMixedSampledCoverage,
-            GrClampType clampType) override {
+            const GrCaps& caps, const GrAppliedClip* clip, GrClampType clampType) override {
         return fProcessorSet.finalize(
                 fColor, GrProcessorAnalysisCoverage::kSingleChannel, clip,
-                &GrUserStencilSettings::kUnused, hasMixedSampledCoverage, caps, clampType, &fColor);
+                &GrUserStencilSettings::kUnused, caps, clampType, &fColor);
     }
 
-    void visitProxies(const VisitProxyFunc& func) const override {
+    void visitProxies(const GrVisitProxyFunc& func) const override {
         if (fProgramInfo) {
             fProgramInfo->visitFPProxies(func);
         } else {
@@ -91,8 +89,9 @@ protected:
     void onCreateProgramInfo(const GrCaps* caps,
                              SkArenaAlloc* arena,
                              const GrSurfaceProxyView& writeView,
+                             bool usesMSAASurface,
                              GrAppliedClip&& appliedClip,
-                             const GrXferProcessor::DstProxyView& dstProxyView,
+                             const GrDstProxyView& dstProxyView,
                              GrXferBarrierFlags renderPassXferBarriers,
                              GrLoadOp colorLoadOp) override {
         auto gp = this->makeGP(*caps, arena);
@@ -179,7 +178,7 @@ private:
         return tmp;
     }
 
-    void onPrepareDraws(Target* target) final {
+    void onPrepareDraws(GrMeshDrawTarget* target) final {
         QuadHelper helper(target, sizeof(Vertex), 1);
         Vertex* verts = reinterpret_cast<Vertex*>(helper.vertices());
         if (!verts) {
@@ -383,7 +382,7 @@ private:
         return tmp;
     }
 
-    void onPrepareDraws(Target* target) final {
+    void onPrepareDraws(GrMeshDrawTarget* target) final {
         QuadHelper helper(target, sizeof(Vertex), 1);
         Vertex* verts = reinterpret_cast<Vertex*>(helper.vertices());
         if (!verts) {

@@ -53,7 +53,7 @@ public:
 
     ~GrVkPipelineState();
 
-    bool setAndBindUniforms(GrVkGpu*, const GrRenderTarget*, const GrProgramInfo&,
+    bool setAndBindUniforms(GrVkGpu*, SkISize colorAttachmentDimensions, const GrProgramInfo&,
                             GrVkCommandBuffer*);
     /**
      * This must be called after setAndBindUniforms() since that function invalidates texture
@@ -65,7 +65,8 @@ public:
                             const GrSurfaceProxy* const geomProcTextures[],
                             GrVkCommandBuffer*);
 
-    bool setAndBindInputAttachment(GrVkGpu*, GrVkRenderTarget* renderTarget, GrVkCommandBuffer*);
+    bool setAndBindInputAttachment(GrVkGpu*, gr_rp<const GrVkDescriptorSet> inputDescSet,
+                                   GrVkCommandBuffer*);
 
     void bindPipeline(const GrVkGpu* gpu, GrVkCommandBuffer* commandBuffer);
 
@@ -87,29 +88,10 @@ private:
             fRenderTargetSize.fHeight = -1;
             fRenderTargetOrigin = (GrSurfaceOrigin)-1;
         }
-
-        /**
-        * Gets a float4 that adjusts the position from Skia device coords to Vulkans normalized device
-        * coords. Assuming the transformed position, pos, is a homogeneous float3, the vec, v, is
-        * applied as such:
-        * pos.x = dot(v.xy, pos.xz)
-        * pos.y = dot(v.zw, pos.yz)
-        */
-        void getRTAdjustmentVec(float* destVec) {
-            destVec[0] = 2.f / fRenderTargetSize.fWidth;
-            destVec[1] = -1.f;
-            if (kBottomLeft_GrSurfaceOrigin == fRenderTargetOrigin) {
-                destVec[2] = -2.f / fRenderTargetSize.fHeight;
-                destVec[3] = 1.f;
-            } else {
-                destVec[2] = 2.f / fRenderTargetSize.fHeight;
-                destVec[3] = -1.f;
-            }
-        }
     };
 
     // Helper for setData() that sets the view matrix and loads the render target height uniform
-    void setRenderTargetState(const GrRenderTarget*, GrSurfaceOrigin);
+    void setRenderTargetState(SkISize colorAttachmentDimensions, GrSurfaceOrigin);
 
     // GrManagedResources
     sk_sp<const GrVkPipeline> fPipeline;

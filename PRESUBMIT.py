@@ -29,7 +29,6 @@ PUBLIC_API_OWNERS = (
     'djsollen@google.com',
     'hcm@chromium.org',
     'hcm@google.com',
-    'mtklein@google.com',
     'reed@chromium.org',
     'reed@google.com',
 )
@@ -37,9 +36,7 @@ PUBLIC_API_OWNERS = (
 AUTHORS_FILE_NAME = 'AUTHORS'
 RELEASE_NOTES_FILE_NAME = 'RELEASE_NOTES.txt'
 
-DOCS_PREVIEW_URL_TMPL = 'https://skia.org/{path}?cl={issue}'
-DOCS_INDEX = '_index'
-
+DOCS_PREVIEW_URL = 'https://skia.org/?cl={issue}'
 GOLD_TRYBOT_URL = 'https://gold.skia.org/search?issue='
 
 SERVICE_ACCOUNT_SUFFIX = [
@@ -252,6 +249,29 @@ def _CheckDEPSValid(input_api, output_api):
   return results
 
 
+def _RegenerateAllExamplesCPP(input_api, output_api):
+  """Regenerates all_examples.cpp if an example was added or deleted."""
+  if not any(f.LocalPath().startswith('docs/examples/')
+             for f in input_api.AffectedFiles()):
+    return []
+  command_str = 'tools/fiddle/make_all_examples_cpp.py'
+  cmd = ['python', command_str]
+  if 0 != subprocess.call(cmd):
+    return [output_api.PresubmitError('`%s` failed' % ' '.join(cmd))]
+
+  results = []
+  git_diff_output = input_api.subprocess.check_output(
+      ['git', 'diff', '--no-ext-diff'])
+  if git_diff_output:
+    results += [output_api.PresubmitError(
+        'Diffs found after running "%s":\n\n%s\n'
+        'Please commit or discard the above changes.' % (
+            command_str,
+            git_diff_output,
+        )
+    )]
+  return results
+
 def _CommonChecks(input_api, output_api):
   """Presubmit checks common to upload and commit."""
   results = []
@@ -279,6 +299,7 @@ def _CommonChecks(input_api, output_api):
   results.extend(_CheckIncludesFormatted(input_api, output_api))
   results.extend(_CheckGNFormatted(input_api, output_api))
   results.extend(_CheckGitConflictMarkers(input_api, output_api))
+  results.extend(_RegenerateAllExamplesCPP(input_api, output_api))
   return results
 
 
@@ -472,22 +493,17 @@ def PostUploadHook(gerrit, change, output_api):
       return []
 
   results = []
+  at_least_one_docs_change = False
   all_docs_changes = True
-  docs_preview_links = []
   for affected_file in change.AffectedFiles():
     affected_file_path = affected_file.LocalPath()
     file_path, _ = os.path.splitext(affected_file_path)
-    top_level_dir = file_path.split(os.path.sep)[0]
-    if 'site' == top_level_dir:
-      site_path = os.path.sep.join(file_path.split(os.path.sep)[1:])
-      # Strip DOCS_INDEX from the site_path to construct the docs_preview_link.
-      if site_path.endswith(DOCS_INDEX):
-        site_path = site_path[:-len(DOCS_INDEX)]
-      docs_preview_link = DOCS_PREVIEW_URL_TMPL.format(
-          path=site_path, issue=change.issue)
-      docs_preview_links.append(docs_preview_link)
+    if 'site' == file_path.split(os.path.sep)[0]:
+      at_least_one_docs_change = True
     else:
       all_docs_changes = False
+    if at_least_one_docs_change and not all_docs_changes:
+      break
 
   footers = change.GitFootersFromDescription()
   description_changed = False
@@ -502,18 +518,18 @@ def PostUploadHook(gerrit, change, output_api):
             'This change has only doc changes. Automatically added '
             '\'No-Try: true\' to the CL\'s description'))
 
-  # Add all preview links that do not already exist in the description.
-  if len(docs_preview_links) > 0:
-    missing_preview_links = list(
-        set(docs_preview_links) - set(footers.get('Docs-Preview', [])))
-    if len(missing_preview_links) > 0:
-      description_changed = True
-      for missing_link in missing_preview_links:
-        change.AddDescriptionFooter('Docs-Preview', missing_link)
-      results.append(
-          output_api.PresubmitNotifyResult(
-              'Automatically added link(s) to preview the docs changes to '
-              'the CL\'s description'))
+  # If there is at least one docs change then add preview link in the CL's
+  # description if it does not already exist there.
+  docs_preview_link = DOCS_PREVIEW_URL.format(issue=change.issue)
+  if (at_least_one_docs_change
+      and docs_preview_link not in footers.get('Docs-Preview', [])):
+    # Automatically add a link to where the docs can be previewed.
+    description_changed = True
+    change.AddDescriptionFooter('Docs-Preview', docs_preview_link)
+    results.append(
+        output_api.PresubmitNotifyResult(
+            'Automatically added a link to preview the docs changes to the '
+            'CL\'s description'))
 
   # If the description has changed update it.
   if description_changed:

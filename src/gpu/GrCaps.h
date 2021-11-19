@@ -67,7 +67,6 @@ public:
 #endif
         return fUseClientSideIndirectBuffers;
     }
-    bool mixedSamplesSupport() const { return fMixedSamplesSupport; }
     bool conservativeRasterSupport() const { return fConservativeRasterSupport; }
     bool wireframeSupport() const { return fWireframeSupport; }
     // This flag indicates that we never have to resolve MSAA. In practice, it means that we have
@@ -160,6 +159,9 @@ public:
         return fMustSyncGpuDuringAbandon;
     }
 
+    // Shortcut for shaderCaps()->reducedShaderMode().
+    bool reducedShaderMode() const { return this->shaderCaps()->reducedShaderMode(); }
+
     /**
      * Indicates whether GPU->CPU memory mapping for GPU resources such as vertex buffers and
      * textures allows partial mappings or full mappings.
@@ -201,12 +203,19 @@ public:
 
     int maxWindowRectangles() const { return fMaxWindowRectangles; }
 
-    // Returns whether mixed samples is supported for the given backend render target.
+    // Returns whether window rectangles are supported for the given backend render target.
     bool isWindowRectanglesSupportedForRT(const GrBackendRenderTarget& rt) const {
         return this->maxWindowRectangles() > 0 && this->onIsWindowRectanglesSupportedForRT(rt);
     }
 
+    // Hardware tessellation seems to have a fixed upfront cost. If there is a somewhat small number
+    // of verbs, we seem to be faster emulating tessellation with instanced draws instead.
+    int minPathVerbsForHwTessellation() const { return fMinPathVerbsForHwTessellation; }
+    int minStrokeVerbsForHwTessellation() const { return fMinStrokeVerbsForHwTessellation; }
+
     uint32_t maxPushConstantsSize() const { return fMaxPushConstantsSize; }
+
+    size_t transferBufferAlignment() const { return fTransferBufferAlignment; }
 
     virtual bool isFormatSRGB(const GrBackendFormat&) const = 0;
 
@@ -222,8 +231,8 @@ public:
     // 1 means the format is renderable but doesn't support MSAA.
     virtual int maxRenderTargetSampleCount(const GrBackendFormat&) const = 0;
 
-    // Returns the number of samples to use when performing internal draws to the given config with
-    // MSAA or mixed samples. If 0, Ganesh should not attempt to use internal multisampling.
+    // Returns the number of samples to use when performing draws to the given config with internal
+    // MSAA. If 0, Ganesh should not attempt to use internal multisampling.
     int internalMultisampleCount(const GrBackendFormat& format) const {
         return std::min(fInternalMultisampleCount, this->maxRenderTargetSampleCount(format));
     }
@@ -305,10 +314,16 @@ public:
                                                GrColorType dstColorType) const;
 
     /**
-     * Do GrGpu::writePixels() and GrGpu::transferPixelsTo() support a src buffer where the row
-     * bytes is not equal to bpp * w?
+     * Does GrGpu::writePixels() support a src buffer where the row bytes is not equal to bpp * w?
      */
     bool writePixelsRowBytesSupport() const { return fWritePixelsRowBytesSupport; }
+
+    /**
+     * Does GrGpu::transferPixelsTo() support a src buffer where the row bytes is not equal to
+     * bpp * w?
+     */
+    bool transferPixelsToRowBytesSupport() const { return fTransferPixelsToRowBytesSupport; }
+
     /**
      * Does GrGpu::readPixels() support a dst buffer where the row bytes is not equal to bpp * w?
      */
@@ -382,7 +397,7 @@ public:
     bool disableTessellationPathRenderer() const { return fDisableTessellationPathRenderer; }
 
     // Returns how to sample the dst values for the passed in GrRenderTargetProxy.
-    GrDstSampleType getDstSampleTypeForProxy(const GrRenderTargetProxy*) const;
+    GrDstSampleFlags getDstSampleFlagsForProxy(const GrRenderTargetProxy*, bool drawUsesMSAA) const;
 
     /**
      * This is used to try to ensure a successful copy a dst in order to perform shader-based
@@ -471,6 +486,22 @@ public:
         return GrInternalSurfaceFlags::kNone;
     }
 
+    bool supportsDynamicMSAA(const GrRenderTargetProxy*) const;
+
+    // skbug.com/11935. Task reordering is disabled for some GPUs on GL due to driver bugs.
+    bool avoidReorderingRenderTasks() const {
+        return fAvoidReorderingRenderTasks;
+    }
+
+    /**
+     * Checks whether the passed color type is renderable. If so, the same color type is passed
+     * back along with the default format used for the color type. If not, provides an alternative
+     * (perhaps lower bit depth and/or unorm instead of float) color type that is supported
+     * along with it's default format or kUnknown if there no renderable fallback format.
+     */
+    std::tuple<GrColorType, GrBackendFormat> getFallbackColorTypeAndFormat(GrColorType,
+                                                                           int sampleCount) const;
+
 #if GR_TEST_UTILS
     struct TestFormatColorTypeCombination {
         GrColorType fColorType;
@@ -486,6 +517,8 @@ protected:
     // NOTE: this method will only reduce the caps, never expand them.
     void finishInitialization(const GrContextOptions& options);
 
+    virtual bool onSupportsDynamicMSAA(const GrRenderTargetProxy*) const { return false; }
+
     sk_sp<GrShaderCaps> fShaderCaps;
 
     bool fNPOTTextureTileSupport                     : 1;
@@ -500,7 +533,6 @@ protected:
     bool fDrawInstancedSupport                       : 1;
     bool fNativeDrawIndirectSupport                  : 1;
     bool fUseClientSideIndirectBuffers               : 1;
-    bool fMixedSamplesSupport                        : 1;
     bool fConservativeRasterSupport                  : 1;
     bool fWireframeSupport                           : 1;
     bool fMSAAResolvesAutomatically                  : 1;
@@ -520,6 +552,7 @@ protected:
     bool fTransferFromBufferToTextureSupport         : 1;
     bool fTransferFromSurfaceToBufferSupport         : 1;
     bool fWritePixelsRowBytesSupport                 : 1;
+    bool fTransferPixelsToRowBytesSupport            : 1;
     bool fReadPixelsRowBytesSupport                  : 1;
     bool fShouldCollapseSrcOverToSrcWhenAble         : 1;
     bool fMustSyncGpuDuringAbandon                   : 1;
@@ -531,6 +564,7 @@ protected:
     bool fAvoidWritePixelsFastPath                   : 1;
     bool fRequiresManualFBBarrierAfterTessellatedStencilDraw : 1;
     bool fNativeDrawIndexedIndirectIsBroken          : 1;
+    bool fAvoidReorderingRenderTasks                 : 1;
 
     // ANGLE performance workaround
     bool fPreferVRAMUseOverFlushes                   : 1;
@@ -557,7 +591,10 @@ protected:
     int fMaxTextureSize;
     int fMaxWindowRectangles;
     int fInternalMultisampleCount;
+    int fMinPathVerbsForHwTessellation = 25;
+    int fMinStrokeVerbsForHwTessellation = 50;
     uint32_t fMaxPushConstantsSize = 0;
+    size_t fTransferBufferAlignment = 1;
 
     GrDriverBugWorkarounds fDriverBugWorkarounds;
 
@@ -585,8 +622,8 @@ private:
 
     virtual GrSwizzle onGetReadSwizzle(const GrBackendFormat&, GrColorType) const = 0;
 
-    virtual GrDstSampleType onGetDstSampleTypeForProxy(const GrRenderTargetProxy*) const {
-        return GrDstSampleType::kAsTextureCopy;
+    virtual GrDstSampleFlags onGetDstSampleFlagsForProxy(const GrRenderTargetProxy*) const {
+        return GrDstSampleFlags::kNone;
     }
 
     bool fSuppressPrints : 1;
@@ -595,6 +632,6 @@ private:
     using INHERITED = SkRefCnt;
 };
 
-GR_MAKE_BITFIELD_CLASS_OPS(GrCaps::ProgramDescOverrideFlags);
+GR_MAKE_BITFIELD_CLASS_OPS(GrCaps::ProgramDescOverrideFlags)
 
 #endif

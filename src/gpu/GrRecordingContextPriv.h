@@ -10,6 +10,7 @@
 
 #include "include/core/SkPaint.h"
 #include "include/gpu/GrRecordingContext.h"
+#include "src/gpu/BaseDevice.h"
 #include "src/gpu/text/GrSDFTControl.h"
 
 class SkDeferredDisplayList;
@@ -25,16 +26,6 @@ public:
     bool matches(GrContext_Base* candidate) const { return fContext->matches(candidate); }
 
     const GrContextOptions& options() const { return fContext->options(); }
-
-#if GR_TEST_UTILS
-    bool alwaysAntialias() const { return fContext->options().fAlwaysAntialias; }
-    GrAA chooseAA(const SkPaint& paint) const {
-        return GrAA(paint.isAntiAlias() || this->alwaysAntialias());
-    }
-#else
-    bool alwaysAntialias() const { return false; }
-    GrAA chooseAA(const SkPaint& paint) const { return GrAA(paint.isAntiAlias()); }
-#endif
 
     const GrCaps* caps() const { return fContext->caps(); }
     sk_sp<const GrCaps> refCaps() const;
@@ -82,7 +73,7 @@ public:
      */
     void addOnFlushCallbackObject(GrOnFlushCallbackObject*);
 
-    GrAuditTrail* auditTrail() { return fContext->auditTrail(); }
+    GrAuditTrail* auditTrail() { return fContext->fAuditTrail.get(); }
 
 #if GR_TEST_UTILS
     // Used by tests that intentionally exercise codepaths that print warning messages, in order to
@@ -108,12 +99,17 @@ public:
             return;
         }
 #endif
-        SkDebugf(msg);
+        SkDebugf("%s", msg);
     }
 
     GrRecordingContext::Stats* stats() {
         return &fContext->fStats;
     }
+
+#if GR_GPU_STATS && GR_TEST_UTILS
+    using DMSAAStats = GrRecordingContext::DMSAAStats;
+    DMSAAStats& dmsaaStats() { return fContext->fDMSAAStats; }
+#endif
 
     GrSDFTControl getSDFTControl(bool useSDFTForSmallText) const;
 
@@ -121,6 +117,22 @@ public:
      * Create a GrRecordingContext without a resource cache
      */
     static sk_sp<GrRecordingContext> MakeDDL(sk_sp<GrContextThreadSafeProxy>);
+
+    sk_sp<skgpu::BaseDevice> createDevice(GrColorType,
+                                          sk_sp<GrSurfaceProxy>,
+                                          sk_sp<SkColorSpace>,
+                                          GrSurfaceOrigin,
+                                          const SkSurfaceProps&,
+                                          skgpu::BaseDevice::InitContents);
+    sk_sp<skgpu::BaseDevice> createDevice(SkBudgeted,
+                                          const SkImageInfo&,
+                                          SkBackingFit,
+                                          int sampleCount,
+                                          GrMipmapped,
+                                          GrProtected,
+                                          GrSurfaceOrigin,
+                                          const SkSurfaceProps&,
+                                          skgpu::BaseDevice::InitContents);
 
 private:
     explicit GrRecordingContextPriv(GrRecordingContext* context) : fContext(context) {}

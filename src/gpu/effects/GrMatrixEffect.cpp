@@ -8,10 +8,10 @@
 #include "src/gpu/effects/GrMatrixEffect.h"
 
 #include "src/gpu/GrTexture.h"
+#include "src/gpu/effects/GrTextureEffect.h"
 #include "src/gpu/glsl/GrGLSLFragmentProcessor.h"
 #include "src/gpu/glsl/GrGLSLFragmentShaderBuilder.h"
 #include "src/gpu/glsl/GrGLSLProgramBuilder.h"
-#include "src/sksl/SkSLCPP.h"
 #include "src/sksl/SkSLUtil.h"
 
 class GrGLSLMatrixEffect : public GrGLSLFragmentProcessor {
@@ -19,8 +19,10 @@ public:
     GrGLSLMatrixEffect() {}
 
     void emitCode(EmitArgs& args) override {
-        fMatrixVar = args.fUniformHandler->addUniform(&args.fFp, kFragment_GrShaderFlag,
-                                                      kFloat3x3_GrSLType, "matrix");
+        fMatrixVar = args.fUniformHandler->addUniform(&args.fFp,
+                                                      kFragment_GrShaderFlag,
+                                                      kFloat3x3_GrSLType,
+                                                      SkSL::SampleUsage::MatrixUniformName());
         args.fFragBuilder->codeAppendf("return %s;\n",
                                        this->invokeChildWithMatrix(0, args).c_str());
     }
@@ -29,11 +31,31 @@ private:
     void onSetData(const GrGLSLProgramDataManager& pdman,
                    const GrFragmentProcessor& proc) override {
         const GrMatrixEffect& mtx = proc.cast<GrMatrixEffect>();
-        pdman.setSkMatrix(fMatrixVar, mtx.matrix());
+        if (auto te = mtx.childProcessor(0)->asTextureEffect()) {
+            SkMatrix m = te->coordAdjustmentMatrix();
+            m.preConcat(mtx.matrix());
+            pdman.setSkMatrix(fMatrixVar, m);
+        } else {
+            pdman.setSkMatrix(fMatrixVar, mtx.matrix());
+        }
     }
 
     UniformHandle fMatrixVar;
 };
+
+std::unique_ptr<GrFragmentProcessor> GrMatrixEffect::Make(
+        const SkMatrix& matrix, std::unique_ptr<GrFragmentProcessor> child) {
+    if (child->classID() == kGrMatrixEffect_ClassID) {
+        auto me = static_cast<GrMatrixEffect*>(child.get());
+        // registerChild's sample usage records whether the matrix used has perspective or not,
+        // so we can't add perspective to 'me' if it doesn't already have it.
+        if (me->matrix().hasPerspective() || !matrix.hasPerspective()) {
+            me->fMatrix.preConcat(matrix);
+            return child;
+        }
+    }
+    return std::unique_ptr<GrFragmentProcessor>(new GrMatrixEffect(matrix, std::move(child)));
+}
 
 std::unique_ptr<GrGLSLFragmentProcessor> GrMatrixEffect::onMakeProgramImpl() const {
     return std::make_unique<GrGLSLMatrixEffect>();

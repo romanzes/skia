@@ -9,6 +9,7 @@
 #include "src/core/SkBlendModePriv.h"
 #include "src/gpu/GrDirectContextPriv.h"
 #include "src/gpu/GrProxyProvider.h"
+#include "src/gpu/GrResourceProvider.h"
 #include "src/gpu/GrSurfaceDrawContext.h"
 #include "src/gpu/ops/GrFillRectOp.h"
 #include "src/gpu/ops/GrTextureOp.h"
@@ -16,7 +17,8 @@
 
 static std::unique_ptr<GrSurfaceDrawContext> new_RTC(GrRecordingContext* rContext) {
     return GrSurfaceDrawContext::Make(
-            rContext, GrColorType::kRGBA_8888, nullptr, SkBackingFit::kExact, {128, 128});
+            rContext, GrColorType::kRGBA_8888, nullptr, SkBackingFit::kExact, {128, 128},
+            SkSurfaceProps());
 }
 
 static sk_sp<GrSurfaceProxy> create_proxy(GrRecordingContext* rContext) {

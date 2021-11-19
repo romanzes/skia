@@ -147,6 +147,10 @@ public:
         return SkRect::Make(this->backingStoreDimensions());
     }
 
+    SkIRect backingStoreBoundsIRect() const {
+        return SkIRect::MakeSize(this->backingStoreDimensions());
+    }
+
     const GrBackendFormat& backendFormat() const { return fFormat; }
 
     bool isFormatCompressed(const GrCaps*) const;
@@ -422,7 +426,7 @@ protected:
     GrInternalSurfaceFlags fSurfaceFlags;
 
 private:
-    // For wrapped resources, 'fFormat', 'fWidth', and 'fHeight'; will always be filled in from the
+    // For wrapped resources, 'fFormat' and 'fDimensions' will always be filled in from the
     // wrapped resource.
     const GrBackendFormat  fFormat;
     SkISize                fDimensions;

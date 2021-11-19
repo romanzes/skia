@@ -24,10 +24,10 @@
 #include "src/sksl/ir/SkSLConstructorMatrixResize.h"
 #include "src/sksl/ir/SkSLConstructorScalarCast.h"
 #include "src/sksl/ir/SkSLConstructorSplat.h"
+#include "src/sksl/ir/SkSLConstructorStruct.h"
 #include "src/sksl/ir/SkSLContinueStatement.h"
 #include "src/sksl/ir/SkSLDiscardStatement.h"
 #include "src/sksl/ir/SkSLDoStatement.h"
-#include "src/sksl/ir/SkSLEnum.h"
 #include "src/sksl/ir/SkSLExpressionStatement.h"
 #include "src/sksl/ir/SkSLExternalFunctionCall.h"
 #include "src/sksl/ir/SkSLExternalFunctionReference.h"
@@ -274,8 +274,7 @@ void Inliner::ensureScopedBlocks(Statement* inlinedBody, Statement* parentStmt) 
     }
 }
 
-void Inliner::reset(ModifiersPool* modifiers) {
-    fModifiers = modifiers;
+void Inliner::reset() {
     fMangler.reset();
     fInlinedStatementCounter = 0;
 }
@@ -352,6 +351,12 @@ std::unique_ptr<Expression> Inliner::inlineExpression(int offset,
             return ConstructorSplat::Make(*fContext, offset,
                                           *ctor.type().clone(symbolTableForExpression),
                                           expr(ctor.argument()));
+        }
+        case Expression::Kind::kConstructorStruct: {
+            const ConstructorStruct& ctor = expression.as<ConstructorStruct>();
+            return ConstructorStruct::Make(*fContext, offset,
+                                           *ctor.type().clone(symbolTableForExpression),
+                                           argList(ctor.arguments()));
         }
         case Expression::Kind::kExternalFunctionCall: {
             const ExternalFunctionCall& externalCall = expression.as<ExternalFunctionCall>();
@@ -535,7 +540,7 @@ std::unique_ptr<Statement> Inliner::inlineStatement(int offset,
             // regard, but see `InlinerAvoidsVariableNameOverlap` for a counterexample where unique
             // names are important.
             const String* name = symbolTableForStatement->takeOwnershipOfString(
-                    fMangler.uniqueName(variable.name(), symbolTableForStatement));
+                    fMangler.uniqueName(String(variable.name()), symbolTableForStatement));
             auto clonedVar = std::make_unique<Variable>(
                                                      offset,
                                                      &variable.modifiers(),
@@ -543,7 +548,7 @@ std::unique_ptr<Statement> Inliner::inlineStatement(int offset,
                                                      variable.type().clone(symbolTableForStatement),
                                                      isBuiltinCode,
                                                      variable.storage());
-            (*varMap)[&variable] = std::make_unique<VariableReference>(offset, clonedVar.get());
+            (*varMap)[&variable] = VariableReference::Make(offset, clonedVar.get());
             auto result = VarDeclaration::Make(*fContext,
                                                clonedVar.get(),
                                                decl.baseType().clone(symbolTableForStatement),
@@ -582,7 +587,7 @@ Inliner::InlineVariable Inliner::makeInlineVariable(const String& baseName,
     // Create our new variable and add it to the symbol table.
     InlineVariable result;
     auto var = std::make_unique<Variable>(/*offset=*/-1,
-                                          fModifiers->addToPool(Modifiers()),
+                                          this->modifiersPool().add(Modifiers{}),
                                           name->c_str(),
                                           type,
                                           isBuiltinCode,
@@ -634,12 +639,12 @@ Inliner::InlinedCall Inliner::inlineCall(FunctionCall* call,
         // for void-return functions, or in cases that are simple enough that we can just replace
         // the function-call node with the result expression.
         std::unique_ptr<Expression> noInitialValue;
-        InlineVariable var = this->makeInlineVariable(function.declaration().name(),
+        InlineVariable var = this->makeInlineVariable(String(function.declaration().name()),
                                                       &function.declaration().returnType(),
                                                       symbolTable.get(), Modifiers{},
                                                       caller->isBuiltin(), &noInitialValue);
         inlineStatements.push_back(std::move(var.fVarDecl));
-        resultExpr = std::make_unique<VariableReference>(/*offset=*/-1, var.fVarSymbol);
+        resultExpr = VariableReference::Make(/*offset=*/-1, var.fVarSymbol);
     }
 
     // Create variables in the extra statements to hold the arguments, and assign the arguments to
@@ -659,11 +664,11 @@ Inliner::InlinedCall Inliner::inlineCall(FunctionCall* call,
                 continue;
             }
         }
-        InlineVariable var = this->makeInlineVariable(param->name(), &arguments[i]->type(),
+        InlineVariable var = this->makeInlineVariable(String(param->name()), &arguments[i]->type(),
                                                       symbolTable.get(), param->modifiers(),
                                                       caller->isBuiltin(), &arguments[i]);
         inlineStatements.push_back(std::move(var.fVarDecl));
-        varMap[param] = std::make_unique<VariableReference>(/*offset=*/-1, var.fVarSymbol);
+        varMap[param] = VariableReference::Make(/*offset=*/-1, var.fVarSymbol);
     }
 
     for (const std::unique_ptr<Statement>& stmt : body.children()) {
@@ -915,7 +920,6 @@ public:
 
         switch ((*expr)->kind()) {
             case Expression::Kind::kBoolLiteral:
-            case Expression::Kind::kDefined:
             case Expression::Kind::kExternalFunctionReference:
             case Expression::Kind::kFieldAccess:
             case Expression::Kind::kFloatLiteral:
@@ -953,7 +957,8 @@ public:
             case Expression::Kind::kConstructorDiagonalMatrix:
             case Expression::Kind::kConstructorMatrixResize:
             case Expression::Kind::kConstructorScalarCast:
-            case Expression::Kind::kConstructorSplat: {
+            case Expression::Kind::kConstructorSplat:
+            case Expression::Kind::kConstructorStruct: {
                 AnyConstructor& constructorExpr = (*expr)->asAnyConstructor();
                 for (std::unique_ptr<Expression>& arg : constructorExpr.argumentSpan()) {
                     this->visitExpression(&arg);

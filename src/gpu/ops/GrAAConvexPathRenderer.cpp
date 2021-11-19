@@ -586,11 +586,15 @@ public:
             varyingHandler->addPassThroughAttribute(qe.fInColor, args.fOutputColor);
 
             // Setup position
-            this->writeOutputPosition(vertBuilder, gpArgs, qe.fInPosition.name());
+            WriteOutputPosition(vertBuilder, gpArgs, qe.fInPosition.name());
             if (qe.fUsesLocalCoords) {
-                this->writeLocalCoord(vertBuilder, uniformHandler, gpArgs,
-                                      qe.fInPosition.asShaderVar(), qe.fLocalMatrix,
-                                      &fLocalMatrixUniform);
+                WriteLocalCoord(vertBuilder,
+                                uniformHandler,
+                                *args.fShaderCaps,
+                                gpArgs,
+                                qe.fInPosition.asShaderVar(),
+                                qe.fLocalMatrix,
+                                &fLocalMatrixUniform);
             }
 
             fragBuilder->codeAppendf("half edgeAlpha;");
@@ -615,17 +619,20 @@ public:
         }
 
         static inline void GenKey(const GrGeometryProcessor& gp,
-                                  const GrShaderCaps&,
+                                  const GrShaderCaps& shaderCaps,
                                   GrProcessorKeyBuilder* b) {
             const QuadEdgeEffect& qee = gp.cast<QuadEdgeEffect>();
             b->addBool(qee.fUsesLocalCoords, "usesLocalCoords");
-            b->addBits(kMatrixKeyBits, ComputeMatrixKey(qee.fLocalMatrix), "localMatrixType");
+            b->addBits(kMatrixKeyBits,
+                       ComputeMatrixKey(shaderCaps, qee.fLocalMatrix),
+                       "localMatrixType");
         }
 
         void setData(const GrGLSLProgramDataManager& pdman,
+                     const GrShaderCaps& shaderCaps,
                      const GrGeometryProcessor& geomProc) override {
             const QuadEdgeEffect& qe = geomProc.cast<QuadEdgeEffect>();
-            this->setTransform(pdman, fLocalMatrixUniform, qe.fLocalMatrix, &fLocalMatrix);
+            SetTransform(pdman, shaderCaps, fLocalMatrixUniform, qe.fLocalMatrix, &fLocalMatrix);
         }
 
     private:
@@ -671,10 +678,12 @@ GR_DEFINE_GEOMETRY_PROCESSOR_TEST(QuadEdgeEffect);
 
 #if GR_TEST_UTILS
 GrGeometryProcessor* QuadEdgeEffect::TestCreate(GrProcessorTestData* d) {
+    SkMatrix localMatrix = GrTest::TestMatrix(d->fRandom);
+    bool usesLocalCoords = d->fRandom->nextBool();
+    bool wideColor = d->fRandom->nextBool();
     // Doesn't work without derivative instructions.
     return d->caps()->shaderCaps()->shaderDerivativeSupport()
-                   ? QuadEdgeEffect::Make(d->allocator(), GrTest::TestMatrix(d->fRandom),
-                                          d->fRandom->nextBool(), d->fRandom->nextBool())
+                   ? QuadEdgeEffect::Make(d->allocator(), localMatrix, usesLocalCoords, wideColor)
                    : nullptr;
 }
 #endif
@@ -723,7 +732,7 @@ public:
 
     const char* name() const override { return "AAConvexPathOp"; }
 
-    void visitProxies(const VisitProxyFunc& func) const override {
+    void visitProxies(const GrVisitProxyFunc& func) const override {
         if (fProgramInfo) {
             fProgramInfo->visitFPProxies(func);
         } else {
@@ -733,12 +742,11 @@ public:
 
     FixedFunctionFlags fixedFunctionFlags() const override { return fHelper.fixedFunctionFlags(); }
 
-    GrProcessorSet::Analysis finalize(
-            const GrCaps& caps, const GrAppliedClip* clip, bool hasMixedSampledCoverage,
-            GrClampType clampType) override {
+    GrProcessorSet::Analysis finalize(const GrCaps& caps, const GrAppliedClip* clip,
+                                      GrClampType clampType) override {
         return fHelper.finalizeProcessors(
-                caps, clip, hasMixedSampledCoverage, clampType,
-                GrProcessorAnalysisCoverage::kSingleChannel, &fPaths.back().fColor, &fWideColor);
+                caps, clip, clampType, GrProcessorAnalysisCoverage::kSingleChannel,
+                &fPaths.back().fColor, &fWideColor);
     }
 
 private:
@@ -747,8 +755,9 @@ private:
     void onCreateProgramInfo(const GrCaps* caps,
                              SkArenaAlloc* arena,
                              const GrSurfaceProxyView& writeView,
+                             bool usesMSAASurface,
                              GrAppliedClip&& appliedClip,
-                             const GrXferProcessor::DstProxyView& dstProxyView,
+                             const GrDstProxyView& dstProxyView,
                              GrXferBarrierFlags renderPassXferBarriers,
                              GrLoadOp colorLoadOp) override {
         SkMatrix invert;
@@ -767,7 +776,7 @@ private:
                                                             renderPassXferBarriers, colorLoadOp);
     }
 
-    void onPrepareDraws(Target* target) override {
+    void onPrepareDraws(GrMeshDrawTarget* target) override {
         int instanceCount = fPaths.count();
 
         if (!fProgramInfo) {
@@ -912,9 +921,9 @@ private:
 }  // anonymous namespace
 
 bool GrAAConvexPathRenderer::onDrawPath(const DrawPathArgs& args) {
-    GR_AUDIT_TRAIL_AUTO_FRAME(args.fRenderTargetContext->auditTrail(),
+    GR_AUDIT_TRAIL_AUTO_FRAME(args.fContext->priv().auditTrail(),
                               "GrAAConvexPathRenderer::onDrawPath");
-    SkASSERT(args.fRenderTargetContext->numSamples() <= 1);
+    SkASSERT(args.fSurfaceDrawContext->numSamples() <= 1);
     SkASSERT(!args.fShape->isEmpty());
 
     SkPath path;
@@ -923,7 +932,7 @@ bool GrAAConvexPathRenderer::onDrawPath(const DrawPathArgs& args) {
     GrOp::Owner op = AAConvexPathOp::Make(args.fContext, std::move(args.fPaint),
                                           *args.fViewMatrix,
                                           path, args.fUserStencilSettings);
-    args.fRenderTargetContext->addDrawOp(args.fClip, std::move(op));
+    args.fSurfaceDrawContext->addDrawOp(args.fClip, std::move(op));
     return true;
 }
 

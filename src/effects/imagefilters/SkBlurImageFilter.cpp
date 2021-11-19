@@ -567,7 +567,8 @@ sk_sp<SkSpecialImage> SkBlurImageFilter::onFilterImage(const Context& ctx,
     if (ctx.gpuBacked()) {
         // Ensure the input is in the destination's gamut. This saves us from having to do the
         // xform during the filter itself.
-        input = ImageToColorSpace(input.get(), ctx.colorType(), ctx.colorSpace());
+        input = ImageToColorSpace(input.get(), ctx.colorType(), ctx.colorSpace(),
+                                  ctx.surfaceProps());
         result = this->gpuFilter(ctx, sigma, input, inputBounds, dstBounds, inputOffset,
                                  &resultOffset);
     } else
@@ -604,6 +605,7 @@ sk_sp<SkSpecialImage> SkBlurImageFilter::onFilterImage(const Context& ctx,
 sk_sp<SkSpecialImage> SkBlurImageFilter::gpuFilter(
         const Context& ctx, SkVector sigma, const sk_sp<SkSpecialImage> &input, SkIRect inputBounds,
         SkIRect dstBounds, SkIPoint inputOffset, SkIPoint* offset) const {
+#if SK_GPU_V1
     if (SkGpuBlurUtils::IsEffectivelyZeroSigma(sigma.x()) &&
         SkGpuBlurUtils::IsEffectivelyZeroSigma(sigma.y())) {
         offset->fX = inputBounds.x() + inputOffset.fX;
@@ -644,6 +646,9 @@ sk_sp<SkSpecialImage> SkBlurImageFilter::gpuFilter(
                                                surfaceDrawContext->colorInfo().colorType(),
                                                sk_ref_sp(input->getColorSpace()),
                                                ctx.surfaceProps());
+#else // SK_GPU_V1
+    return nullptr;
+#endif // SK_GPU_V1
 }
 #endif
 

@@ -92,7 +92,7 @@ GrProgramInfo* CreateProgramInfo(const GrCaps* caps,
                                  SkArenaAlloc* arena,
                                  const GrSurfaceProxyView& writeView,
                                  GrAppliedClip&& appliedClip,
-                                 const GrXferProcessor::DstProxyView& dstProxyView,
+                                 const GrDstProxyView& dstProxyView,
                                  GrGeometryProcessor* geomProc,
                                  SkBlendMode blendMode,
                                  GrPrimitiveType primitiveType,
@@ -107,8 +107,8 @@ GrProgramInfo* CreateProgramInfo(const GrCaps* caps,
 
     SkDEBUGCODE(auto analysis =) processors.finalize(analysisColor,
                                                      GrProcessorAnalysisCoverage::kSingleChannel,
-                                                     &appliedClip, stencilSettings, false,
-                                                     *caps, GrClampType::kAuto, &analysisColor);
+                                                     &appliedClip, stencilSettings, *caps,
+                                                     GrClampType::kAuto, &analysisColor);
     SkASSERT(!analysis.requiresDstTexture());
 
     return GrSimpleMeshDrawOpHelper::CreateProgramInfo(caps, arena, writeView,

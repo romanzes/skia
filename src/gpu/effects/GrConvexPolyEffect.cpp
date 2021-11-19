@@ -7,7 +7,6 @@
 
 #include "src/core/SkPathPriv.h"
 #include "src/gpu/effects/GrConvexPolyEffect.h"
-#include "src/gpu/effects/generated/GrAARectEffect.h"
 #include "src/gpu/glsl/GrGLSLFragmentProcessor.h"
 #include "src/gpu/glsl/GrGLSLFragmentShaderBuilder.h"
 #include "src/gpu/glsl/GrGLSLProgramDataManager.h"
@@ -42,15 +41,16 @@ void GrGLConvexPolyEffect::emitCode(EmitArgs& args) {
 
     using namespace SkSL::dsl;
     StartFragmentProcessor(this, &args);
-    Var edgeArray(kUniform_Modifier, Array(kHalf3, cpe.getEdgeCount()));
+    GlobalVar edgeArray(kUniform_Modifier, Array(kHalf3_Type, cpe.getEdgeCount()), "edgeArray");
+    Declare(edgeArray);
     fEdgeUniform = VarUniformHandle(edgeArray);
-    Var alpha(kHalf, "alpha", 1);
+    Var alpha(kHalf_Type, "alpha", 1);
     Declare(alpha);
-    Var edge(kHalf, "edge");
+    Var edge(kHalf_Type, "edge");
     Declare(edge);
     for (int i = 0; i < cpe.getEdgeCount(); ++i) {
         edge = Dot(edgeArray[i], Half3(Swizzle(sk_FragCoord(), X, Y, ONE)));
-        if (GrProcessorEdgeTypeIsAA(cpe.getEdgeType())) {
+        if (GrClipEdgeTypeIsAA(cpe.getEdgeType())) {
             edge = Saturate(edge);
         } else {
             edge = Select(edge >= 0.5, 1.0, 0.0);
@@ -58,7 +58,7 @@ void GrGLConvexPolyEffect::emitCode(EmitArgs& args) {
         alpha *= edge;
     }
 
-    if (GrProcessorEdgeTypeIsInverseFill(cpe.getEdgeType())) {
+    if (GrClipEdgeTypeIsInverseFill(cpe.getEdgeType())) {
         alpha = 1.0 - alpha;
     }
 
@@ -97,7 +97,7 @@ GrFPResult GrConvexPolyEffect::Make(std::unique_ptr<GrFragmentProcessor> inputFP
     // case nothing is inside the clip. It'd be nice to detect this at a higher level and either
     // skip the draw or omit the clip element.
     if (dir == SkPathFirstDirection::kUnknown) {
-        if (GrProcessorEdgeTypeIsInverseFill(type)) {
+        if (GrClipEdgeTypeIsInverseFill(type)) {
             return GrFPSuccess(
                     GrFragmentProcessor::ModulateRGBA(std::move(inputFP), SK_PMColor4fWHITE));
         }
@@ -122,8 +122,6 @@ GrFPResult GrConvexPolyEffect::Make(std::unique_ptr<GrFragmentProcessor> inputFP
     while ((verb = iter.next(pts)) != SkPath::kDone_Verb) {
         switch (verb) {
             case SkPath::kMove_Verb:
-                SkASSERT(n == 0);
-                break;
             case SkPath::kClose_Verb:
                 break;
             case SkPath::kLine_Verb: {
@@ -146,12 +144,13 @@ GrFPResult GrConvexPolyEffect::Make(std::unique_ptr<GrFragmentProcessor> inputFP
                 break;
             }
             default:
+                // Non-linear segment so not a polygon.
                 return GrFPFailure(std::move(inputFP));
         }
     }
 
     if (path.isInverseFillType()) {
-        type = GrInvertProcessorEdgeType(type);
+        type = GrInvertClipEdgeType(type);
     }
     return GrConvexPolyEffect::Make(std::move(inputFP), type, n, edges);
 }
@@ -168,8 +167,12 @@ std::unique_ptr<GrGLSLFragmentProcessor> GrConvexPolyEffect::onMakeProgramImpl()
 }
 
 GrConvexPolyEffect::GrConvexPolyEffect(std::unique_ptr<GrFragmentProcessor> inputFP,
-                                       GrClipEdgeType edgeType, int n, const SkScalar edges[])
-        : INHERITED(kGrConvexPolyEffect_ClassID, kCompatibleWithCoverageAsAlpha_OptimizationFlag)
+                                       GrClipEdgeType edgeType,
+                                       int n,
+                                       const SkScalar edges[])
+        : INHERITED(kGrConvexPolyEffect_ClassID,
+                    ProcessorOptimizationFlags(inputFP.get()) &
+                            kCompatibleWithCoverageAsAlpha_OptimizationFlag)
         , fEdgeType(edgeType)
         , fEdgeCount(n) {
     // Factory function should have already ensured this.
@@ -185,7 +188,7 @@ GrConvexPolyEffect::GrConvexPolyEffect(std::unique_ptr<GrFragmentProcessor> inpu
 }
 
 GrConvexPolyEffect::GrConvexPolyEffect(const GrConvexPolyEffect& that)
-        : INHERITED(kGrConvexPolyEffect_ClassID, kCompatibleWithCoverageAsAlpha_OptimizationFlag)
+        : INHERITED(kGrConvexPolyEffect_ClassID, that.optimizationFlags())
         , fEdgeType(that.fEdgeType)
         , fEdgeCount(that.fEdgeCount) {
     this->cloneAndRegisterAllChildProcessors(that);

@@ -3,8 +3,8 @@
 #define TextWrapper_DEFINED
 
 #include <string>
+#include "include/core/SkSpan.h"
 #include "modules/skparagraph/src/TextLine.h"
-#include "src/core/SkSpan.h"
 
 namespace skia {
 namespace textlayout {
@@ -170,8 +170,9 @@ public:
          fExceededMaxLines = false;
     }
 
-    using AddLineToParagraph = std::function<void(TextRange text,
-                                                  TextRange textWithSpaces,
+    using AddLineToParagraph = std::function<void(TextRange textExcludingSpaces,
+                                                  TextRange text,
+                                                  TextRange textIncludingNewlines,
                                                   ClusterRange clusters,
                                                   ClusterRange clustersWithGhosts,
                                                   SkScalar AddLineToParagraph,

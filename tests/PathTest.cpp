@@ -1314,22 +1314,6 @@ static void check_convexity(skiatest::Reporter* reporter, const SkPath& path,
     SkPath copy(path);  // NOLINT(performance-unnecessary-copy-initialization)
     bool convexity = copy.isConvex();
     REPORTER_ASSERT(reporter, convexity == expectedConvexity);
-
-    // test points-by-array interface
-    SkPath::Iter iter(path, true);
-    int initialMoves = 0;
-    SkPoint pts[4];
-    while (SkPath::kMove_Verb == iter.next(pts)) {
-        ++initialMoves;
-    }
-    if (initialMoves > 0) {
-        std::vector<SkPoint> points;
-        points.resize(path.getPoints(nullptr, 0));
-        (void) path.getPoints(&points.front(), points.size());
-        int skip = initialMoves - 1;
-        bool isConvex = SkPathPriv::IsConvex(&points.front() + skip, points.size() - skip);
-        REPORTER_ASSERT(reporter, isConvex == expectedConvexity);
-    }
 }
 
 static void test_path_crbug389050(skiatest::Reporter* reporter) {
@@ -1984,9 +1968,9 @@ static void test_conservativelyContains(skiatest::Reporter* reporter) {
     path.moveTo(0, 0);
     path.lineTo(SkIntToScalar(100), 0);
     path.lineTo(0, SkIntToScalar(100));
-    // Convexity logic is now more conservative, so that multiple (non-trailing) moveTos make a
-    // path non-convex.
-    REPORTER_ASSERT(reporter, !path.conservativelyContainsRect(
+    // Convexity logic treats a path as filled and closed, so that multiple (non-trailing) moveTos
+    // have no effect on convexity
+    REPORTER_ASSERT(reporter, path.conservativelyContainsRect(
         SkRect::MakeXYWH(SkIntToScalar(50), 0,
                          SkIntToScalar(10),
                          SkIntToScalar(10))));
@@ -5816,4 +5800,57 @@ DEF_TEST(path_convexity_scale_way_down, r) {
     path.transform(SkMatrix::Scale(scale, scale), &path2);
     SkPathPriv::ForceComputeConvexity(path2);
     REPORTER_ASSERT(r, path2.isConvex());
+}
+
+// crbug.com/1187385
+DEF_TEST(path_moveto_addrect, r) {
+    // Test both an empty and non-empty rect passed to SkPath::addRect
+    SkRect rects[] = {{207.0f, 237.0f, 300.0f, 237.0f},
+                      {207.0f, 237.0f, 300.0f, 267.0f}};
+
+    for (SkRect rect: rects) {
+        for (int numExtraMoveTos : {0, 1, 2, 3}) {
+            SkPath path;
+            // Convexity and contains functions treat the path as a simple fill, so consecutive
+            // moveTos are collapsed together.
+            for (int i = 0; i < numExtraMoveTos; ++i) {
+                path.moveTo(i, i);
+            }
+            path.addRect(rect);
+
+            REPORTER_ASSERT(r, (numExtraMoveTos + 1) == SkPathPriv::LeadingMoveToCount(path));
+
+            // addRect should mark the path as known convex automatically (i.e. it wasn't set
+            // to unknown after edits)
+            SkPathConvexity origConvexity = SkPathPriv::GetConvexityOrUnknown(path);
+            REPORTER_ASSERT(r, origConvexity == SkPathConvexity::kConvex);
+
+            // but it should also agree with the regular convexity computation
+            SkPathPriv::ForceComputeConvexity(path);
+            REPORTER_ASSERT(r, path.isConvex());
+
+            SkRect query = rect.makeInset(10.f, 0.f);
+            REPORTER_ASSERT(r, path.conservativelyContainsRect(query));
+        }
+    }
+}
+
+// crbug.com/1220754
+DEF_TEST(path_moveto_twopass_convexity, r) {
+    // There had been a bug when the last moveTo index > 0, the calculated point count was incorrect
+    // and the BySign convexity pass would not evaluate the entire path, effectively only using the
+    // winding rule for determining convexity.
+    SkPath path;
+    path.setFillType(SkPathFillType::kWinding);
+    path.moveTo(3.25f, 115.5f);
+    path.conicTo(9.98099e+17f, 2.83874e+15f, 1.75098e-30f, 1.75097e-30f, 1.05385e+18f);
+    path.conicTo(9.96938e+17f, 6.3804e+19f, 9.96934e+17f, 1.75096e-30f, 1.75096e-30f);
+    path.quadTo(1.28886e+10f, 9.9647e+17f, 9.98101e+17f, 2.61006e+15f);
+    REPORTER_ASSERT(r, !path.isConvex());
+
+    SkPath pathWithExtraMoveTo;
+    pathWithExtraMoveTo.setFillType(SkPathFillType::kWinding);
+    pathWithExtraMoveTo.moveTo(5.90043e-39f, 1.34525e-43f);
+    pathWithExtraMoveTo.addPath(path);
+    REPORTER_ASSERT(r, !pathWithExtraMoveTo.isConvex());
 }

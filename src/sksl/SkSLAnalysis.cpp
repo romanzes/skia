@@ -17,11 +17,9 @@
 #include "src/sksl/ir/SkSLProgram.h"
 
 // ProgramElements
-#include "src/sksl/ir/SkSLEnum.h"
 #include "src/sksl/ir/SkSLExtension.h"
 #include "src/sksl/ir/SkSLFunctionDefinition.h"
 #include "src/sksl/ir/SkSLInterfaceBlock.h"
-#include "src/sksl/ir/SkSLSection.h"
 #include "src/sksl/ir/SkSLVarDeclarations.h"
 
 // Statements
@@ -66,7 +64,7 @@ namespace {
 
 static bool is_sample_call_to_fp(const FunctionCall& fc, const Variable& fp) {
     const FunctionDeclaration& f = fc.function();
-    return f.isBuiltin() && f.name() == "sample" && fc.arguments().size() >= 1 &&
+    return f.intrinsicKind() == k_sample_IntrinsicKind && fc.arguments().size() >= 1 &&
            fc.arguments()[0]->is<VariableReference>() &&
            fc.arguments()[0]->as<VariableReference>().variable() == &fp;
 }
@@ -74,8 +72,8 @@ static bool is_sample_call_to_fp(const FunctionCall& fc, const Variable& fp) {
 // Visitor that determines the merged SampleUsage for a given child 'fp' in the program.
 class MergeSampleUsageVisitor : public ProgramVisitor {
 public:
-    MergeSampleUsageVisitor(const Context& context, const Variable& fp)
-            : fContext(context), fFP(fp) {}
+    MergeSampleUsageVisitor(const Context& context, const Variable& fp, bool writesToSampleCoords)
+            : fContext(context), fFP(fp), fWritesToSampleCoords(writesToSampleCoords) {}
 
     SampleUsage visit(const Program& program) {
         fUsage = SampleUsage(); // reset to none
@@ -83,45 +81,47 @@ public:
         return fUsage;
     }
 
+    int elidedSampleCoordCount() const { return fElidedSampleCoordCount; }
+
 protected:
     const Context& fContext;
     const Variable& fFP;
+    const bool fWritesToSampleCoords;
     SampleUsage fUsage;
+    int fElidedSampleCoordCount = 0;
 
     bool visitExpression(const Expression& e) override {
-        // Looking for sample(fp, inColor?, ...)
-        if (e.kind() == Expression::Kind::kFunctionCall) {
+        // Looking for sample(fp, ...)
+        if (e.is<FunctionCall>()) {
             const FunctionCall& fc = e.as<FunctionCall>();
             if (is_sample_call_to_fp(fc, fFP)) {
                 // Determine the type of call at this site, and merge it with the accumulated state
-                const Expression* lastArg = fc.arguments().back().get();
-
-                if (lastArg->type() == *fContext.fTypes.fFloat2) {
-                    fUsage.merge(SampleUsage::Explicit());
-                } else if (lastArg->type() == *fContext.fTypes.fFloat3x3) {
-                    // Determine the type of matrix for this call site
-                    if (lastArg->isConstantOrUniform()) {
-                        if (lastArg->is<VariableReference>() || lastArg->isAnyConstructor()) {
-                            // FIXME if this is a constant, we should parse the float3x3 constructor
-                            // and determine if the resulting matrix introduces perspective.
-                            fUsage.merge(SampleUsage::UniformMatrix(lastArg->description()));
+                if (fc.arguments().size() >= 2) {
+                    const Expression* coords = fc.arguments()[1].get();
+                    if (coords->type() == *fContext.fTypes.fFloat2) {
+                        // If the coords are a direct reference to the program's sample-coords,
+                        // and those coords are never modified, we can conservatively turn this
+                        // into PassThrough sampling. In all other cases, we consider it Explicit.
+                        if (!fWritesToSampleCoords && coords->is<VariableReference>() &&
+                            coords->as<VariableReference>()
+                                            .variable()
+                                            ->modifiers()
+                                            .fLayout.fBuiltin == SK_MAIN_COORDS_BUILTIN) {
+                            fUsage.merge(SampleUsage::PassThrough());
+                            ++fElidedSampleCoordCount;
                         } else {
-                            // FIXME this is really to workaround a restriction of the downstream
-                            // code that relies on the SampleUsage's fExpression to identify uniform
-                            // names. Once they are tracked separately, any uniform expression can
-                            // work, but right now this avoids issues from '0.5 * matrix' that is
-                            // both a constant AND a uniform.
-                            fUsage.merge(SampleUsage::VariableMatrix());
+                            fUsage.merge(SampleUsage::Explicit());
                         }
                     } else {
-                        fUsage.merge(SampleUsage::VariableMatrix());
+                        // sample(fp, half4 inputColor) -> PassThrough
+                        fUsage.merge(SampleUsage::PassThrough());
                     }
                 } else {
-                    // The only other signatures do pass-through sampling
+                    // sample(fp) -> PassThrough
                     fUsage.merge(SampleUsage::PassThrough());
                 }
                 // NOTE: we don't return true here just because we found a sample call. We need to
-                //  process the entire program and merge across all encountered calls.
+                // process the entire program and merge across all encountered calls.
             }
         }
 
@@ -145,6 +145,30 @@ public:
     }
 
     int fBuiltin;
+
+    using INHERITED = ProgramVisitor;
+};
+
+// Visitor that searches for calls to sample() from a function other than main()
+class SampleOutsideMainVisitor : public ProgramVisitor {
+public:
+    SampleOutsideMainVisitor() {}
+
+    bool visitExpression(const Expression& e) override {
+        if (e.is<FunctionCall>()) {
+            const FunctionDeclaration& f = e.as<FunctionCall>().function();
+            if (f.intrinsicKind() == k_sample_IntrinsicKind) {
+                return true;
+            }
+        }
+        return INHERITED::visitExpression(e);
+    }
+
+    bool visitProgramElement(const ProgramElement& p) override {
+        return p.is<FunctionDefinition>() &&
+               !p.as<FunctionDefinition>().declaration().isMain() &&
+               INHERITED::visitProgramElement(p);
+    }
 
     using INHERITED = ProgramVisitor;
 };
@@ -193,6 +217,9 @@ public:
                 // they are unread and unwritten.
                 fUsage->fVariableCounts[param];
             }
+        } else if (pe.is<InterfaceBlock>()) {
+            // Ensure interface-block variables exist in the variable usage map.
+            fUsage->fVariableCounts[&pe.as<InterfaceBlock>().variable()];
         }
         return INHERITED::visitProgramElement(pe);
     }
@@ -306,8 +333,7 @@ public:
             case Expression::Kind::kVariableReference: {
                 VariableReference& varRef = expr.as<VariableReference>();
                 const Variable* var = varRef.variable();
-                if (var->modifiers().fFlags & (Modifiers::kConst_Flag | Modifiers::kUniform_Flag |
-                                               Modifiers::kVarying_Flag)) {
+                if (var->modifiers().fFlags & (Modifiers::kConst_Flag | Modifiers::kUniform_Flag)) {
                     fErrors->error(expr.fOffset,
                                    "cannot modify immutable variable '" + var->name() + "'");
                 } else {
@@ -563,9 +589,16 @@ public:
 ////////////////////////////////////////////////////////////////////////////////
 // Analysis
 
-SampleUsage Analysis::GetSampleUsage(const Program& program, const Variable& fp) {
-    MergeSampleUsageVisitor visitor(*program.fContext, fp);
-    return visitor.visit(program);
+SampleUsage Analysis::GetSampleUsage(const Program& program,
+                                     const Variable& fp,
+                                     bool writesToSampleCoords,
+                                     int* elidedSampleCoordCount) {
+    MergeSampleUsageVisitor visitor(*program.fContext, fp, writesToSampleCoords);
+    SampleUsage result = visitor.visit(program);
+    if (elidedSampleCoordCount) {
+        *elidedSampleCoordCount += visitor.elidedSampleCoordCount();
+    }
+    return result;
 }
 
 bool Analysis::ReferencesBuiltin(const Program& program, int builtin) {
@@ -579,6 +612,11 @@ bool Analysis::ReferencesSampleCoords(const Program& program) {
 
 bool Analysis::ReferencesFragCoords(const Program& program) {
     return Analysis::ReferencesBuiltin(program, SK_FRAGCOORD_BUILTIN);
+}
+
+bool Analysis::CallsSampleOutsideMain(const Program& program) {
+    SampleOutsideMainVisitor visitor;
+    return visitor.visit(program);
 }
 
 int Analysis::NodeCountUpToLimit(const FunctionDefinition& function, int limit) {
@@ -619,8 +657,8 @@ bool ProgramUsage::isDead(const Variable& v) const {
     const Modifiers& modifiers = v.modifiers();
     VariableCounts counts = this->get(v);
     if ((v.storage() != Variable::Storage::kLocal && counts.fRead) ||
-        (modifiers.fFlags & (Modifiers::kIn_Flag | Modifiers::kOut_Flag | Modifiers::kUniform_Flag |
-                             Modifiers::kVarying_Flag))) {
+        (modifiers.fFlags &
+         (Modifiers::kIn_Flag | Modifiers::kOut_Flag | Modifiers::kUniform_Flag))) {
         return false;
     }
     // Consider the variable dead if it's never read and never written (besides the initial-value).
@@ -752,6 +790,7 @@ bool Analysis::IsSameExpressionTree(const Expression& left, const Expression& ri
         case Expression::Kind::kConstructorDiagonalMatrix:
         case Expression::Kind::kConstructorMatrixResize:
         case Expression::Kind::kConstructorScalarCast:
+        case Expression::Kind::kConstructorStruct:
         case Expression::Kind::kConstructorSplat: {
             if (left.kind() != right.kind()) {
                 return false;
@@ -1032,6 +1071,7 @@ public:
             case Expression::Kind::kConstructorMatrixResize:
             case Expression::Kind::kConstructorScalarCast:
             case Expression::Kind::kConstructorSplat:
+            case Expression::Kind::kConstructorStruct:
             case Expression::Kind::kFieldAccess:
             case Expression::Kind::kIndex:
             case Expression::Kind::kPrefix:
@@ -1047,8 +1087,10 @@ public:
             case Expression::Kind::kFunctionCall:
                 return true;
 
+            case Expression::Kind::kPoison:
+                return true;
+
             // These should never appear in final IR
-            case Expression::Kind::kDefined:
             case Expression::Kind::kExternalFunctionReference:
             case Expression::Kind::kFunctionReference:
             case Expression::Kind::kTypeReference:
@@ -1137,11 +1179,11 @@ bool ProgramVisitor::visit(const Program& program) {
 template <typename T> bool TProgramVisitor<T>::visitExpression(typename T::Expression& e) {
     switch (e.kind()) {
         case Expression::Kind::kBoolLiteral:
-        case Expression::Kind::kDefined:
         case Expression::Kind::kExternalFunctionReference:
         case Expression::Kind::kFloatLiteral:
         case Expression::Kind::kFunctionReference:
         case Expression::Kind::kIntLiteral:
+        case Expression::Kind::kPoison:
         case Expression::Kind::kSetting:
         case Expression::Kind::kTypeReference:
         case Expression::Kind::kVariableReference:
@@ -1159,7 +1201,8 @@ template <typename T> bool TProgramVisitor<T>::visitExpression(typename T::Expre
         case Expression::Kind::kConstructorDiagonalMatrix:
         case Expression::Kind::kConstructorMatrixResize:
         case Expression::Kind::kConstructorScalarCast:
-        case Expression::Kind::kConstructorSplat: {
+        case Expression::Kind::kConstructorSplat:
+        case Expression::Kind::kConstructorStruct: {
             auto& c = e.asAnyConstructor();
             for (auto& arg : c.argumentSpan()) {
                 if (this->visitExpressionPtr(arg)) { return true; }
@@ -1281,12 +1324,10 @@ template <typename T> bool TProgramVisitor<T>::visitStatement(typename T::Statem
 
 template <typename T> bool TProgramVisitor<T>::visitProgramElement(typename T::ProgramElement& pe) {
     switch (pe.kind()) {
-        case ProgramElement::Kind::kEnum:
         case ProgramElement::Kind::kExtension:
         case ProgramElement::Kind::kFunctionPrototype:
         case ProgramElement::Kind::kInterfaceBlock:
         case ProgramElement::Kind::kModifiers:
-        case ProgramElement::Kind::kSection:
         case ProgramElement::Kind::kStructDefinition:
             // Leaf program elements just return false by default
             return false;

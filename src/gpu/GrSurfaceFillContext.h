@@ -29,17 +29,6 @@ class SkColorSpace;
 
 class GrSurfaceFillContext : public GrSurfaceContext {
 public:
-    /**
-     * Checks whether the passed color type is renderable with the passed context. If so, the
-     * same color type is passed back along with the default format used for the color type. If
-     * not, provides an alternative (perhaps lower bit depth and/or unorm instead of float) color
-     * type that is supported along with it's default format or kUnknown if there no renderable
-     * fallback format.
-     */
-    static std::tuple<GrColorType, GrBackendFormat> GetFallbackColorTypeAndFormat(GrImageContext*,
-                                                                                  GrColorType,
-                                                                                  int sampleCount);
-
     GrSurfaceFillContext(GrRecordingContext*,
                          GrSurfaceProxyView readView,
                          GrSurfaceProxyView writeView,
@@ -193,7 +182,9 @@ public:
 
     int numSamples() const { return this->asRenderTargetProxy()->numSamples(); }
     bool wrapsVkSecondaryCB() const { return this->asRenderTargetProxy()->wrapsVkSecondaryCB(); }
-    GrMipmapped mipmapped() const;
+
+    SkArenaAlloc* arenaAlloc() { return this->arenas()->arenaAlloc(); }
+    GrSubRunAllocator* subRunAlloc() { return this->arenas()->subRunAlloc(); }
 
 #if GR_TEST_UTILS
     GrOpsTask* testingOnly_PeekLastOpsTask() { return fOpsTask.get(); }
@@ -209,7 +200,11 @@ protected:
 
     void addOp(GrOp::Owner);
 
+    GrOpsTask* replaceOpsTask();
+
 private:
+    sk_sp<GrArenas> arenas() { return fWriteView.proxy()->asRenderTargetProxy()->arenas(); }
+
     template <SkAlphaType AlphaType>
     static std::array<float, 4> ConvertColor(SkRGBA4f<AlphaType> color);
 

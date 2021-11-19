@@ -84,14 +84,12 @@ public:
             , fQuads(1, !fHelper.isTrivial()) {
         // Set bounds before clipping so we don't have to worry about unioning the bounds of
         // the two potential quads (GrQuad::bounds() is perspective-safe).
+        bool hairline = GrQuadUtils::WillUseHairline(quad->fDevice, aaType, quad->fEdgeFlags);
         this->setBounds(quad->fDevice.bounds(), HasAABloat(aaType == GrAAType::kCoverage),
-                        IsHairline::kNo);
-
+                        hairline ? IsHairline::kYes : IsHairline::kNo);
         DrawQuad extra;
-        // Only clip when there's anti-aliasing. When non-aa, the GPU clips just fine and there's
-        // no inset/outset math that requires w > 0.
-        int count = quad->fEdgeFlags != GrQuadAAFlags::kNone ? GrQuadUtils::ClipToW0(quad, &extra)
-                                                             : 1;
+        // Always crop to W>0 to remain consistent with GrQuad::bounds()
+        int count = GrQuadUtils::ClipToW0(quad, &extra);
         if (count == 0) {
             // We can't discard the op at this point, but disable AA flags so it won't go through
             // inset/outset processing
@@ -112,7 +110,7 @@ public:
 
     const char* name() const override { return "FillRectOp"; }
 
-    void visitProxies(const VisitProxyFunc& func) const override {
+    void visitProxies(const GrVisitProxyFunc& func) const override {
         if (fProgramInfo) {
             fProgramInfo->visitFPProxies(func);
         } else {
@@ -120,9 +118,8 @@ public:
         }
     }
 
-    GrProcessorSet::Analysis finalize(
-            const GrCaps& caps, const GrAppliedClip* clip, bool hasMixedSampledCoverage,
-            GrClampType clampType) override {
+    GrProcessorSet::Analysis finalize(const GrCaps& caps, const GrAppliedClip* clip,
+                                      GrClampType clampType) override {
         // Initialize aggregate color analysis with the first quad's color (which always exists)
         auto iter = fQuads.metadata();
         SkAssertResult(iter.next());
@@ -142,8 +139,7 @@ public:
         auto coverage = fHelper.aaType() == GrAAType::kCoverage
                                                     ? GrProcessorAnalysisCoverage::kSingleChannel
                                                     : GrProcessorAnalysisCoverage::kNone;
-        auto result = fHelper.finalizeProcessors(
-                caps, clip, hasMixedSampledCoverage, clampType, coverage, &quadColors);
+        auto result = fHelper.finalizeProcessors(caps, clip, clampType, coverage, &quadColors);
         // If there is a constant color after analysis, that means all of the quads should be set
         // to the same color (even if they started out with different colors).
         iter = fQuads.metadata();
@@ -204,8 +200,9 @@ private:
     void onCreateProgramInfo(const GrCaps* caps,
                              SkArenaAlloc* arena,
                              const GrSurfaceProxyView& writeView,
+                             bool usesMSAASurface,
                              GrAppliedClip&& appliedClip,
-                             const GrXferProcessor::DstProxyView& dstProxyView,
+                             const GrDstProxyView& dstProxyView,
                              GrXferBarrierFlags renderPassXferBarriers,
                              GrLoadOp colorLoadOp) override {
         const VertexSpec vertexSpec = this->vertexSpec();
@@ -223,7 +220,7 @@ private:
     void onPrePrepareDraws(GrRecordingContext* rContext,
                            const GrSurfaceProxyView& writeView,
                            GrAppliedClip* clip,
-                           const GrXferProcessor::DstProxyView& dstProxyView,
+                           const GrDstProxyView& dstProxyView,
                            GrXferBarrierFlags renderPassXferBarriers,
                            GrLoadOp colorLoadOp) override {
         TRACE_EVENT0("skia.gpu", TRACE_FUNC);
@@ -260,7 +257,7 @@ private:
         }
     }
 
-    void onPrepareDraws(Target* target) override {
+    void onPrepareDraws(GrMeshDrawTarget* target) override {
         TRACE_EVENT0("skia.gpu", TRACE_FUNC);
 
         const VertexSpec vertexSpec = this->vertexSpec();

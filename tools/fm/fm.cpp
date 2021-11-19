@@ -56,14 +56,16 @@ static DEFINE_string(at    , "premul", "The alpha type for any raster backend.")
 static DEFINE_string(gamut ,   "srgb", "The color gamut for any raster backend.");
 static DEFINE_string(tf    ,   "srgb", "The transfer function for any raster backend.");
 static DEFINE_bool  (legacy,    false, "Use a null SkColorSpace instead of --gamut and --tf?");
-static DEFINE_bool  (skvm  ,    false, "Use SkVMBlitter when supported?");
-static DEFINE_bool  (jit   ,     true, "JIT SkVM?");
-static DEFINE_bool  (dylib ,    false, "JIT SkVM via dylib?");
 
-static DEFINE_int   (samples ,         0, "Samples per pixel in GPU backends.");
-static DEFINE_bool  (stencils,      true, "If false, avoid stencil buffers in GPU backends.");
-static DEFINE_bool  (dit     ,     false, "Use device-independent text in GPU backends.");
-static DEFINE_string(surf    , "default", "Backing store for GPU backend surfaces.");
+static DEFINE_bool  (skvm ,    false, "Use SkVMBlitter when supported?");
+static DEFINE_bool  (jit  ,     true, "JIT SkVM?");
+static DEFINE_bool  (dylib,    false, "JIT SkVM via dylib?");
+
+static DEFINE_bool  (reducedshaders,    false, "Use reduced shader set for any GPU backend.");
+static DEFINE_int   (samples       ,         0, "Samples per pixel in GPU backends.");
+static DEFINE_bool  (stencils      ,      true, "If false, avoid stencil buffers in GPU backends.");
+static DEFINE_bool  (dit           ,     false, "Use device-independent text in GPU backends.");
+static DEFINE_string(surf          , "default", "Backing store for GPU backend surfaces.");
 
 static DEFINE_bool(       preAbandonGpuContext, false, "Abandon the GrContext before drawing.");
 static DEFINE_bool(          abandonGpuContext, false, "Abandon the GrContext after drawing.");
@@ -389,6 +391,7 @@ int main(int argc, char** argv) {
 
     GrContextOptions baseOptions;
     SetCtxOptionsFromCommonFlags(&baseOptions);
+    baseOptions.fReducedShaderVariations = FLAGS_reducedshaders;
 
     sk_gpu_test::MemoryCache memoryCache;
     if (!FLAGS_writeShaders.isEmpty()) {
@@ -495,7 +498,8 @@ int main(int argc, char** argv) {
         { "angle_d3d11_es3", GrContextFactory::kANGLE_D3D11_ES3_ContextType },
         { "angle_gl_es2"   , GrContextFactory::kANGLE_GL_ES2_ContextType },
         { "angle_gl_es3"   , GrContextFactory::kANGLE_GL_ES3_ContextType },
-        { "commandbuffer"  , GrContextFactory::kCommandBuffer_ContextType },
+        { "cmdbuffer_es2"  , GrContextFactory::kCommandBuffer_ES2_ContextType },
+        { "cmdbuffer_es3"  , GrContextFactory::kCommandBuffer_ES3_ContextType },
         { "vk"             , GrContextFactory::kVulkan_ContextType },
         { "mtl"            , GrContextFactory::kMetal_ContextType },
         { "mock"           , GrContextFactory::kMock_ContextType },

@@ -12,6 +12,11 @@
 #include "include/private/GrImageContext.h"
 #include "include/private/SkTArray.h"
 
+#if GR_GPU_STATS && GR_TEST_UTILS
+#include <map>
+#include <string>
+#endif
+
 class GrAuditTrail;
 class GrBackendFormat;
 class GrDrawingManager;
@@ -192,8 +197,6 @@ protected:
      */
     void addOnFlushCallbackObject(GrOnFlushCallbackObject*);
 
-    GrAuditTrail* auditTrail() { return fAuditTrail.get(); }
-
     GrRecordingContext* asRecordingContext() override { return this; }
 
     class Stats {
@@ -229,14 +232,28 @@ protected:
 #endif // GR_GPU_STATS
     } fStats;
 
+#if GR_GPU_STATS && GR_TEST_UTILS
+    struct DMSAAStats {
+        void dumpKeyValuePairs(SkTArray<SkString>* keys, SkTArray<double>* values) const;
+        void dump() const;
+        void merge(const DMSAAStats&);
+        int fNumRenderPasses = 0;
+        int fNumMultisampleRenderPasses = 0;
+        std::map<std::string, int> fTriggerCounts;
+    };
+
+    DMSAAStats fDMSAAStats;
+#endif
+
     Stats* stats() { return &fStats; }
     const Stats* stats() const { return &fStats; }
     void dumpJSON(SkJSONWriter*) const;
 
-private:
+protected:
     // Delete last in case other objects call it during destruction.
     std::unique_ptr<GrAuditTrail>     fAuditTrail;
 
+private:
     OwnedArenas                       fArenas;
 
     std::unique_ptr<GrDrawingManager> fDrawingManager;
