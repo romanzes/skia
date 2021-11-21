@@ -401,7 +401,7 @@ void GrVkCaps::init(const GrContextOptions& contextOptions, const GrVkInterface*
     this->initShaderCaps(properties, features);
 
     if (kQualcomm_VkVendor == properties.vendorID) {
-        // A "clear" load for the CCPR atlas runs faster on QC than a "discard" load followed by a
+        // A "clear" load for atlases runs faster on QC than a "discard" load followed by a
         // scissored clear.
         // On NVIDIA and Intel, the discard load followed by clear is faster.
         // TODO: Evaluate on ARM, Imagination, and ATI.
@@ -556,15 +556,6 @@ void GrVkCaps::applyDriverCorrectnessWorkarounds(const VkPhysicalDevicePropertie
     // GrCaps workarounds
     ////////////////////////////////////////////////////////////////////////////
 
-    // The GTX660 bot was experiencing crashes and incorrect rendering with MSAA CCPR. Block this
-    // path renderer on non-mixed-sampled NVIDIA.
-    // NOTE: We may lose mixed samples support later if the context options suppress dual source
-    // blending, but that shouldn't be an issue because MSAA CCPR seems to work fine (even without
-    // mixed samples) on later NVIDIA hardware where mixed samples would be supported.
-    if ((kNvidia_VkVendor == properties.vendorID) && !fMixedSamplesSupport) {
-        fDriverDisableMSAAClipAtlas = true;
-    }
-
 #ifdef SK_BUILD_FOR_ANDROID
     // MSAA CCPR was slow on Android. http://skbug.com/9676
     fDriverDisableMSAAClipAtlas = true;
@@ -598,11 +589,6 @@ void GrVkCaps::applyDriverCorrectnessWorkarounds(const VkPhysicalDevicePropertie
     if (kImagination_VkVendor == properties.vendorID) {
         fShaderCaps->fAtan2ImplementedAsAtanYOverX = true;
     }
-
-    // http://skbug.com/11965
-    if (strstr(properties.deviceName, "SwiftShader")) {
-        fShaderCaps->fVertexIDSupport = false;
-    }
 }
 
 void GrVkCaps::initGrCaps(const GrVkInterface* vkInterface,
@@ -632,10 +618,6 @@ void GrVkCaps::initGrCaps(const GrVkInterface* vkInterface,
         fMultisampleDisableSupport = true;
     }
 #endif
-
-    if (extensions.hasExtension(VK_NV_FRAMEBUFFER_MIXED_SAMPLES_EXTENSION_NAME, 1)) {
-        fMixedSamplesSupport = true;
-    }
 
     if (extensions.hasExtension(VK_EXT_CONSERVATIVE_RASTERIZATION_EXTENSION_NAME, 1)) {
         fConservativeRasterSupport = true;
@@ -732,7 +714,9 @@ void GrVkCaps::initShaderCaps(const VkPhysicalDeviceProperties& properties,
     shaderCaps->fDualSourceBlendingSupport = features.features.dualSrcBlend;
 
     shaderCaps->fIntegerSupport = true;
+    shaderCaps->fNonsquareMatrixSupport = true;
     shaderCaps->fVertexIDSupport = true;
+    shaderCaps->fInfinitySupport = true;
     shaderCaps->fBitManipulationSupport = true;
 
     // Assume the minimum precisions mandated by the SPIR-V spec.
@@ -1408,7 +1392,7 @@ static bool backend_format_is_external(const GrBackendFormat& format) {
 #ifdef SK_DEBUG
         VkFormat vkFormat;
         SkAssertResult(format.asVkFormat(&vkFormat));
-        SkASSERT(vkFormat == VK_NULL_HANDLE);
+        SkASSERT(vkFormat == VK_FORMAT_UNDEFINED);
 #endif
         return true;
     }
@@ -1570,6 +1554,9 @@ GrCaps::SurfaceReadPixelsSupport GrVkCaps::surfaceSupportsReadPixels(
     }
     if (auto tex = static_cast<const GrVkTexture*>(surface->asTexture())) {
         auto texAttachment = tex->textureAttachment();
+        if (!texAttachment) {
+            return SurfaceReadPixelsSupport::kUnsupported;
+        }
         // We can't directly read from a VkImage that has a ycbcr sampler.
         if (texAttachment->ycbcrConversionInfo().isValid()) {
             return SurfaceReadPixelsSupport::kCopyToTexture2D;
@@ -1604,8 +1591,12 @@ bool GrVkCaps::onSurfaceSupportsWritePixels(const GrSurface* surface) const {
     }
     // We can't write to a texture that has a ycbcr sampler.
     if (auto tex = static_cast<const GrVkTexture*>(surface->asTexture())) {
+        auto texAttachment = tex->textureAttachment();
+        if (!texAttachment) {
+            return false;
+        }
         // We can't directly read from a VkImage that has a ycbcr sampler.
-        if (tex->textureAttachment()->ycbcrConversionInfo().isValid()) {
+        if (texAttachment->ycbcrConversionInfo().isValid()) {
             return false;
         }
     }
@@ -1689,7 +1680,8 @@ GrSwizzle GrVkCaps::onGetReadSwizzle(const GrBackendFormat& format, GrColorType 
             return ctInfo.fReadSwizzle;
         }
     }
-    SkDEBUGFAILF("Illegal color type (%d) and format (%d) combination.", colorType, vkFormat);
+    SkDEBUGFAILF("Illegal color type (%d) and format (%d) combination.",
+                 (int)colorType, (int)vkFormat);
     return {};
 }
 
@@ -1703,19 +1695,20 @@ GrSwizzle GrVkCaps::getWriteSwizzle(const GrBackendFormat& format, GrColorType c
             return ctInfo.fWriteSwizzle;
         }
     }
-    SkDEBUGFAILF("Illegal color type (%d) and format (%d) combination.", colorType, vkFormat);
+    SkDEBUGFAILF("Illegal color type (%d) and format (%d) combination.",
+                 (int)colorType, (int)vkFormat);
     return {};
 }
 
-GrDstSampleType GrVkCaps::onGetDstSampleTypeForProxy(const GrRenderTargetProxy* rt) const {
+GrDstSampleFlags GrVkCaps::onGetDstSampleFlagsForProxy(const GrRenderTargetProxy* rt) const {
     bool isMSAAWithResolve = rt->numSamples() > 1 && rt->asTextureProxy();
     // TODO: Currently if we have an msaa rt with a resolve, the supportsVkInputAttachment call
     // references whether the resolve is supported as an input attachment. We need to add a check to
     // allow checking the color attachment (msaa or not) supports input attachment specifically.
     if (!isMSAAWithResolve && rt->supportsVkInputAttachment()) {
-        return GrDstSampleType::kAsInputAttachment;
+        return GrDstSampleFlags::kRequiresTextureBarrier | GrDstSampleFlags::kAsInputAttachment;
     }
-    return GrDstSampleType::kAsTextureCopy;
+    return GrDstSampleFlags::kNone;
 }
 
 uint64_t GrVkCaps::computeFormatKey(const GrBackendFormat& format) const {
@@ -1845,10 +1838,10 @@ GrProgramDesc GrVkCaps::makeDesc(GrRenderTarget* rt,
         SkASSERT(!needsResolve || (vkRT->resolveAttachment() &&
                                    vkRT->resolveAttachment()->supportsInputAttachmentUsage()));
 
-        bool needsStencil = programInfo.numStencilSamples() || programInfo.isStencilEnabled();
+        bool needsStencil = programInfo.needsStencil() || programInfo.isStencilEnabled();
         // TODO: support failure in getSimpleRenderPass
-        auto[rp, compatibleHandle] = vkRT->getSimpleRenderPass(needsResolve, needsStencil,
-                                                               selfDepFlags, loadFromResolve);
+        auto rp = vkRT->getSimpleRenderPass(needsResolve, needsStencil, selfDepFlags,
+                                            loadFromResolve);
         SkASSERT(rp);
         rp->genKey(&b);
 
@@ -1883,16 +1876,10 @@ GrProgramDesc GrVkCaps::makeDesc(GrRenderTarget* rt,
     stencil.genKey(&b, true);
 
     programInfo.pipeline().genKey(&b, *this);
-    b.add32(programInfo.numRasterSamples());
+    b.add32(programInfo.numSamples());
 
     // Vulkan requires the full primitive type as part of its key
     b.add32(programInfo.primitiveTypeKey());
-
-    if (this->mixedSamplesSupport()) {
-        // Add "0" to indicate that coverage modulation will not be enabled, or the (non-zero)
-        // raster sample count if it will.
-        b.add32(!programInfo.isMixedSampled() ? 0 : programInfo.numRasterSamples());
-    }
 
     b.flush();
     return desc;

@@ -31,13 +31,14 @@ public:
         kBoolLiteral,
         kCodeString,
         kConstructorArray,
+        kConstructorArrayCast,
         kConstructorCompound,
         kConstructorCompoundCast,
         kConstructorDiagonalMatrix,
         kConstructorMatrixResize,
         kConstructorScalarCast,
         kConstructorSplat,
-        kDefined,
+        kConstructorStruct,
         kExternalFunctionCall,
         kExternalFunctionReference,
         kIntLiteral,
@@ -46,8 +47,9 @@ public:
         kFunctionReference,
         kFunctionCall,
         kIndex,
-        kPrefix,
+        kPoison,
         kPostfix,
+        kPrefix,
         kSetting,
         kSwizzle,
         kTernary,
@@ -88,8 +90,8 @@ public:
 
     bool isAnyConstructor() const {
         static_assert((int)Kind::kConstructorArray - 1 == (int)Kind::kCodeString);
-        static_assert((int)Kind::kConstructorSplat + 1 == (int)Kind::kDefined);
-        return this->kind() >= Kind::kConstructorArray && this->kind() <= Kind::kConstructorSplat;
+        static_assert((int)Kind::kConstructorStruct + 1 == (int)Kind::kExternalFunctionCall);
+        return this->kind() >= Kind::kConstructorArray && this->kind() <= Kind::kConstructorStruct;
     }
 
     /**

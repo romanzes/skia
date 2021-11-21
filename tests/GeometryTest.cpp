@@ -37,14 +37,16 @@ static void testChopCubic(skiatest::Reporter* reporter) {
         REPORTER_ASSERT(reporter, count);
     }
     // Make sure src and dst can be the same pointer.
-    SkPoint pts[7];
-    for (int i = 0; i < 7; ++i) {
-        pts[i].set(i, i);
-    }
-    SkChopCubicAt(pts, pts, .5f);
-    for (int i = 0; i < 7; ++i) {
-        REPORTER_ASSERT(reporter, pts[i].fX == pts[i].fY);
-        REPORTER_ASSERT(reporter, pts[i].fX == i * .5f);
+    {
+        SkPoint pts[7];
+        for (int i = 0; i < 7; ++i) {
+            pts[i].set(i, i);
+        }
+        SkChopCubicAt(pts, pts, .5f);
+        for (int i = 0; i < 7; ++i) {
+            REPORTER_ASSERT(reporter, pts[i].fX == pts[i].fY);
+            REPORTER_ASSERT(reporter, pts[i].fX == i * .5f);
+        }
     }
 
     static const float chopTs[] = {
@@ -620,6 +622,13 @@ DEF_TEST(Geometry, reporter) {
 
     int count = SkChopQuadAtMaxCurvature(pts, pts);  // Ensure src and dst can be the same pointer.
     REPORTER_ASSERT(reporter, count == 1 || count == 2);
+
+    // This previously crashed because the computed t of max curvature is NaN and SkChopQuadAt
+    // asserts that the passed t is in 0..1. Passes by not asserting.
+    pts[0].set(15.1213f, 7.77647f);
+    pts[1].set(6.2168e+19f, 1.51338e+20f);
+    pts[2].set(1.4579e+19f, 1.55558e+21f);
+    count = SkChopQuadAtMaxCurvature(pts, pts);
 
     pts[0].set(0, 0);
     pts[1].set(3, 0);

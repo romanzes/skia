@@ -8,8 +8,9 @@
 #ifndef SKSL_DSL_MODIFIERS
 #define SKSL_DSL_MODIFIERS
 
+#include "include/core/SkSpan.h"
 #include "include/private/SkSLModifiers.h"
-#include "include/private/SkTArray.h"
+#include "include/sksl/DSLLayout.h"
 
 namespace SkSL {
 
@@ -31,17 +32,28 @@ enum Modifier {
 
 class DSLModifiers {
 public:
+    DSLModifiers(int flags = 0)
+        : DSLModifiers(DSLLayout(), flags) {}
 
-    DSLModifiers() {}
+    DSLModifiers(DSLLayout layout, int flags = 0)
+        : fModifiers(layout.fSkSLLayout, flags) {}
 
-    DSLModifiers(int flags)
-        : fModifiers(SkSL::Layout(), flags) {}
+    int flags() const {
+        return fModifiers.fFlags;
+    }
+
+    DSLLayout layout() const {
+        return DSLLayout(fModifiers.fLayout);
+    }
 
 private:
     SkSL::Modifiers fModifiers;
 
-    friend DSLType Struct(const char* name, SkTArray<DSLField> fields);
-    friend class DSLVar;
+    friend DSLType Struct(skstd::string_view name, SkSpan<DSLField> fields);
+    friend class DSLCore;
+    friend class DSLFunction;
+    friend class DSLType;
+    friend class DSLVarBase;
     friend class DSLWriter;
 };
 

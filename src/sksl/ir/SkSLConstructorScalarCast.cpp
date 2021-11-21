@@ -5,6 +5,7 @@
  * found in the LICENSE file.
  */
 
+#include "src/sksl/SkSLConstantFolder.h"
 #include "src/sksl/ir/SkSLConstructorScalarCast.h"
 
 namespace SkSL {
@@ -60,17 +61,28 @@ std::unique_ptr<Expression> ConstructorScalarCast::Convert(const Context& contex
     SkASSERT(type.isScalar());
 
     if (args.size() != 1) {
-        context.fErrors.error(offset, "invalid arguments to '" + type.displayName() +
-                                      "' constructor, (expected exactly 1 argument, but found " +
-                                      to_string((uint64_t)args.size()) + ")");
+        context.errors().error(offset, "invalid arguments to '" + type.displayName() +
+                                       "' constructor, (expected exactly 1 argument, but found " +
+                                       to_string((uint64_t)args.size()) + ")");
         return nullptr;
     }
 
     const Type& argType = args[0]->type();
     if (!argType.isScalar()) {
-        context.fErrors.error(offset, "invalid argument to '" + type.displayName() +
-                                      "' constructor (expected a number or bool, but found '" +
-                                      argType.displayName() + "')");
+        // Casting a vector-type into its scalar component type is treated as a slice in GLSL.
+        // We don't allow those casts in SkSL; recommend a .x swizzle instead.
+        const char* swizzleHint = "";
+        if (argType.componentType() == type) {
+            if (argType.isVector()) {
+                swizzleHint = "; use '.x' instead";
+            } else if (argType.isMatrix()) {
+                swizzleHint = "; use '[0][0]' instead";
+            }
+        }
+
+        context.errors().error(offset,
+                               "'" + argType.displayName() + "' is not a valid parameter to '" +
+                               type.displayName() + "' constructor" + swizzleHint);
         return nullptr;
     }
 
@@ -87,6 +99,11 @@ std::unique_ptr<Expression> ConstructorScalarCast::Make(const Context& context,
     // No cast required when the types match.
     if (arg->type() == type) {
         return arg;
+    }
+    // When optimization is on, look up the value of constant variables. This allows expressions
+    // like `int(zero)` to be replaced with a literal zero.
+    if (context.fConfig->fSettings.fOptimize) {
+        arg = ConstantFolder::MakeConstantValueForVariable(std::move(arg));
     }
     // We can cast scalar literals at compile-time.
     if (std::unique_ptr<Expression> converted = cast_scalar_literal(type, *arg)) {

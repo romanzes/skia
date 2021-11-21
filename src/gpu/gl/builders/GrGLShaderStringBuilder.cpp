@@ -6,11 +6,12 @@
  */
 
 #include "src/core/SkAutoMalloc.h"
+#include "src/core/SkTraceEvent.h"
 #include "src/gpu/GrShaderUtils.h"
 #include "src/gpu/gl/GrGLGpu.h"
 #include "src/gpu/gl/builders/GrGLShaderStringBuilder.h"
 #include "src/sksl/SkSLCompiler.h"
-#include "src/sksl/SkSLGLSLCodeGenerator.h"
+#include "src/sksl/codegen/SkSLGLSLCodeGenerator.h"
 #include "src/sksl/ir/SkSLProgram.h"
 
 // Print the source code for all shaders generated.

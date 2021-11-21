@@ -92,7 +92,7 @@ std::unique_ptr<Expression> BinaryExpression::Convert(const Context& context,
                                       op.kind() != Token::Kind::TK_EQ
                                               ? VariableReference::RefKind::kReadWrite
                                               : VariableReference::RefKind::kWrite,
-                                      &context.fErrors)) {
+                                      &context.errors())) {
         return nullptr;
     }
 
@@ -101,29 +101,29 @@ std::unique_ptr<Expression> BinaryExpression::Convert(const Context& context,
     const Type* resultType;
     if (!op.determineBinaryType(context, *rawLeftType, *rawRightType,
                                 &leftType, &rightType, &resultType)) {
-        context.fErrors.error(offset, String("type mismatch: '") + op.operatorName() +
-                                      "' cannot operate on '" + left->type().displayName() +
-                                      "', '" + right->type().displayName() + "'");
+        context.errors().error(offset, String("type mismatch: '") + op.operatorName() +
+                                       "' cannot operate on '" + left->type().displayName() +
+                                       "', '" + right->type().displayName() + "'");
         return nullptr;
     }
 
     if (isAssignment && leftType->componentType().isOpaque()) {
-        context.fErrors.error(offset, "assignments to opaque type '" + left->type().displayName() +
-                                      "' are not permitted");
+        context.errors().error(offset, "assignments to opaque type '" + left->type().displayName() +
+                                       "' are not permitted");
         return nullptr;
     }
     if (context.fConfig->strictES2Mode()) {
         if (!op.isAllowedInStrictES2Mode()) {
-            context.fErrors.error(offset, String("operator '") + op.operatorName() +
-                                          "' is not allowed");
+            context.errors().error(offset, String("operator '") + op.operatorName() +
+                                           "' is not allowed");
             return nullptr;
         }
         if (leftType->isOrContainsArray()) {
             // Most operators are already rejected on arrays, but GLSL ES 1.0 is very explicit that
             // the *only* operator allowed on arrays is subscripting (and the rules against
             // assignment, comparison, and even sequence apply to structs containing arrays as well)
-            context.fErrors.error(offset, String("operator '") + op.operatorName() + "' can not "
-                                          "operate on arrays (or structs containing arrays)");
+            context.errors().error(offset, String("operator '") + op.operatorName() + "' can not "
+                                           "operate on arrays (or structs containing arrays)");
             return nullptr;
         }
     }
@@ -164,15 +164,16 @@ std::unique_ptr<Expression> BinaryExpression::Make(const Context& context,
     SkASSERT(!op.isAssignment() || Analysis::IsAssignable(*left));
     SkASSERT(!op.isAssignment() || !left->type().componentType().isOpaque());
 
-    // If we can detect division-by-zero, we should synthesize an error, but our caller is still
-    // expecting to receive a binary expression back; don't return nullptr.
+    // For simple assignments, detect and report out-of-range literal values.
+    if (op.kind() == Token::Kind::TK_EQ) {
+        left->type().checkForOutOfRangeLiteral(context, *right);
+    }
+
+    // Perform constant-folding on the expression.
     const int offset = left->fOffset;
-    if (!ConstantFolder::ErrorOnDivideByZero(context, offset, op, *right)) {
-        std::unique_ptr<Expression> result = ConstantFolder::Simplify(context, offset, *left,
-                                                                      op, *right, *resultType);
-        if (result) {
-            return result;
-        }
+    if (std::unique_ptr<Expression> result = ConstantFolder::Simplify(context, offset, *left,
+                                                                      op, *right, *resultType)) {
+        return result;
     }
 
     if (context.fConfig->fSettings.fOptimize) {
@@ -182,7 +183,7 @@ std::unique_ptr<Expression> BinaryExpression::Make(const Context& context,
         //                                        : mat * vec)
         if (is_low_precision_matrix_vector_multiply(*left, op, *right, *resultType)) {
             // Look up `sk_Caps.rewriteMatrixVectorMultiply`.
-            auto caps = Setting::Convert(context, left->fOffset, "rewriteMatrixVectorMultiply");
+            auto caps = Setting::Convert(context, offset, "rewriteMatrixVectorMultiply");
 
             bool capsBitIsTrue = caps->is<BoolLiteral>() && caps->as<BoolLiteral>().value();
             if (capsBitIsTrue || !caps->is<BoolLiteral>()) {

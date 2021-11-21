@@ -5,15 +5,14 @@
  * found in the LICENSE file.
  */
 
-
 #include "include/gpu/GrContextOptions.h"
 #include "include/gpu/GrDirectContext.h"
 #include "src/core/SkOpts.h"
 #include "src/gpu/GrDirectContextPriv.h"
+#include "src/gpu/GrFragmentProcessor.h"
 #include "src/gpu/GrProcessor.h"
 #include "src/gpu/GrRenderTarget.h"
 #include "src/gpu/GrStencilSettings.h"
-#include "src/gpu/glsl/GrGLSLFragmentProcessor.h"
 #include "src/gpu/glsl/GrGLSLProgramDataManager.h"
 #include "src/gpu/vk/GrVkGpu.h"
 #include "src/gpu/vk/GrVkPipelineState.h"
@@ -78,9 +77,8 @@ GrVkPipelineState* GrVkResourceProvider::PipelineStateCache::findOrCreatePipelin
 #ifdef SK_DEBUG
     if (programInfo.isStencilEnabled()) {
         SkASSERT(renderTarget->getStencilAttachment());
-        SkASSERT(renderTarget->numStencilBits() == 8);
-        SkASSERT(renderTarget->getStencilAttachment()->numSamples() ==
-                 programInfo.numStencilSamples());
+        SkASSERT(renderTarget->numStencilBits(renderTarget->numSamples() > 1) == 8);
+        SkASSERT(renderTarget->getStencilAttachment()->numSamples() == programInfo.numSamples());
     }
 #endif
 
@@ -95,9 +93,8 @@ GrVkPipelineState* GrVkResourceProvider::PipelineStateCache::findOrCreatePipelin
     }
 
     Stats::ProgramCacheResult stat;
-    auto tmp = this->findOrCreatePipelineState(renderTarget, desc, programInfo,
-                                               compatibleRenderPass, overrideSubpassForResolveLoad,
-                                               &stat);
+    auto tmp = this->findOrCreatePipelineStateImpl(desc, programInfo, compatibleRenderPass,
+                                                   overrideSubpassForResolveLoad, &stat);
     if (!tmp) {
         fStats.incNumInlineCompilationFailures();
     } else {
@@ -107,8 +104,7 @@ GrVkPipelineState* GrVkResourceProvider::PipelineStateCache::findOrCreatePipelin
     return tmp;
 }
 
-GrVkPipelineState* GrVkResourceProvider::PipelineStateCache::findOrCreatePipelineState(
-        GrRenderTarget* renderTarget,
+GrVkPipelineState* GrVkResourceProvider::PipelineStateCache::findOrCreatePipelineStateImpl(
         const GrProgramDesc& desc,
         const GrProgramInfo& programInfo,
         VkRenderPass compatibleRenderPass,
@@ -124,8 +120,7 @@ GrVkPipelineState* GrVkResourceProvider::PipelineStateCache::findOrCreatePipelin
             *stat = Stats::ProgramCacheResult::kMiss;
         }
         GrVkPipelineState* pipelineState(GrVkPipelineStateBuilder::CreatePipelineState(
-                fGpu, renderTarget, desc, programInfo, compatibleRenderPass,
-                overrideSubpassForResolveLoad));
+                fGpu, desc, programInfo, compatibleRenderPass, overrideSubpassForResolveLoad));
         if (!pipelineState) {
             return nullptr;
         }
