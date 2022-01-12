@@ -373,8 +373,18 @@ Cluster::Cluster(ParagraphImpl* owner,
     fIsHardBreak = fOwner->codeUnitHasProperty(fTextRange.end, CodeUnitFlags::kHardLineBreakBefore);
     // NON-SKIA-UPSTREAMED CHANGE
     // Chrome doesn't break words on soft breaks, except some characters:
-    fIsChromeBreak = *ch == 0x2D // Hyphen (-)
-                     || *ch == 0x3F; // Question mark (?)
+    switch(*ch) {
+        case 0x2D: // Hyphen (-)
+        case 0x3F: // Question mark (?)
+            fIsChromeBreak = true;
+            break;
+        case 0x3002: // Ideographic full stop (。)
+            fIsChromeBreak = true;
+            break;
+        default:
+            fIsChromeBreak = false;
+            break;
+    }
     // END OF NON-SKIA-UPSTREAMED CHANGE
 }
 
