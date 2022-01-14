@@ -374,8 +374,8 @@ Cluster::Cluster(ParagraphImpl* owner,
     // NON-SKIA-UPSTREAMED CHANGE
     // Some of the symbols that Chrome doesn't recognize to be soft breaks,
     // are soft breaks in Skia by default
-    fIsSoftBreakExemption = *ch == 0x0F // Forward slash (/)
-                           || *ch == 0x21 // Exclamation mark (1)
+    fIsSoftBreakExemption = *ch == 0x21 // Exclamation mark (!)
+                           || *ch == 0x2F // Forward slash (/)
                            || *ch == 0x7C // Vertical bar (|)
                            || *ch == 0x7D; // Right brace (})
     // END OF NON-SKIA-UPSTREAMED CHANGE
