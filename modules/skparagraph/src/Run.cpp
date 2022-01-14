@@ -310,7 +310,7 @@ SkFont Cluster::font() const {
 
 bool Cluster::isSoftBreak() const {
     return fOwner->codeUnitHasProperty(fTextRange.end, CodeUnitFlags::kSoftLineBreakBefore) &&
-            !fOwner->isSoftBreakExemption();
+            !isSoftBreakExemption();
 }
 
 bool Cluster::isGraphemeBreak() const {
