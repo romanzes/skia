@@ -58,15 +58,8 @@ class TextWrapper {
         inline size_t endPos() const { return fEnd.position(); }
         bool endOfCluster() { return fEnd.position() == fEnd.cluster()->endPos(); }
         bool endOfWord() {
-            // NON-SKIA-UPSTREAMED CHANGE
-            /*
             return endOfCluster() &&
                    (fEnd.cluster()->isHardBreak() || fEnd.cluster()->isSoftBreak());
-            */
-            Cluster* end = fEnd.cluster();
-            return endOfCluster() &&
-                   (end->isHardBreak() || end->isWhitespaceBreak() || end->isChromeBreak());
-            // END OF NON-SKIA-UPSTREAMED CHANGE
         }
 
         void extend(TextStretch& stretch) {

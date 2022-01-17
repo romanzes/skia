@@ -296,7 +296,7 @@ public:
     bool isIntraWordBreak() const { return fIsIntraWordBreak; }
     bool isHardBreak() const { return fIsHardBreak; }
     // NON-SKIA-UPSTREAMED CHANGE
-    bool isChromeBreak() const { return fIsChromeBreak; }
+    bool isSoftBreakExemption() const { return fIsSoftBreakExemption; }
     // END OF NON-SKIA-UPSTREAMED CHANGE
 
     bool isSoftBreak() const;
@@ -352,7 +352,7 @@ private:
     bool fIsIntraWordBreak;
     bool fIsHardBreak;
     // NON-SKIA-UPSTREAMED CHANGE
-    bool fIsChromeBreak;
+    bool fIsSoftBreakExemption;
     // END OF NON-SKIA-UPSTREAMED CHANGE
 };
 
