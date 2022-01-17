@@ -179,12 +179,7 @@ void TextWrapper::lookAhead(SkScalar maxWidth, Cluster* endOfClusters, bool appl
             fClusters.extend(cluster);
 
             // Keep adding clusters/words
-            // NON-SKIA-UPSTREAMED CHANGE
-            /*
             if (fClusters.endOfWord()) {
-            */
-            if (fClusters.endOfWord() || cluster + 1 == endOfClusters) {
-            // END OF NON-SKIA-UPSTREAMED CHANGE
                 fMinIntrinsicWidth = std::max(fMinIntrinsicWidth, getClustersTrimmedWidth());
                 fWords.extend(fClusters);
             }
