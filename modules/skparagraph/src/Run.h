@@ -309,6 +309,9 @@ public:
     bool isIntraWordBreak() const { return fIsIntraWordBreak; }
     bool isHardBreak() const { return fIsHardBreak; }
     bool isIdeographic() const { return fIsIdeographic; }
+    // NON-SKIA-UPSTREAMED CHANGE
+    bool isSoftBreakExemption() const { return fIsSoftBreakExemption; }
+    // END OF NON-SKIA-UPSTREAMED CHANGE
 
     bool isSoftBreak() const;
     bool isGraphemeBreak() const;
@@ -362,6 +365,9 @@ private:
     bool fIsIntraWordBreak;
     bool fIsHardBreak;
     bool fIsIdeographic;
+    // NON-SKIA-UPSTREAMED CHANGE
+    bool fIsSoftBreakExemption;
+    // END OF NON-SKIA-UPSTREAMED CHANGE
 };
 
 class InternalLineMetrics {
