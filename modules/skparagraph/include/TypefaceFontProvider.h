@@ -75,6 +75,47 @@ private:
     SkTArray<SkString> fFamilyNames;
 };
 
+class LazyTypefaceFontProvider : public SkFontMgr {
+public:
+    size_t registerTypeface(const char[] fontFilePath, const SkString& alias);
+
+    int onCountFamilies() const override;
+
+    void onGetFamilyName(int index, SkString* familyName) const override;
+
+    SkFontStyleSet* onMatchFamily(const char familyName[]) const override;
+
+    SkFontStyleSet* onCreateStyleSet(int) const override { return nullptr; }
+    SkTypeface* onMatchFamilyStyle(const char[], const SkFontStyle&) const override {
+        return nullptr;
+    }
+    SkTypeface* onMatchFamilyStyleCharacter(const char[], const SkFontStyle&,
+                                            const char*[], int,
+                                            SkUnichar) const override {
+        return nullptr;
+    }
+
+    sk_sp<SkTypeface> onMakeFromData(sk_sp<SkData>, int) const override { return nullptr; }
+    sk_sp<SkTypeface> onMakeFromStreamIndex(std::unique_ptr<SkStreamAsset>, int) const override {
+        return nullptr;
+    }
+    sk_sp<SkTypeface> onMakeFromStreamArgs(std::unique_ptr<SkStreamAsset>,
+                                           const SkFontArguments&) const override {
+        return nullptr;
+    }
+    sk_sp<SkTypeface> onMakeFromFile(const char[], int) const override {
+        return nullptr;
+    }
+
+    sk_sp<SkTypeface> onLegacyMakeTypeface(const char[], SkFontStyle) const override {
+        return nullptr;
+    }
+
+private:
+    SkTHashMap<SkString, const char[]> fRegisteredFamilies;
+    SkTArray<SkString> fFamilyNames;
+};
+
 }  // namespace textlayout
 }  // namespace skia
 

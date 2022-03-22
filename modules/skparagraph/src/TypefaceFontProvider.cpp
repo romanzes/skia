@@ -81,5 +81,37 @@ void TypefaceFontStyleSet::appendTypeface(sk_sp<SkTypeface> typeface) {
     }
 }
 
+int LazyTypefaceFontProvider::onCountFamilies() const { return fRegisteredFamilies.count(); }
+
+void LazyTypefaceFontProvider::onGetFamilyName(int index, SkString* familyName) const {
+    SkASSERT(index < fRegisteredFamilies.count());
+    familyName->set(fFamilyNames[index]);
+}
+
+SkFontStyleSet* LazyTypefaceFontProvider::onMatchFamily(const char familyName[]) const {
+    auto found = fRegisteredFamilies.find(SkString(familyName));
+    if (found) {
+        auto styleSet = sk_make_sp<TypefaceFontStyleSet>(familyName);
+        auto typeface = makeFromFile(found, 0);
+        (*styleSet)->appendTypeface(std::move(typeface));
+        return SkRef((*styleSet).get());
+    }
+    return nullptr;
+}
+
+size_t LazyTypefaceFontProvider::registerTypeface(const char[] fontFilePath, const SkString& familyName) {
+    if (familyName.size() == 0) {
+        return 0;
+    }
+
+    auto found = fRegisteredFamilies.find(familyName);
+    if (found == nullptr) {
+        found = fRegisteredFamilies.set(familyName, fontFilePath);
+        fFamilyNames.emplace_back(familyName);
+    }
+
+    return 1;
+}
+
 }  // namespace textlayout
 }  // namespace skia
