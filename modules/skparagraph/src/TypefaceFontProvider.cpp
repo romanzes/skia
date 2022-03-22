@@ -89,7 +89,7 @@ void LazyTypefaceFontProvider::onGetFamilyName(int index, SkString* familyName) 
 }
 
 SkFontStyleSet* LazyTypefaceFontProvider::onMatchFamily(const char familyName[]) const {
-    const char[] found = fRegisteredFamilies.find(SkString(familyName));
+    const char found[] = fRegisteredFamilies.find(SkString(familyName));
     if (found) {
         SkFontStyleSet* styleSet = sk_make_sp<TypefaceFontStyleSet>(familyName);
         SkTypeface typeface = makeFromFile(*found, 0);
