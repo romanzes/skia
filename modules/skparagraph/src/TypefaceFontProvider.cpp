@@ -92,7 +92,7 @@ SkFontStyleSet* LazyTypefaceFontProvider::onMatchFamily(const char familyName[])
     auto found = fRegisteredFamilies.find(SkString(familyName));
     if (found) {
         auto styleSet = sk_make_sp<TypefaceFontStyleSet>(familyName);
-        auto typeface = makeFromFile(found, 0);
+        auto typeface = makeFromFile(*found, 0);
         (*styleSet)->appendTypeface(std::move(typeface));
         return SkRef((*styleSet).get());
     }
