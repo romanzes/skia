@@ -99,14 +99,14 @@ SkFontStyleSet* LazyTypefaceFontProvider::onMatchFamily(const char familyName[])
     return nullptr;
 }
 
-size_t LazyTypefaceFontProvider::registerTypeface(const char fontFilePath[], const SkString& familyName) {
+size_t LazyTypefaceFontProvider::registerTypeface(const SkString& fontFilePath, const SkString& familyName) {
     if (familyName.size() == 0) {
         return 0;
     }
 
     auto found = fRegisteredFamilies.find(familyName);
     if (found == nullptr) {
-        found = fRegisteredFamilies.set(familyName, SkString(fontFilePath));
+        found = fRegisteredFamilies.set(familyName, fontFilePath);
         fFamilyNames.emplace_back(familyName);
     }
 
