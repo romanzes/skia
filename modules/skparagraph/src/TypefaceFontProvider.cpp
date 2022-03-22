@@ -99,7 +99,7 @@ SkFontStyleSet* LazyTypefaceFontProvider::onMatchFamily(const char familyName[])
     return nullptr;
 }
 
-size_t LazyTypefaceFontProvider::registerTypeface(const char[] fontFilePath, const SkString& familyName) {
+size_t LazyTypefaceFontProvider::registerTypeface(const char fontFilePath[], const SkString& familyName) {
     if (familyName.size() == 0) {
         return 0;
     }

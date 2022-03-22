@@ -77,7 +77,7 @@ private:
 
 class LazyTypefaceFontProvider : public SkFontMgr {
 public:
-    size_t registerTypeface(const char[] fontFilePath, const SkString& alias);
+    size_t registerTypeface(const char fontFilePath[], const SkString& alias);
 
     int onCountFamilies() const override;
 
