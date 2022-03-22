@@ -112,7 +112,7 @@ public:
     }
 
 private:
-    SkTHashMap<SkString, const char[]> fRegisteredFamilies;
+    SkTHashMap<SkString, SkString> fRegisteredFamilies;
     SkTArray<SkString> fFamilyNames;
 };
 
