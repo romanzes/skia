@@ -96,10 +96,8 @@ SkFontStyleSet* LazyTypefaceFontProvider::onMatchFamily(const char familyName[])
 
     SkString* registered = fRegisteredFamilies.find(SkString(familyName));
     if (registered) {
-        sk_sp<TypefaceFontStyleSet> styleSet = sk_make_sp<TypefaceFontStyleSet>(SkString(familyName));
-        sk_sp<SkTypeface> typeface = SkTypeface::MakeFromFile(registered->c_str());
-        styleSet->appendTypeface(std::move(typeface));
-        fLoadedFamilies.set(familyName, styleSet);
+        sk_sp<TypefaceFontStyleSet> styleSet = fLoadedFamilies.set(familyName, sk_make_sp<TypefaceFontStyleSet>(SkString(familyName)));
+        styleSet->appendTypeface(std::move(SkTypeface::MakeFromFile(registered->c_str())));
         return SkRef(styleSet.get());
     }
     return nullptr;
