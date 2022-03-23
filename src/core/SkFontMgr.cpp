@@ -98,7 +98,9 @@ SkFontStyleSet* SkFontMgr::createStyleSet(int index) const {
 }
 
 SkFontStyleSet* SkFontMgr::matchFamily(const char familyName[]) const {
-    return emptyOnNull(this->onMatchFamily(familyName));
+    auto result = emptyOnNull(this->onMatchFamily(familyName));
+    SkDebugf("SkFontMgr::matchFamily");
+    return result;
 }
 
 SkTypeface* SkFontMgr::matchFamilyStyle(const char familyName[],
