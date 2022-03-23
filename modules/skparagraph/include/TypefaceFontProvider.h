@@ -113,7 +113,7 @@ public:
 
 private:
     SkTHashMap<SkString, SkString> fRegisteredFamilies;
-    SkTHashMap<SkString, sk_sp<TypefaceFontStyleSet>> fLoadedFamilies;
+    mutable SkTHashMap<SkString, sk_sp<TypefaceFontStyleSet>> fLoadedFamilies;
     SkTArray<SkString> fFamilyNames;
 };
 
