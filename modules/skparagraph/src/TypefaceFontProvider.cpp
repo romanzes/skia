@@ -103,7 +103,7 @@ SkFontStyleSet* LazyTypefaceFontProvider::onMatchFamily(const char familyName[])
         } else {
             SkDebugf("typeface isn't bold\n");
         }
-        SkDebugf("6: %s\n");
+        SkDebugf("6\n");
         styleSet->appendTypeface(std::move(typeface));
         SkDebugf("7\n");
         return styleSet.get();
