@@ -586,6 +586,7 @@ protected:
     }
 
     sk_sp<SkTypeface> onMakeFromFile(const char path[], int ttcIndex) const override {
+        SkDebugf("SkFontMgr_mac_ct::onMakeFromFile");
         if (ttcIndex != 0) {
             return nullptr;
         }
