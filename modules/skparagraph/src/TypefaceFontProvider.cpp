@@ -89,7 +89,7 @@ void LazyTypefaceFontProvider::onGetFamilyName(int index, SkString* familyName) 
 }
 
 SkFontStyleSet* LazyTypefaceFontProvider::onMatchFamily(const char familyName[]) const {
-    SkString* loaded = fLoadedFamilies.find(SkString(familyName));
+    auto loaded = fLoadedFamilies.find(SkString(familyName));
     if (loaded) {
         return SkRef((*loaded).get());
     }
