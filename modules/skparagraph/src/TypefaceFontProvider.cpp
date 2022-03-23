@@ -93,7 +93,7 @@ SkFontStyleSet* LazyTypefaceFontProvider::onMatchFamily(const char familyName[])
     SkString* found = fRegisteredFamilies.find(SkString(familyName));
     SkDebugf("2: %s\n", familyName);
     if (found) {
-        SkDebugf("3: %s\n", found);
+        SkDebugf("3: %s\n", found->c_str());
         sk_sp<TypefaceFontStyleSet> styleSet = sk_make_sp<TypefaceFontStyleSet>(SkString(familyName));
         SkDebugf("4\n");
         sk_sp<SkTypeface> typeface = SkTypeface::MakeFromFile(found->c_str());
