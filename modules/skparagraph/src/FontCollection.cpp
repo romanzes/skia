@@ -117,6 +117,7 @@ std::vector<sk_sp<SkTypeface>> FontCollection::findTypefaces(const std::vector<S
 
 sk_sp<SkTypeface> FontCollection::matchTypeface(const SkString& familyName, SkFontStyle fontStyle) {
     for (const auto& manager : this->getFontManagerOrder()) {
+        SkDebugf("FontCollection::matchTypeface\n");
         sk_sp<SkFontStyleSet> set(manager->matchFamily(familyName.c_str()));
         if (!set || set->count() == 0) {
             continue;

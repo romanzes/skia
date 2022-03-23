@@ -180,6 +180,7 @@ class FontMgrMatchGM : public skiagm::GM {
 
         sk_sp<SkFontStyleSet> fset;
         for (size_t i = 0; i < SK_ARRAY_COUNT(gNames); ++i) {
+            SkDebugf("fontmgr::onDraw\n");
             fset.reset(fFM->matchFamily(gNames[i]));
             if (fset->count() > 0) {
                 break;

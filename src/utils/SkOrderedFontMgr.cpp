@@ -46,6 +46,7 @@ SkFontStyleSet* SkOrderedFontMgr::onCreateStyleSet(int index) const {
 
 SkFontStyleSet* SkOrderedFontMgr::onMatchFamily(const char familyName[]) const {
     for (const auto& fm : fList) {
+        SkDebugf("SkOrderedFontMgr::onMatchFamily\n");
         if (auto fs = fm->matchFamily(familyName)) {
             return fs;
         }

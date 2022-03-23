@@ -211,6 +211,7 @@ SkFontStyleSet_Custom* SkFontMgr_Custom::onMatchFamily(const char familyName[]) 
 SkTypeface* SkFontMgr_Custom::onMatchFamilyStyle(const char familyName[],
                                 const SkFontStyle& fontStyle) const
 {
+    SkDebugf("SkFontMgr_Custom::onMatchFamilyStyle\n");
     sk_sp<SkFontStyleSet> sset(this->matchFamily(familyName));
     return sset->matchStyle(fontStyle);
 }
