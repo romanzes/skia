@@ -94,12 +94,13 @@ SkFontStyleSet* LazyTypefaceFontProvider::onMatchFamily(const char familyName[])
         return SkRef((*loaded).get());
     }
 
-//    SkString* registered = fRegisteredFamilies.find(SkString(familyName));
-//    if (registered) {
-//        sk_sp<TypefaceFontStyleSet> styleSet = fLoadedFamilies.set(familyName, sk_make_sp<TypefaceFontStyleSet>(SkString(familyName)));
-//        styleSet->appendTypeface(std::move(SkTypeface::MakeFromFile(registered->c_str())));
-//        return SkRef(styleSet.get());
-//    }
+    SkString* registered = fRegisteredFamilies.find(SkString(familyName));
+    if (registered) {
+        const SkString family = SkString(familyName);
+        sk_sp<TypefaceFontStyleSet> styleSet = fLoadedFamilies.set(familyName, sk_make_sp<TypefaceFontStyleSet>(family));
+        styleSet->appendTypeface(std::move(SkTypeface::MakeFromFile(registered->c_str())));
+        return SkRef(styleSet.get());
+    }
     return nullptr;
 }
 
