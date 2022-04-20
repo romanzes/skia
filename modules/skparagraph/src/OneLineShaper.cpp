@@ -629,6 +629,9 @@ bool OneLineShaper::shape() {
     // (by place holders, possibly, by hard line breaks or tabs, too)
     auto limitlessWidth = std::numeric_limits<SkScalar>::max();
 
+    SkDebugf("Just before iterateThroughShapingRegions():\n");
+    logUnresolvedBlocks();
+
     auto result = iterateThroughShapingRegions(
             [this, limitlessWidth]
             (TextRange textRange, SkSpan<Block> styleSpan, SkScalar& advanceX, TextIndex textStart, uint8_t defaultBidiLevel) {
@@ -639,6 +642,9 @@ bool OneLineShaper::shape() {
             // For instance, loadICU does not work. We have to stop the process
             return false;
         }
+
+        SkDebugf("Just before iterateThroughFontStyles():\n");
+        logUnresolvedBlocks();
 
         iterateThroughFontStyles(textRange, styleSpan,
                 [this, &shaper, defaultBidiLevel, limitlessWidth, &advanceX]
@@ -651,10 +657,10 @@ bool OneLineShaper::shape() {
             fAdvance = SkVector::Make(advanceX, 0);
             fCurrentText = block.fRange;
             auto run_block = RunBlock(block.fRange);
-            SkString familyName;
-            run_block.fRun->fFont.getTypeface()->getFamilyName(&familyName);
-            SkDebugf("adding run block: %s\n", familyName.c_str());
             fUnresolvedBlocks.emplace_back(run_block);
+
+            SkDebugf("Just before matchResolvedFonts():\n");
+            logUnresolvedBlocks();
 
             matchResolvedFonts(block.fStyle, [&](sk_sp<SkTypeface> typeface) {
                 SkString familyName;
@@ -717,7 +723,8 @@ bool OneLineShaper::shape() {
                     return Resolved::Nothing;
                 }
             });
-            SkDebugf("unresolved count: %i\n", fUnresolvedBlocks.size());
+            SkDebugf("Just before finish():\n");
+            logUnresolvedBlocks();
 
             this->finish(block, fHeight, advanceX);
         });
@@ -726,6 +733,14 @@ bool OneLineShaper::shape() {
     });
 
     return result;
+}
+
+void logUnresolvedBlocks() {
+    for (auto& block : fUnresolvedBlocks) {
+        SkString familyName;
+        block.fRun->fFont.getTypeface()->getFamilyName(&familyName);
+        SkDebugf("unresolved block: %s\n", familyName.c_str());
+    }
 }
 
 // When we extend TextRange to the grapheme edges, we also extend glyphs range
