@@ -650,7 +650,9 @@ bool OneLineShaper::shape() {
             fUseHalfLeading = block.fStyle.getHalfLeading();
             fAdvance = SkVector::Make(advanceX, 0);
             fCurrentText = block.fRange;
-            SkDebugf("adding run block\n");
+            SkString familyName;
+            block.fRun->fFont.getTypeface()->getFamilyName(&familyName);
+            SkDebugf("adding run block: %s\n", familyName.c_str());
             fUnresolvedBlocks.emplace_back(RunBlock(block.fRange));
 
             matchResolvedFonts(block.fStyle, [&](sk_sp<SkTypeface> typeface) {
