@@ -148,13 +148,10 @@ void OneLineShaper::finish(const Block& block, SkScalar height, SkScalar& advanc
     auto blockText = block.fRange;
 
     // Add all unresolved blocks to resolved blocks
-    SkDebugf("finish (1): fUnresolvedBlocks: %i\n", fUnresolvedBlocks.size());
-    SkDebugf("finish (1): fResolvedBlocks: %i\n", fResolvedBlocks.size());
     while (!fUnresolvedBlocks.empty()) {
         auto unresolved = fUnresolvedBlocks.front();
         SkString familyName;
         unresolved.fRun->fFont.getTypeface()->getFamilyName(&familyName);
-        SkDebugf("unresolved block font: %s\n", familyName.c_str());
         fUnresolvedBlocks.pop_front();
         if (unresolved.fText.width() == 0) {
             continue;
@@ -162,8 +159,6 @@ void OneLineShaper::finish(const Block& block, SkScalar height, SkScalar& advanc
         fResolvedBlocks.emplace_back(unresolved);
         fUnresolvedGlyphs += unresolved.fGlyphs.width();
     }
-    SkDebugf("finish (2): fUnresolvedBlocks: %i\n", fUnresolvedBlocks.size());
-    SkDebugf("finish (2): fResolvedBlocks: %i\n", fResolvedBlocks.size());
 
     // Sort all pieces by text
     std::sort(fResolvedBlocks.begin(), fResolvedBlocks.end(),
@@ -173,12 +168,9 @@ void OneLineShaper::finish(const Block& block, SkScalar height, SkScalar& advanc
 
     // Go through all of them
     size_t lastTextEnd = blockText.start;
-    SkDebugf("finish (3): fResolvedBlocks: %i\n", fResolvedBlocks.size());
     for (auto& resolvedBlock : fResolvedBlocks) {
-        SkDebugf("resolved block: %i -> %i\n", resolvedBlock.fText.start, resolvedBlock.fText.end);
 
         if (resolvedBlock.fText.end <= blockText.start) {
-            SkDebugf("block end is before or equals to start\n");
             continue;
         }
 
@@ -558,6 +550,7 @@ void OneLineShaper::matchResolvedFonts(const TextStyle& textStyle,
         }
 
         for (auto& block : hopelessBlocks) {
+            SkDebugf("adding hopeless block\n");
             fUnresolvedBlocks.emplace_front(block);
         }
     }
@@ -657,6 +650,7 @@ bool OneLineShaper::shape() {
             fUseHalfLeading = block.fStyle.getHalfLeading();
             fAdvance = SkVector::Make(advanceX, 0);
             fCurrentText = block.fRange;
+            SkDebugf("adding run block\n");
             fUnresolvedBlocks.emplace_back(RunBlock(block.fRange));
 
             matchResolvedFonts(block.fStyle, [&](sk_sp<SkTypeface> typeface) {
