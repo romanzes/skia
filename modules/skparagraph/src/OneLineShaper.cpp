@@ -194,18 +194,19 @@ void OneLineShaper::finish(const Block& block, SkScalar height, SkScalar& advanc
         lastTextEnd = text.end;
 
         if (resolvedBlock.isFullyResolved()) {
-            SkDebugf("block is fully resolved\n");
             // Just move the entire run
             resolvedBlock.fRun->fIndex = this->fParagraph->fRuns.size();
             this->fParagraph->fRuns.emplace_back(*resolvedBlock.fRun);
             resolvedBlock.fRun.reset();
             continue;
         } else if (run == nullptr) {
-            SkDebugf("block is NOT fully resolved\n");
             continue;
         }
 
         auto runAdvance = SkVector::Make(run->posX(glyphs.end) - run->posX(glyphs.start), run->fAdvance.fY);
+        SkString familyName;
+        run->fFont.getTypeface()->getFamilyName(&familyName)
+        SkDebugf("run font: %s\n", familyName.c_str());
         const SkShaper::RunHandler::RunInfo info = {
                 run->fFont,
                 run->fBidiLevel,
