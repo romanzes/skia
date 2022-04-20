@@ -1311,7 +1311,7 @@ ShapedRun ShaperHarfBuzz::shape(char const * const utf8,
     hb_buffer_t* buffer = fBuffer.get();
     SkAutoTCallVProc<hb_buffer_t, hb_buffer_clear_contents> autoClearBuffer(buffer);
     hb_buffer_set_content_type(buffer, HB_BUFFER_CONTENT_TYPE_UNICODE);
-    hb_buffer_set_cluster_level(buffer, HB_BUFFER_CLUSTER_LEVEL_MONOTONE_CHARACTERS);
+    hb_buffer_set_cluster_level(buffer, HB_BUFFER_CLUSTER_LEVEL_MONOTONE_GRAPHEMES);
 
     // Documentation for HB_BUFFER_FLAG_BOT/EOT at 763e5466c0a03a7c27020e1e2598e488612529a7.
     // Currently BOT forces a dotted circle when first codepoint is a mark; EOT has no effect.
