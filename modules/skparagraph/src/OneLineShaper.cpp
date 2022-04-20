@@ -515,6 +515,7 @@ void OneLineShaper::matchResolvedFonts(const TextStyle& textStyle,
                             unicode, textStyle.getFontStyle(), textStyle.getLocale());
 
                     if (typeface == nullptr) {
+                        SkDebugf("returning early\n", unicode);
                         return;
                     }
                     fFallbackFonts.set(fontKey, typeface);
