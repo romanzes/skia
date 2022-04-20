@@ -652,7 +652,7 @@ bool OneLineShaper::shape() {
             matchResolvedFonts(block.fStyle, [&](sk_sp<SkTypeface> typeface) {
                 SkString familyName;
                 typeface->getFamilyName(&familyName);
-                SkDebugf("visitor: typeface: %s", familyName.c_str());
+                SkDebugf("visitor: typeface: %s\n", familyName.c_str());
 
                 // Create one more font to try
                 SkFont font(std::move(typeface), block.fStyle.getFontSize());
@@ -710,6 +710,7 @@ bool OneLineShaper::shape() {
                     return Resolved::Nothing;
                 }
             });
+            SkDebugf("unresolved count: %i\n", fUnresolvedBlocks.size());
 
             this->finish(block, fHeight, advanceX);
         });
