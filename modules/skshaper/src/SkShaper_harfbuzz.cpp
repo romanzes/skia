@@ -1364,7 +1364,7 @@ ShapedRun ShaperHarfBuzz::shape(char const * const utf8,
     }
     if (!hbFont) {
         SkString familyName;
-        run.fFont.currentFont().getTypeface()->getFamilyName(&familyName);
+        run.fFont.getTypeface()->getFamilyName(&familyName);
         SkDebugf("ShaperHarfBuzz::shape(1): %s\n", familyName.c_str());
         return run;
     }
@@ -1391,7 +1391,7 @@ ShapedRun ShaperHarfBuzz::shape(char const * const utf8,
     unsigned len = hb_buffer_get_length(buffer);
     if (len == 0) {
         SkString familyName;
-        run.fFont.currentFont().getTypeface()->getFamilyName(&familyName);
+        run.fFont.getTypeface()->getFamilyName(&familyName);
         SkDebugf("ShaperHarfBuzz::shape(2): %s\n", familyName.c_str());
         return run;
     }
@@ -1438,7 +1438,7 @@ ShapedRun ShaperHarfBuzz::shape(char const * const utf8,
     run.fAdvance = runAdvance;
 
     SkString familyName;
-    run.fFont.currentFont().getTypeface()->getFamilyName(&familyName);
+    run.fFont.getTypeface()->getFamilyName(&familyName);
     SkDebugf("ShaperHarfBuzz::shape(3): %s\n", familyName.c_str());
     return run;
 }
