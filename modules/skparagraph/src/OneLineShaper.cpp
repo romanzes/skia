@@ -14,6 +14,14 @@ static inline SkUnichar nextUtf8Unit(const char** ptr, const char* end) {
 namespace skia {
 namespace textlayout {
 
+void OneLineShaper::logUnresolvedBlocks() {
+    for (auto& block : fUnresolvedBlocks) {
+        SkString familyName;
+        block.fRun->fFont.getTypeface()->getFamilyName(&familyName);
+        SkDebugf("unresolved block: %s\n", familyName.c_str());
+    }
+}
+
 void OneLineShaper::commitRunBuffer(const RunInfo&) {
 
     fCurrentRun->commit();
@@ -733,14 +741,6 @@ bool OneLineShaper::shape() {
     });
 
     return result;
-}
-
-void logUnresolvedBlocks() {
-    for (auto& block : fUnresolvedBlocks) {
-        SkString familyName;
-        block.fRun->fFont.getTypeface()->getFamilyName(&familyName);
-        SkDebugf("unresolved block: %s\n", familyName.c_str());
-    }
 }
 
 // When we extend TextRange to the grapheme edges, we also extend glyphs range
