@@ -88,6 +88,7 @@ private:
         return fCurrentRun->newRunBuffer();
     }
 
+    OneLineShaper::logUnresolvedBlocks();
     void commitRunBuffer(const RunInfo&) override;
 
     TextRange clusteredText(GlyphRange& glyphs);
