@@ -15,10 +15,15 @@ namespace skia {
 namespace textlayout {
 
 void OneLineShaper::logUnresolvedBlocks() {
+    SkDebugf("unresolved blocks count: %s\n", fUnresolvedBlocks.size());
     for (auto& block : fUnresolvedBlocks) {
-        SkString familyName;
-        block.fRun->fFont.getTypeface()->getFamilyName(&familyName);
-        SkDebugf("unresolved block: %s\n", familyName.c_str());
+        if (block.fRun == nullptr) {
+            SkDebugf("unresolved block: null\n");
+        } else {
+            SkString familyName;
+            block.fRun->fFont.getTypeface()->getFamilyName(&familyName);
+            SkDebugf("unresolved block: %s\n", familyName.c_str());
+        }
     }
 }
 
