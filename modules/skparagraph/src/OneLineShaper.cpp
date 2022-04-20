@@ -676,6 +676,7 @@ bool OneLineShaper::shape() {
             matchResolvedFonts(block.fStyle, [&](sk_sp<SkTypeface> typeface) {
                 SkDebugf("At the beginning of matchResolvedFonts():\n");
                 logUnresolvedBlocks();
+
                 SkString familyName;
                 typeface->getFamilyName(&familyName);
 
@@ -734,6 +735,8 @@ bool OneLineShaper::shape() {
                 } else {
                     return Resolved::Nothing;
                 }
+                SkDebugf("At the end of matchResolvedFonts():\n");
+                logUnresolvedBlocks();
             });
             SkDebugf("Just before finish():\n");
             logUnresolvedBlocks();
