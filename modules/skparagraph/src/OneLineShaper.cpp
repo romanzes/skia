@@ -489,6 +489,9 @@ void OneLineShaper::matchResolvedFonts(const TextStyle& textStyle,
         // Give fallback a clue
         // Some unresolved subblocks might be resolved with different fallback fonts
         std::vector<RunBlock> hopelessBlocks;
+        if (fUnresolvedBlocks.empty()) {
+            SkDebugf("unresolved blocks are empty\n");
+        }
         while (!fUnresolvedBlocks.empty()) {
             auto unresolvedRange = fUnresolvedBlocks.front().fText;
             auto unresolvedText = fParagraph->text(unresolvedRange);
@@ -497,6 +500,7 @@ void OneLineShaper::matchResolvedFonts(const TextStyle& textStyle,
             // but we still need to keep track of all SkUnichars used in this unresolved block
             SkTHashSet<SkUnichar> alreadyTried;
             SkUnichar unicode = nextUtf8Unit(&ch, unresolvedText.end());
+            SkDebugf("unicode: %i\n", unicode);
             while (true) {
 
                 sk_sp<SkTypeface> typeface;
