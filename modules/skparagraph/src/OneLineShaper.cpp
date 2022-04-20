@@ -514,9 +514,10 @@ void OneLineShaper::matchResolvedFonts(const TextStyle& textStyle,
                     typeface = fParagraph->fFontCollection->defaultFallback(
                             unicode, textStyle.getFontStyle(), textStyle.getLocale());
 
-                    if (typeface != nullptr) {
-                        fFallbackFonts.set(fontKey, typeface);
+                    if (typeface == nullptr) {
+                        typeface = fParagraph->fFontCollection->defaultFallback();
                     }
+                    fFallbackFonts.set(fontKey, typeface);
                 }
 
                 auto resolved = visitor(typeface);
