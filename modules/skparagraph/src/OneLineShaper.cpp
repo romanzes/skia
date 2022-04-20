@@ -205,7 +205,7 @@ void OneLineShaper::finish(const Block& block, SkScalar height, SkScalar& advanc
 
         auto runAdvance = SkVector::Make(run->posX(glyphs.end) - run->posX(glyphs.start), run->fAdvance.fY);
         SkString familyName;
-        run->fFont.getTypeface()->getFamilyName(&familyName)
+        run->fFont.getTypeface()->getFamilyName(&familyName);
         SkDebugf("run font: %s\n", familyName.c_str());
         const SkShaper::RunHandler::RunInfo info = {
                 run->fFont,
