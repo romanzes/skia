@@ -170,9 +170,11 @@ void OneLineShaper::finish(const Block& block, SkScalar height, SkScalar& advanc
 
     // Go through all of them
     size_t lastTextEnd = blockText.start;
+    SkDebugf("finish (3): fResolvedBlocks: %i\n", fResolvedBlocks.size());
     for (auto& resolvedBlock : fResolvedBlocks) {
 
         if (resolvedBlock.fText.end <= blockText.start) {
+            SkDebugf("block end is before or equals to start\n");
             continue;
         }
 
