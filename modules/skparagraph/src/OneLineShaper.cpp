@@ -174,8 +174,6 @@ void OneLineShaper::finish(const Block& block, SkScalar height, SkScalar& advanc
 
         if (resolvedBlock.fRun != nullptr) {
             fParagraph->fFontSwitches.emplace_back(resolvedBlock.fText.start, resolvedBlock.fRun->fFont);
-        } else {
-            fParagraph->fFontSwitches.emplace_back(resolvedBlock.fText.start, nullptr);
         }
 
         auto run = resolvedBlock.fRun;
@@ -189,12 +187,14 @@ void OneLineShaper::finish(const Block& block, SkScalar height, SkScalar& advanc
         lastTextEnd = text.end;
 
         if (resolvedBlock.isFullyResolved()) {
+            SkDebugf("block is fully resolved\n");
             // Just move the entire run
             resolvedBlock.fRun->fIndex = this->fParagraph->fRuns.size();
             this->fParagraph->fRuns.emplace_back(*resolvedBlock.fRun);
             resolvedBlock.fRun.reset();
             continue;
         } else if (run == nullptr) {
+            SkDebugf("block is NOT fully resolved\n");
             continue;
         }
 
