@@ -512,7 +512,6 @@ void OneLineShaper::matchResolvedFonts(const TextStyle& textStyle,
             // but we still need to keep track of all SkUnichars used in this unresolved block
             SkTHashSet<SkUnichar> alreadyTried;
             SkUnichar unicode = nextUtf8Unit(&ch, unresolvedText.end());
-            SkDebugf("unicode: %i\n", unicode);
             while (true) {
 
                 sk_sp<SkTypeface> typeface;
@@ -527,7 +526,6 @@ void OneLineShaper::matchResolvedFonts(const TextStyle& textStyle,
                             unicode, textStyle.getFontStyle(), textStyle.getLocale());
 
                     if (typeface == nullptr) {
-                        SkDebugf("returning early\n", unicode);
                         return;
                     }
                     fFallbackFonts.set(fontKey, typeface);
@@ -676,9 +674,10 @@ bool OneLineShaper::shape() {
             logUnresolvedBlocks();
 
             matchResolvedFonts(block.fStyle, [&](sk_sp<SkTypeface> typeface) {
+                SkDebugf("At the beginning of matchResolvedFonts():\n");
+                logUnresolvedBlocks();
                 SkString familyName;
                 typeface->getFamilyName(&familyName);
-                SkDebugf("visitor: typeface: %s\n", familyName.c_str());
 
                 // Create one more font to try
                 SkFont font(std::move(typeface), block.fStyle.getFontSize());
