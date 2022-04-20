@@ -674,7 +674,7 @@ bool OneLineShaper::shape() {
             logUnresolvedBlocks();
 
             matchResolvedFonts(block.fStyle, [&](sk_sp<SkTypeface> typeface) {
-                SkDebugf("At the beginning of matchResolvedFonts():\n");
+                SkDebugf("matchResolvedFonts(1):\n");
                 logUnresolvedBlocks();
 
                 SkString familyName;
@@ -685,6 +685,9 @@ bool OneLineShaper::shape() {
                 font.setEdging(SkFont::Edging::kAntiAlias);
                 font.setHinting(SkFontHinting::kNone);
                 font.setSubpixel(true);
+
+                SkDebugf("matchResolvedFonts(2):\n");
+                logUnresolvedBlocks();
 
                 // Apply fake bold and/or italic settings to the font if the
                 // typeface's attributes do not match the intended font style.
@@ -697,6 +700,9 @@ bool OneLineShaper::shape() {
                     font.getTypeface()->fontStyle().slant() != SkFontStyle::kItalic_Slant;
                 font.setEmbolden(fakeBold);
                 font.setSkewX(fakeItalic ? -SK_Scalar1 / 4 : 0);
+
+                SkDebugf("matchResolvedFonts(3):\n");
+                logUnresolvedBlocks();
 
                 // Walk through all the currently unresolved blocks
                 // (ignoring those that appear later)
@@ -728,7 +734,7 @@ bool OneLineShaper::shape() {
                     fUnresolvedBlocks.pop_front();
                 }
 
-                SkDebugf("At the end of matchResolvedFonts():\n");
+                SkDebugf("matchResolvedFonts(4):\n");
                 logUnresolvedBlocks();
 
                 if (fUnresolvedBlocks.empty()) {
