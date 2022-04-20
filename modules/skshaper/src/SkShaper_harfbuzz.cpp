@@ -1231,18 +1231,17 @@ void ShapeDontWrapOrReorder::wrap(char const * const utf8, size_t utf8Bytes,
         utf8Start = utf8End;
         utf8End = utf8 + runSegmenter.endOfCurrentRun();
 
-        const ShapedRun run = shape(utf8, utf8Bytes,
-                         utf8Start, utf8End,
-                         bidi, language, script, font,
-                         features, featuresSize);
-        runs.emplace_back(run);
-        SkString familyName;
-        run.fFont.getTypeface()->getFamilyName(&familyName);
-        SkDebugf("ShapeDontWrapOrReorder::wrap: %s\n", familyName.c_str());
+        runs.emplace_back(shape(utf8, utf8Bytes,
+                                utf8Start, utf8End,
+                                bidi, language, script, font,
+                                features, featuresSize));
     }
 
     handler->beginLine();
     for (const auto& run : runs) {
+        SkString familyName;
+        run.fFont.getTypeface()->getFamilyName(&familyName);
+        SkDebugf("ShapeDontWrapOrReorder::wrap (1): %s\n", familyName.c_str());
         const RunHandler::RunInfo info = {
             run.fFont,
             run.fLevel,
@@ -1254,6 +1253,9 @@ void ShapeDontWrapOrReorder::wrap(char const * const utf8, size_t utf8Bytes,
     }
     handler->commitRunInfo();
     for (const auto& run : runs) {
+        SkString familyName;
+        run.fFont.getTypeface()->getFamilyName(&familyName);
+        SkDebugf("ShapeDontWrapOrReorder::wrap (2): %s\n", familyName.c_str());
         const RunHandler::RunInfo info = {
             run.fFont,
             run.fLevel,
