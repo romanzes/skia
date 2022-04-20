@@ -640,9 +640,6 @@ bool OneLineShaper::shape() {
     // (by place holders, possibly, by hard line breaks or tabs, too)
     auto limitlessWidth = std::numeric_limits<SkScalar>::max();
 
-    SkDebugf("Just before iterateThroughShapingRegions():\n");
-    logUnresolvedBlocks();
-
     auto result = iterateThroughShapingRegions(
             [this, limitlessWidth]
             (TextRange textRange, SkSpan<Block> styleSpan, SkScalar& advanceX, TextIndex textStart, uint8_t defaultBidiLevel) {
@@ -653,9 +650,6 @@ bool OneLineShaper::shape() {
             // For instance, loadICU does not work. We have to stop the process
             return false;
         }
-
-        SkDebugf("Just before iterateThroughFontStyles():\n");
-        logUnresolvedBlocks();
 
         iterateThroughFontStyles(textRange, styleSpan,
                 [this, &shaper, defaultBidiLevel, limitlessWidth, &advanceX]
@@ -670,13 +664,7 @@ bool OneLineShaper::shape() {
             auto run_block = RunBlock(block.fRange);
             fUnresolvedBlocks.emplace_back(run_block);
 
-            SkDebugf("Just before matchResolvedFonts():\n");
-            logUnresolvedBlocks();
-
             matchResolvedFonts(block.fStyle, [&](sk_sp<SkTypeface> typeface) {
-                SkDebugf("matchResolvedFonts(1):\n");
-                logUnresolvedBlocks();
-
                 SkString familyName;
                 typeface->getFamilyName(&familyName);
 
@@ -685,9 +673,6 @@ bool OneLineShaper::shape() {
                 font.setEdging(SkFont::Edging::kAntiAlias);
                 font.setHinting(SkFontHinting::kNone);
                 font.setSubpixel(true);
-
-                SkDebugf("matchResolvedFonts(2):\n");
-                logUnresolvedBlocks();
 
                 // Apply fake bold and/or italic settings to the font if the
                 // typeface's attributes do not match the intended font style.
@@ -700,9 +685,6 @@ bool OneLineShaper::shape() {
                     font.getTypeface()->fontStyle().slant() != SkFontStyle::kItalic_Slant;
                 font.setEmbolden(fakeBold);
                 font.setSkewX(fakeItalic ? -SK_Scalar1 / 4 : 0);
-
-                SkDebugf("matchResolvedFonts(3):\n");
-                logUnresolvedBlocks();
 
                 // Walk through all the currently unresolved blocks
                 // (ignoring those that appear later)
@@ -724,18 +706,22 @@ bool OneLineShaper::shape() {
                     auto scriptIter = SkShaper::MakeSkUnicodeHbScriptRunIterator
                                      (fParagraph->getUnicode(), unresolvedText.begin(), unresolvedText.size());
                     fCurrentText = unresolvedRange;
+
+                    SkDebugf("before shape:\n");
+                    logUnresolvedBlocks();
+
                     shaper->shape(unresolvedText.begin(), unresolvedText.size(),
                             fontIter, bidiIter,*scriptIter, langIter,
                             features.data(), features.size(),
                             limitlessWidth, this);
 
+                    SkDebugf("after shape:\n");
+                    logUnresolvedBlocks();
+
                     // Take off the queue the block we tried to resolved -
                     // whatever happened, we have now smaller pieces of it to deal with
                     fUnresolvedBlocks.pop_front();
                 }
-
-                SkDebugf("matchResolvedFonts(4):\n");
-                logUnresolvedBlocks();
 
                 if (fUnresolvedBlocks.empty()) {
                     return Resolved::Everything;
@@ -745,8 +731,6 @@ bool OneLineShaper::shape() {
                     return Resolved::Nothing;
                 }
             });
-            SkDebugf("Just before finish():\n");
-            logUnresolvedBlocks();
 
             this->finish(block, fHeight, advanceX);
         });
