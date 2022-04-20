@@ -15,7 +15,7 @@ namespace skia {
 namespace textlayout {
 
 void OneLineShaper::logUnresolvedBlocks() {
-    SkDebugf("unresolved blocks count: %s\n", fUnresolvedBlocks.size());
+    SkDebugf("unresolved blocks count: %i\n", fUnresolvedBlocks.size());
     for (auto& block : fUnresolvedBlocks) {
         if (block.fRun == nullptr) {
             SkDebugf("unresolved block: null\n");
