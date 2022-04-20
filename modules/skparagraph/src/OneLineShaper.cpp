@@ -152,6 +152,9 @@ void OneLineShaper::finish(const Block& block, SkScalar height, SkScalar& advanc
     SkDebugf("finish (1): fResolvedBlocks: %i\n", fResolvedBlocks.size());
     while (!fUnresolvedBlocks.empty()) {
         auto unresolved = fUnresolvedBlocks.front();
+        SkString familyName;
+        unresolved.fRun->fFont.getTypeface()->getFamilyName(&familyName);
+        SkDebugf("unresolved block font: %s\n", familyName.c_str());
         fUnresolvedBlocks.pop_front();
         if (unresolved.fText.width() == 0) {
             continue;
@@ -204,9 +207,6 @@ void OneLineShaper::finish(const Block& block, SkScalar height, SkScalar& advanc
         }
 
         auto runAdvance = SkVector::Make(run->posX(glyphs.end) - run->posX(glyphs.start), run->fAdvance.fY);
-        SkString familyName;
-        run->fFont.getTypeface()->getFamilyName(&familyName);
-        SkDebugf("run font: %s\n", familyName.c_str());
         const SkShaper::RunHandler::RunInfo info = {
                 run->fFont,
                 run->fBidiLevel,
