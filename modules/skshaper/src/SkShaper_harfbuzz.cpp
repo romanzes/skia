@@ -1304,6 +1304,10 @@ ShapedRun ShaperHarfBuzz::shape(char const * const utf8,
                                   const FontRunIterator& font,
                                   Feature const * const features, size_t const featuresSize) const
 {
+    SkString familyName;
+    font.currentFont().getTypeface()->getFamilyName(&familyName);
+    SkDebugf("ShaperHarfBuzz::shape: %s\n", familyName.c_str());
+
     size_t utf8runLength = utf8End - utf8Start;
     ShapedRun run(RunHandler::Range(utf8Start - utf8, utf8runLength),
                   font.currentFont(), bidi.currentLevel(), nullptr, 0);
