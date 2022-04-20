@@ -491,9 +491,7 @@ void OneLineShaper::matchResolvedFonts(const TextStyle& textStyle,
         // Give fallback a clue
         // Some unresolved subblocks might be resolved with different fallback fonts
         std::vector<RunBlock> hopelessBlocks;
-        if (fUnresolvedBlocks.empty()) {
-            SkDebugf("unresolved blocks are empty\n");
-        }
+        SkDebugf("unresolved blocks size: %i\n", fUnresolvedBlocks.size());
         while (!fUnresolvedBlocks.empty()) {
             auto unresolvedRange = fUnresolvedBlocks.front().fText;
             auto unresolvedText = fParagraph->text(unresolvedRange);
