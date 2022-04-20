@@ -1231,7 +1231,7 @@ void ShapeDontWrapOrReorder::wrap(char const * const utf8, size_t utf8Bytes,
         utf8Start = utf8End;
         utf8End = utf8 + runSegmenter.endOfCurrentRun();
 
-        auto run = shape(utf8, utf8Bytes,
+        ShapedRun run = shape(utf8, utf8Bytes,
                          utf8Start, utf8End,
                          bidi, language, script, font,
                          features, featuresSize);
