@@ -145,7 +145,7 @@ sk_sp<SkTypeface> FontCollection::defaultFallback(SkUnichar unicode, SkFontStyle
             return typeface;
         }
     }
-    return nullptr;
+    return defaultFallback();
 }
 
 sk_sp<SkTypeface> FontCollection::defaultFallback() {
