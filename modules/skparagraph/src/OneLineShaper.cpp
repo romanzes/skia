@@ -148,6 +148,8 @@ void OneLineShaper::finish(const Block& block, SkScalar height, SkScalar& advanc
     auto blockText = block.fRange;
 
     // Add all unresolved blocks to resolved blocks
+    SkDebugf("finish (1): fUnresolvedBlocks: %i\n", fUnresolvedBlocks.size());
+    SkDebugf("finish (1): fResolvedBlocks: %i\n", fResolvedBlocks.size());
     while (!fUnresolvedBlocks.empty()) {
         auto unresolved = fUnresolvedBlocks.front();
         fUnresolvedBlocks.pop_front();
@@ -157,6 +159,8 @@ void OneLineShaper::finish(const Block& block, SkScalar height, SkScalar& advanc
         fResolvedBlocks.emplace_back(unresolved);
         fUnresolvedGlyphs += unresolved.fGlyphs.width();
     }
+    SkDebugf("finish (2): fUnresolvedBlocks: %i\n", fUnresolvedBlocks.size());
+    SkDebugf("finish (2): fResolvedBlocks: %i\n", fResolvedBlocks.size());
 
     // Sort all pieces by text
     std::sort(fResolvedBlocks.begin(), fResolvedBlocks.end(),
