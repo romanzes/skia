@@ -1231,11 +1231,14 @@ void ShapeDontWrapOrReorder::wrap(char const * const utf8, size_t utf8Bytes,
         utf8Start = utf8End;
         utf8End = utf8 + runSegmenter.endOfCurrentRun();
 
-        SkDebugf("ShapeDontWrapOrReorder::wrap\n");
-        runs.emplace_back(shape(utf8, utf8Bytes,
-                                utf8Start, utf8End,
-                                bidi, language, script, font,
-                                features, featuresSize));
+        auto run = shape(utf8, utf8Bytes,
+                         utf8Start, utf8End,
+                         bidi, language, script, font,
+                         features, featuresSize);
+        runs.emplace_back(run);
+        SkString familyName;
+        run.fFont.getTypeface()->getFamilyName(&familyName);
+        SkDebugf("ShapeDontWrapOrReorder::wrap: %s\n", familyName.c_str());
     }
 
     handler->beginLine();

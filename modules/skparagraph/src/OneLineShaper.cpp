@@ -665,9 +665,9 @@ bool OneLineShaper::shape() {
             fUnresolvedBlocks.emplace_back(run_block);
 
             matchResolvedFonts(block.fStyle, [&](sk_sp<SkTypeface> typeface) {
-                SkString familyName;
-                typeface->getFamilyName(&familyName);
-                SkDebugf("visitor: %s\n", familyName.c_str());
+//                SkString familyName;
+//                typeface->getFamilyName(&familyName);
+//                SkDebugf("visitor: %s\n", familyName.c_str());
 
                 // Create one more font to try
                 SkFont font(std::move(typeface), block.fStyle.getFontSize());
@@ -708,16 +708,16 @@ bool OneLineShaper::shape() {
                                      (fParagraph->getUnicode(), unresolvedText.begin(), unresolvedText.size());
                     fCurrentText = unresolvedRange;
 
-                    SkDebugf("before shape:\n");
-                    logUnresolvedBlocks();
+//                    SkDebugf("before shape:\n");
+//                    logUnresolvedBlocks();
 
                     shaper->shape(unresolvedText.begin(), unresolvedText.size(),
                             fontIter, bidiIter,*scriptIter, langIter,
                             features.data(), features.size(),
                             limitlessWidth, this);
 
-                    SkDebugf("after shape:\n");
-                    logUnresolvedBlocks();
+//                    SkDebugf("after shape:\n");
+//                    logUnresolvedBlocks();
 
                     // Take off the queue the block we tried to resolved -
                     // whatever happened, we have now smaller pieces of it to deal with
