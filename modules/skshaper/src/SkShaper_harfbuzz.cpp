@@ -939,6 +939,7 @@ void ShaperDrivenWrapper::wrap(char const * const utf8, size_t utf8Bytes,
                 ShapedRun candidate = [&](const TextProps& props){
                     if (props.glyphLen) {
                         candidateUsesModelForGlyphs = true;
+                        SkDebugf("is this it?\n");
                         return ShapedRun(RunHandler::Range(utf8Start - utf8, breakIteratorCurrent),
                                          font.currentFont(), bidi.currentLevel(),
                                          std::unique_ptr<ShapedGlyph[]>(),
