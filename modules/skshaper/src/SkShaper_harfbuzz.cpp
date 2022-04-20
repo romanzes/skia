@@ -1311,7 +1311,7 @@ ShapedRun ShaperHarfBuzz::shape(char const * const utf8,
     hb_buffer_t* buffer = fBuffer.get();
     SkAutoTCallVProc<hb_buffer_t, hb_buffer_clear_contents> autoClearBuffer(buffer);
     hb_buffer_set_content_type(buffer, HB_BUFFER_CONTENT_TYPE_UNICODE);
-    hb_buffer_set_cluster_level(buffer, HB_BUFFER_CLUSTER_LEVEL_CHARACTERS);
+    hb_buffer_set_cluster_level(buffer, HB_BUFFER_CLUSTER_LEVEL_MONOTONE_CHARACTERS);
 
     // Documentation for HB_BUFFER_FLAG_BOT/EOT at 763e5466c0a03a7c27020e1e2598e488612529a7.
     // Currently BOT forces a dotted circle when first codepoint is a mark; EOT has no effect.
@@ -1319,7 +1319,7 @@ ShapedRun ShaperHarfBuzz::shape(char const * const utf8,
     // hb_buffer_set_flags(buffer, HB_BUFFER_FLAG_BOT | HB_BUFFER_FLAG_EOT);
 
     // Add precontext.
-    hb_buffer_add_utf8(buffer, utf8, utf8Start - utf8, utf8Start - utf8, 0);
+//    hb_buffer_add_utf8(buffer, utf8, utf8Start - utf8, utf8Start - utf8, 0);
 
     // Populate the hb_buffer directly with utf8 cluster indexes.
     const char* utf8Current = utf8Start;
