@@ -728,6 +728,9 @@ bool OneLineShaper::shape() {
                     fUnresolvedBlocks.pop_front();
                 }
 
+                SkDebugf("At the end of matchResolvedFonts():\n");
+                logUnresolvedBlocks();
+
                 if (fUnresolvedBlocks.empty()) {
                     return Resolved::Everything;
                 } else if (resolvedCount < fResolvedBlocks.size()) {
@@ -735,8 +738,6 @@ bool OneLineShaper::shape() {
                 } else {
                     return Resolved::Nothing;
                 }
-                SkDebugf("At the end of matchResolvedFonts():\n");
-                logUnresolvedBlocks();
             });
             SkDebugf("Just before finish():\n");
             logUnresolvedBlocks();
