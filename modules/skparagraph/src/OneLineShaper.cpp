@@ -477,11 +477,9 @@ void OneLineShaper::iterateThroughFontStyles(TextRange textRange,
 void OneLineShaper::matchResolvedFonts(const TextStyle& textStyle,
                                        const TypefaceVisitor& visitor) {
     std::vector<sk_sp<SkTypeface>> typefaces = fParagraph->fFontCollection->findTypefaces(textStyle.getFontFamilies(), textStyle.getFontStyle());
-    SkDebugf("matchResolvedFonts, typeface count = %i\n", typefaces.size());
 
     for (const auto& typeface : typefaces) {
         if (visitor(typeface) == Resolved::Everything) {
-            SkDebugf("everything is resolved\n");
             // Resolved everything
             return;
         }
@@ -490,8 +488,7 @@ void OneLineShaper::matchResolvedFonts(const TextStyle& textStyle,
     if (fParagraph->fFontCollection->fontFallbackEnabled()) {
         // Give fallback a clue
         // Some unresolved subblocks might be resolved with different fallback fonts
-        std::vector<RunBlock> hopelessBlocks;
-        SkDebugf("unresolved blocks size: %i\n", fUnresolvedBlocks.size());
+        std::vector<RunBlock> hopelessBlocks;\
         while (!fUnresolvedBlocks.empty()) {
             auto unresolvedRange = fUnresolvedBlocks.front().fText;
             auto unresolvedText = fParagraph->text(unresolvedRange);
