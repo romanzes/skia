@@ -51,6 +51,7 @@ public:
     SkTypeface* onMatchFamilyStyleCharacter(const char[], const SkFontStyle&,
                                             const char*[], int,
                                             SkUnichar) const override {
+        SkDebugf("TypefaceFontProvider::onMatchFamilyStyleCharacter\n");
         return nullptr;
     }
 
