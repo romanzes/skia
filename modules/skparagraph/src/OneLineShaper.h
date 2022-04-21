@@ -74,8 +74,12 @@ private:
 
     void beginLine() override {}
     void runInfo(const RunInfo&) override {}
-    void commitRunInfo() override {}
-    void commitLine() override {}
+    void commitRunInfo() override {
+        SkDebugf("OneLineShaper::commitRunInfo()");
+    }
+    void commitLine() override {
+        SkDebugf("OneLineShaper::commitLine()");
+    }
 
     Buffer runBuffer(const RunInfo& info) override {
         fCurrentRun = std::make_shared<Run>(fParagraph,
