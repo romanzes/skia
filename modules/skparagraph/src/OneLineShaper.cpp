@@ -27,8 +27,10 @@ void OneLineShaper::logUnresolvedBlocks() {
     }
 }
 
-void OneLineShaper::commitRunBuffer(const RunInfo&) {
-    SkDebugf("How many times is this run?\n");
+void OneLineShaper::commitRunBuffer(const RunInfo& runInfo) {
+    SkString familyName;
+    runInfo->fFont.getTypeface()->getFamilyName(&familyName);
+    SkDebugf("commitRunBuffer: %s\n", familyName);
     fCurrentRun->commit();
 
     auto oldUnresolvedCount = fUnresolvedBlocks.size();
