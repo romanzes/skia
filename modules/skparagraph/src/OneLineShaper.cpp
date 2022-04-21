@@ -53,8 +53,8 @@ void OneLineShaper::commitRunBuffer(const RunInfo&) {
     } else if (oldUnresolvedCount == fUnresolvedBlocks.size() - 1) {
         auto& unresolved = fUnresolvedBlocks.back();
         // this condition is true when latin text and false when chinese
-        SkDebugf("fCurrentRun->textRange(): %i -> %i\n", fCurrentRun->textRange().start(), fCurrentRun->textRange().end());
-        SkDebugf("unresolved.fText: %i -> %i\n", unresolved.fText.start(), unresolved.fText.end());
+        SkDebugf("fCurrentRun->textRange(): %zu -> %zu\n", fCurrentRun->textRange().start(), fCurrentRun->textRange().end());
+        SkDebugf("unresolved.fText: %zu -> %zu\n", unresolved.fText.start(), unresolved.fText.end());
         if (fCurrentRun->textRange() == unresolved.fText) {
             // Nothing was resolved; preserve the initial run if it makes sense
             auto& front = fUnresolvedBlocks.front();
