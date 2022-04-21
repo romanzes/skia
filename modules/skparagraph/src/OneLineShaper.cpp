@@ -55,12 +55,16 @@ void OneLineShaper::commitRunBuffer(const RunInfo&) {
         auto& unresolved = fUnresolvedBlocks.back();
         if (fCurrentRun->textRange() == unresolved.fText) {
             // Nothing was resolved; preserve the initial run if it makes sense
-//            auto& front = fUnresolvedBlocks.front();
-//            if (front.fRun != nullptr) {
-//               unresolved.fRun = front.fRun;
-//               unresolved.fGlyphs = front.fGlyphs;
-//            }
+            auto& front = fUnresolvedBlocks.front();
+            SkDebugf("commitRunBuffer (3):\n");
+            logUnresolvedBlocks();
+            if (front.fRun != nullptr) {
+               unresolved.fRun = front.fRun;
+               unresolved.fGlyphs = front.fGlyphs;
+            }
             // ROMAN: Already Adigiana
+            SkDebugf("commitRunBuffer (4):\n");
+            logUnresolvedBlocks();
             return;
         }
     }
