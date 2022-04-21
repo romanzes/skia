@@ -29,7 +29,7 @@ void OneLineShaper::logUnresolvedBlocks() {
 
 void OneLineShaper::commitRunBuffer(const RunInfo& runInfo) {
     SkString familyName;
-    runInfo->fFont.getTypeface()->getFamilyName(&familyName);
+    runInfo.fFont.getTypeface()->getFamilyName(&familyName);
     SkDebugf("commitRunBuffer: %s\n", familyName.c_str());
     fCurrentRun->commit();
 
