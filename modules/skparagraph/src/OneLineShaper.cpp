@@ -28,6 +28,7 @@ void OneLineShaper::logUnresolvedBlocks() {
 }
 
 void OneLineShaper::commitRunBuffer(const RunInfo&) {
+    SkDebugf("commitRunBuffer (1)\n");
     fCurrentRun->commit();
 
     auto oldUnresolvedCount = fUnresolvedBlocks.size();
@@ -40,6 +41,7 @@ void OneLineShaper::commitRunBuffer(const RunInfo&) {
     // Find all unresolved blocks
     sortOutGlyphs([&](GlyphRange block){
         if (block.width() == 0) {
+            SkDebugf("commitRunBuffer (2)\n");
             return;
         }
         addUnresolvedWithRun(block);
@@ -49,26 +51,25 @@ void OneLineShaper::commitRunBuffer(const RunInfo&) {
     if (oldUnresolvedCount == fUnresolvedBlocks.size()) {
         // No unresolved blocks added - we resolved the block with one run entirely
         addFullyResolved();
+        SkDebugf("commitRunBuffer (3)\n");
         return;
     } else if (oldUnresolvedCount == fUnresolvedBlocks.size() - 1) {
-        // ROMAN: Still Noto Sans CJK SC
         auto& unresolved = fUnresolvedBlocks.back();
         if (fCurrentRun->textRange() == unresolved.fText) {
             // Nothing was resolved; preserve the initial run if it makes sense
             auto& front = fUnresolvedBlocks.front();
-            SkDebugf("commitRunBuffer (3):\n");
-            logUnresolvedBlocks();
+            // ROMAN: Still Noto Sans CJK SC
             if (front.fRun != nullptr) {
                unresolved.fRun = front.fRun;
                unresolved.fGlyphs = front.fGlyphs;
             }
             // ROMAN: Already Adigiana
-            SkDebugf("commitRunBuffer (4):\n");
-            logUnresolvedBlocks();
+            SkDebugf("commitRunBuffer (4)\n");
             return;
         }
     }
 
+    SkDebugf("commitRunBuffer (5)\n");
     fillGaps(oldUnresolvedCount);
 }
 
