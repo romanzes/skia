@@ -34,6 +34,9 @@ void OneLineShaper::commitRunBuffer(const RunInfo&) {
     fCurrentRun->commit();
 
     auto oldUnresolvedCount = fUnresolvedBlocks.size();
+
+    SkDebugf("commitRunBuffer(1):\n");
+    logUnresolvedBlocks();
 /*
     SkDebugf("Run [%zu:%zu)\n", fCurrentRun->fTextRange.start, fCurrentRun->fTextRange.end);
     for (size_t i = 0; i < fCurrentRun->size(); ++i) {
@@ -43,19 +46,18 @@ void OneLineShaper::commitRunBuffer(const RunInfo&) {
     // Find all unresolved blocks
     sortOutGlyphs([&](GlyphRange block){
         if (block.width() == 0) {
-            SkDebugf("commitRunBuffer(1):\n");
-            logUnresolvedBlocks();
             return;
         }
         addUnresolvedWithRun(block);
     });
 
+    SkDebugf("commitRunBuffer(1):\n");
+    logUnresolvedBlocks();
+
     // Fill all the gaps between unresolved blocks with resolved ones
     if (oldUnresolvedCount == fUnresolvedBlocks.size()) {
         // No unresolved blocks added - we resolved the block with one run entirely
         addFullyResolved();
-        SkDebugf("commitRunBuffer(2):\n");
-        logUnresolvedBlocks();
         return;
     } else if (oldUnresolvedCount == fUnresolvedBlocks.size() - 1) {
         auto& unresolved = fUnresolvedBlocks.back();
@@ -73,8 +75,6 @@ void OneLineShaper::commitRunBuffer(const RunInfo&) {
     }
 
     fillGaps(oldUnresolvedCount);
-    SkDebugf("At the end of commitRunBuffer:\n");
-    logUnresolvedBlocks();
 }
 
 #ifdef SK_DEBUG
@@ -718,16 +718,10 @@ bool OneLineShaper::shape() {
                                      (fParagraph->getUnicode(), unresolvedText.begin(), unresolvedText.size());
                     fCurrentText = unresolvedRange;
 
-                    SkDebugf("before shape:\n");
-                    logUnresolvedBlocks();
-
                     shaper->shape(unresolvedText.begin(), unresolvedText.size(),
                             fontIter, bidiIter,*scriptIter, langIter,
                             features.data(), features.size(),
                             limitlessWidth, this);
-
-                    SkDebugf("after shape:\n");
-                    logUnresolvedBlocks();
 
                     // Take off the queue the block we tried to resolved -
                     // whatever happened, we have now smaller pieces of it to deal with
