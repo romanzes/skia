@@ -28,7 +28,6 @@ void OneLineShaper::logUnresolvedBlocks() {
 }
 
 void OneLineShaper::commitRunBuffer(const RunInfo&) {
-    SkDebugf("commitRunBuffer (1)\n");
     fCurrentRun->commit();
 
     auto oldUnresolvedCount = fUnresolvedBlocks.size();
@@ -41,22 +40,21 @@ void OneLineShaper::commitRunBuffer(const RunInfo&) {
     // Find all unresolved blocks
     sortOutGlyphs([&](GlyphRange block){
         if (block.width() == 0) {
-            SkDebugf("commitRunBuffer (2)\n");
             return;
         }
         addUnresolvedWithRun(block);
     });
 
     // Fill all the gaps between unresolved blocks with resolved ones
-    SkDebugf("oldUnresolvedCount: %i\n", oldUnresolvedCount);
-    SkDebugf("fUnresolvedBlocks.size(): %i\n", fUnresolvedBlocks.size());
     if (oldUnresolvedCount == fUnresolvedBlocks.size()) {
         // No unresolved blocks added - we resolved the block with one run entirely
         addFullyResolved();
-        SkDebugf("commitRunBuffer (3)\n");
         return;
     } else if (oldUnresolvedCount == fUnresolvedBlocks.size() - 1) {
         auto& unresolved = fUnresolvedBlocks.back();
+        // this condition is true when latin text and false when chinese
+        SkDebugf("fCurrentRun->textRange(): %i -> %i\n", fCurrentRun->textRange().begin, fCurrentRun->textRange().end);
+        SkDebugf("unresolved.fText: %i -> %i\n",unresolved.fText.begin, unresolved.fText.end);
         if (fCurrentRun->textRange() == unresolved.fText) {
             // Nothing was resolved; preserve the initial run if it makes sense
             auto& front = fUnresolvedBlocks.front();
@@ -66,12 +64,10 @@ void OneLineShaper::commitRunBuffer(const RunInfo&) {
                unresolved.fGlyphs = front.fGlyphs;
             }
             // ROMAN: Already Adigiana
-            SkDebugf("commitRunBuffer (4)\n");
             return;
         }
     }
 
-    SkDebugf("commitRunBuffer (5)\n");
     fillGaps(oldUnresolvedCount);
 }
 
