@@ -46,6 +46,7 @@ void OneLineShaper::commitRunBuffer(const RunInfo&) {
         }
         addUnresolvedWithRun(block);
         SkDebugf("block inside sortOutGlyphs (2):\n");
+        logUnresolvedBlocks();
     });
 
     // Fill all the gaps between unresolved blocks with resolved ones
