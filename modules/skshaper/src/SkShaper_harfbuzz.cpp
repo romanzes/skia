@@ -1239,9 +1239,7 @@ void ShapeDontWrapOrReorder::wrap(char const * const utf8, size_t utf8Bytes,
 
     handler->beginLine();
     for (const auto& run : runs) {
-        SkString familyName;
-        run.fFont.getTypeface()->getFamilyName(&familyName);
-        SkDebugf("ShapeDontWrapOrReorder::wrap (1): %s\n", familyName.c_str());
+        // Still Noto Sans CJK SC here
         const RunHandler::RunInfo info = {
             run.fFont,
             run.fLevel,
@@ -1253,9 +1251,7 @@ void ShapeDontWrapOrReorder::wrap(char const * const utf8, size_t utf8Bytes,
     }
     handler->commitRunInfo();
     for (const auto& run : runs) {
-        SkString familyName;
-        run.fFont.getTypeface()->getFamilyName(&familyName);
-        SkDebugf("ShapeDontWrapOrReorder::wrap (2): %s\n", familyName.c_str());
+        // Still Noto Sans CJK SC here
         const RunHandler::RunInfo info = {
             run.fFont,
             run.fLevel,
@@ -1372,9 +1368,6 @@ ShapedRun ShaperHarfBuzz::shape(char const * const utf8,
         hbFont = create_hb_font(font.currentFont(), *hbFaceCached);
     }
     if (!hbFont) {
-        SkString familyName;
-        run.fFont.getTypeface()->getFamilyName(&familyName);
-        SkDebugf("ShaperHarfBuzz::shape(1): %s\n", familyName.c_str());
         return run;
     }
 
@@ -1399,9 +1392,6 @@ ShapedRun ShaperHarfBuzz::shape(char const * const utf8,
     hb_shape(hbFont.get(), buffer, hbFeatures.data(), hbFeatures.size());
     unsigned len = hb_buffer_get_length(buffer);
     if (len == 0) {
-        SkString familyName;
-        run.fFont.getTypeface()->getFamilyName(&familyName);
-        SkDebugf("ShaperHarfBuzz::shape(2): %s\n", familyName.c_str());
         return run;
     }
 
@@ -1446,9 +1436,7 @@ ShapedRun ShaperHarfBuzz::shape(char const * const utf8,
     }
     run.fAdvance = runAdvance;
 
-    SkString familyName;
-    run.fFont.getTypeface()->getFamilyName(&familyName);
-    SkDebugf("ShaperHarfBuzz::shape(3): %s\n", familyName.c_str());
+    // Still Noto Sans CJK SC here
     return run;
 }
 
