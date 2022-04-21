@@ -63,6 +63,8 @@ void OneLineShaper::commitRunBuffer(const RunInfo&) {
                unresolved.fRun = front.fRun;
                unresolved.fGlyphs = front.fGlyphs;
             }
+            SkDebugf("commitRunBuffer: before return:\n");
+            logUnresolvedBlocks();
             return;
         }
     }
