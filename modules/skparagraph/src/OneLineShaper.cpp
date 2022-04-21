@@ -50,22 +50,6 @@ void OneLineShaper::commitRunBuffer(const RunInfo&) {
         // No unresolved blocks added - we resolved the block with one run entirely
         addFullyResolved();
         return;
-    } else if (oldUnresolvedCount == fUnresolvedBlocks.size() - 1) {
-        auto& unresolved = fUnresolvedBlocks.back();
-        // this condition is true when latin text and false when chinese
-        SkDebugf("fCurrentRun->textRange(): %i -> %i\n", fCurrentRun->textRange().start, fCurrentRun->textRange().end);
-        SkDebugf("unresolved.fText: %i -> %i\n", unresolved.fText.start, unresolved.fText.end);
-//        if (fCurrentRun->textRange() == unresolved.fText) {
-            // Nothing was resolved; preserve the initial run if it makes sense
-            auto& front = fUnresolvedBlocks.front();
-            // ROMAN: Still Noto Sans CJK SC
-            if (front.fRun != nullptr) {
-               unresolved.fRun = front.fRun;
-               unresolved.fGlyphs = front.fGlyphs;
-            }
-            // ROMAN: Already Adigiana
-            return;
-//        }
     }
 
     fillGaps(oldUnresolvedCount);
