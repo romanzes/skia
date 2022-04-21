@@ -55,7 +55,7 @@ void OneLineShaper::commitRunBuffer(const RunInfo&) {
         // this condition is true when latin text and false when chinese
         SkDebugf("fCurrentRun->textRange(): %i -> %i\n", fCurrentRun->textRange().start, fCurrentRun->textRange().end);
         SkDebugf("unresolved.fText: %i -> %i\n", unresolved.fText.start, unresolved.fText.end);
-        if (fCurrentRun->textRange() == unresolved.fText) {
+//        if (fCurrentRun->textRange() == unresolved.fText) {
             // Nothing was resolved; preserve the initial run if it makes sense
             auto& front = fUnresolvedBlocks.front();
             // ROMAN: Still Noto Sans CJK SC
@@ -65,7 +65,7 @@ void OneLineShaper::commitRunBuffer(const RunInfo&) {
             }
             // ROMAN: Already Adigiana
             return;
-        }
+//        }
     }
 
     fillGaps(oldUnresolvedCount);
