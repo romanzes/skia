@@ -75,10 +75,10 @@ private:
     void beginLine() override {}
     void runInfo(const RunInfo&) override {}
     void commitRunInfo() override {
-        SkDebugf("OneLineShaper::commitRunInfo()");
+        SkDebugf("OneLineShaper::commitRunInfo()\n");
     }
     void commitLine() override {
-        SkDebugf("OneLineShaper::commitLine()");
+        SkDebugf("OneLineShaper::commitLine()\n");
     }
 
     Buffer runBuffer(const RunInfo& info) override {
