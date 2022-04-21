@@ -48,6 +48,8 @@ void OneLineShaper::commitRunBuffer(const RunInfo&) {
     });
 
     // Fill all the gaps between unresolved blocks with resolved ones
+    SkDebugf("oldUnresolvedCount: \n", oldUnresolvedCount);
+    SkDebugf("fUnresolvedBlocks.size(): \n", fUnresolvedBlocks.size());
     if (oldUnresolvedCount == fUnresolvedBlocks.size()) {
         // No unresolved blocks added - we resolved the block with one run entirely
         addFullyResolved();
