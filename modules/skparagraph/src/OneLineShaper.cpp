@@ -28,15 +28,9 @@ void OneLineShaper::logUnresolvedBlocks() {
 }
 
 void OneLineShaper::commitRunBuffer(const RunInfo&) {
-    SkDebugf("At the beginning of commitRunBuffer():\n");
-    logUnresolvedBlocks();
-
     fCurrentRun->commit();
 
     auto oldUnresolvedCount = fUnresolvedBlocks.size();
-
-    SkDebugf("commitRunBuffer(1):\n");
-    logUnresolvedBlocks();
 /*
     SkDebugf("Run [%zu:%zu)\n", fCurrentRun->fTextRange.start, fCurrentRun->fTextRange.end);
     for (size_t i = 0; i < fCurrentRun->size(); ++i) {
@@ -45,14 +39,14 @@ void OneLineShaper::commitRunBuffer(const RunInfo&) {
 */
     // Find all unresolved blocks
     sortOutGlyphs([&](GlyphRange block){
+        SkDebugf("block inside sortOutGlyphs (1):\n");
+        logUnresolvedBlocks();
         if (block.width() == 0) {
             return;
         }
         addUnresolvedWithRun(block);
+        SkDebugf("block inside sortOutGlyphs (2):\n");
     });
-
-    SkDebugf("commitRunBuffer(1):\n");
-    logUnresolvedBlocks();
 
     // Fill all the gaps between unresolved blocks with resolved ones
     if (oldUnresolvedCount == fUnresolvedBlocks.size()) {
@@ -68,8 +62,6 @@ void OneLineShaper::commitRunBuffer(const RunInfo&) {
                unresolved.fRun = front.fRun;
                unresolved.fGlyphs = front.fGlyphs;
             }
-            SkDebugf("commitRunBuffer(3):\n");
-            logUnresolvedBlocks();
             return;
         }
     }
