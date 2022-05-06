@@ -27,6 +27,19 @@ void OneLineShaper::logUnresolvedBlocks() {
     }
 }
 
+void OneLineShaper::logResolvedBlocks() {
+    SkDebugf("resolved blocks count: %i\n", fResolvedBlocks.size());
+    for (auto& block : fResolvedBlocks) {
+        if (block.fRun == nullptr) {
+            SkDebugf("resolved block: null\n");
+        } else {
+            SkString familyName;
+            block.fRun->fFont.getTypeface()->getFamilyName(&familyName);
+            SkDebugf("resolved block: %s, %i -> %i\n", familyName.c_str(), block.fRun->textRange().start, block.fRun->textRange().end);
+        }
+    }
+}
+
 void OneLineShaper::commitRunBuffer(const RunInfo& runInfo) {
     fCurrentRun->commit();
 
@@ -52,11 +65,11 @@ void OneLineShaper::commitRunBuffer(const RunInfo& runInfo) {
         return;
     }
 
-    SkDebugf("before fillGaps: %i\n", oldUnresolvedCount);
-    logUnresolvedBlocks();
+    SkDebugf("before fillGaps:\n");
+    logResolvedBlocks();
     fillGaps(oldUnresolvedCount);
-    SkDebugf("after fillGaps: %i\n", oldUnresolvedCount);
-    logUnresolvedBlocks();
+    SkDebugf("after fillGaps:\n");
+    logResolvedBlocks();
 }
 
 #ifdef SK_DEBUG
