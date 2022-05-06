@@ -89,6 +89,7 @@ private:
     }
 
     void logUnresolvedBlocks();
+    void logResolvedBlocks();
     void commitRunBuffer(const RunInfo&) override;
 
     TextRange clusteredText(GlyphRange& glyphs);
