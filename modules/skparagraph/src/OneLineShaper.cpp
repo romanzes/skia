@@ -159,6 +159,8 @@ void OneLineShaper::fillGaps(size_t startingCount) {
 }
 
 void OneLineShaper::finish(const Block& block, SkScalar height, SkScalar& advanceX) {
+    SkDebugf("before finish:\n");
+    logResolvedBlocks();
     auto blockText = block.fRange;
 
     // Add all unresolved blocks to resolved blocks
@@ -255,6 +257,8 @@ void OneLineShaper::finish(const Block& block, SkScalar height, SkScalar& advanc
         SkDEBUGF("Last range mismatch: %zu - %zu\n", lastTextEnd, blockText.end);
         SkASSERT(false);
     }
+    SkDebugf("after finish:\n");
+    logResolvedBlocks();
 }
 
 // Make it [left:right) regardless of a text direction
@@ -709,20 +713,14 @@ bool OneLineShaper::shape() {
                                      (fParagraph->getUnicode(), unresolvedText.begin(), unresolvedText.size());
                     fCurrentText = unresolvedRange;
 
-                    SkDebugf("before shaping:\n");
-                    logResolvedBlocks();
                     shaper->shape(unresolvedText.begin(), unresolvedText.size(),
                             fontIter, bidiIter,*scriptIter, langIter,
                             features.data(), features.size(),
                             limitlessWidth, this);
-                    SkDebugf("after shaping:\n");
-                    logResolvedBlocks();
 
                     // Take off the queue the block we tried to resolved -
                     // whatever happened, we have now smaller pieces of it to deal with
                     fUnresolvedBlocks.pop_front();
-                    SkDebugf("after popping:\n");
-                    logResolvedBlocks();
                 }
 
                 if (fUnresolvedBlocks.empty()) {
