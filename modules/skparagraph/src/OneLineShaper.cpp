@@ -18,11 +18,11 @@ void OneLineShaper::logUnresolvedBlocks() {
     SkDebugf("unresolved blocks count: %i\n", fUnresolvedBlocks.size());
     for (auto& block : fUnresolvedBlocks) {
         if (block.fRun == nullptr) {
-            SkDebugf("unresolved block: null\n");
+            SkDebugf("unresolved block: null, %i -> %i\n", block.fRun->textRange().start, block.fRun->textRange().end);
         } else {
             SkString familyName;
             block.fRun->fFont.getTypeface()->getFamilyName(&familyName);
-            SkDebugf("unresolved block: %s\n", familyName.c_str());
+            SkDebugf("unresolved block: %s, %i -> %i\n", familyName.c_str(), block.fRun->textRange().start, block.fRun->textRange().end);
         }
     }
 }
