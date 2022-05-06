@@ -65,11 +65,7 @@ void OneLineShaper::commitRunBuffer(const RunInfo& runInfo) {
         return;
     }
 
-    SkDebugf("before fillGaps:\n");
-    logResolvedBlocks();
     fillGaps(oldUnresolvedCount);
-    SkDebugf("after fillGaps:\n");
-    logResolvedBlocks();
 }
 
 #ifdef SK_DEBUG
@@ -713,14 +709,20 @@ bool OneLineShaper::shape() {
                                      (fParagraph->getUnicode(), unresolvedText.begin(), unresolvedText.size());
                     fCurrentText = unresolvedRange;
 
+                    SkDebugf("before shaping:\n");
+                    logResolvedBlocks();
                     shaper->shape(unresolvedText.begin(), unresolvedText.size(),
                             fontIter, bidiIter,*scriptIter, langIter,
                             features.data(), features.size(),
                             limitlessWidth, this);
+                    SkDebugf("after shaping:\n");
+                    logResolvedBlocks();
 
                     // Take off the queue the block we tried to resolved -
                     // whatever happened, we have now smaller pieces of it to deal with
                     fUnresolvedBlocks.pop_front();
+                    SkDebugf("after popping:\n");
+                    logResolvedBlocks();
                 }
 
                 if (fUnresolvedBlocks.empty()) {
