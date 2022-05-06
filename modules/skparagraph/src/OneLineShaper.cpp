@@ -18,7 +18,7 @@ void OneLineShaper::logUnresolvedBlocks() {
     SkDebugf("unresolved blocks count: %i\n", fUnresolvedBlocks.size());
     for (auto& block : fUnresolvedBlocks) {
         if (block.fRun == nullptr) {
-            SkDebugf("unresolved block: null, %i -> %i\n", block.fRun->textRange().start, block.fRun->textRange().end);
+            SkDebugf("unresolved block: null\n");
         } else {
             SkString familyName;
             block.fRun->fFont.getTypeface()->getFamilyName(&familyName);
