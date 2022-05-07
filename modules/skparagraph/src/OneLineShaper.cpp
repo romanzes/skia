@@ -159,9 +159,9 @@ void OneLineShaper::fillGaps(size_t startingCount) {
 }
 
 void OneLineShaper::finish(const Block& block, SkScalar height, SkScalar& advanceX) {
-    SkDebugf("finish (1):\n");
-    logResolvedBlocks();
-    logUnresolvedBlocks();
+//    SkDebugf("finish (1):\n");
+//    logResolvedBlocks();
+//    logUnresolvedBlocks();
     auto blockText = block.fRange;
 
     // Add all unresolved blocks to resolved blocks
@@ -177,9 +177,9 @@ void OneLineShaper::finish(const Block& block, SkScalar height, SkScalar& advanc
         fUnresolvedGlyphs += unresolved.fGlyphs.width();
     }
 
-    SkDebugf("finish (2):\n");
-    logResolvedBlocks();
-    logUnresolvedBlocks();
+//    SkDebugf("finish (2):\n");
+//    logResolvedBlocks();
+//    logUnresolvedBlocks();
 
     // Sort all pieces by text
     std::sort(fResolvedBlocks.begin(), fResolvedBlocks.end(),
@@ -262,9 +262,9 @@ void OneLineShaper::finish(const Block& block, SkScalar height, SkScalar& advanc
         SkDEBUGF("Last range mismatch: %zu - %zu\n", lastTextEnd, blockText.end);
         SkASSERT(false);
     }
-    SkDebugf("finish (3):\n");
-    logResolvedBlocks();
-    logUnresolvedBlocks();
+//    SkDebugf("finish (3):\n");
+//    logResolvedBlocks();
+//    logUnresolvedBlocks();
 }
 
 // Make it [left:right) regardless of a text direction
@@ -719,10 +719,16 @@ bool OneLineShaper::shape() {
                                      (fParagraph->getUnicode(), unresolvedText.begin(), unresolvedText.size());
                     fCurrentText = unresolvedRange;
 
+                    SkDebugf("before shape:\n");
+                    logResolvedBlocks();
+                    logUnresolvedBlocks();
                     shaper->shape(unresolvedText.begin(), unresolvedText.size(),
                             fontIter, bidiIter,*scriptIter, langIter,
                             features.data(), features.size(),
                             limitlessWidth, this);
+                    SkDebugf("after shape:\n");
+                    logResolvedBlocks();
+                    logUnresolvedBlocks();
 
                     // Take off the queue the block we tried to resolved -
                     // whatever happened, we have now smaller pieces of it to deal with
