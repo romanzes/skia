@@ -646,8 +646,6 @@ bool OneLineShaper::iterateThroughShapingRegions(const ShapeVisitor& shape) {
 }
 
 bool OneLineShaper::shape() {
-    SkDebugf("OneLineShaper::shape():\n");
-
     // The text can be broken into many shaping sequences
     // (by place holders, possibly, by hard line breaks or tabs, too)
     auto limitlessWidth = std::numeric_limits<SkScalar>::max();
@@ -720,27 +718,21 @@ bool OneLineShaper::shape() {
                                      (fParagraph->getUnicode(), unresolvedText.begin(), unresolvedText.size());
                     fCurrentText = unresolvedRange;
 
-//                    SkDebugf("before shape:\n");
-//                    logResolvedBlocks();
-//                    logUnresolvedBlocks();
+                    SkDebugf("before shape:\n");
+                    logResolvedBlocks();
+                    logUnresolvedBlocks();
                     auto oldUnresolvedCount = fUnresolvedBlocks.size();
                     shaper->shape(unresolvedText.begin(), unresolvedText.size(),
                             fontIter, bidiIter,*scriptIter, langIter,
                             features.data(), features.size(),
                             limitlessWidth, this);
-//                    SkDebugf("after shape:\n");
-//                    logResolvedBlocks();
-//                    logUnresolvedBlocks();
+                    SkDebugf("after shape:\n");
+                    logResolvedBlocks();
+                    logUnresolvedBlocks();
 
-                    if (fUnresolvedBlocks.size() == oldUnresolvedCount + 1) {
-                        SkDebugf("before pop_back():\n");
-                        fUnresolvedBlocks.pop_back();
-                        SkDebugf("after pop_back():\n");
-                    } else {
-                        // Take off the queue the block we tried to resolved -
-                        // whatever happened, we have now smaller pieces of it to deal with
-                        fUnresolvedBlocks.pop_front();
-                    }
+                    // Take off the queue the block we tried to resolved -
+                    // whatever happened, we have now smaller pieces of it to deal with
+                    fUnresolvedBlocks.pop_front();
                 }
 
                 if (fUnresolvedBlocks.empty()) {
