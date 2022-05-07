@@ -718,21 +718,25 @@ bool OneLineShaper::shape() {
                                      (fParagraph->getUnicode(), unresolvedText.begin(), unresolvedText.size());
                     fCurrentText = unresolvedRange;
 
-                    SkDebugf("before shape:\n");
-                    logResolvedBlocks();
-                    logUnresolvedBlocks();
+//                    SkDebugf("before shape:\n");
+//                    logResolvedBlocks();
+//                    logUnresolvedBlocks();
                     auto oldUnresolvedCount = fUnresolvedBlocks.size();
                     shaper->shape(unresolvedText.begin(), unresolvedText.size(),
                             fontIter, bidiIter,*scriptIter, langIter,
                             features.data(), features.size(),
                             limitlessWidth, this);
-                    SkDebugf("after shape:\n");
-                    logResolvedBlocks();
-                    logUnresolvedBlocks();
+//                    SkDebugf("after shape:\n");
+//                    logResolvedBlocks();
+//                    logUnresolvedBlocks();
 
-                    // Take off the queue the block we tried to resolved -
-                    // whatever happened, we have now smaller pieces of it to deal with
-                    fUnresolvedBlocks.pop_front();
+                    if (fUnresolvedBlocks.size() == oldUnresolvedCount + 1 && fUnresolvedBlocks.back().fRun != nullptr) {
+                        fUnresolvedBlocks.pop_back();
+                    } else {
+                        // Take off the queue the block we tried to resolved -
+                        // whatever happened, we have now smaller pieces of it to deal with
+                        fUnresolvedBlocks.pop_front();
+                    }
                 }
 
                 if (fUnresolvedBlocks.empty()) {
