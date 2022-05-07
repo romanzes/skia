@@ -159,7 +159,7 @@ void OneLineShaper::fillGaps(size_t startingCount) {
 }
 
 void OneLineShaper::finish(const Block& block, SkScalar height, SkScalar& advanceX) {
-    SkDebugf("before finish:\n");
+    SkDebugf("finish (1):\n");
     logResolvedBlocks();
     logUnresolvedBlocks();
     auto blockText = block.fRange;
@@ -176,6 +176,10 @@ void OneLineShaper::finish(const Block& block, SkScalar height, SkScalar& advanc
         fResolvedBlocks.emplace_back(unresolved);
         fUnresolvedGlyphs += unresolved.fGlyphs.width();
     }
+
+    SkDebugf("finish (2):\n");
+    logResolvedBlocks();
+    logUnresolvedBlocks();
 
     // Sort all pieces by text
     std::sort(fResolvedBlocks.begin(), fResolvedBlocks.end(),
@@ -258,7 +262,7 @@ void OneLineShaper::finish(const Block& block, SkScalar height, SkScalar& advanc
         SkDEBUGF("Last range mismatch: %zu - %zu\n", lastTextEnd, blockText.end);
         SkASSERT(false);
     }
-    SkDebugf("after finish:\n");
+    SkDebugf("finish (3):\n");
     logResolvedBlocks();
     logUnresolvedBlocks();
 }
