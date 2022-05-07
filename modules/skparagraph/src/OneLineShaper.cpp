@@ -730,7 +730,7 @@ bool OneLineShaper::shape() {
 //                    logResolvedBlocks();
 //                    logUnresolvedBlocks();
 
-                    if (fUnresolvedBlocks.size() == oldUnresolvedCount + 1 && fUnresolvedBlocks.back().fRun != nullptr) {
+                    if (fUnresolvedBlocks.size() == oldUnresolvedCount + 1 && fUnresolvedBlocks.front().fRun != nullptr) {
                         fUnresolvedBlocks.pop_back();
                     } else {
                         // Take off the queue the block we tried to resolved -
