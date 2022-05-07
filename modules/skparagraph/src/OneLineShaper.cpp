@@ -161,6 +161,7 @@ void OneLineShaper::fillGaps(size_t startingCount) {
 void OneLineShaper::finish(const Block& block, SkScalar height, SkScalar& advanceX) {
     SkDebugf("before finish:\n");
     logResolvedBlocks();
+    logUnresolvedBlocks();
     auto blockText = block.fRange;
 
     // Add all unresolved blocks to resolved blocks
@@ -259,6 +260,7 @@ void OneLineShaper::finish(const Block& block, SkScalar height, SkScalar& advanc
     }
     SkDebugf("after finish:\n");
     logResolvedBlocks();
+    logUnresolvedBlocks();
 }
 
 // Make it [left:right) regardless of a text direction
