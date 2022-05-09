@@ -69,7 +69,7 @@ void OneLineShaper::commitRunBuffer(const RunInfo& runInfo) {
             // Nothing was resolved; preserve the initial run if it makes sense
             auto& front = fUnresolvedBlocks.front();
             if (front.fRun != nullptr) {
-                SkDebugf("It's on\n");
+                logUnresolvedBlocks();
                 unresolved.fRun = front.fRun;
                 unresolved.fGlyphs = front.fGlyphs;
             }
@@ -178,9 +178,6 @@ void OneLineShaper::fillGaps(size_t startingCount) {
 }
 
 void OneLineShaper::finish(const Block& block, SkScalar height, SkScalar& advanceX) {
-    SkDebugf("finish (1):\n");
-    logResolvedBlocks();
-    logUnresolvedBlocks();
     auto blockText = block.fRange;
 
     // Add all unresolved blocks to resolved blocks
@@ -195,10 +192,6 @@ void OneLineShaper::finish(const Block& block, SkScalar height, SkScalar& advanc
         fResolvedBlocks.emplace_back(unresolved);
         fUnresolvedGlyphs += unresolved.fGlyphs.width();
     }
-
-    SkDebugf("finish (2):\n");
-    logResolvedBlocks();
-    logUnresolvedBlocks();
 
     // Sort all pieces by text
     std::sort(fResolvedBlocks.begin(), fResolvedBlocks.end(),
@@ -281,9 +274,6 @@ void OneLineShaper::finish(const Block& block, SkScalar height, SkScalar& advanc
         SkDEBUGF("Last range mismatch: %zu - %zu\n", lastTextEnd, blockText.end);
         SkASSERT(false);
     }
-    SkDebugf("finish (3):\n");
-    logResolvedBlocks();
-    logUnresolvedBlocks();
 }
 
 // Make it [left:right) regardless of a text direction
