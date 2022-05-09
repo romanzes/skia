@@ -160,6 +160,9 @@ void OneLineShaper::fillGaps(size_t startingCount) {
         RunBlock resolved(fCurrentRun, resolvedText, resolvedGlyphs, resolvedGlyphs.width());
         fResolvedBlocks.emplace_back(resolved);
     }
+    SkDebugf("OneLineShaper::fillGaps end\n");
+    logResolvedBlocks();
+    logUnresolvedBlocks();
 }
 
 void OneLineShaper::finish(const Block& block, SkScalar height, SkScalar& advanceX) {
