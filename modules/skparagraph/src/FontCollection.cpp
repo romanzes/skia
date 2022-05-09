@@ -145,10 +145,7 @@ sk_sp<SkTypeface> FontCollection::defaultFallback(SkUnichar unicode, SkFontStyle
             return typeface;
         }
     }
-    std::vector<const char*> bcp47;
-    sk_sp<SkTypeface> typeface(fAssetFontManager->matchFamilyStyleCharacter(
-            nullptr, fontStyle, bcp47.data(), bcp47.size(), 0x20));
-    return typeface;
+    return nullptr;
 }
 
 sk_sp<SkTypeface> FontCollection::defaultFallback() {

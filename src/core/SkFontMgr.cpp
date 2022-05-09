@@ -57,7 +57,6 @@ protected:
                                             const char* bcp47[],
                                             int bcp47Count,
                                             SkUnichar character) const override {
-        SkDebugf("SkFontMgr::onMatchFamilyStyleCharacter\n");
         return nullptr;
     }
 

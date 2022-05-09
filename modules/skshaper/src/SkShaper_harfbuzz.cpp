@@ -889,7 +889,6 @@ void ShaperDrivenWrapper::wrap(char const * const utf8, size_t utf8Bytes,
         while (utf8Start < utf8End) {  // While there are still code points left in this item
             size_t utf8runLength = utf8End - utf8Start;
             if (modelNeedsRegenerated) {
-                SkDebugf("ShaperDrivenWrapper::wrap (1)\n");
                 model = shape(utf8, utf8Bytes,
                               utf8Start, utf8End,
                               bidi, language, script, font,
