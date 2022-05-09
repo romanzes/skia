@@ -63,6 +63,18 @@ void OneLineShaper::commitRunBuffer(const RunInfo& runInfo) {
         // No unresolved blocks added - we resolved the block with one run entirely
         addFullyResolved();
         return;
+    } else if (oldUnresolvedCount == fUnresolvedBlocks.size() - 1) {
+        auto& unresolved = fUnresolvedBlocks.back();
+        if (fCurrentRun->textRange() == unresolved.fText) {
+            // Nothing was resolved; preserve the initial run if it makes sense
+            auto& front = fUnresolvedBlocks.front();
+            if (front.fRun != nullptr) {
+                SkDebugf("It's on\n");
+                unresolved.fRun = front.fRun;
+                unresolved.fGlyphs = front.fGlyphs;
+            }
+            return;
+        }
     }
 
     fillGaps(oldUnresolvedCount);
