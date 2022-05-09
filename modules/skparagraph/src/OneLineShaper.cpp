@@ -60,6 +60,7 @@ void OneLineShaper::commitRunBuffer(const RunInfo& runInfo) {
 
     SkDebugf("OneLineShaper::commitRunBuffer (1)\n");
     SkDebugf("oldUnresolvedCount: %i\n", oldUnresolvedCount);
+    logResolvedBlocks();
     logUnresolvedBlocks();
 
     // Fill all the gaps between unresolved blocks with resolved ones
@@ -81,10 +82,14 @@ void OneLineShaper::commitRunBuffer(const RunInfo& runInfo) {
     }
 
     SkDebugf("OneLineShaper::commitRunBuffer (2)\n");
+    logResolvedBlocks();
     logUnresolvedBlocks();
-    SkDebugf("\n");
 
     fillGaps(oldUnresolvedCount);
+
+    SkDebugf("OneLineShaper::commitRunBuffer (2)\n");
+    logResolvedBlocks();
+    logUnresolvedBlocks();
 }
 
 #ifdef SK_DEBUG
