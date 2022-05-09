@@ -104,6 +104,10 @@ void OneLineShaper::fillGaps(size_t startingCount) {
     TextIndex resolvedTextStart = resolvedTextLimits.start;
     GlyphIndex resolvedGlyphsStart = 0;
 
+    SkDebugf("OneLineShaper::fillGaps begin\n");
+    logResolvedBlocks();
+    logUnresolvedBlocks();
+
     auto begin = fUnresolvedBlocks.begin();
     auto end = fUnresolvedBlocks.end();
     begin += startingCount; // Skip the old ones, do the new ones
@@ -718,25 +722,13 @@ bool OneLineShaper::shape() {
                                      (fParagraph->getUnicode(), unresolvedText.begin(), unresolvedText.size());
                     fCurrentText = unresolvedRange;
 
-//                    SkDebugf("before shape:\n");
-//                    logResolvedBlocks();
-//                    logUnresolvedBlocks();
-                    auto oldUnresolvedCount = fUnresolvedBlocks.size();
                     shaper->shape(unresolvedText.begin(), unresolvedText.size(),
                             fontIter, bidiIter,*scriptIter, langIter,
                             features.data(), features.size(),
                             limitlessWidth, this);
-//                    SkDebugf("after shape:\n");
-//                    logResolvedBlocks();
-//                    logUnresolvedBlocks();
-
-                    if (fUnresolvedBlocks.size() == oldUnresolvedCount + 1 && fUnresolvedBlocks.front().fRun != nullptr) {
-                        fUnresolvedBlocks.pop_back();
-                    } else {
-                        // Take off the queue the block we tried to resolved -
-                        // whatever happened, we have now smaller pieces of it to deal with
-                        fUnresolvedBlocks.pop_front();
-                    }
+                    // Take off the queue the block we tried to resolved -
+                    // whatever happened, we have now smaller pieces of it to deal with
+                    fUnresolvedBlocks.pop_front();
                 }
 
                 if (fUnresolvedBlocks.empty()) {
