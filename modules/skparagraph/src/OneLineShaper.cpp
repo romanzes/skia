@@ -104,9 +104,9 @@ void OneLineShaper::fillGaps(size_t startingCount) {
     TextIndex resolvedTextStart = resolvedTextLimits.start;
     GlyphIndex resolvedGlyphsStart = 0;
 
-    SkDebugf("OneLineShaper::fillGaps begin\n");
-    logResolvedBlocks();
-    logUnresolvedBlocks();
+//    SkDebugf("OneLineShaper::fillGaps begin\n");
+//    logResolvedBlocks();
+//    logUnresolvedBlocks();
 
     auto begin = fUnresolvedBlocks.begin();
     auto end = fUnresolvedBlocks.end();
@@ -160,15 +160,15 @@ void OneLineShaper::fillGaps(size_t startingCount) {
         RunBlock resolved(fCurrentRun, resolvedText, resolvedGlyphs, resolvedGlyphs.width());
         fResolvedBlocks.emplace_back(resolved);
     }
-    SkDebugf("OneLineShaper::fillGaps end\n");
-    logResolvedBlocks();
-    logUnresolvedBlocks();
+//    SkDebugf("OneLineShaper::fillGaps end\n");
+//    logResolvedBlocks();
+//    logUnresolvedBlocks();
 }
 
 void OneLineShaper::finish(const Block& block, SkScalar height, SkScalar& advanceX) {
-//    SkDebugf("finish (1):\n");
-//    logResolvedBlocks();
-//    logUnresolvedBlocks();
+    SkDebugf("finish (1):\n");
+    logResolvedBlocks();
+    logUnresolvedBlocks();
     auto blockText = block.fRange;
 
     // Add all unresolved blocks to resolved blocks
@@ -184,9 +184,9 @@ void OneLineShaper::finish(const Block& block, SkScalar height, SkScalar& advanc
         fUnresolvedGlyphs += unresolved.fGlyphs.width();
     }
 
-//    SkDebugf("finish (2):\n");
-//    logResolvedBlocks();
-//    logUnresolvedBlocks();
+    SkDebugf("finish (2):\n");
+    logResolvedBlocks();
+    logUnresolvedBlocks();
 
     // Sort all pieces by text
     std::sort(fResolvedBlocks.begin(), fResolvedBlocks.end(),
@@ -269,9 +269,9 @@ void OneLineShaper::finish(const Block& block, SkScalar height, SkScalar& advanc
         SkDEBUGF("Last range mismatch: %zu - %zu\n", lastTextEnd, blockText.end);
         SkASSERT(false);
     }
-//    SkDebugf("finish (3):\n");
-//    logResolvedBlocks();
-//    logUnresolvedBlocks();
+    SkDebugf("finish (3):\n");
+    logResolvedBlocks();
+    logUnresolvedBlocks();
 }
 
 // Make it [left:right) regardless of a text direction
