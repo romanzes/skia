@@ -121,6 +121,7 @@ void OneLineShaper::fillGaps(size_t startingCount) {
 
     auto begin = fUnresolvedBlocks.begin();
     auto end = fUnresolvedBlocks.end();
+    SkDebugf("startingCount: %i\n", startingCount);
     begin += startingCount; // Skip the old ones, do the new ones
     TextRange prevText = EMPTY_TEXT;
     for (; begin != end; ++begin) {
