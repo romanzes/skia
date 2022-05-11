@@ -58,40 +58,33 @@ void OneLineShaper::commitRunBuffer(const RunInfo& runInfo) {
         addUnresolvedWithRun(block);
     });
 
-    SkDebugf("OneLineShaper::commitRunBuffer (1)\n");
-    SkDebugf("oldUnresolvedCount: %i\n", oldUnresolvedCount);
-    logResolvedBlocks();
-    logUnresolvedBlocks();
-
     // Fill all the gaps between unresolved blocks with resolved ones
     if (oldUnresolvedCount == fUnresolvedBlocks.size()) {
-        SkDebugf("fully resolved\n");
         // No unresolved blocks added - we resolved the block with one run entirely
         addFullyResolved();
+        SkDebugf("early exit 1\n");
+        logResolvedBlocks();
+        logUnresolvedBlocks();
         return;
-//    } else if (oldUnresolvedCount == fUnresolvedBlocks.size() - 1) {
-//        SkDebugf("oldUnresolvedCount == fUnresolvedBlocks.size() - 1\n");
-//        auto& unresolved = fUnresolvedBlocks.back();
-//        if (fCurrentRun->textRange() == unresolved.fText) {
-//            SkDebugf("fCurrentRun->textRange() == unresolved.fText\n");
-//            // Nothing was resolved; preserve the initial run if it makes sense
-//            auto& front = fUnresolvedBlocks.front();
-//            if (front.fRun != nullptr) {
-//                SkDebugf("front.fRun != nullptr\n");
-//                unresolved.fRun = front.fRun;
-//                unresolved.fGlyphs = front.fGlyphs;
-//            }
-//            return;
-//        }
+    } else if (oldUnresolvedCount == fUnresolvedBlocks.size() - 1) {
+        auto& unresolved = fUnresolvedBlocks.back();
+        if (fCurrentRun->textRange() == unresolved.fText) {
+            // Nothing was resolved; preserve the initial run if it makes sense
+            auto& front = fUnresolvedBlocks.front();
+            if (front.fRun != nullptr) {
+                unresolved.fRun = front.fRun;
+                unresolved.fGlyphs = front.fGlyphs;
+            }
+            SkDebugf("early exit 2\n");
+            logResolvedBlocks();
+            logUnresolvedBlocks();
+            return;
+        }
     }
-
-    SkDebugf("OneLineShaper::commitRunBuffer (2)\n");
-    logResolvedBlocks();
-    logUnresolvedBlocks();
 
     fillGaps(oldUnresolvedCount);
 
-    SkDebugf("OneLineShaper::commitRunBuffer (3)\n");
+    SkDebugf("natural exit (3)\n");
     logResolvedBlocks();
     logUnresolvedBlocks();
 }
