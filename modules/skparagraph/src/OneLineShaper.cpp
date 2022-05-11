@@ -192,6 +192,7 @@ void OneLineShaper::fillGaps(size_t startingCount) {
 }
 
 void OneLineShaper::finish(const Block& block, SkScalar height, SkScalar& advanceX) {
+    SkDebugf("OneLineShaper::finish\n");
     auto blockText = block.fRange;
 
     // Add all unresolved blocks to resolved blocks
