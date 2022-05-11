@@ -62,17 +62,9 @@ void OneLineShaper::commitRunBuffer(const RunInfo& runInfo) {
     if (oldUnresolvedCount == fUnresolvedBlocks.size()) {
         // No unresolved blocks added - we resolved the block with one run entirely
         addFullyResolved();
-        SkDebugf("OneLineShaper::commitRunBuffer (1)\n");
-        logResolvedBlocks();
-        logUnresolvedBlocks();
         return;
     } else if (oldUnresolvedCount == fUnresolvedBlocks.size() - 1) {
         auto& unresolved = fUnresolvedBlocks.back();
-        SkDebugf("OneLineShaper::commitRunBuffer (2)\n");
-        SkDebugf("fCurrentRun->textRange(): %i -> %i\n", fCurrentRun->textRange().start, fCurrentRun->textRange().end);
-        SkDebugf("unresolved.fText: %i -> %i\n", unresolved.fText.start, unresolved.fText.end);
-        logResolvedBlocks();
-        logUnresolvedBlocks();
         if (fCurrentRun->textRange() == unresolved.fText) {
             // Nothing was resolved; preserve the initial run if it makes sense
             auto& front = fUnresolvedBlocks.front();
@@ -80,18 +72,11 @@ void OneLineShaper::commitRunBuffer(const RunInfo& runInfo) {
                 unresolved.fRun = front.fRun;
                 unresolved.fGlyphs = front.fGlyphs;
             }
-            SkDebugf("OneLineShaper::commitRunBuffer (3)\n");
-            logResolvedBlocks();
-            logUnresolvedBlocks();
             return;
         }
     }
 
     fillGaps(oldUnresolvedCount);
-
-    SkDebugf("OneLineShaper::commitRunBuffer (4)\n");
-    logResolvedBlocks();
-    logUnresolvedBlocks();
 }
 
 #ifdef SK_DEBUG
@@ -192,7 +177,9 @@ void OneLineShaper::fillGaps(size_t startingCount) {
 }
 
 void OneLineShaper::finish(const Block& block, SkScalar height, SkScalar& advanceX) {
-    SkDebugf("OneLineShaper::finish\n");
+    SkDebugf("OneLineShaper::finish (1)\n");
+    logResolvedBlocks();
+    logUnresolvedBlocks();
     auto blockText = block.fRange;
 
     // Add all unresolved blocks to resolved blocks
@@ -207,12 +194,19 @@ void OneLineShaper::finish(const Block& block, SkScalar height, SkScalar& advanc
         fResolvedBlocks.emplace_back(unresolved);
         fUnresolvedGlyphs += unresolved.fGlyphs.width();
     }
+    SkDebugf("OneLineShaper::finish (2)\n");
+    logResolvedBlocks();
+    logUnresolvedBlocks();
 
     // Sort all pieces by text
     std::sort(fResolvedBlocks.begin(), fResolvedBlocks.end(),
               [](const RunBlock& a, const RunBlock& b) {
                 return a.fText.start < b.fText.start;
               });
+
+    SkDebugf("OneLineShaper::finish (3)\n");
+    logResolvedBlocks();
+    logUnresolvedBlocks();
 
     // Go through all of them
     size_t lastTextEnd = blockText.start;
@@ -284,11 +278,19 @@ void OneLineShaper::finish(const Block& block, SkScalar height, SkScalar& advanc
         fAdvance.fY = std::max(fAdvance.fY, runAdvance.fY);
     }
 
+    SkDebugf("OneLineShaper::finish (4)\n");
+    logResolvedBlocks();
+    logUnresolvedBlocks();
+
     advanceX = fAdvance.fX;
     if (lastTextEnd != blockText.end) {
         SkDEBUGF("Last range mismatch: %zu - %zu\n", lastTextEnd, blockText.end);
         SkASSERT(false);
     }
+
+    SkDebugf("OneLineShaper::finish (5)\n");
+    logResolvedBlocks();
+    logUnresolvedBlocks();
 }
 
 // Make it [left:right) regardless of a text direction
