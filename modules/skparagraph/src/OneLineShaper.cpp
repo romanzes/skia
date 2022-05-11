@@ -76,7 +76,7 @@ void OneLineShaper::commitRunBuffer(const RunInfo& runInfo) {
         }
     }
 
-    fillGaps(oldUnresolvedCount);
+    fillGaps(0);
 }
 
 #ifdef SK_DEBUG
