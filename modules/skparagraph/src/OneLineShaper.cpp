@@ -122,9 +122,11 @@ void OneLineShaper::fillGaps(size_t startingCount) {
     auto begin = fUnresolvedBlocks.begin();
     auto end = fUnresolvedBlocks.end();
     begin += startingCount; // Skip the old ones, do the new ones
+    SkDebugf("initial begin: %i\n", begin);
     TextRange prevText = EMPTY_TEXT;
-    for (; end != begin; ++end) {
-        auto& unresolved = *end;
+    for (; begin != end; ++begin) {
+        SkDebugf("begin in the loop: %i\n", begin);
+        auto& unresolved = *begin;
 
         if (unresolved.fText == prevText) {
             // Clean up repetitive blocks that appear inside the same grapheme block
