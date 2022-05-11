@@ -66,20 +66,20 @@ void OneLineShaper::commitRunBuffer(const RunInfo& runInfo) {
         logResolvedBlocks();
         logUnresolvedBlocks();
         return;
-    } else if (oldUnresolvedCount == fUnresolvedBlocks.size() - 1) {
-        auto& unresolved = fUnresolvedBlocks.back();
-        if (fCurrentRun->textRange() == unresolved.fText) {
-            // Nothing was resolved; preserve the initial run if it makes sense
-            auto& front = fUnresolvedBlocks.front();
-            if (front.fRun != nullptr) {
-                unresolved.fRun = front.fRun;
-                unresolved.fGlyphs = front.fGlyphs;
-            }
-            SkDebugf("early exit 2\n");
-            logResolvedBlocks();
-            logUnresolvedBlocks();
-            return;
-        }
+//    } else if (oldUnresolvedCount == fUnresolvedBlocks.size() - 1) {
+//        auto& unresolved = fUnresolvedBlocks.back();
+//        if (fCurrentRun->textRange() == unresolved.fText) {
+//            // Nothing was resolved; preserve the initial run if it makes sense
+//            auto& front = fUnresolvedBlocks.front();
+//            if (front.fRun != nullptr) {
+//                unresolved.fRun = front.fRun;
+//                unresolved.fGlyphs = front.fGlyphs;
+//            }
+//            SkDebugf("early exit 2\n");
+//            logResolvedBlocks();
+//            logUnresolvedBlocks();
+//            return;
+//        }
     }
 
     fillGaps(oldUnresolvedCount);
