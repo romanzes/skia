@@ -115,7 +115,7 @@ void OneLineShaper::fillGaps(size_t startingCount) {
     TextIndex resolvedTextStart = resolvedTextLimits.start;
     GlyphIndex resolvedGlyphsStart = 0;
 
-    SkDebugf("OneLineShaper::fillGaps begin\n");
+    SkDebugf("OneLineShaper::fillGaps (1)\n");
     logResolvedBlocks();
     logUnresolvedBlocks();
 
@@ -160,6 +160,9 @@ void OneLineShaper::fillGaps(size_t startingCount) {
                                 ? unresolved.fText.end
                                 : unresolved.fText.start;
     }
+    SkDebugf("OneLineShaper::fillGaps (2)\n");
+    logResolvedBlocks();
+    logUnresolvedBlocks();
 
     TextRange resolvedText(resolvedTextStart,resolvedTextLimits.end);
     if (resolvedText.width() > 0) {
@@ -171,7 +174,7 @@ void OneLineShaper::fillGaps(size_t startingCount) {
         RunBlock resolved(fCurrentRun, resolvedText, resolvedGlyphs, resolvedGlyphs.width());
         fResolvedBlocks.emplace_back(resolved);
     }
-    SkDebugf("OneLineShaper::fillGaps end\n");
+    SkDebugf("OneLineShaper::fillGaps (3)\n");
     logResolvedBlocks();
     logUnresolvedBlocks();
 }
@@ -191,19 +194,12 @@ void OneLineShaper::finish(const Block& block, SkScalar height, SkScalar& advanc
         fResolvedBlocks.emplace_back(unresolved);
         fUnresolvedGlyphs += unresolved.fGlyphs.width();
     }
-    SkDebugf("OneLineShaper::finish (2)\n");
-    logResolvedBlocks();
-    logUnresolvedBlocks();
 
     // Sort all pieces by text
     std::sort(fResolvedBlocks.begin(), fResolvedBlocks.end(),
               [](const RunBlock& a, const RunBlock& b) {
                 return a.fText.start < b.fText.start;
               });
-
-    SkDebugf("OneLineShaper::finish (3)\n");
-    logResolvedBlocks();
-    logUnresolvedBlocks();
 
     // Go through all of them
     size_t lastTextEnd = blockText.start;
@@ -275,19 +271,11 @@ void OneLineShaper::finish(const Block& block, SkScalar height, SkScalar& advanc
         fAdvance.fY = std::max(fAdvance.fY, runAdvance.fY);
     }
 
-    SkDebugf("OneLineShaper::finish (4)\n");
-    logResolvedBlocks();
-    logUnresolvedBlocks();
-
     advanceX = fAdvance.fX;
     if (lastTextEnd != blockText.end) {
         SkDEBUGF("Last range mismatch: %zu - %zu\n", lastTextEnd, blockText.end);
         SkASSERT(false);
     }
-
-    SkDebugf("OneLineShaper::finish (5)\n");
-    logResolvedBlocks();
-    logUnresolvedBlocks();
 }
 
 // Make it [left:right) regardless of a text direction
