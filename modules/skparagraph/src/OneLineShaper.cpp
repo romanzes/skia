@@ -115,9 +115,9 @@ void OneLineShaper::fillGaps(size_t startingCount) {
     TextIndex resolvedTextStart = resolvedTextLimits.start;
     GlyphIndex resolvedGlyphsStart = 0;
 
-//    SkDebugf("OneLineShaper::fillGaps begin\n");
-//    logResolvedBlocks();
-//    logUnresolvedBlocks();
+    SkDebugf("OneLineShaper::fillGaps begin\n");
+    logResolvedBlocks();
+    logUnresolvedBlocks();
 
     auto begin = fUnresolvedBlocks.begin();
     auto end = fUnresolvedBlocks.end();
@@ -171,15 +171,12 @@ void OneLineShaper::fillGaps(size_t startingCount) {
         RunBlock resolved(fCurrentRun, resolvedText, resolvedGlyphs, resolvedGlyphs.width());
         fResolvedBlocks.emplace_back(resolved);
     }
-//    SkDebugf("OneLineShaper::fillGaps end\n");
-//    logResolvedBlocks();
-//    logUnresolvedBlocks();
+    SkDebugf("OneLineShaper::fillGaps end\n");
+    logResolvedBlocks();
+    logUnresolvedBlocks();
 }
 
 void OneLineShaper::finish(const Block& block, SkScalar height, SkScalar& advanceX) {
-    SkDebugf("OneLineShaper::finish (1)\n");
-    logResolvedBlocks();
-    logUnresolvedBlocks();
     auto blockText = block.fRange;
 
     // Add all unresolved blocks to resolved blocks
