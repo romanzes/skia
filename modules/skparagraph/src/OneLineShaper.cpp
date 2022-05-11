@@ -76,7 +76,7 @@ void OneLineShaper::commitRunBuffer(const RunInfo& runInfo) {
         }
     }
 
-    fillGaps(0);
+    fillGaps(oldUnresolvedCount);
 }
 
 #ifdef SK_DEBUG
@@ -123,6 +123,7 @@ void OneLineShaper::fillGaps(size_t startingCount) {
     auto end = fUnresolvedBlocks.end();
     SkDebugf("startingCount: %i\n", startingCount);
     begin += startingCount; // Skip the old ones, do the new ones
+    begin -= 1;
     TextRange prevText = EMPTY_TEXT;
     for (; begin != end; ++begin) {
         auto& unresolved = *begin;
