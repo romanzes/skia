@@ -371,11 +371,6 @@ Cluster::Cluster(ParagraphImpl* owner,
     fIsWhiteSpaceBreak = whiteSpacesBreakLen == fTextRange.width();
     fIsIntraWordBreak = intraWordBreakLen == fTextRange.width();
     fIsHardBreak = fOwner->codeUnitHasProperty(fTextRange.end, CodeUnitFlags::kHardLineBreakBefore);
-    // NON-SKIA-UPSTREAMED CHANGE
-    // Chrome doesn't break words on soft breaks, except some characters:
-    fIsChromeBreak = *ch == 0x2D // Hyphen (-)
-                     || *ch == 0x3F; // Question mark (?)
-    // END OF NON-SKIA-UPSTREAMED CHANGE
 }
 
 SkScalar Run::calculateWidth(size_t start, size_t end, bool clip) const {
