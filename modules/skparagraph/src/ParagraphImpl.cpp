@@ -202,13 +202,14 @@ void ParagraphImpl::layout(SkScalar rawWidth) {
     // TODO: This rounding is done to match Flutter tests. Must be removed...
     fMinIntrinsicWidth = littleRound(fMinIntrinsicWidth);
     fMaxIntrinsicWidth = littleRound(fMaxIntrinsicWidth);
+    */
+    // END OF NON-SKIA-UPSTREAMED CHANGE
 
     // TODO: This is strictly Flutter thing. Must be factored out into some flutter code
     if (fParagraphStyle.getMaxLines() == 1 ||
         (fParagraphStyle.unlimited_lines() && fParagraphStyle.ellipsized())) {
         fMinIntrinsicWidth = fMaxIntrinsicWidth;
-    } */
-    // END OF NON-SKIA-UPSTREAMED CHANGE
+    }
 
     // TODO: Since min and max are calculated differently it's possible to get a rounding error
     //  that would make min > max. Sort it out later, make it the same for now
