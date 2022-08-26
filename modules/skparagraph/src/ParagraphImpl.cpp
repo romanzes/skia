@@ -111,13 +111,8 @@ int32_t ParagraphImpl::unresolvedGlyphs() {
 
 void ParagraphImpl::layout(SkScalar rawWidth) {
 
-    // NON-SKIA-UPSTREAMED CHANGE
-    /*
     // TODO: This rounding is done to match Flutter tests. Must be removed...
     auto floorWidth = SkScalarFloorToScalar(rawWidth);
-    */
-    auto floorWidth = rawWidth;
-    // END OF NON-SKIA-UPSTREAMED CHANGE
 
     if ((!SkScalarIsFinite(rawWidth) || fLongestLine <= floorWidth) &&
         fState >= kLineBroken &&
@@ -197,12 +192,12 @@ void ParagraphImpl::layout(SkScalar rawWidth) {
     this->fOldWidth = floorWidth;
     this->fOldHeight = this->fHeight;
 
+    // NON-SKIA-UPSTREAMED CHANGE
+    /*
     // TODO: This rounding is done to match Flutter tests. Must be removed...
     fMinIntrinsicWidth = littleRound(fMinIntrinsicWidth);
     fMaxIntrinsicWidth = littleRound(fMaxIntrinsicWidth);
 
-    // NON-SKIA-UPSTREAMED CHANGE
-    /*
     // TODO: This is strictly Flutter thing. Must be factored out into some flutter code
     if (fParagraphStyle.getMaxLines() == 1 ||
         (fParagraphStyle.unlimited_lines() && fParagraphStyle.ellipsized())) {
