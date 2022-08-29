@@ -296,47 +296,40 @@ void TextWrapper::breakTextIntoLines(ParagraphImpl* parent,
 
     SkScalar softLineMaxIntrinsicWidth = 0;
     fEndLine = TextStretch(span.begin(), span.begin(), parent->strutForceHeight());
-    SkDebugf("fEndLine.metrics().height() (0): %g\n", fEndLine.metrics().height());
     auto end = span.end() - 1;
     auto start = span.begin();
     InternalLineMetrics maxRunMetrics;
     bool needEllipsis = false;
     while (fEndLine.endCluster() != end) {
-        SkDebugf("fEndLine.metrics().height() (1): %g\n", fEndLine.metrics().height());
 
+        SkDebugf("maxWidth: %g\n", maxWidth);
         lookAhead(maxWidth, end);
-        SkDebugf("fEndLine.metrics().height() (2): %g\n", fEndLine.metrics().height());
 
         auto lastLine = (hasEllipsis && unlimitedLines) || fLineNumber >= maxLines;
         needEllipsis = hasEllipsis && !endlessLine && lastLine;
 
         moveForward(needEllipsis);
-        SkDebugf("fEndLine.metrics().height() (3): %g\n", fEndLine.metrics().height());
         needEllipsis &= fEndLine.endCluster() < end - 1; // Only if we have some text to ellipsize
 
         // Do not trim end spaces on the naturally last line of the left aligned text
         trimEndSpaces(align);
-        SkDebugf("fEndLine.metrics().height() (4): %g\n", fEndLine.metrics().height());
 
         // For soft line breaks add to the line all the spaces next to it
         Cluster* startLine;
         size_t pos;
         SkScalar widthWithSpaces;
         std::tie(startLine, pos, widthWithSpaces) = trimStartSpaces(end);
-        SkDebugf("fEndLine.metrics().height() (5): %g\n", fEndLine.metrics().height());
 
         if (needEllipsis && !fHardLineBreak) {
             // This is what we need to do to preserve a space before the ellipsis
             fEndLine.restoreBreak();
             widthWithSpaces = fEndLine.widthWithGhostSpaces();
         }
-        SkDebugf("fEndLine.metrics().height() (6): %g\n", fEndLine.metrics().height());
 
         // If the line is empty with the hard line break, let's take the paragraph font (flutter???)
         if (fHardLineBreak && fEndLine.width() == 0) {
             fEndLine.setMetrics(parent->getEmptyMetrics());
         }
-        SkDebugf("fEndLine.metrics().height() (7): %g\n", fEndLine.metrics().height());
 
         // Deal with placeholder clusters == runs[@size==1]
         Run* lastRun = nullptr;
