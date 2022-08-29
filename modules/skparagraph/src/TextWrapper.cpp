@@ -375,6 +375,7 @@ void TextWrapper::breakTextIntoLines(ParagraphImpl* parent,
         }
 
         SkScalar lineHeight = fEndLine.metrics().height();
+        SkDebugf("lineHeight: %g\n", lineHeight);
         firstLine = false;
 
         if (fEndLine.empty()) {
