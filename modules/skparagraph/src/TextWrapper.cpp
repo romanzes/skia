@@ -345,7 +345,9 @@ void TextWrapper::breakTextIntoLines(ParagraphImpl* parent,
                 SkASSERT(lastRun->size() == 1);
                 // Update the placeholder metrics so we can get the placeholder positions later
                 // and the line metrics (to make sure the placeholder fits)
+                SkDebugf("fEndLine.metrics().height() (2.3): %g\n", fEndLine.metrics().height());
                 lastRun->updateMetrics(&fEndLine.metrics());
+                SkDebugf("fEndLine.metrics().height() (2.6): %g\n", fEndLine.metrics().height());
             }
         }
 
@@ -373,11 +375,9 @@ void TextWrapper::breakTextIntoLines(ParagraphImpl* parent,
         SkDebugf("fEndLine.metrics().height() (2.5): %g\n", fEndLine.metrics().height());
         if (disableFirstAscent && firstLine) {
             fEndLine.metrics().fAscent = fEndLine.metrics().fRawAscent;
-            SkDebugf("fEndLine.metrics().fAscent: %g\n", fEndLine.metrics().fAscent);
         }
         if (disableLastDescent && (lastLine || (startLine == end && !fHardLineBreak ))) {
             fEndLine.metrics().fDescent = fEndLine.metrics().fRawDescent;
-            SkDebugf("fEndLine.metrics().fDescent: %g\n", fEndLine.metrics().fDescent);
         }
         SkDebugf("fEndLine.metrics().height() (3): %g\n", fEndLine.metrics().height());
 
