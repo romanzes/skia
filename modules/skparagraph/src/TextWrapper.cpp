@@ -370,6 +370,7 @@ void TextWrapper::breakTextIntoLines(ParagraphImpl* parent,
         ClusterRange clusters(fEndLine.startCluster() - start, fEndLine.endCluster() - start + 1);
         ClusterRange clustersWithGhosts(fEndLine.startCluster() - start, startLine - start);
 
+        SkDebugf("fEndLine.metrics().height() (2.5): %g\n", fEndLine.metrics().height());
         if (disableFirstAscent && firstLine) {
             fEndLine.metrics().fAscent = fEndLine.metrics().fRawAscent;
         }
