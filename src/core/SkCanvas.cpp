@@ -2195,7 +2195,7 @@ void SkCanvas::drawImageRect(const SkImage* image, const SkRect& dst,
 
 void SkCanvas::onDrawTextBlob(const SkTextBlob* blob, SkScalar x, SkScalar y,
                               const SkPaint& paint) {
-    SkDebugf("drawing text at: %i, %i\n", x, y);
+    SkDebugf("drawing text at: %g, %g\n", x, y);
     auto glyphRunList = fScratchGlyphRunBuilder->blobToGlyphRunList(*blob, {x, y});
     this->onDrawGlyphRunList(glyphRunList, paint);
 }
