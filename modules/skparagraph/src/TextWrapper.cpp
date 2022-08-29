@@ -302,36 +302,41 @@ void TextWrapper::breakTextIntoLines(ParagraphImpl* parent,
     InternalLineMetrics maxRunMetrics;
     bool needEllipsis = false;
     while (fEndLine.endCluster() != end) {
+        SkDebugf("fEndLine.metrics().height() (1): %g\n", fEndLine.metrics().height());
 
         lookAhead(maxWidth, end);
+        SkDebugf("fEndLine.metrics().height() (2): %g\n", fEndLine.metrics().height());
 
         auto lastLine = (hasEllipsis && unlimitedLines) || fLineNumber >= maxLines;
         needEllipsis = hasEllipsis && !endlessLine && lastLine;
 
         moveForward(needEllipsis);
+        SkDebugf("fEndLine.metrics().height() (3): %g\n", fEndLine.metrics().height());
         needEllipsis &= fEndLine.endCluster() < end - 1; // Only if we have some text to ellipsize
 
         // Do not trim end spaces on the naturally last line of the left aligned text
         trimEndSpaces(align);
+        SkDebugf("fEndLine.metrics().height() (4): %g\n", fEndLine.metrics().height());
 
         // For soft line breaks add to the line all the spaces next to it
         Cluster* startLine;
         size_t pos;
         SkScalar widthWithSpaces;
         std::tie(startLine, pos, widthWithSpaces) = trimStartSpaces(end);
+        SkDebugf("fEndLine.metrics().height() (5): %g\n", fEndLine.metrics().height());
 
         if (needEllipsis && !fHardLineBreak) {
             // This is what we need to do to preserve a space before the ellipsis
             fEndLine.restoreBreak();
-            SkDebugf("fEndLine.metrics().height() (1): %g\n", fEndLine.metrics().height());
             widthWithSpaces = fEndLine.widthWithGhostSpaces();
         }
+        SkDebugf("fEndLine.metrics().height() (6): %g\n", fEndLine.metrics().height());
 
         // If the line is empty with the hard line break, let's take the paragraph font (flutter???)
         if (fHardLineBreak && fEndLine.width() == 0) {
             fEndLine.setMetrics(parent->getEmptyMetrics());
-            SkDebugf("fEndLine.metrics().height() (2): %g\n", fEndLine.metrics().height());
         }
+        SkDebugf("fEndLine.metrics().height() (7): %g\n", fEndLine.metrics().height());
 
         // Deal with placeholder clusters == runs[@size==1]
         Run* lastRun = nullptr;
@@ -345,9 +350,7 @@ void TextWrapper::breakTextIntoLines(ParagraphImpl* parent,
                 SkASSERT(lastRun->size() == 1);
                 // Update the placeholder metrics so we can get the placeholder positions later
                 // and the line metrics (to make sure the placeholder fits)
-                SkDebugf("fEndLine.metrics().height() (2.3): %g\n", fEndLine.metrics().height());
                 lastRun->updateMetrics(&fEndLine.metrics());
-                SkDebugf("fEndLine.metrics().height() (2.6): %g\n", fEndLine.metrics().height());
             }
         }
 
@@ -372,14 +375,12 @@ void TextWrapper::breakTextIntoLines(ParagraphImpl* parent,
         ClusterRange clusters(fEndLine.startCluster() - start, fEndLine.endCluster() - start + 1);
         ClusterRange clustersWithGhosts(fEndLine.startCluster() - start, startLine - start);
 
-        SkDebugf("fEndLine.metrics().height() (2.5): %g\n", fEndLine.metrics().height());
         if (disableFirstAscent && firstLine) {
             fEndLine.metrics().fAscent = fEndLine.metrics().fRawAscent;
         }
         if (disableLastDescent && (lastLine || (startLine == end && !fHardLineBreak ))) {
             fEndLine.metrics().fDescent = fEndLine.metrics().fRawDescent;
         }
-        SkDebugf("fEndLine.metrics().height() (3): %g\n", fEndLine.metrics().height());
 
         SkScalar lineHeight = fEndLine.metrics().height();
         SkDebugf("lineHeight: %g\n", lineHeight);
