@@ -276,6 +276,7 @@ void TextWrapper::breakTextIntoLines(ParagraphImpl* parent,
                                      SkScalar maxWidth,
                                      const AddLineToParagraph& addLine) {
     fHeight = 0;
+    SkDebugf("fHeight (0): %g\n", fHeight);
     fMinIntrinsicWidth = std::numeric_limits<SkScalar>::min();
     fMaxIntrinsicWidth = std::numeric_limits<SkScalar>::min();
 
@@ -403,6 +404,7 @@ void TextWrapper::breakTextIntoLines(ParagraphImpl* parent,
         }
         // Start a new line
         fHeight += lineHeight;
+        SkDebugf("fHeight (1): %g\n", fHeight);
         if (!fHardLineBreak || startLine != end) {
             fEndLine.clean();
         }
@@ -468,6 +470,7 @@ void TextWrapper::breakTextIntoLines(ParagraphImpl* parent,
                 fEndLine.metrics().fDescent = fEndLine.metrics().fRawDescent;
             }
             fHeight = std::max(fHeight, fEndLine.metrics().height());
+            SkDebugf("fHeight (2): %g\n", fHeight);
         }
     }
 
@@ -496,6 +499,7 @@ void TextWrapper::breakTextIntoLines(ParagraphImpl* parent,
                 fEndLine.metrics(),
                 needEllipsis);
         fHeight += fEndLine.metrics().height();
+        SkDebugf("fHeight (3): %g\n", fHeight);
         parent->lines().back().setMaxRunMetrics(maxRunMetrics);
     }
 }
