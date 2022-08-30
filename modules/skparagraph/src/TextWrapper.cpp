@@ -36,7 +36,7 @@ struct LineBreakerWithLittleRounding {
 
 struct LineBreakerWithoutLittleRounding {
     LineBreakerWithoutLittleRounding(SkScalar maxWidth)
-            , fMaxWidth(maxWidth) {}
+        : fMaxWidth(maxWidth) {}
 
     bool breakLine(SkScalar width) const {
         return width > fMaxWidth;
