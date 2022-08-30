@@ -280,6 +280,7 @@ std::tuple<Cluster*, size_t, SkScalar> TextWrapper::trimStartSpaces(Cluster* end
 void TextWrapper::breakTextIntoLines(ParagraphImpl* parent,
                                      SkScalar maxWidth,
                                      const AddLineToParagraph& addLine) {
+    SkDebugf("fWords: %i, fClusters: %i\n", fWords.size(), fClusters.size());
     fHeight = 0;
     SkDebugf("fHeight (0): %g\n", fHeight);
     fMinIntrinsicWidth = std::numeric_limits<SkScalar>::min();
