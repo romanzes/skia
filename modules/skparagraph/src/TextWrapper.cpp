@@ -302,8 +302,9 @@ void TextWrapper::breakTextIntoLines(ParagraphImpl* parent,
     bool needEllipsis = false;
     while (fEndLine.endCluster() != end) {
 
-        SkDebugf("maxWidth: %g\n", maxWidth);
+        SkDebugf("fEndLine.metrics().height() (1): %g\n", fEndLine.metrics().height());
         lookAhead(maxWidth, end);
+        SkDebugf("fEndLine.metrics().height() (2): %g\n", fEndLine.metrics().height());
 
         auto lastLine = (hasEllipsis && unlimitedLines) || fLineNumber >= maxLines;
         needEllipsis = hasEllipsis && !endlessLine && lastLine;
