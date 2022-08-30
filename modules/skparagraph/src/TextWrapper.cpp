@@ -56,20 +56,24 @@ void TextWrapper::lookAhead(SkScalar maxWidth, Cluster* endOfClusters) {
             if (cluster->isWhitespaceBreak()) {
                 // It's the end of the word
                 fClusters.extend(cluster);
+                SkDebugf("clusters extended (1)\n");
                 fMinIntrinsicWidth = std::max(fMinIntrinsicWidth, getClustersTrimmedWidth());
                 fWords.extend(fClusters);
+                SkDebugf("words extended (1)\n");
                 continue;
             } else if (cluster->run().isPlaceholder()) {
                 if (!fClusters.empty()) {
                     // Placeholder ends the previous word
                     fMinIntrinsicWidth = std::max(fMinIntrinsicWidth, getClustersTrimmedWidth());
                     fWords.extend(fClusters);
+                    SkDebugf("words extended (2)\n");
                 }
 
                 if (cluster->width() > maxWidth && fWords.empty()) {
                     // Placeholder is the only text and it's longer than the line;
                     // it does not count in fMinIntrinsicWidth
                     fClusters.extend(cluster);
+                    SkDebugf("clusters extended (2)\n");
                     fTooLongCluster = true;
                     fTooLongWord = true;
                 } else {
@@ -113,9 +117,11 @@ void TextWrapper::lookAhead(SkScalar maxWidth, Cluster* endOfClusters) {
                         fClusters = TextStretch(fClusters.startCluster(), nextNonBreakingSpace, fClusters.metrics().getForceStrut());
                         fMinIntrinsicWidth = std::max(fMinIntrinsicWidth, nextShortWordLength);
                         fWords.extend(fClusters);
+                        SkDebugf("words extended (3)\n");
                     } else {
                         // We can place the short word on the next line
                         fClusters.clean();
+                        SkDebugf("clusters cleaned\n");
                     }
                     // Either way we are not in "word is too long" situation anymore
                     break;
@@ -135,18 +141,19 @@ void TextWrapper::lookAhead(SkScalar maxWidth, Cluster* endOfClusters) {
                 // |potamus  | -> |hippopota|
                 // |         |    |mus      |
                 //
-                if (fClusters.endPos() - fClusters.startPos() > 1 ||
+                /* if (fClusters.endPos() - fClusters.startPos() > 1 ||
                     fWords.empty()) {
                     fTooLongWord = true;
                 } else {
                     // Even if the word is too long there is a very little space on this line.
                     // let's deal with it on the next line.
-                }
+                } */
                 // END OF NON-SKIA-UPSTREAMED CHANGE
             }
 
             if (cluster->width() > maxWidth) {
                 fClusters.extend(cluster);
+                SkDebugf("clusters extended (3)\n");
                 fTooLongCluster = true;
                 fTooLongWord = true;
             }
@@ -158,18 +165,22 @@ void TextWrapper::lookAhead(SkScalar maxWidth, Cluster* endOfClusters) {
                 // Placeholder ends the previous word (placeholders are ignored in trimming)
                 fMinIntrinsicWidth = std::max(fMinIntrinsicWidth, getClustersTrimmedWidth());
                 fWords.extend(fClusters);
+                SkDebugf("words extended (4)\n");
             }
 
             // Placeholder is separate word and its width now is counted in minIntrinsicWidth
             fMinIntrinsicWidth = std::max(fMinIntrinsicWidth, cluster->width());
             fWords.extend(cluster);
+            SkDebugf("words extended (5)\n");
         } else {
             fClusters.extend(cluster);
+            SkDebugf("clusters extended (4)\n");
 
             // Keep adding clusters/words
             if (fClusters.endOfWord()) {
                 fMinIntrinsicWidth = std::max(fMinIntrinsicWidth, getClustersTrimmedWidth());
                 fWords.extend(fClusters);
+                SkDebugf("words extended (6)\n");
             }
         }
 
