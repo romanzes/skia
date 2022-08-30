@@ -280,7 +280,7 @@ std::tuple<Cluster*, size_t, SkScalar> TextWrapper::trimStartSpaces(Cluster* end
 void TextWrapper::breakTextIntoLines(ParagraphImpl* parent,
                                      SkScalar maxWidth,
                                      const AddLineToParagraph& addLine) {
-    SkDebugf("fWords: %s, fClusters: %s\n", fWords.empty() ? "empty" : "not empty", fClusters.empty() ? "empty" : "not empty");
+    SkDebugf("(1) fWords: %s, fClusters: %s\n", fWords.empty() ? "empty" : "not empty", fClusters.empty() ? "empty" : "not empty");
     fHeight = 0;
     SkDebugf("fHeight (0): %g\n", fHeight);
     fMinIntrinsicWidth = std::numeric_limits<SkScalar>::min();
@@ -306,11 +306,12 @@ void TextWrapper::breakTextIntoLines(ParagraphImpl* parent,
     auto start = span.begin();
     InternalLineMetrics maxRunMetrics;
     bool needEllipsis = false;
+
+    SkDebugf("(2) fWords: %s, fClusters: %s\n", fWords.empty() ? "empty" : "not empty", fClusters.empty() ? "empty" : "not empty");
     while (fEndLine.endCluster() != end) {
-        SkDebugf("fEndLine.metrics().height() (1): %g\n", fEndLine.metrics().height());
 
         lookAhead(maxWidth, end);
-        SkDebugf("fEndLine.metrics().height() (2): %g\n", fEndLine.metrics().height());
+        SkDebugf("(3) fWords: %s, fClusters: %s\n", fWords.empty() ? "empty" : "not empty", fClusters.empty() ? "empty" : "not empty");
 
         auto lastLine = (hasEllipsis && unlimitedLines) || fLineNumber >= maxLines;
         needEllipsis = hasEllipsis && !endlessLine && lastLine;
@@ -318,12 +319,12 @@ void TextWrapper::breakTextIntoLines(ParagraphImpl* parent,
         moveForward(needEllipsis);
         needEllipsis &= fEndLine.endCluster() < end - 1; // Only if we have some text to ellipsize
 
-        SkDebugf("fEndLine.metrics().height() (3): %g\n", fEndLine.metrics().height());
+        SkDebugf("(4) fWords: %s, fClusters: %s\n", fWords.empty() ? "empty" : "not empty", fClusters.empty() ? "empty" : "not empty");
 
         // Do not trim end spaces on the naturally last line of the left aligned text
         trimEndSpaces(align);
 
-        SkDebugf("fEndLine.metrics().height() (4): %g\n", fEndLine.metrics().height());
+        SkDebugf("(5) fWords: %s, fClusters: %s\n", fWords.empty() ? "empty" : "not empty", fClusters.empty() ? "empty" : "not empty");
 
         // For soft line breaks add to the line all the spaces next to it
         Cluster* startLine;
@@ -331,7 +332,7 @@ void TextWrapper::breakTextIntoLines(ParagraphImpl* parent,
         SkScalar widthWithSpaces;
         std::tie(startLine, pos, widthWithSpaces) = trimStartSpaces(end);
 
-        SkDebugf("fEndLine.metrics().height() (5): %g\n", fEndLine.metrics().height());
+        SkDebugf("(6) fWords: %s, fClusters: %s\n", fWords.empty() ? "empty" : "not empty", fClusters.empty() ? "empty" : "not empty");
 
         if (needEllipsis && !fHardLineBreak) {
             // This is what we need to do to preserve a space before the ellipsis
@@ -339,14 +340,14 @@ void TextWrapper::breakTextIntoLines(ParagraphImpl* parent,
             widthWithSpaces = fEndLine.widthWithGhostSpaces();
         }
 
-        SkDebugf("fEndLine.metrics().height() (6): %g\n", fEndLine.metrics().height());
+        SkDebugf("(7) fWords: %s, fClusters: %s\n", fWords.empty() ? "empty" : "not empty", fClusters.empty() ? "empty" : "not empty");
 
         // If the line is empty with the hard line break, let's take the paragraph font (flutter???)
         if (fHardLineBreak && fEndLine.width() == 0) {
             fEndLine.setMetrics(parent->getEmptyMetrics());
         }
 
-        SkDebugf("fEndLine.metrics().height() (7): %g\n", fEndLine.metrics().height());
+        SkDebugf("(8) fWords: %s, fClusters: %s\n", fWords.empty() ? "empty" : "not empty", fClusters.empty() ? "empty" : "not empty");
 
         // Deal with placeholder clusters == runs[@size==1]
         Run* lastRun = nullptr;
@@ -364,7 +365,7 @@ void TextWrapper::breakTextIntoLines(ParagraphImpl* parent,
             }
         }
 
-        SkDebugf("fEndLine.metrics().height() (8): %g\n", fEndLine.metrics().height());
+        SkDebugf("(9) fWords: %s, fClusters: %s\n", fWords.empty() ? "empty" : "not empty", fClusters.empty() ? "empty" : "not empty");
 
         // Before we update the line metrics with struts,
         // let's save it for GetRectsForRange(RectHeightStyle::kMax)
@@ -376,7 +377,6 @@ void TextWrapper::breakTextIntoLines(ParagraphImpl* parent,
             parent->strutMetrics().updateLineMetrics(fEndLine.metrics());
         }
 
-        SkDebugf("fEndLine.metrics().height() (9): %g\n", fEndLine.metrics().height());
 
         // TODO: keep start/end/break info for text and runs but in a better way that below
         TextRange textExcludingSpaces(fEndLine.startCluster()->textRange().start, fEndLine.endCluster()->textRange().end);
@@ -389,16 +389,12 @@ void TextWrapper::breakTextIntoLines(ParagraphImpl* parent,
         ClusterRange clusters(fEndLine.startCluster() - start, fEndLine.endCluster() - start + 1);
         ClusterRange clustersWithGhosts(fEndLine.startCluster() - start, startLine - start);
 
-        SkDebugf("fEndLine.metrics().height() (10): %g\n", fEndLine.metrics().height());
-
         if (disableFirstAscent && firstLine) {
             fEndLine.metrics().fAscent = fEndLine.metrics().fRawAscent;
         }
         if (disableLastDescent && (lastLine || (startLine == end && !fHardLineBreak ))) {
             fEndLine.metrics().fDescent = fEndLine.metrics().fRawDescent;
         }
-
-        SkDebugf("fEndLine.metrics().height() (11): %g\n", fEndLine.metrics().height());
 
         SkScalar lineHeight = fEndLine.metrics().height();
         SkDebugf("lineHeight: %g\n", lineHeight);
