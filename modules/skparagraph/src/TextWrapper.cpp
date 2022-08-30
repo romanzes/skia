@@ -39,14 +39,18 @@ struct LineBreakerWithLittleRounding {
 // we have to work with stretches - parts of clusters
 void TextWrapper::lookAhead(SkScalar maxWidth, Cluster* endOfClusters) {
 
+    SkDebugf("fEndLine.metrics().height() (1): %g\n", fEndLine.metrics().height());
     reset();
+    SkDebugf("fEndLine.metrics().height() (2): %g\n", fEndLine.metrics().height());
     fEndLine.metrics().clean();
+    SkDebugf("fEndLine.metrics().height() (3): %g\n", fEndLine.metrics().height());
     fWords.startFrom(fEndLine.startCluster(), fEndLine.startPos());
     fClusters.startFrom(fEndLine.startCluster(), fEndLine.startPos());
     fClip.startFrom(fEndLine.startCluster(), fEndLine.startPos());
 
     LineBreakerWithLittleRounding breaker(maxWidth);
     Cluster* nextNonBreakingSpace = nullptr;
+    SkDebugf("fEndLine.metrics().height() (4): %g\n", fEndLine.metrics().height());
     for (auto cluster = fEndLine.endCluster(); cluster < endOfClusters; ++cluster) {
         if (cluster->isHardBreak()) {
         } else if (
@@ -178,6 +182,7 @@ void TextWrapper::lookAhead(SkScalar maxWidth, Cluster* endOfClusters) {
             break;
         }
     }
+    SkDebugf("fEndLine.metrics().height() (5): %g\n", fEndLine.metrics().height());
 }
 
 void TextWrapper::moveForward(bool hasEllipsis) {
@@ -302,9 +307,7 @@ void TextWrapper::breakTextIntoLines(ParagraphImpl* parent,
     bool needEllipsis = false;
     while (fEndLine.endCluster() != end) {
 
-        SkDebugf("fEndLine.metrics().height() (1): %g\n", fEndLine.metrics().height());
         lookAhead(maxWidth, end);
-        SkDebugf("fEndLine.metrics().height() (2): %g\n", fEndLine.metrics().height());
 
         auto lastLine = (hasEllipsis && unlimitedLines) || fLineNumber >= maxLines;
         needEllipsis = hasEllipsis && !endlessLine && lastLine;
