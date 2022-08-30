@@ -13,22 +13,7 @@ struct LineBreakerWithLittleRounding {
         , fUpper(maxWidth + 0.25f) {}
 
     bool breakLine(SkScalar width) const {
-        if (width < fLower) {
-            return false;
-        } else if (width > fUpper) {
-            return true;
-        }
-
-        auto val = std::fabs(width);
-        SkScalar roundedWidth;
-        if (val < 10000) {
-            roundedWidth = SkScalarRoundToScalar(width * 100) * (1.0f/100);
-        } else if (val < 100000) {
-            roundedWidth = SkScalarRoundToScalar(width *  10) * (1.0f/10);
-        } else {
-            roundedWidth = SkScalarFloorToScalar(width);
-        }
-        return roundedWidth > fMaxWidth;
+        return width > fMaxWidth;
     }
 
     const SkScalar fLower, fMaxWidth, fUpper;
