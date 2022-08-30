@@ -135,13 +135,13 @@ void TextWrapper::lookAhead(SkScalar maxWidth, Cluster* endOfClusters) {
                 // |potamus  | -> |hippopota|
                 // |         |    |mus      |
                 //
-                /* if (fClusters.endPos() - fClusters.startPos() > 1 ||
+                if (fClusters.endPos() - fClusters.startPos() > 1 ||
                     fWords.empty()) {
                     fTooLongWord = true;
                 } else {
                     // Even if the word is too long there is a very little space on this line.
                     // let's deal with it on the next line.
-                } */
+                }
                 // END OF NON-SKIA-UPSTREAMED CHANGE
             }
 
@@ -280,9 +280,7 @@ std::tuple<Cluster*, size_t, SkScalar> TextWrapper::trimStartSpaces(Cluster* end
 void TextWrapper::breakTextIntoLines(ParagraphImpl* parent,
                                      SkScalar maxWidth,
                                      const AddLineToParagraph& addLine) {
-    SkDebugf("(1) fWords: %s, fClusters: %s\n", fWords.empty() ? "empty" : "not empty", fClusters.empty() ? "empty" : "not empty");
     fHeight = 0;
-    SkDebugf("fHeight (0): %g\n", fHeight);
     fMinIntrinsicWidth = std::numeric_limits<SkScalar>::min();
     fMaxIntrinsicWidth = std::numeric_limits<SkScalar>::min();
 
@@ -307,11 +305,9 @@ void TextWrapper::breakTextIntoLines(ParagraphImpl* parent,
     InternalLineMetrics maxRunMetrics;
     bool needEllipsis = false;
 
-    SkDebugf("(2) fWords: %s, fClusters: %s\n", fWords.empty() ? "empty" : "not empty", fClusters.empty() ? "empty" : "not empty");
     while (fEndLine.endCluster() != end) {
 
         lookAhead(maxWidth, end);
-        SkDebugf("(3) fWords: %s, fClusters: %s\n", fWords.empty() ? "empty" : "not empty", fClusters.empty() ? "empty" : "not empty");
 
         auto lastLine = (hasEllipsis && unlimitedLines) || fLineNumber >= maxLines;
         needEllipsis = hasEllipsis && !endlessLine && lastLine;
@@ -319,12 +315,8 @@ void TextWrapper::breakTextIntoLines(ParagraphImpl* parent,
         moveForward(needEllipsis);
         needEllipsis &= fEndLine.endCluster() < end - 1; // Only if we have some text to ellipsize
 
-        SkDebugf("(4) fWords: %s, fClusters: %s\n", fWords.empty() ? "empty" : "not empty", fClusters.empty() ? "empty" : "not empty");
-
         // Do not trim end spaces on the naturally last line of the left aligned text
         trimEndSpaces(align);
-
-        SkDebugf("(5) fWords: %s, fClusters: %s\n", fWords.empty() ? "empty" : "not empty", fClusters.empty() ? "empty" : "not empty");
 
         // For soft line breaks add to the line all the spaces next to it
         Cluster* startLine;
@@ -332,22 +324,16 @@ void TextWrapper::breakTextIntoLines(ParagraphImpl* parent,
         SkScalar widthWithSpaces;
         std::tie(startLine, pos, widthWithSpaces) = trimStartSpaces(end);
 
-        SkDebugf("(6) fWords: %s, fClusters: %s\n", fWords.empty() ? "empty" : "not empty", fClusters.empty() ? "empty" : "not empty");
-
         if (needEllipsis && !fHardLineBreak) {
             // This is what we need to do to preserve a space before the ellipsis
             fEndLine.restoreBreak();
             widthWithSpaces = fEndLine.widthWithGhostSpaces();
         }
 
-        SkDebugf("(7) fWords: %s, fClusters: %s\n", fWords.empty() ? "empty" : "not empty", fClusters.empty() ? "empty" : "not empty");
-
         // If the line is empty with the hard line break, let's take the paragraph font (flutter???)
         if (fHardLineBreak && fEndLine.width() == 0) {
             fEndLine.setMetrics(parent->getEmptyMetrics());
         }
-
-        SkDebugf("(8) fWords: %s, fClusters: %s\n", fWords.empty() ? "empty" : "not empty", fClusters.empty() ? "empty" : "not empty");
 
         // Deal with placeholder clusters == runs[@size==1]
         Run* lastRun = nullptr;
@@ -365,7 +351,6 @@ void TextWrapper::breakTextIntoLines(ParagraphImpl* parent,
             }
         }
 
-        SkDebugf("(9) fWords: %s, fClusters: %s\n", fWords.empty() ? "empty" : "not empty", fClusters.empty() ? "empty" : "not empty");
 
         // Before we update the line metrics with struts,
         // let's save it for GetRectsForRange(RectHeightStyle::kMax)
