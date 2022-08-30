@@ -110,6 +110,7 @@ void TextWrapper::lookAhead(SkScalar maxWidth, Cluster* endOfClusters) {
                     nextWordLength += further->width();
                 }
             }
+            SkDebugf("nextWordLength(%g), maxWidth(%g)\n", nextWordLength, maxWidth);
             if (nextWordLength > maxWidth) {
                 if (nextNonBreakingSpace != nullptr) {
                     // We only get here if the non-breaking space improves our situation
