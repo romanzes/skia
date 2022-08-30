@@ -187,19 +187,24 @@ void TextWrapper::moveForward(bool hasEllipsis) {
     // it's the first word and it has an ellipsis attached to it.
     // If nothing fits we show the clipping.
     if (!fWords.empty()) {
+        SkDebugf("moveForward: !fWords.empty()\n");
         fEndLine.extend(fWords);
         if (!fTooLongWord || hasEllipsis) {
+            SkDebugf("!fTooLongWord || hasEllipsis\n");
             return;
         }
     }
     if (!fClusters.empty()) {
+        SkDebugf("!fClusters.empty()\n");
         fEndLine.extend(fClusters);
         if (!fTooLongCluster) {
+            SkDebugf("!fTooLongCluster\n");
             return;
         }
     }
 
     if (!fClip.empty()) {
+        SkDebugf("!fClip.empty()\n");
         // Flutter: forget the clipped cluster but keep the metrics
         fEndLine.metrics().add(fClip.metrics());
     }
