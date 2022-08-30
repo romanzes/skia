@@ -49,10 +49,12 @@ void TextWrapper::lookAhead(SkScalar maxWidth, Cluster* endOfClusters) {
     Cluster* nextNonBreakingSpace = nullptr;
     for (auto cluster = fEndLine.endCluster(); cluster < endOfClusters; ++cluster) {
         if (cluster->isHardBreak()) {
+            SkDebugf("cluster is hard break\n");
         } else if (
                 // TODO: Trying to deal with flutter rounding problem. Must be removed...
                 SkScalar width = fWords.width() + fClusters.width() + cluster->width();
                 breaker.breakLine(width)) {
+            SkDebugf("breaker.breakLine\n");
             if (cluster->isWhitespaceBreak()) {
                 // It's the end of the word
                 fClusters.extend(cluster);
@@ -77,6 +79,7 @@ void TextWrapper::lookAhead(SkScalar maxWidth, Cluster* endOfClusters) {
                     fTooLongCluster = true;
                     fTooLongWord = true;
                 } else {
+                    SkDebugf("Placeholder does not fit the line\n");
                     // Placeholder does not fit the line; it will be considered again on the next line
                 }
                 break;
