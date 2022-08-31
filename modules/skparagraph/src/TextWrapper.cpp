@@ -45,6 +45,17 @@ struct LineBreakerWithLittleRounding {
     const SkScalar fLower, fMaxWidth, fUpper;
     const bool fApplyRoundingHack;
 };
+
+struct LineBreakerWithoutLittleRounding {
+    LineBreakerWithoutLittleRounding(SkScalar maxWidth)
+        : fMaxWidth(maxWidth) {}
+
+    bool breakLine(SkScalar width) const {
+        return width > fMaxWidth;
+    }
+
+    const SkScalar fMaxWidth;
+};
 }  // namespace
 
 // Since we allow cluster clipping when they don't fit
@@ -57,7 +68,10 @@ void TextWrapper::lookAhead(SkScalar maxWidth, Cluster* endOfClusters, bool appl
     fClusters.startFrom(fEndLine.startCluster(), fEndLine.startPos());
     fClip.startFrom(fEndLine.startCluster(), fEndLine.startPos());
 
-    LineBreakerWithLittleRounding breaker(maxWidth, applyRoundingHack);
+    // NON-SKIA-UPSTREAMED CHANGE
+    // LineBreakerWithLittleRounding breaker(maxWidth);
+    LineBreakerWithoutLittleRounding breaker(maxWidth);
+    // END OF NON-SKIA-UPSTREAMED CHANGE
     Cluster* nextNonBreakingSpace = nullptr;
     for (auto cluster = fEndLine.endCluster(); cluster < endOfClusters; ++cluster) {
         if (cluster->isHardBreak()) {
