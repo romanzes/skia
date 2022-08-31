@@ -56,7 +56,10 @@ void TextWrapper::lookAhead(SkScalar maxWidth, Cluster* endOfClusters) {
     fClusters.startFrom(fEndLine.startCluster(), fEndLine.startPos());
     fClip.startFrom(fEndLine.startCluster(), fEndLine.startPos());
 
+    // NON-SKIA-UPSTREAMED CHANGE
+    // LineBreakerWithLittleRounding breaker(maxWidth);
     LineBreakerWithoutLittleRounding breaker(maxWidth);
+    // END OF NON-SKIA-UPSTREAMED CHANGE
     Cluster* nextNonBreakingSpace = nullptr;
     for (auto cluster = fEndLine.endCluster(); cluster < endOfClusters; ++cluster) {
         if (cluster->isHardBreak()) {
