@@ -372,12 +372,9 @@ Cluster::Cluster(ParagraphImpl* owner,
     fIsIntraWordBreak = intraWordBreakLen == fTextRange.width();
     fIsHardBreak = fOwner->codeUnitHasProperty(fTextRange.end, CodeUnitFlags::kHardLineBreakBefore);
     // NON-SKIA-UPSTREAMED CHANGE
-    // Some of the symbols that Chrome doesn't recognize to be soft breaks,
-    // are soft breaks in Skia by default
-    fIsSoftBreakExemption = *ch == 0x21 // Exclamation mark (!)
-                           || *ch == 0x2F // Forward slash (/)
-                           || *ch == 0x7C // Vertical bar (|)
-                           || *ch == 0x7D; // Right brace (})
+    // Chrome doesn't break words on soft breaks, except some characters:
+    fIsChromeBreak = *ch == 0x2D // Hyphen (-)
+                     || *ch == 0x3F; // Question mark (?)
     // END OF NON-SKIA-UPSTREAMED CHANGE
 }
 
