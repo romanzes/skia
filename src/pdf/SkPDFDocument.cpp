@@ -9,6 +9,7 @@
 #include "src/pdf/SkPDFDocumentPriv.h"
 
 #include "include/core/SkStream.h"
+#include "include/core/SkTypes.h"
 #include "include/docs/SkPDFDocument.h"
 #include "include/private/SkTo.h"
 #include "src/pdf/SkPDFDevice.h"
@@ -606,6 +607,7 @@ void SkPDFDocument::waitForJobs() {
 ///////////////////////////////////////////////////////////////////////////////
 
 void SkPDF::SetNodeId(SkCanvas* canvas, int nodeID) {
+    SkDebugf("SkPDF::SetNodeId called with nodeID: %i\n", nodeID);
     sk_sp<SkData> payload = SkData::MakeWithCopy(&nodeID, sizeof(nodeID));
     const char* key = SkPDFGetNodeIdKey();
     canvas->drawAnnotation({0, 0, 0, 0}, key, payload.get());
