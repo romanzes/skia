@@ -370,6 +370,7 @@ void SkPDFDevice::drawAnnotation(const SkRect& rect, const char key[], SkData* v
     }
 
     if (linkType != SkPDFLink::Type::kNone) {
+        SkDebugf("adding link with node ID: %i\n", fNodeId);
         std::unique_ptr<SkPDFLink> link = std::make_unique<SkPDFLink>(
             linkType, value, transformedRect, fNodeId);
         fDocument->fCurrentPageLinks.push_back(std::move(link));
