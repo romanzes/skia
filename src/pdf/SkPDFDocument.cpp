@@ -339,6 +339,7 @@ std::unique_ptr<SkPDFArray> SkPDFDocument::getAnnotations() {
             SkDebugf("creating struct parent key, fNodeId: %i\n", link->fNodeId);
             int structParentKey = createStructParentKeyForNodeId(link->fNodeId);
             if (structParentKey != -1) {
+                SkDebugf("inserting struct parent key, structParentKey: %i\n", structParentKey);
                 annotation.insertInt("StructParent", structParentKey);
             }
         }
