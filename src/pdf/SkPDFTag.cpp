@@ -268,10 +268,10 @@ int SkPDFTagTree::createMarkIdForNodeId(int nodeId, unsigned pageIndex) {
 }
 
 int SkPDFTagTree::createStructParentKeyForNodeId(int nodeId, unsigned pageIndex) {
-    if (!fRoot) {
-        SkDebugf("!fRoot\n");
-        return -1;
-    }
+//    if (!fRoot) {
+//        SkDebugf("!fRoot\n");
+//        return -1;
+//    }
     SkPDFTagNode** tagPtr = fNodeMap.find(nodeId);
     if (!tagPtr) {
         SkDebugf("!tagPtr\n");
