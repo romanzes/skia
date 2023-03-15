@@ -370,6 +370,7 @@ void SkPDFDocument::onEndPage() {
     page->insertObject("MediaBox", SkPDFUtils::RectToArray(SkRect::MakeSize(mediaSize)));
 
     if (std::unique_ptr<SkPDFArray> annotations = getAnnotations()) {
+        SkDebugf("inserting annotations\n");
         page->insertObject("Annots", std::move(annotations));
         fCurrentPageLinks.clear();
     }
