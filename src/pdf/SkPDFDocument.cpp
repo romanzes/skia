@@ -336,6 +336,7 @@ std::unique_ptr<SkPDFArray> SkPDFDocument::getAnnotations() {
         }
 
         if (link->fNodeId) {
+            SkDebugf("creating struct parent key, fNodeId: %i\n", link->fNodeId);
             int structParentKey = createStructParentKeyForNodeId(link->fNodeId);
             if (structParentKey != -1) {
                 annotation.insertInt("StructParent", structParentKey);
@@ -345,6 +346,7 @@ std::unique_ptr<SkPDFArray> SkPDFDocument::getAnnotations() {
         SkPDFIndirectReference annotationRef = emit(annotation);
         array->appendRef(annotationRef);
         if (link->fNodeId) {
+            SkDebugf("adding node annotation, fNodeId: %i\n", link->fNodeId);
             fTagTree.addNodeAnnotation(link->fNodeId, annotationRef, SkToUInt(this->currentPageIndex()));
         }
     }
