@@ -340,6 +340,7 @@ void SkPDFDevice::drawAnnotation(const SkRect& rect, const char key[], SkData* v
             if (value->size() != sizeof(nodeID)) { return; }
             memcpy(&nodeID, value->data(), sizeof(nodeID));
             fNodeId = nodeID;
+            SkDebugf("SkPDFDevice::drawAnnotation called, fNodeId set to %i\n", fNodeId);
             return;
         }
         if (!strcmp(SkAnnotationKeys::Define_Named_Dest_Key(), key)) {
