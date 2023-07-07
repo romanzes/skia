@@ -10,14 +10,17 @@
 
 #include "include/core/SkBlendMode.h"
 #include "include/core/SkColor.h"
+#include "include/core/SkColorType.h"
 #include "include/core/SkSpan.h"
-#include "include/private/SkMacros.h"
-#include "include/private/SkTArray.h"
-#include "include/private/SkTHash.h"
+#include "include/private/base/SkMacros.h"
+#include "include/private/base/SkTArray.h"
+#include "src/core/SkTHash.h"
 #include "src/core/SkVM_fwd.h"
 #include <vector>      // std::vector
 
 class SkWStream;
+
+#if defined(SK_ENABLE_SKVM)
 
 #if defined(SKVM_JIT_WHEN_POSSIBLE) && !defined(SK_BUILD_FOR_IOS)
     #if defined(__x86_64__) || defined(_M_X64)
@@ -33,15 +36,14 @@ class SkWStream;
 #endif
 
 #if 0
-    #define SKVM_LLVM
-#endif
-
-#if 0
     #undef SKVM_JIT
 #endif
 
-namespace skvm {
+namespace SkSL {
+class TraceHook;
+}
 
+namespace skvm {
     class Assembler {
     public:
         explicit Assembler(void* buf);
@@ -81,9 +83,9 @@ namespace skvm {
         void word(uint32_t);
 
         struct Label {
-            int                                      offset = 0;
+            int offset = 0;
             enum { NotYetSet, ARMDisp19, X86Disp32 } kind = NotYetSet;
-            SkSTArray<2, int>                        references;
+            skia_private::STArray<2, int> references;
         };
 
         // x86-64
@@ -434,6 +436,8 @@ namespace skvm {
     // Order matters a little: Ops <=store128 are treated as having side effects.
     #define SKVM_OPS(M)                                              \
         M(assert_true)                                               \
+        M(trace_line) M(trace_var)                                   \
+        M(trace_enter) M(trace_exit) M(trace_scope)                  \
         M(store8)   M(store16)   M(store32) M(store64) M(store128)   \
         M(load8)    M(load16)    M(load32)  M(load64) M(load128)     \
         M(index)                                                     \
@@ -454,7 +458,8 @@ namespace skvm {
         M(neq_f32) M(eq_f32) M(eq_i32)                               \
         M(gte_f32) M(gt_f32) M(gt_i32)                               \
         M(bit_and)     M(bit_or)     M(bit_xor)     M(bit_clear)     \
-        M(select)
+        M(select)                                                    \
+        M(duplicate)
     // End of SKVM_OPS
 
     enum class Op : int {
@@ -472,9 +477,12 @@ namespace skvm {
     static inline bool is_always_varying(Op op) {
         return Op::store8 <= op && op <= Op::index;
     }
+    static inline bool is_trace(Op op) {
+        return Op::trace_line <= op && op <= Op::trace_scope;
+    }
 
     using Val = int;
-    // We reserve an impossibe Val ID as a sentinel
+    // We reserve an impossible Val ID as a sentinel
     // NA meaning none, n/a, null, nil, etc.
     static const Val NA = -1;
 
@@ -547,7 +555,7 @@ namespace skvm {
             for (int bits : ints) {
                 buf.push_back(bits);
             }
-            return {base, (int)( sizeof(int)*(buf.size() - SK_ARRAY_COUNT(ints)) )};
+            return {base, (int)( sizeof(int)*(buf.size() - std::size(ints)) )};
         }
 
         Uniform pushArray(int32_t a[]) {
@@ -560,7 +568,7 @@ namespace skvm {
     };
 
     struct PixelFormat {
-        enum { UNORM, FLOAT} encoding;
+        enum { UNORM, SRGB, FLOAT, XRNG } encoding;
         int r_bits,  g_bits,  b_bits,  a_bits,
             r_shift, g_shift, b_shift, a_shift;
     };
@@ -595,15 +603,18 @@ namespace skvm {
 
     class Builder {
     public:
+        Builder(bool createDuplicates = false);
+        Builder(Features, bool createDuplicates = false);
 
-        Builder();
-        explicit Builder(Features);
-
-        Program done(const char* debug_name = nullptr, bool allow_jit=true) const;
+        Program done(const char* debug_name = nullptr,
+                     bool allow_jit=true) const;
 
         // Mostly for debugging, tests, etc.
         std::vector<Instruction> program() const { return fProgram; }
         std::vector<OptimizedInstruction> optimize() const;
+
+        // Returns a trace-hook ID which must be passed to the trace opcodes.
+        int attachTraceHook(SkSL::TraceHook*);
 
         // Convenience arg() wrappers for most common strides, sizeof(T) and 0.
         template <typename T>
@@ -619,6 +630,14 @@ namespace skvm {
         void assert_true(I32 cond, I32 debug);
         void assert_true(I32 cond, F32 debug) { assert_true(cond, pun_to_I32(debug)); }
         void assert_true(I32 cond)            { assert_true(cond, cond); }
+
+        // Insert debug traces into the instruction stream
+        bool mergeMasks(I32& mask, I32& traceMask);
+        void trace_line (int traceHookID, I32 mask, I32 traceMask, int line);
+        void trace_var  (int traceHookID, I32 mask, I32 traceMask, int slot, I32 val);
+        void trace_enter(int traceHookID, I32 mask, I32 traceMask, int fnIdx);
+        void trace_exit (int traceHookID, I32 mask, I32 traceMask, int fnIdx);
+        void trace_scope(int traceHookID, I32 mask, I32 traceMask, int delta);
 
         // Store {8,16,32,64,128}-bit varying.
         void store8  (Ptr ptr, I32 val);
@@ -973,16 +992,29 @@ namespace skvm {
             return this->allImm(id, &imm) && imm == want;
         }
 
-        SkTHashMap<Instruction, Val, InstructionHash> fIndex;
-        std::vector<Instruction>                      fProgram;
-        std::vector<int>                              fStrides;
-        const Features                                fFeatures;
+        // `canonicalizeIdOrder` and has two rules:
+        // - Immediate values go last; that is, `x + 1` is preferred over `1 + x`.
+        // - If both/neither of x and y are immediate, lower IDs go before higher IDs.
+        // Canonicalizing the IDs helps with opcode deduplication. Putting immediates in a
+        // consistent position makes it easier to detect no-op arithmetic like `x + 0`.
+        template <typename F32_or_I32>
+        void canonicalizeIdOrder(F32_or_I32& x, F32_or_I32& y);
+
+        // If the passed in ID is a bit-not, return the value being bit-notted. Otherwise, NA.
+        Val holdsBitNot(Val id);
+
+        skia_private::THashMap<Instruction, Val, InstructionHash> fIndex;
+        std::vector<Instruction>                                  fProgram;
+        std::vector<SkSL::TraceHook*>                             fTraceHooks;
+        std::vector<int>                                          fStrides;
+        const Features                                            fFeatures;
+        bool                                                      fCreateDuplicates;
     };
 
     // Optimization passes and data structures normally used by Builder::optimize(),
     // extracted here so they can be unit tested.
-    std::vector<Instruction>          eliminate_dead_code(std::vector<Instruction>);
-    std::vector<OptimizedInstruction> finalize           (std::vector<Instruction>);
+    std::vector<Instruction> eliminate_dead_code(std::vector<Instruction>);
+    std::vector<OptimizedInstruction> finalize(std::vector<Instruction>);
 
     using Reg = int;
 
@@ -997,6 +1029,7 @@ namespace skvm {
     public:
         Program(const std::vector<OptimizedInstruction>& instructions,
                 const std::vector<int>& strides,
+                const std::vector<SkSL::TraceHook*>& traceHooks,
                 const char* debug_name, bool allow_jit);
 
         Program();
@@ -1024,20 +1057,20 @@ namespace skvm {
         int  loop () const;
         bool empty() const;
 
-        bool hasJIT() const;  // Has this Program been JITted?
+        bool hasJIT() const;         // Has this Program been JITted?
+        bool hasTraceHooks() const;  // Is this program instrumented for debugging?
 
         void dump(SkWStream* = nullptr) const;
+        void disassemble(SkWStream* = nullptr) const;
 
     private:
         void setupInterpreter(const std::vector<OptimizedInstruction>&);
         void setupJIT        (const std::vector<OptimizedInstruction>&, const char* debug_name);
-        void setupLLVM       (const std::vector<OptimizedInstruction>&, const char* debug_name);
 
         bool jit(const std::vector<OptimizedInstruction>&,
                  int* stack_hint, uint32_t* registers_used,
                  Assembler*) const;
 
-        void waitForLLVM() const;
         void dropJIT();
 
         struct Impl;
@@ -1322,4 +1355,5 @@ namespace skvm {
 #undef SI
 }  // namespace skvm
 
-#endif//SkVM_DEFINED
+#endif  // defined(SK_ENABLE_SKVM)
+#endif  // SkVM_DEFINED

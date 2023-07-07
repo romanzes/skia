@@ -29,11 +29,12 @@
 #include "include/gpu/GrBackendSurface.h"
 #include "include/gpu/GrDirectContext.h"
 #include "include/gpu/GrTypes.h"
+#include "include/gpu/ganesh/SkImageGanesh.h"
 #include "src/core/SkAutoPixmapStorage.h"
-#include "src/gpu/GrDirectContextPriv.h"
-#include "src/gpu/GrGpu.h"
-#include "src/gpu/gl/GrGLCaps.h"
-#include "src/gpu/gl/GrGLDefines.h"
+#include "src/gpu/ganesh/GrDirectContextPriv.h"
+#include "src/gpu/ganesh/GrGpu.h"
+#include "src/gpu/ganesh/gl/GrGLCaps.h"
+#include "src/gpu/ganesh/gl/GrGLDefines_impl.h"
 
 #include <algorithm>
 #include <cstdint>
@@ -95,18 +96,24 @@ private:
                                              const SkBitmap content) {
         SkASSERT(content.colorType() == kRGBA_8888_SkColorType);
         auto format = GrBackendFormat::MakeGL(GR_GL_RGBA8, GR_GL_TEXTURE_RECTANGLE);
-        auto bet = dContext->createBackendTexture(content.width(), content.height(), format,
-                                                  GrMipmapped::kNo, GrRenderable::kNo);
+        auto bet = dContext->createBackendTexture(content.width(),
+                                                  content.height(),
+                                                  format,
+                                                  GrMipmapped::kNo,
+                                                  GrRenderable::kNo,
+                                                  GrProtected::kNo,
+                                                  /*label=*/"CreateRectangleTextureImage");
         if (!bet.isValid()) {
             return nullptr;
         }
         if (!dContext->updateBackendTexture(bet, content.pixmap(), origin, nullptr, nullptr)) {
             dContext->deleteBackendTexture(bet);
         }
-        return SkImage::MakeFromAdoptedTexture(dContext, bet, origin, kRGBA_8888_SkColorType);
+        return SkImages::AdoptTextureFrom(dContext, bet, origin, kRGBA_8888_SkColorType);
     }
 
-    DrawResult onGpuSetup(GrDirectContext* context, SkString* errorMsg) override {
+    DrawResult onGpuSetup(SkCanvas* canvas, SkString* errorMsg) override {
+        auto context = GrAsDirectContext(canvas->recordingContext());
         if (!context || context->abandoned()) {
             return DrawResult::kSkip;
         }
@@ -163,9 +170,9 @@ private:
             auto img = fGradImgs[i];
             int w = img->width();
             int h = img->height();
-            for (auto s : kScales) {
+            for (auto scale : kScales) {
                 canvas->save();
-                canvas->scale(s, s);
+                canvas->scale(scale, scale);
                 for (auto s : kSamplings) {
                     // drawImage
                     canvas->drawImage(img, 0, 0, s);
@@ -193,7 +200,7 @@ private:
                     canvas->translate(.5f*w + kPad, 0);
                 }
                 canvas->restore();
-                canvas->translate(0, kPad + 1.5f*h*s);
+                canvas->translate(0, kPad + 1.5f*h*scale);
             }
         }
 

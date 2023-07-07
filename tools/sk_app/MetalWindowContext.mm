@@ -11,9 +11,9 @@
 #include "include/gpu/GrDirectContext.h"
 #include "include/gpu/mtl/GrMtlBackendContext.h"
 #include "include/gpu/mtl/GrMtlTypes.h"
-#include "src/core/SkMathPriv.h"
-#include "src/gpu/GrCaps.h"
-#include "src/gpu/GrDirectContextPriv.h"
+#include "src/base/SkMathPriv.h"
+#include "src/gpu/ganesh/GrCaps.h"
+#include "src/gpu/ganesh/GrDirectContextPriv.h"
 #include "src/image/SkImage_Base.h"
 #include "tools/sk_app/MetalWindowContext.h"
 
@@ -65,7 +65,6 @@ void MetalWindowContext::initializeContext() {
             fPipelineArchive = [*fDevice newBinaryArchiveWithDescriptor:*desc error:&error];
             if (!fPipelineArchive) {
                 (*desc).url = nil; // create new
-                NSError* error;
                 fPipelineArchive = [*fDevice newBinaryArchiveWithDescriptor:*desc error:&error];
                 if (!fPipelineArchive) {
                     SkDebugf("Error creating MTLBinaryArchive:\n%s\n",
@@ -152,7 +151,7 @@ sk_sp<SkSurface> MetalWindowContext::getBackbufferSurface() {
     return surface;
 }
 
-void MetalWindowContext::swapBuffers() {
+void MetalWindowContext::onSwapBuffers() {
     id<CAMetalDrawable> currentDrawable = (id<CAMetalDrawable>)fDrawableHandle;
 
     id<MTLCommandBuffer> commandBuffer([*fQueue commandBuffer]);

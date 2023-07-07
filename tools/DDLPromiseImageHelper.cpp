@@ -12,13 +12,15 @@
 #include "include/core/SkSerialProcs.h"
 #include "include/gpu/GrDirectContext.h"
 #include "include/gpu/GrYUVABackendTextures.h"
+#include "include/gpu/ganesh/SkImageGanesh.h"
 #include "src/codec/SkCodecImageGenerator.h"
 #include "src/core/SkCachedData.h"
 #include "src/core/SkMipmap.h"
 #include "src/core/SkTaskGroup.h"
-#include "src/gpu/GrDirectContextPriv.h"
+#include "src/gpu/ganesh/GrCaps.h"
+#include "src/gpu/ganesh/GrDirectContextPriv.h"
+#include "src/gpu/ganesh/image/SkImage_GaneshYUVA.h"
 #include "src/image/SkImage_Base.h"
-#include "src/image/SkImage_GpuYUVA.h"
 
 DDLPromiseImageHelper::PromiseImageInfo::PromiseImageInfo(int index,
                                                           uint32_t originalUniqueID,
@@ -132,7 +134,8 @@ static GrBackendTexture create_yuva_texture(GrDirectContext* direct,
                                               GrRenderable::kNo,
                                               GrProtected::kNo,
                                               markFinished,
-                                              &finishedBECreate);
+                                              &finishedBECreate,
+                                              /*label=*/"CreateYuvaTexture");
     if (beTex.isValid()) {
         direct->submit();
         while (!finishedBECreate) {
@@ -180,7 +183,8 @@ void DDLPromiseImageHelper::CreateBETexturesForPromiseImage(GrDirectContext* dir
                                                        GrRenderable::kNo,
                                                        GrProtected::kNo,
                                                        markFinished,
-                                                       &finishedBECreate);
+                                                       &finishedBECreate,
+                                                       /*label=*/"CreateBETexturesForPromiseImage");
         SkASSERT(backendTex.isValid());
         direct->submit();
         while (!finishedBECreate) {
@@ -217,7 +221,7 @@ void DDLPromiseImageHelper::createCallbackContexts(GrDirectContext* direct) {
     const GrCaps* caps = direct->priv().caps();
     const int maxDimension = caps->maxTextureSize();
 
-    for (int i = 0; i < fImageInfo.count(); ++i) {
+    for (int i = 0; i < fImageInfo.size(); ++i) {
         PromiseImageInfo& info = fImageInfo[i];
 
         if (info.isYUV()) {
@@ -245,7 +249,7 @@ void DDLPromiseImageHelper::createCallbackContexts(GrDirectContext* direct) {
 
             GrBackendFormat backendFormat = direct->defaultBackendFormat(baseLevel.colorType(),
                                                                          GrRenderable::kNo);
-            if (!caps->isFormatTexturable(backendFormat)) {
+            if (!caps->isFormatTexturable(backendFormat, GrTextureType::k2D)) {
                 continue;
             }
 
@@ -259,13 +263,13 @@ void DDLPromiseImageHelper::createCallbackContexts(GrDirectContext* direct) {
 
 void DDLPromiseImageHelper::uploadAllToGPU(SkTaskGroup* taskGroup, GrDirectContext* direct) {
     if (taskGroup) {
-        for (int i = 0; i < fImageInfo.count(); ++i) {
+        for (int i = 0; i < fImageInfo.size(); ++i) {
             PromiseImageInfo* info = &fImageInfo[i];
 
             taskGroup->add([direct, info]() { CreateBETexturesForPromiseImage(direct, info); });
         }
     } else {
-        for (int i = 0; i < fImageInfo.count(); ++i) {
+        for (int i = 0; i < fImageInfo.size(); ++i) {
             CreateBETexturesForPromiseImage(direct, &fImageInfo[i]);
         }
     }
@@ -273,13 +277,13 @@ void DDLPromiseImageHelper::uploadAllToGPU(SkTaskGroup* taskGroup, GrDirectConte
 
 void DDLPromiseImageHelper::deleteAllFromGPU(SkTaskGroup* taskGroup, GrDirectContext* direct) {
     if (taskGroup) {
-        for (int i = 0; i < fImageInfo.count(); ++i) {
+        for (int i = 0; i < fImageInfo.size(); ++i) {
             PromiseImageInfo* info = &fImageInfo[i];
 
             taskGroup->add([info]() { DeleteBETexturesForPromiseImage(info); });
         }
     } else {
-        for (int i = 0; i < fImageInfo.count(); ++i) {
+        for (int i = 0; i < fImageInfo.size(); ++i) {
             DeleteBETexturesForPromiseImage(&fImageInfo[i]);
         }
     }
@@ -336,13 +340,13 @@ sk_sp<SkImage> DDLPromiseImageHelper::CreatePromiseImages(const void* rawData,
                                                      backendFormats,
                                                      GrMipmapped::kNo,
                                                      kTopLeft_GrSurfaceOrigin);
-        image = SkImage::MakePromiseYUVATexture(
-                                            procContext->fThreadSafeProxy,
-                                            yuvaBackendTextures,
-                                            curImage.refOverallColorSpace(),
-                                            PromiseImageCallbackContext::PromiseImageFulfillProc,
-                                            PromiseImageCallbackContext::PromiseImageReleaseProc,
-                                            contexts);
+        image = SkImages::PromiseTextureFromYUVA(
+                procContext->fThreadSafeProxy,
+                yuvaBackendTextures,
+                curImage.refOverallColorSpace(),
+                PromiseImageCallbackContext::PromiseImageFulfillProc,
+                PromiseImageCallbackContext::PromiseImageReleaseProc,
+                contexts);
         if (!image) {
             return nullptr;
         }
@@ -354,17 +358,17 @@ sk_sp<SkImage> DDLPromiseImageHelper::CreatePromiseImages(const void* rawData,
         const GrBackendFormat& backendFormat = curImage.backendFormat(0);
         SkASSERT(backendFormat.isValid());
 
-        image = SkImage::MakePromiseTexture(procContext->fThreadSafeProxy,
-                                            backendFormat,
-                                            curImage.overallDimensions(),
-                                            curImage.mipMapped(0),
-                                            GrSurfaceOrigin::kTopLeft_GrSurfaceOrigin,
-                                            curImage.overallColorType(),
-                                            curImage.overallAlphaType(),
-                                            curImage.refOverallColorSpace(),
-                                            PromiseImageCallbackContext::PromiseImageFulfillProc,
-                                            PromiseImageCallbackContext::PromiseImageReleaseProc,
-                                            (void*)curImage.refCallbackContext(0).release());
+        image = SkImages::PromiseTextureFrom(procContext->fThreadSafeProxy,
+                                             backendFormat,
+                                             curImage.overallDimensions(),
+                                             curImage.mipmapped(0),
+                                             GrSurfaceOrigin::kTopLeft_GrSurfaceOrigin,
+                                             curImage.overallColorType(),
+                                             curImage.overallAlphaType(),
+                                             curImage.refOverallColorSpace(),
+                                             PromiseImageCallbackContext::PromiseImageFulfillProc,
+                                             PromiseImageCallbackContext::PromiseImageReleaseProc,
+                                             (void*)curImage.refCallbackContext(0).release());
         curImage.callbackContext(0)->wasAddedToImage();
     }
     helper->fPromiseImages.push_back(image);
@@ -373,7 +377,7 @@ sk_sp<SkImage> DDLPromiseImageHelper::CreatePromiseImages(const void* rawData,
 }
 
 int DDLPromiseImageHelper::findImage(SkImage* image) const {
-    for (int i = 0; i < fImageInfo.count(); ++i) {
+    for (int i = 0; i < fImageInfo.size(); ++i) {
         if (fImageInfo[i].originalUniqueID() == image->uniqueID()) { // trying to dedup here
             SkASSERT(fImageInfo[i].index() == i);
             SkASSERT(this->isValidID(i) && this->isValidID(fImageInfo[i].index()));
@@ -393,7 +397,7 @@ int DDLPromiseImageHelper::addImage(SkImage* image) {
                                               image->alphaType(),
                                               image->refColorSpace());
 
-    PromiseImageInfo& newImageInfo = fImageInfo.emplace_back(fImageInfo.count(),
+    PromiseImageInfo& newImageInfo = fImageInfo.emplace_back(fImageInfo.size(),
                                                              image->uniqueID(),
                                                              overallII);
 
@@ -431,7 +435,7 @@ int DDLPromiseImageHelper::addImage(SkImage* image) {
     }
     // In either case newImageInfo's PromiseImageCallbackContext is filled in by uploadAllToGPU
 
-    return fImageInfo.count()-1;
+    return fImageInfo.size()-1;
 }
 
 int DDLPromiseImageHelper::findOrDefineImage(SkImage* image) {

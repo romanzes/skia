@@ -6,7 +6,12 @@
  */
 
 #include "include/core/SkM44.h"
-#include "include/utils/SkRandom.h"
+#include "include/core/SkMatrix.h"
+#include "include/core/SkPath.h"
+#include "include/core/SkRect.h"
+#include "include/core/SkScalar.h"
+#include "include/core/SkTypes.h"
+#include "src/base/SkRandom.h"
 #include "src/core/SkMatrixPriv.h"
 #include "tests/Test.h"
 
@@ -357,4 +362,18 @@ DEF_TEST(M44_mapRect, reporter) {
     p.setIdentity();
     p.setRow(3, {-.2f, -.6f, 0.f, 8.f});
     assertMapRect(p, src, nullptr);
+}
+
+DEF_TEST(M44_mapRect_skbug12335, r) {
+    // Stripped down test case from skbug.com/12335. Essentially, the corners of this rect would
+    // map to homogoneous coords with very small w's (below the old value of kW0PlaneDistance) and
+    // so they would be clipped "behind" the plane, resulting in an empty mapped rect. Coordinates
+    // with positive that wouldn't overflow when divided by w should still be included in the mapped
+    // rectangle.
+    SkRect rect = SkRect::MakeLTRB(0, 0, 319, 620);
+    SkM44 m(SkMatrix::MakeAll( 0.000152695269f, 0.00000000f,     -6.53848401e-05f,
+                              -1.75697533e-05f, 0.000157153074f, -1.10847975e-06f,
+                              -6.00415362e-08f, 0.00000000f,      0.000169880834f));
+    SkRect out = SkMatrixPriv::MapRect(m, rect);
+    REPORTER_ASSERT(r, !out.isEmpty());
 }

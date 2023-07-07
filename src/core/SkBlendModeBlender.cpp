@@ -6,12 +6,20 @@
  */
 
 #include "src/core/SkBlendModeBlender.h"
+#include "src/core/SkBlendModePriv.h"
+#include "src/core/SkEffectPriv.h"
+#include "src/core/SkRasterPipeline.h"
 #include "src/core/SkReadBuffer.h"
 #include "src/core/SkWriteBuffer.h"
 
-#if SK_SUPPORT_GPU
-#include "src/gpu/GrFragmentProcessor.h"
-#include "src/gpu/effects/GrBlendFragmentProcessor.h"
+#if defined(SK_GANESH)
+#include "src/gpu/ganesh/GrFragmentProcessor.h"
+#include "src/gpu/ganesh/effects/GrBlendFragmentProcessor.h"
+#endif
+
+#if defined(SK_GRAPHITE)
+#include "src/gpu/graphite/KeyHelpers.h"
+#include "src/gpu/graphite/PaintParamsKey.h"
 #endif
 
 sk_sp<SkBlender> SkBlender::Mode(SkBlendMode mode) {
@@ -59,6 +67,25 @@ sk_sp<SkBlender> SkBlender::Mode(SkBlendMode mode) {
 #undef RETURN_SINGLETON_BLENDER
 }
 
+#if defined(SK_GRAPHITE)
+#include "src/gpu/Blend.h"
+
+void SkBlendModeBlender::addToKey(const skgpu::graphite::KeyContext& keyContext,
+                                  skgpu::graphite::PaintParamsKeyBuilder* builder,
+                                  skgpu::graphite::PipelineDataGatherer* gatherer) const {
+    using namespace skgpu::graphite;
+
+    SkSpan<const float> coeffs = skgpu::GetPorterDuffBlendConstants(fMode);
+    if (!coeffs.empty()) {
+        CoeffBlenderBlock::BeginBlock(keyContext, builder, gatherer, coeffs);
+        builder->endBlock();
+    } else {
+        BlendModeBlenderBlock::BeginBlock(keyContext, builder, gatherer, fMode);
+        builder->endBlock();
+    }
+}
+#endif
+
 sk_sp<SkFlattenable> SkBlendModeBlender::CreateProc(SkReadBuffer& buffer) {
     SkBlendMode mode = buffer.read32LE(SkBlendMode::kLastMode);
     return SkBlender::Mode(mode);
@@ -68,21 +95,24 @@ void SkBlendModeBlender::flatten(SkWriteBuffer& buffer) const {
     buffer.writeInt((int)fMode);
 }
 
-#if SK_SUPPORT_GPU
+#if defined(SK_GANESH)
 std::unique_ptr<GrFragmentProcessor> SkBlendModeBlender::asFragmentProcessor(
         std::unique_ptr<GrFragmentProcessor> srcFP,
         std::unique_ptr<GrFragmentProcessor> dstFP,
         const GrFPArgs& fpArgs) const {
-    // Note that for the final blend onto the canvas, we should prefer to use the GrXferProcessor
-    // instead of a SkBlendModeBlender to perform the blend. The Xfer processor is able to perform
-    // coefficient-based blends directly, without readback. This will be much more efficient.
-    return GrBlendFragmentProcessor::Make(
-            std::move(srcFP), GrFragmentProcessor::UseDestColorAsInput(std::move(dstFP)), fMode);
+    return GrBlendFragmentProcessor::Make(std::move(srcFP), std::move(dstFP), fMode);
 }
 #endif
 
+bool SkBlendModeBlender::onAppendStages(const SkStageRec& rec) const {
+    SkBlendMode_AppendStages(fMode, rec.fPipeline);
+    return true;
+}
+
+#if defined(SK_ENABLE_SKVM)
 skvm::Color SkBlendModeBlender::onProgram(skvm::Builder* p, skvm::Color src, skvm::Color dst,
                                           const SkColorInfo& colorInfo, skvm::Uniforms* uniforms,
                                           SkArenaAlloc* alloc) const {
     return p->blend(fMode, src, dst);
 }
+#endif

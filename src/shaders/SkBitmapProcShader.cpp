@@ -7,10 +7,9 @@
 
 #include "src/shaders/SkBitmapProcShader.h"
 
-#include "src/core/SkArenaAlloc.h"
+#include "src/base/SkArenaAlloc.h"
 #include "src/core/SkBitmapProcState.h"
 #include "src/core/SkPaintPriv.h"
-#include "src/core/SkXfermodePriv.h"
 
 class BitmapProcShaderContext : public SkShaderBase::Context {
 public:

@@ -5,28 +5,28 @@
  * found in the LICENSE file.
  */
 
+#include "src/sksl/ir/SkSLIfStatement.h"
+
+#include "include/core/SkTypes.h"
+#include "src/sksl/SkSLAnalysis.h"
+#include "src/sksl/SkSLBuiltinTypes.h"
 #include "src/sksl/SkSLConstantFolder.h"
 #include "src/sksl/SkSLContext.h"
 #include "src/sksl/SkSLProgramSettings.h"
-#include "src/sksl/ir/SkSLBoolLiteral.h"
 #include "src/sksl/ir/SkSLExpressionStatement.h"
-#include "src/sksl/ir/SkSLIfStatement.h"
+#include "src/sksl/ir/SkSLLiteral.h"
 #include "src/sksl/ir/SkSLNop.h"
 #include "src/sksl/ir/SkSLType.h"
 
 namespace SkSL {
 
 std::unique_ptr<Statement> IfStatement::clone() const {
-    return std::make_unique<IfStatement>(fOffset, this->isStatic(), this->test()->clone(),
-                                         this->ifTrue()->clone(),
+    return std::make_unique<IfStatement>(fPosition, this->test()->clone(), this->ifTrue()->clone(),
                                          this->ifFalse() ? this->ifFalse()->clone() : nullptr);
 }
 
-String IfStatement::description() const {
-    String result;
-    if (this->isStatic()) {
-        result += "@";
-    }
+std::string IfStatement::description() const {
+    std::string result;
     result += "if (" + this->test()->description() + ") " + this->ifTrue()->description();
     if (this->ifFalse()) {
         result += " else " + this->ifFalse()->description();
@@ -34,7 +34,8 @@ String IfStatement::description() const {
     return result;
 }
 
-std::unique_ptr<Statement> IfStatement::Convert(const Context& context, int offset, bool isStatic,
+std::unique_ptr<Statement> IfStatement::Convert(const Context& context,
+                                                Position pos,
                                                 std::unique_ptr<Expression> test,
                                                 std::unique_ptr<Statement> ifTrue,
                                                 std::unique_ptr<Statement> ifFalse) {
@@ -42,8 +43,14 @@ std::unique_ptr<Statement> IfStatement::Convert(const Context& context, int offs
     if (!test) {
         return nullptr;
     }
-    return IfStatement::Make(context, offset, isStatic, std::move(test),
-                             std::move(ifTrue), std::move(ifFalse));
+    SkASSERT(ifTrue);
+    if (Analysis::DetectVarDeclarationWithoutScope(*ifTrue, context.fErrors)) {
+        return nullptr;
+    }
+    if (ifFalse && Analysis::DetectVarDeclarationWithoutScope(*ifFalse, context.fErrors)) {
+        return nullptr;
+    }
+    return IfStatement::Make(context, pos, std::move(test), std::move(ifTrue), std::move(ifFalse));
 }
 
 static std::unique_ptr<Statement> replace_empty_with_nop(std::unique_ptr<Statement> stmt,
@@ -52,11 +59,14 @@ static std::unique_ptr<Statement> replace_empty_with_nop(std::unique_ptr<Stateme
                                                    : Nop::Make();
 }
 
-std::unique_ptr<Statement> IfStatement::Make(const Context& context, int offset, bool isStatic,
+std::unique_ptr<Statement> IfStatement::Make(const Context& context,
+                                             Position pos,
                                              std::unique_ptr<Expression> test,
                                              std::unique_ptr<Statement> ifTrue,
                                              std::unique_ptr<Statement> ifFalse) {
-    SkASSERT(test->type() == *context.fTypes.fBool);
+    SkASSERT(test->type().matches(*context.fTypes.fBool));
+    SkASSERT(!Analysis::DetectVarDeclarationWithoutScope(*ifTrue));
+    SkASSERT(!ifFalse || !Analysis::DetectVarDeclarationWithoutScope(*ifFalse));
 
     const bool optimize = context.fConfig->fSettings.fOptimize;
     bool trueIsEmpty = false;
@@ -71,11 +81,11 @@ std::unique_ptr<Statement> IfStatement::Make(const Context& context, int offset,
         }
     }
 
-    if (isStatic || optimize) {
+    if (optimize) {
         // Static Boolean values can fold down to a single branch.
         const Expression* testValue = ConstantFolder::GetConstantValueForVariable(*test);
-        if (testValue->is<BoolLiteral>()) {
-            if (testValue->as<BoolLiteral>().value()) {
+        if (testValue->isBoolLiteral()) {
+            if (testValue->as<Literal>().boolValue()) {
                 return replace_empty_with_nop(std::move(ifTrue), trueIsEmpty);
             } else {
                 return replace_empty_with_nop(std::move(ifFalse), falseIsEmpty);
@@ -91,8 +101,8 @@ std::unique_ptr<Statement> IfStatement::Make(const Context& context, int offset,
         }
     }
 
-    return std::make_unique<IfStatement>(offset, isStatic, std::move(test),
-                                         std::move(ifTrue), std::move(ifFalse));
+    return std::make_unique<IfStatement>(
+            pos, std::move(test), std::move(ifTrue), std::move(ifFalse));
 }
 
 }  // namespace SkSL

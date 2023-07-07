@@ -6,63 +6,99 @@
  */
 
 #include "include/core/SkCanvas.h"
+#include "include/core/SkColorSpace.h"
 #include "include/core/SkImageGenerator.h"
 #include "include/core/SkMatrix.h"
 #include "include/core/SkPaint.h"
 #include "include/core/SkPicture.h"
 #include "include/core/SkSurface.h"
-#include "src/core/SkTLazy.h"
+#include "src/base/SkTLazy.h"
+#include "src/image/SkImageGeneratorPriv.h"
 #include "src/image/SkImage_Base.h"
 
-class SkPictureImageGenerator : public SkImageGenerator {
+#if defined(SK_GANESH)
+#include "include/gpu/ganesh/GrTextureGenerator.h"
+#include "src/gpu/ganesh/GrTextureProxy.h"
+#include "src/gpu/ganesh/image/GrImageUtils.h"
+#endif
+
+
+#if defined(SK_GANESH)
+using BASE_CLASS = GrTextureGenerator;
+#else
+using BASE_CLASS = SkImageGenerator;
+#endif
+
+class SkPictureImageGenerator : public BASE_CLASS {
 public:
-    SkPictureImageGenerator(const SkImageInfo& info, sk_sp<SkPicture>, const SkMatrix*,
-                            const SkPaint*);
+    SkPictureImageGenerator(const SkImageInfo&, sk_sp<SkPicture>, const SkMatrix*,
+                            const SkPaint*, const SkSurfaceProps&);
 
 protected:
-    bool onGetPixels(const SkImageInfo& info, void* pixels, size_t rowBytes, const Options& opts)
-        override;
+    bool onGetPixels(const SkImageInfo&, void* pixels, size_t rowBytes, const Options&) override;
 
-#if SK_SUPPORT_GPU
-    GrSurfaceProxyView onGenerateTexture(GrRecordingContext*, const SkImageInfo&, const SkIPoint&,
+#if defined(SK_GANESH)
+    GrSurfaceProxyView onGenerateTexture(GrRecordingContext*, const SkImageInfo&,
                                          GrMipmapped, GrImageTexGenPolicy) override;
 #endif
 
-private:
-    sk_sp<SkPicture>    fPicture;
-    SkMatrix            fMatrix;
-    SkTLazy<SkPaint>    fPaint;
+#if defined(SK_GRAPHITE)
+    sk_sp<SkImage> onMakeTextureImage(skgpu::graphite::Recorder*,
+                                      const SkImageInfo&,
+                                      skgpu::Mipmapped) override;
+#endif
 
-    using INHERITED = SkImageGenerator;
+private:
+    sk_sp<SkPicture> fPicture;
+    SkMatrix         fMatrix;
+    SkTLazy<SkPaint> fPaint;
+    SkSurfaceProps   fProps;
 };
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
-std::unique_ptr<SkImageGenerator>
-SkImageGenerator::MakeFromPicture(const SkISize& size, sk_sp<SkPicture> picture,
-                                  const SkMatrix* matrix, const SkPaint* paint,
-                                  SkImage::BitDepth bitDepth, sk_sp<SkColorSpace> colorSpace) {
+namespace SkImageGenerators {
+std::unique_ptr<SkImageGenerator> MakeFromPicture(
+        const SkISize& size,
+        sk_sp<SkPicture> picture,
+        const SkMatrix* matrix,
+        const SkPaint* paint,
+        SkImages::BitDepth bitDepth,
+        sk_sp<SkColorSpace> colorSpace) {
+    return MakeFromPicture(size, picture, matrix, paint, bitDepth, colorSpace, {});
+}
+
+std::unique_ptr<SkImageGenerator> MakeFromPicture(const SkISize& size,
+                                                  sk_sp<SkPicture> picture,
+                                                  const SkMatrix* matrix,
+                                                  const SkPaint* paint,
+                                                  SkImages::BitDepth bitDepth,
+                                                  sk_sp<SkColorSpace> colorSpace,
+                                                  SkSurfaceProps props) {
     if (!picture || !colorSpace || size.isEmpty()) {
         return nullptr;
     }
 
     SkColorType colorType = kN32_SkColorType;
-    if (SkImage::BitDepth::kF16 == bitDepth) {
+    if (SkImages::BitDepth::kF16 == bitDepth) {
         colorType = kRGBA_F16_SkColorType;
     }
 
     SkImageInfo info =
             SkImageInfo::Make(size, colorType, kPremul_SkAlphaType, std::move(colorSpace));
     return std::unique_ptr<SkImageGenerator>(
-        new SkPictureImageGenerator(info, std::move(picture), matrix, paint));
+        new SkPictureImageGenerator(info, std::move(picture), matrix, paint, props));
 }
+} // SkImageGenerators
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
 SkPictureImageGenerator::SkPictureImageGenerator(const SkImageInfo& info, sk_sp<SkPicture> picture,
-                                                 const SkMatrix* matrix, const SkPaint* paint)
-    : INHERITED(info)
-    , fPicture(std::move(picture)) {
+                                                 const SkMatrix* matrix, const SkPaint* paint,
+                                                 const SkSurfaceProps& props)
+        : BASE_CLASS(info)
+        , fPicture(std::move(picture))
+        , fProps(props) {
 
     if (matrix) {
         fMatrix = *matrix;
@@ -77,8 +113,7 @@ SkPictureImageGenerator::SkPictureImageGenerator(const SkImageInfo& info, sk_sp<
 
 bool SkPictureImageGenerator::onGetPixels(const SkImageInfo& info, void* pixels, size_t rowBytes,
                                           const Options& opts) {
-    SkSurfaceProps props(0, kUnknown_SkPixelGeometry);
-    std::unique_ptr<SkCanvas> canvas = SkCanvas::MakeRasterDirect(info, pixels, rowBytes, &props);
+    std::unique_ptr<SkCanvas> canvas = SkCanvas::MakeRasterDirect(info, pixels, rowBytes, &fProps);
     if (!canvas) {
         return false;
     }
@@ -89,41 +124,61 @@ bool SkPictureImageGenerator::onGetPixels(const SkImageInfo& info, void* pixels,
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
-#if SK_SUPPORT_GPU
+#if defined(SK_GANESH)
 #include "include/gpu/GrRecordingContext.h"
-#include "src/gpu/GrRecordingContextPriv.h"
-#include "src/gpu/SkGr.h"
+#include "src/gpu/ganesh/GrRecordingContextPriv.h"
+#include "src/gpu/ganesh/SkGr.h"
 
 GrSurfaceProxyView SkPictureImageGenerator::onGenerateTexture(GrRecordingContext* ctx,
                                                               const SkImageInfo& info,
-                                                              const SkIPoint& origin,
                                                               GrMipmapped mipmapped,
                                                               GrImageTexGenPolicy texGenPolicy) {
     SkASSERT(ctx);
 
-    SkSurfaceProps props(0, kUnknown_SkPixelGeometry);
-
-    SkBudgeted budgeted = texGenPolicy == GrImageTexGenPolicy::kNew_Uncached_Unbudgeted
-                                  ? SkBudgeted::kNo
-                                  : SkBudgeted::kYes;
+    skgpu::Budgeted budgeted = texGenPolicy == GrImageTexGenPolicy::kNew_Uncached_Unbudgeted
+                                       ? skgpu::Budgeted::kNo
+                                       : skgpu::Budgeted::kYes;
     auto surface = SkSurface::MakeRenderTarget(ctx, budgeted, info, 0, kTopLeft_GrSurfaceOrigin,
-                                               &props, mipmapped == GrMipmapped::kYes);
+                                               &fProps, mipmapped == GrMipmapped::kYes);
     if (!surface) {
         return {};
     }
 
-    SkMatrix matrix = fMatrix;
-    matrix.postTranslate(-origin.x(), -origin.y());
-    surface->getCanvas()->clear(0);
-    surface->getCanvas()->drawPicture(fPicture.get(), &matrix, fPaint.getMaybeNull());
+    surface->getCanvas()->clear(SkColors::kTransparent);
+    surface->getCanvas()->drawPicture(fPicture.get(), &fMatrix, fPaint.getMaybeNull());
     sk_sp<SkImage> image(surface->makeImageSnapshot());
     if (!image) {
         return {};
     }
-    auto [view, ct] = as_IB(image)->asView(ctx, mipmapped);
+
+    auto [view, ct] = skgpu::ganesh::AsView(ctx, image, mipmapped);
     SkASSERT(view);
     SkASSERT(mipmapped == GrMipmapped::kNo ||
              view.asTextureProxy()->mipmapped() == GrMipmapped::kYes);
     return view;
 }
-#endif
+
+#endif // defined(SK_GANESH)
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+
+#if defined(SK_GRAPHITE)
+#include "src/gpu/graphite/Log.h"
+
+sk_sp<SkImage> SkPictureImageGenerator::onMakeTextureImage(skgpu::graphite::Recorder* recorder,
+                                                           const SkImageInfo& info,
+                                                           skgpu::Mipmapped mipmapped) {
+    using namespace skgpu::graphite;
+
+    sk_sp<SkSurface> surface = SkSurface::MakeGraphite(recorder, info, mipmapped);
+    if (!surface) {
+        SKGPU_LOG_E("Failed to create Surface");
+        return nullptr;
+    }
+
+    surface->getCanvas()->clear(SkColors::kTransparent);
+    surface->getCanvas()->drawPicture(fPicture.get(), &fMatrix, fPaint.getMaybeNull());
+    return surface->asImage();
+}
+
+#endif // SK_GRAPHITE

@@ -10,6 +10,7 @@
 #define GrGLTypes_DEFINED
 
 #include "include/core/SkRefCnt.h"
+#include "include/gpu/GpuTypes.h"
 #include "include/gpu/gl/GrGLConfig.h"
 
 /**
@@ -68,6 +69,7 @@ enum class GrGLFormat {
     kRGBA16F,
     kR16F,
     kRGB8,
+    kRGBX8,
     kRG8,
     kRGB10_A2,
     kRGBA4,
@@ -192,6 +194,15 @@ struct GrGLFramebufferInfo {
     bool operator==(const GrGLFramebufferInfo& that) const {
         return fFBOID == that.fFBOID && fFormat == that.fFormat;
     }
+};
+
+struct GrGLSurfaceInfo {
+    uint32_t fSampleCount = 1;
+    uint32_t fLevelCount = 0;
+    skgpu::Protected fProtected = skgpu::Protected::kNo;
+
+    GrGLenum fTarget = 0;
+    GrGLenum fFormat = 0;
 };
 
 #endif

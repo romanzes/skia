@@ -1,5 +1,4 @@
 
-out vec4 sk_FragColor;
 uniform vec4 colorRed;
 uniform vec4 colorGreen;
 uniform float unknownInput;
@@ -56,7 +55,7 @@ vec4 main() {
     _1_ok = _1_ok && _2_x == 0.0;
     _2_x = _0_unknown;
     _1_ok = _1_ok && _2_x == _0_unknown;
-    _2_x = 0.0;
+    _2_x = 0.0 / _0_unknown;
     _1_ok = _1_ok && _2_x == 0.0;
     _2_x += 1.0;
     _1_ok = _1_ok && _2_x == 1.0;
@@ -68,7 +67,7 @@ vec4 main() {
     _2_x *= 2.0;
     _1_ok = _1_ok && _2_x == -2.0;
     _1_ok = _1_ok && _2_x == -2.0;
-    _2_x /= 2.0;
+    _2_x *= 0.5;
     _1_ok = _1_ok && _2_x == -1.0;
     return _1_ok ? colorGreen : colorRed;
 }

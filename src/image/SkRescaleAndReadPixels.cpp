@@ -5,14 +5,25 @@
  * found in the LICENSE file.
  */
 
+#include "src/image/SkRescaleAndReadPixels.h"
+
 #include "include/core/SkBitmap.h"
+#include "include/core/SkBlendMode.h"
 #include "include/core/SkCanvas.h"
+#include "include/core/SkColorSpace.h"
+#include "include/core/SkColorType.h"
 #include "include/core/SkImageInfo.h"
 #include "include/core/SkPaint.h"
+#include "include/core/SkPixmap.h"
 #include "include/core/SkRect.h"
+#include "include/core/SkRefCnt.h"
+#include "include/core/SkSamplingOptions.h"
 #include "include/core/SkSurface.h"
 
 #include <cmath>
+#include <cstddef>
+#include <memory>
+#include <utility>
 
 void SkRescaleAndReadPixels(SkBitmap bmp,
                             const SkImageInfo& resultInfo,
@@ -88,7 +99,7 @@ void SkRescaleAndReadPixels(SkBitmap bmp,
         constraint = SkCanvas::kFast_SrcRectConstraint;
     } else {
         // MakeFromBitmap would trigger a copy if bmp is mutable.
-        srcImage = SkImage::MakeFromRaster(bmp.pixmap(), nullptr, nullptr);
+        srcImage = SkImages::RasterFromPixmap(bmp.pixmap(), nullptr, nullptr);
     }
     while (stepsX || stepsY) {
         int nextW = resultInfo.width();

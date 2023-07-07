@@ -13,6 +13,7 @@
 #include "include/core/SkSurface.h"
 #include "include/core/SkTypes.h"
 #include "tools/gpu/GrContextFactory.h"
+#include "tools/graphite/ContextFactory.h"
 
 class SkBitmap;
 class SkCanvas;
@@ -52,7 +53,7 @@ struct Target {
     /** Called between benchmarks (or between calibration and measured
         runs) to make sure all pending work in drivers / threads is
         complete. */
-    virtual void fence() { }
+    virtual void syncCPU() { }
 
     /** CPU-like targets can just be timed, but GPU-like
         targets need to pay attention to frame boundaries
@@ -66,9 +67,6 @@ struct Target {
     /** Stores any pixels drawn to the screen in the bitmap.
         Returns false on error. */
     virtual bool capturePixels(SkBitmap* bmp);
-
-    /** Writes any config-specific data to the log. */
-    virtual void fillOptions(NanoJSONResultsWriter& log) { }
 
     /** Writes gathered stats using SkDebugf. */
     virtual void dumpStats() {}

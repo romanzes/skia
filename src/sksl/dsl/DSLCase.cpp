@@ -5,21 +5,23 @@
  * found in the LICENSE file.
  */
 
-#include "include/sksl/DSLCase.h"
+#include "src/sksl/dsl/DSLCase.h"
 
-#include "include/private/SkSLStatement.h"
+using namespace skia_private;
 
 namespace SkSL {
 
 namespace dsl {
 
-DSLCase::DSLCase(DSLExpression value, SkSL::StatementArray statements)
+DSLCase::DSLCase(DSLExpression value, SkSL::StatementArray statements, Position pos)
     : fValue(std::move(value))
-    , fStatements(std::move(statements)) {}
+    , fStatements(std::move(statements))
+    , fPosition(pos) {}
 
-DSLCase::DSLCase(DSLExpression value, SkTArray<DSLStatement> statements)
-    : fValue(std::move(value)) {
-    fStatements.reserve_back(statements.count());
+DSLCase::DSLCase(DSLExpression value, TArray<DSLStatement> statements, Position pos)
+    : fValue(std::move(value))
+    , fPosition(pos) {
+    fStatements.reserve_back(statements.size());
     for (DSLStatement& stmt : statements) {
         fStatements.push_back(stmt.release());
     }
@@ -32,7 +34,7 @@ DSLCase::DSLCase(DSLCase&& other)
 DSLCase::~DSLCase() {}
 
 DSLCase& DSLCase::operator=(DSLCase&& other) {
-    fValue = std::move(other.fValue);
+    fValue.assign(std::move(other.fValue));
     fStatements = std::move(other.fStatements);
     return *this;
 }

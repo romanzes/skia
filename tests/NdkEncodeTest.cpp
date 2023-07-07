@@ -8,10 +8,12 @@
 #include "include/core/SkTypes.h"
 #ifdef SK_ENABLE_NDK_IMAGES
 #include "include/core/SkColor.h"
-#include "include/core/SkImageEncoder.h"
+#include "include/core/SkColorSpace.h"
 #include "include/core/SkImageGenerator.h"
-#include "include/private/SkMalloc.h"
-#include "src/images/SkImageEncoderPriv.h"
+#include "include/encode/SkJpegEncoder.h"
+#include "include/encode/SkPngEncoder.h"
+#include "include/encode/SkWebpEncoder.h"
+#include "include/private/base/SkMalloc.h"
 #include "tests/Test.h"
 #include "tools/Resources.h"
 #include "tools/ToolUtils.h"
@@ -39,7 +41,27 @@ static const struct {
 
 static sk_sp<SkData> encode_ndk(const SkPixmap& pmap, SkEncodedImageFormat format, int quality) {
     SkDynamicMemoryWStream stream;
-    return SkEncodeImageWithNDK(&stream, pmap, format, quality) ? stream.detachAsData() : nullptr;
+    SkDynamicMemoryWStream buf;
+    switch (format) {
+        case SkEncodedImageFormat::kPNG: {
+            bool success = SkPngEncoder::Encode(&buf, pmap, {});
+            return success ? buf.detachAsData() : nullptr;
+        }
+        case SkEncodedImageFormat::kJPEG: {
+            SkJpegEncoder::Options opts;
+            opts.fQuality = quality;
+            bool success = SkJpegEncoder::Encode(&buf, pmap, opts);
+            return success ? buf.detachAsData() : nullptr;
+        }
+        case SkEncodedImageFormat::kWEBP: {
+            SkWebpEncoder::Options opts;
+            opts.fQuality = quality;
+            bool success = SkWebpEncoder::Encode(&buf, pmap, opts);
+            return success ? buf.detachAsData() : nullptr;
+        }
+        default:
+            SkUNREACHABLE;
+    }
 }
 
 DEF_TEST(NdkEncode, r) {

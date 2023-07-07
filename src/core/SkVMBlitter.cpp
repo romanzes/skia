@@ -5,15 +5,15 @@
  * found in the LICENSE file.
  */
 
-#include "include/private/SkImageInfoPriv.h"
-#include "include/private/SkMacros.h"
-#include "src/core/SkArenaAlloc.h"
+#include "include/private/base/SkMacros.h"
+#include "src/base/SkArenaAlloc.h"
 #include "src/core/SkBlendModePriv.h"
 #include "src/core/SkBlenderBase.h"
 #include "src/core/SkColorFilterBase.h"
 #include "src/core/SkColorSpacePriv.h"
 #include "src/core/SkColorSpaceXformSteps.h"
 #include "src/core/SkCoreBlitters.h"
+#include "src/core/SkImageInfoPriv.h"
 #include "src/core/SkLRUCache.h"
 #include "src/core/SkMatrixProvider.h"
 #include "src/core/SkOpts.h"
@@ -24,6 +24,8 @@
 
 #include <cinttypes>
 
+#ifdef SK_ENABLE_SKVM
+
 namespace {
 
     // Uniforms set by the Blitter itself,
@@ -33,7 +35,7 @@ namespace {
         int       y;      // Device y coordinate.
     };
     static_assert(SkIsAlign4(sizeof(BlitterUniforms)), "");
-    static constexpr int kBlitterUniformsCount = sizeof(BlitterUniforms) / 4;
+    inline static constexpr int kBlitterUniformsCount = sizeof(BlitterUniforms) / 4;
 
     static skvm::Coord device_coord(skvm::Builder* p, skvm::Uniforms* uniforms) {
         skvm::I32 dx = p->uniform32(uniforms->base, offsetof(BlitterUniforms, right))
@@ -45,13 +47,13 @@ namespace {
         };
     }
 
-    struct NoopColorFilter : public SkColorFilterBase {
+    struct NoopColorFilter final : public SkColorFilterBase {
         skvm::Color onProgram(skvm::Builder*, skvm::Color c,
                               const SkColorInfo&, skvm::Uniforms*, SkArenaAlloc*) const override {
             return c;
         }
 
-        bool onAppendStages(const SkStageRec&, bool) const override { return true; }
+        bool appendStages(const SkStageRec&, bool) const override { return true; }
 
         // Only created here, should never be flattened / unflattened.
         Factory getFactory() const override { return nullptr; }
@@ -69,11 +71,14 @@ namespace {
 
         bool isOpaque() const override { return fSprite.isOpaque(); }
 
-        skvm::Color onProgram(skvm::Builder* p,
-                              skvm::Coord /*device*/, skvm::Coord /*local*/, skvm::Color /*paint*/,
-                              const SkMatrixProvider&, const SkMatrix* /*localM*/,
-                              const SkColorInfo& dst,
-                              skvm::Uniforms* uniforms, SkArenaAlloc*) const override {
+        skvm::Color program(skvm::Builder* p,
+                            skvm::Coord /*device*/,
+                            skvm::Coord /*local*/,
+                            skvm::Color /*paint*/,
+                            const MatrixRec&,
+                            const SkColorInfo& dst,
+                            skvm::Uniforms* uniforms,
+                            SkArenaAlloc*) const override {
             const SkColorType ct = fSprite.colorType();
 
             skvm::PixelFormat fmt = skvm::SkColorType_to_PixelFormat(ct);
@@ -95,33 +100,53 @@ namespace {
 
         bool isOpaque() const override { return fShader->isOpaque(); }
 
-        skvm::Color onProgram(skvm::Builder* p,
-                              skvm::Coord device, skvm::Coord local, skvm::Color paint,
-                              const SkMatrixProvider& matrices, const SkMatrix* localM,
-                              const SkColorInfo& dst,
-                              skvm::Uniforms* uniforms, SkArenaAlloc* alloc) const override {
+        skvm::Color program(skvm::Builder* p,
+                            skvm::Coord device,
+                            skvm::Coord local,
+                            skvm::Color paint,
+                            const MatrixRec& mRec,
+                            const SkColorInfo& dst,
+                            skvm::Uniforms* uniforms,
+                            SkArenaAlloc* alloc) const override {
             // Run our wrapped shader.
-            skvm::Color c = as_SB(fShader)->program(p, device,local, paint,
-                                                    matrices,localM, dst, uniforms,alloc);
+            skvm::Color c = as_SB(fShader)->program(p,
+                                                    device,
+                                                    local,
+                                                    paint,
+                                                    mRec,
+                                                    dst,
+                                                    uniforms,
+                                                    alloc);
             if (!c) {
                 return {};
             }
 
             float rate = 0.0f;
             switch (dst.colorType()) {
-                case kARGB_4444_SkColorType:    rate =   1/15.0f; break;
-                case   kRGB_565_SkColorType:    rate =   1/63.0f; break;
-                case    kGray_8_SkColorType:
-                case  kRGB_888x_SkColorType:
+                case kARGB_4444_SkColorType:
+                    rate = 1 / 15.0f;
+                    break;
+                case kRGB_565_SkColorType:
+                    rate = 1 / 63.0f;
+                    break;
+                case kGray_8_SkColorType:
+                case kRGB_888x_SkColorType:
                 case kRGBA_8888_SkColorType:
-                case kBGRA_8888_SkColorType:    rate =  1/255.0f; break;
+                case kBGRA_8888_SkColorType:
+                case kSRGBA_8888_SkColorType:
+                case kR8_unorm_SkColorType:
+                    rate = 1 / 255.0f;
+                    break;
                 case kRGB_101010x_SkColorType:
                 case kRGBA_1010102_SkColorType:
                 case kBGR_101010x_SkColorType:
-                case kBGRA_1010102_SkColorType: rate = 1/1023.0f; break;
+                case kBGRA_1010102_SkColorType:
+                    rate = 1 / 1023.0f;
+                    break;
 
                 case kUnknown_SkColorType:
                 case kAlpha_8_SkColorType:
+                case kBGR_101010x_XR_SkColorType:
                 case kRGBA_F16_SkColorType:
                 case kRGBA_F16Norm_SkColorType:
                 case kRGBA_F32_SkColorType:
@@ -130,7 +155,8 @@ namespace {
                 case kA16_unorm_SkColorType:
                 case kR16G16_float_SkColorType:
                 case kR16G16_unorm_SkColorType:
-                case kR16G16B16A16_unorm_SkColorType: return c;
+                case kR16G16B16A16_unorm_SkColorType:
+                    return c;
             }
 
             // See SkRasterPipeline dither stage.
@@ -168,29 +194,6 @@ namespace {
             return c;
         }
     };
-
-    // This is similar to using SkShaders::Color(paint.getColor4f(), nullptr),
-    // but uses the blitter-provided paint color uniforms instead of pushing its own.
-    struct PaintColorShader : public SkShaderBase {
-        explicit PaintColorShader(bool isOpaque) : fIsOpaque(isOpaque) {}
-
-        const bool fIsOpaque;
-
-        // Only created here temporarily... never serialized.
-        Factory      getFactory() const override { return nullptr; }
-        const char* getTypeName() const override { return "PaintColorShader"; }
-
-        bool isOpaque() const override { return fIsOpaque; }
-
-        skvm::Color onProgram(skvm::Builder*,
-                              skvm::Coord, skvm::Coord, skvm::Color paint,
-                              const SkMatrixProvider&, const SkMatrix*, const SkColorInfo&,
-                              skvm::Uniforms*, SkArenaAlloc*) const override {
-            // Incoming `paint` is unpremul in the destination color space,
-            // so we just need to premul it.
-            return premul(paint);
-        }
-    };
 }  // namespace
 
 bool SkVMBlitter::Key::operator==(const Key& that) const {
@@ -218,7 +221,7 @@ SkVMBlitter::Params SkVMBlitter::Params::withCoverage(Coverage c) const {
 SkVMBlitter::Params SkVMBlitter::EffectiveParams(const SkPixmap& device,
                                                  const SkPixmap* sprite,
                                                  SkPaint paint,
-                                                 const SkMatrixProvider& matrices,
+                                                 const SkMatrix& ctm,
                                                  sk_sp<SkShader> clip) {
     // Sprites take priority over any shader.  (There's rarely one set, and it's meaningless.)
     if (sprite) {
@@ -232,15 +235,21 @@ SkVMBlitter::Params SkVMBlitter::EffectiveParams(const SkPixmap& device,
     }
     SkASSERT(!paint.getColorFilter());
 
-    // If there's no explicit shader, the paint color is the shader,
+    // If there's no explicit shader, SkColorShader is the shader,
     // but if there is a shader, it's modulated by the paint alpha.
     sk_sp<SkShader> shader = paint.refShader();
     if (!shader) {
-        shader = sk_make_sp<PaintColorShader>(paint.getColor4f().isOpaque());
+        shader = SkShaders::Color(paint.getColor4f(), nullptr);
+        if (!shader) {
+            // If the paint color is non-finite (possible after RemoveColorFilter), we might not
+            // have a shader. (oss-fuzz:49391)
+            shader = SkShaders::Color(SK_ColorTRANSPARENT);
+        }
     } else if (paint.getAlphaf() < 1.0f) {
         shader = sk_make_sp<SkColorFilterShader>(std::move(shader),
                                                  paint.getAlphaf(),
                                                  sk_make_sp<NoopColorFilter>());
+        paint.setAlphaf(1.0f);
     }
 
     // Add dither to the end of the shader pipeline if requested and needed.
@@ -283,7 +292,7 @@ SkVMBlitter::Params SkVMBlitter::EffectiveParams(const SkPixmap& device,
         { device.colorType(), device.alphaType(), device.refColorSpace() },
         Coverage::Full,  // Placeholder... withCoverage() will change as needed.
         paintColor,
-        matrices,
+        ctm,
     };
 }
 
@@ -310,9 +319,13 @@ void SkVMBlitter::BuildProgram(skvm::Builder* p, const Params& params,
     skvm::Color paint = p->uniformColor(params.paint, uniforms);
 
     // See note about arguments above: a SpriteShader will call p->arg() once during program().
-    skvm::Color src = as_SB(params.shader)->program(p, device, /*local=*/device, paint,
-                                                    params.matrices, /*localM=*/nullptr,
-                                                    params.dst, uniforms, alloc);
+    skvm::Color src = as_SB(params.shader)->rootProgram(p,
+                                                        device,
+                                                        paint,
+                                                        params.ctm,
+                                                        params.dst,
+                                                        uniforms,
+                                                        alloc);
     SkASSERT(src);
     if (params.coverage == Coverage::Mask3D) {
         skvm::F32 M = from_unorm(8, p->load8(p->varying<uint8_t>())),
@@ -323,25 +336,12 @@ void SkVMBlitter::BuildProgram(skvm::Builder* p, const Params& params,
         src.b = min(src.b * M + A, src.a);
     }
 
-    // If we can determine this we can skip a fair bit of clamping!
-    bool src_in_gamut = false;
-
-    // Normalized premul formats can surprisingly represent some out-of-gamut
-    // values (e.g. r=0xff, a=0xee fits in unorm8 but r = 1.07), but most code
-    // working with normalized premul colors is not prepared to handle r,g,b > a.
-    // So we clamp the shader to gamut here before blending and coverage.
-    //
-    // In addition, GL clamps all its color channels to limits of the format just
-    // before the blend step (~here).  To match that auto-clamp, we clamp alpha to
-    // [0,1] too, just in case someone gave us an out of range alpha.
-    if (!src_in_gamut
-            && params.dst.alphaType() == kPremul_SkAlphaType
-            && SkColorTypeIsNormalized(params.dst.colorType())) {
-        src.a = clamp(src.a, 0.0f,  1.0f);
-        src.r = clamp(src.r, 0.0f, src.a);
-        src.g = clamp(src.g, 0.0f, src.a);
-        src.b = clamp(src.b, 0.0f, src.a);
-        src_in_gamut = true;
+    // GL clamps all its color channels to limits of the format just before the blend step (~here).
+    // TODO: Below, we also clamp after the blend step. If we can prove that none of the work here
+    // (especially blending, for built-in blend modes) will produce colors outside [0, 1] we may be
+    // able to skip the second clamp. For now, we clamp twice.
+    if (SkColorTypeIsNormalized(params.dst.colorType())) {
+        src = clamp01(src);
     }
 
     // Load the destination color.
@@ -378,11 +378,18 @@ void SkVMBlitter::BuildProgram(skvm::Builder* p, const Params& params,
             cov.a = select(src.a < dst.a, min(cov.r, min(cov.g, cov.b)),
                            max(cov.r, max(cov.g, cov.b)));
         } break;
+
+        case Coverage::kCount:
+            SkUNREACHABLE;
     }
     if (params.clip) {
-        skvm::Color clip = as_SB(params.clip)->program(p, device, /*local=*/device, paint,
-                                                       params.matrices, /*localM=*/nullptr,
-                                                       params.dst, uniforms, alloc);
+        skvm::Color clip = as_SB(params.clip)->rootProgram(p,
+                                                           device,
+                                                           paint,
+                                                           params.ctm,
+                                                           params.dst,
+                                                           uniforms,
+                                                           alloc);
         SkAssertResult(clip);
         cov.r *= clip.a;  // We use the alpha channel of clip for all four.
         cov.g *= clip.a;
@@ -424,17 +431,7 @@ void SkVMBlitter::BuildProgram(skvm::Builder* p, const Params& params,
     }
 
     // Clamp to fit destination color format if needed.
-    if (as_blendmode && src_in_gamut) {
-        // An in-gamut src blended with an in-gamut dst should stay in gamut.
-        // Being in-gamut implies all channels are in [0,1], so no need to clamp.
-        // We allow one ulp error above 1.0f, and about that much (~1.2e-7) below 0.
-        skvm::F32 lo = pun_to_F32(p->splat(0xb400'0000)),
-                  hi = pun_to_F32(p->splat(0x3f80'0001));
-        assert_true(src.r == clamp(src.r, lo, hi), src.r);
-        assert_true(src.g == clamp(src.g, lo, hi), src.g);
-        assert_true(src.b == clamp(src.b, lo, hi), src.b);
-        assert_true(src.a == clamp(src.a, lo, hi), src.a);
-    } else if (SkColorTypeIsNormalized(params.dst.colorType())) {
+    if (SkColorTypeIsNormalized(params.dst.colorType())) {
         src = clamp01(src);
     }
 
@@ -464,8 +461,13 @@ SkVMBlitter::Key SkVMBlitter::CacheKey(
         };
 
         uint64_t hash = 0;
-        *outColor = sb->program(&p, device, /*local=*/device, paint, params.matrices,
-                /*localM=*/nullptr, params.dst, uniforms, alloc);
+        *outColor = sb->rootProgram(&p,
+                                    device,
+                                    paint,
+                                    params.ctm,
+                                    params.dst,
+                                    uniforms,
+                                    alloc);
         if (*outColor) {
             hash = p.hash();
             // p.hash() folds in all instructions to produce r,g,b,a but does not know
@@ -551,41 +553,42 @@ SkVMBlitter::SkVMBlitter(const SkPixmap& device,
                          const SkPaint& paint,
                          const SkPixmap* sprite,
                          SkIPoint spriteOffset,
-                         const SkMatrixProvider& matrices,
+                         const SkMatrix& ctm,
                          sk_sp<SkShader> clip,
                          bool* ok)
-        : fDevice(device), fSprite(sprite ? *sprite : SkPixmap{})
+        : fDevice(device)
+        , fSprite(sprite ? *sprite : SkPixmap{})
         , fSpriteOffset(spriteOffset)
         , fUniforms(skvm::UPtr{{0}}, kBlitterUniformsCount)
-        , fParams(EffectiveParams(device, sprite, paint, matrices, std::move(clip)))
+        , fParams(EffectiveParams(device, sprite, paint, ctm, std::move(clip)))
         , fKey(CacheKey(fParams, &fUniforms, &fAlloc, ok)) {}
 
 SkVMBlitter::~SkVMBlitter() {
-    if (SkLRUCache<Key, skvm::Program>* cache = TryAcquireProgramCache()) {
-        auto cache_program = [&](skvm::Program&& program, Coverage coverage) {
-            if (!program.empty()) {
-                cache->insert_or_update(fKey.withCoverage(coverage), std::move(program));
+    if (fStoreToCache) {
+        if (SkLRUCache<Key, skvm::Program>* cache = TryAcquireProgramCache()) {
+            auto cache_program = [&](SkTLazy<skvm::Program>& program, Coverage coverage) {
+                if (program.isValid() && !program->hasTraceHooks()) {
+                    cache->insert_or_update(fKey.withCoverage(coverage), std::move(*program));
+                }
+            };
+            for (int c = 0; c < Coverage::kCount; c++) {
+                cache_program(fPrograms[c], static_cast<Coverage>(c));
             }
-        };
-        cache_program(std::move(fBlitH),         Coverage::Full);
-        cache_program(std::move(fBlitAntiH),     Coverage::UniformF);
-        cache_program(std::move(fBlitMaskA8),    Coverage::MaskA8);
-        cache_program(std::move(fBlitMask3D),    Coverage::Mask3D);
-        cache_program(std::move(fBlitMaskLCD16), Coverage::MaskLCD16);
 
-        ReleaseProgramCache();
+            ReleaseProgramCache();
+        }
     }
 }
 
 SkLRUCache<SkVMBlitter::Key, skvm::Program>* SkVMBlitter::TryAcquireProgramCache() {
-#if 1 && defined(SKVM_JIT)
+#if defined(SKVM_JIT)
     thread_local static SkLRUCache<Key, skvm::Program> cache{64};
     return &cache;
 #else
-    // iOS in particular does not support thread_local until iOS 9.0.
-        // On the other hand, we'll never be able to JIT there anyway.
-        // It's probably fine to not cache any interpreted programs, anywhere.
-        return nullptr;
+    // iOS now supports thread_local since iOS 9.
+    // On the other hand, we'll never be able to JIT there anyway.
+    // It's probably fine to not cache any interpreted programs, anywhere.
+    return nullptr;
 #endif
 }
 
@@ -603,20 +606,30 @@ SkString SkVMBlitter::DebugName(const Key& key) {
 
 void SkVMBlitter::ReleaseProgramCache() {}
 
-skvm::Program SkVMBlitter::buildProgram(Coverage coverage) {
+skvm::Program* SkVMBlitter::buildProgram(Coverage coverage) {
+    // eg, blitter re-use...
+    if (fProgramPtrs[coverage]) {
+        return fProgramPtrs[coverage];
+    }
+
+    // Next, cache lookup...
     Key key = fKey.withCoverage(coverage);
     {
-        skvm::Program p;
+        skvm::Program* p = nullptr;
         if (SkLRUCache<Key, skvm::Program>* cache = TryAcquireProgramCache()) {
-            if (skvm::Program* found = cache->find(key)) {
-                p = std::move(*found);
-            }
+            p = cache->find(key);
             ReleaseProgramCache();
         }
-        if (!p.empty()) {
+        if (p) {
+            SkASSERT(!p->empty());
+            fProgramPtrs[coverage] = p;
             return p;
         }
     }
+
+    // Okay, let's build it...
+    fStoreToCache = true;
+
     // We don't really _need_ to rebuild fUniforms here.
     // It's just more natural to have effects unconditionally emit them,
     // and more natural to rebuild fUniforms than to emit them into a temporary buffer.
@@ -629,9 +642,9 @@ skvm::Program SkVMBlitter::buildProgram(Coverage coverage) {
               "%zu, prev was %zu", fUniforms.buf.size(), prev);
 
     skvm::Program program = builder.done(DebugName(key).c_str());
-    if (false) {
+    if ((false)) {
         static std::atomic<int> missed{0},
-                total{0};
+                                total{0};
         if (!program.hasJIT()) {
             SkDebugf("\ncouldn't JIT %s\n", DebugName(key).c_str());
             builder.dump();
@@ -644,7 +657,8 @@ skvm::Program SkVMBlitter::buildProgram(Coverage coverage) {
                                 total.load(), missed.load()); });
         }
     }
-    return program;
+    fProgramPtrs[coverage] = fPrograms[coverage].set(std::move(program));
+    return fProgramPtrs[coverage];
 }
 
 void SkVMBlitter::updateUniforms(int right, int y) {
@@ -661,28 +675,38 @@ const void* SkVMBlitter::isSprite(int x, int y) const {
 }
 
 void SkVMBlitter::blitH(int x, int y, int w) {
-    if (fBlitH.empty()) {
-        fBlitH = this->buildProgram(Coverage::Full);
-    }
+    skvm::Program* blit_h = this->buildProgram(Coverage::Full);
     this->updateUniforms(x+w, y);
     if (const void* sprite = this->isSprite(x,y)) {
-        fBlitH.eval(w, fUniforms.buf.data(), fDevice.addr(x,y), sprite);
+        blit_h->eval(w, fUniforms.buf.data(), fDevice.addr(x,y), sprite);
     } else {
-        fBlitH.eval(w, fUniforms.buf.data(), fDevice.addr(x,y));
+        blit_h->eval(w, fUniforms.buf.data(), fDevice.addr(x,y));
     }
 }
 
 void SkVMBlitter::blitAntiH(int x, int y, const SkAlpha cov[], const int16_t runs[]) {
-    if (fBlitAntiH.empty()) {
-        fBlitAntiH = this->buildProgram(Coverage::UniformF);
-    }
+    skvm::Program* blit_anti_h = this->buildProgram(Coverage::UniformF);
+    skvm::Program* blit_h = this->buildProgram(Coverage::Full);
+
     for (int16_t run = *runs; run > 0; run = *runs) {
-        this->updateUniforms(x+run, y);
-        const float covF = *cov * (1/255.0f);
-        if (const void* sprite = this->isSprite(x,y)) {
-            fBlitAntiH.eval(run, fUniforms.buf.data(), fDevice.addr(x,y), sprite, &covF);
-        } else {
-            fBlitAntiH.eval(run, fUniforms.buf.data(), fDevice.addr(x,y), &covF);
+        const SkAlpha coverage = *cov;
+        if (coverage != 0x00) {
+            this->updateUniforms(x+run, y);
+            const void* sprite = this->isSprite(x,y);
+            if (coverage == 0xFF) {
+                if (sprite) {
+                    blit_h->eval(run, fUniforms.buf.data(), fDevice.addr(x,y), sprite);
+                } else {
+                    blit_h->eval(run, fUniforms.buf.data(), fDevice.addr(x,y));
+                }
+            } else {
+                const float covF = *cov * (1/255.0f);
+                if (sprite) {
+                    blit_anti_h->eval(run, fUniforms.buf.data(), fDevice.addr(x,y), sprite, &covF);
+                } else {
+                    blit_anti_h->eval(run, fUniforms.buf.data(), fDevice.addr(x,y), &covF);
+                }
+            }
         }
         x    += run;
         runs += run;
@@ -700,24 +724,15 @@ void SkVMBlitter::blitMask(const SkMask& mask, const SkIRect& clip) {
         default: SkUNREACHABLE;     // ARGB and SDF masks shouldn't make it here.
 
         case SkMask::k3D_Format:
-            if (fBlitMask3D.empty()) {
-                fBlitMask3D = this->buildProgram(Coverage::Mask3D);
-            }
-            program = &fBlitMask3D;
+            program = this->buildProgram(Coverage::Mask3D);
             break;
 
         case SkMask::kA8_Format:
-            if (fBlitMaskA8.empty()) {
-                fBlitMaskA8 = this->buildProgram(Coverage::MaskA8);
-            }
-            program = &fBlitMaskA8;
+            program = this->buildProgram(Coverage::MaskA8);
             break;
 
         case SkMask::kLCD16_Format:
-            if (fBlitMaskLCD16.empty()) {
-                fBlitMaskLCD16 = this->buildProgram(Coverage::MaskLCD16);
-            }
-            program = &fBlitMaskLCD16;
+            program = this->buildProgram(Coverage::MaskLCD16);
             break;
     }
 
@@ -730,7 +745,7 @@ void SkVMBlitter::blitMask(const SkMask& mask, const SkIRect& clip) {
             auto  mptr = (const uint8_t*)mask.getAddr(x,y);
             this->updateUniforms(x+w,y);
 
-            if (program == &fBlitMask3D) {
+            if (mask.fFormat == SkMask::k3D_Format) {
                 size_t plane = mask.computeImageSize();
                 if (const void* sprite = this->isSprite(x,y)) {
                     program->eval(w, fUniforms.buf.data(), dptr, sprite, mptr + 1*plane
@@ -754,12 +769,17 @@ void SkVMBlitter::blitMask(const SkMask& mask, const SkIRect& clip) {
 
 SkVMBlitter* SkVMBlitter::Make(const SkPixmap& device,
                                const SkPaint& paint,
-                               const SkMatrixProvider& matrices,
+                               const SkMatrix& ctm,
                                SkArenaAlloc* alloc,
                                sk_sp<SkShader> clip) {
     bool ok = true;
-    SkVMBlitter* blitter = alloc->make<SkVMBlitter>(
-            device, paint, /*sprite=*/nullptr, SkIPoint{0,0}, matrices, std::move(clip), &ok);
+    SkVMBlitter* blitter = alloc->make<SkVMBlitter>(device,
+                                                    paint,
+                                                    /*sprite=*/nullptr,
+                                                    SkIPoint{0,0},
+                                                    ctm,
+                                                    std::move(clip),
+                                                    &ok);
     return ok ? blitter : nullptr;
 }
 
@@ -774,8 +794,14 @@ SkVMBlitter* SkVMBlitter::Make(const SkPixmap& device,
         return nullptr;
     }
     bool ok = true;
-    auto blitter = alloc->make<SkVMBlitter>(
-            device, paint, &sprite, SkIPoint{left,top},
-            SkSimpleMatrixProvider{SkMatrix{}}, std::move(clip), &ok);
+    auto blitter = alloc->make<SkVMBlitter>(device,
+                                            paint,
+                                            &sprite,
+                                            SkIPoint{left,top},
+                                            SkMatrix::I(),
+                                            std::move(clip),
+                                            &ok);
     return ok ? blitter : nullptr;
 }
+
+#endif  // SK_ENABLE_SKVM

@@ -5,30 +5,88 @@
  * found in the LICENSE file.
  */
 
+#include "include/core/SkAlphaType.h"
+#include "include/core/SkBitmap.h"
+#include "include/core/SkBlendMode.h"
 #include "include/core/SkCanvas.h"
+#include "include/core/SkColor.h"
+#include "include/core/SkColorSpace.h"
+#include "include/core/SkColorType.h"
+#include "include/core/SkData.h"
+#include "include/core/SkDeferredDisplayList.h"
 #include "include/core/SkDeferredDisplayListRecorder.h"
+#include "include/core/SkImageInfo.h"
+#include "include/core/SkMatrix.h"
+#include "include/core/SkPaint.h"
+#include "include/core/SkPoint.h"
+#include "include/core/SkRect.h"
+#include "include/core/SkRefCnt.h"
+#include "include/core/SkSamplingOptions.h"
+#include "include/core/SkSurface.h"
 #include "include/core/SkSurfaceCharacterization.h"
-#include "include/private/SkMalloc.h"
-#include "include/utils/SkRandom.h"
+#include "include/core/SkSurfaceProps.h"
+#include "include/core/SkTypes.h"
+#include "include/gpu/GpuTypes.h"
+#include "include/gpu/GrBackendSurface.h"
+#include "include/gpu/GrDirectContext.h"
+#include "include/gpu/GrRecordingContext.h"
+#include "include/gpu/GrTypes.h"
+#include "include/private/SkColorData.h"
+#include "include/private/base/SkDebug.h"
+#include "include/private/base/SkMalloc.h"
+#include "include/private/gpu/ganesh/GrTypesPriv.h"
+#include "src/base/SkRandom.h"
 #include "src/core/SkCanvasPriv.h"
 #include "src/core/SkMessageBus.h"
-#include "src/gpu/GrDefaultGeoProcFactory.h"
-#include "src/gpu/GrDirectContextPriv.h"
-#include "src/gpu/GrGpu.h"
-#include "src/gpu/GrMemoryPool.h"
-#include "src/gpu/GrOpFlushState.h"
-#include "src/gpu/GrProxyProvider.h"
-#include "src/gpu/GrRecordingContextPriv.h"
-#include "src/gpu/GrResourceProvider.h"
-#include "src/gpu/GrStyle.h"
-#include "src/gpu/GrThreadSafeCache.h"
-#include "src/gpu/ops/GrDrawOp.h"
-#include "src/gpu/v1/SurfaceDrawContext_v1.h"
+#include "src/gpu/GpuTypesPriv.h"
+#include "src/gpu/ResourceKey.h"
+#include "src/gpu/SkBackingFit.h"
+#include "src/gpu/Swizzle.h"
+#include "src/gpu/ganesh/GrAppliedClip.h"
+#include "src/gpu/ganesh/GrBuffer.h"
+#include "src/gpu/ganesh/GrCaps.h"
+#include "src/gpu/ganesh/GrColorSpaceXform.h"
+#include "src/gpu/ganesh/GrDefaultGeoProcFactory.h"
+#include "src/gpu/ganesh/GrDirectContextPriv.h"
+#include "src/gpu/ganesh/GrGpu.h"
+#include "src/gpu/ganesh/GrGpuBuffer.h"
+#include "src/gpu/ganesh/GrOpFlushState.h"
+#include "src/gpu/ganesh/GrPaint.h"
+#include "src/gpu/ganesh/GrProcessorSet.h"
+#include "src/gpu/ganesh/GrProxyProvider.h"
+#include "src/gpu/ganesh/GrRecordingContextPriv.h"
+#include "src/gpu/ganesh/GrRenderTargetProxy.h"
+#include "src/gpu/ganesh/GrResourceCache.h"
+#include "src/gpu/ganesh/GrResourceProvider.h"
+#include "src/gpu/ganesh/GrSamplerState.h"
+#include "src/gpu/ganesh/GrStyle.h"
+#include "src/gpu/ganesh/GrSurface.h"
+#include "src/gpu/ganesh/GrSurfaceProxy.h"
+#include "src/gpu/ganesh/GrSurfaceProxyView.h"
+#include "src/gpu/ganesh/GrTextureProxy.h"
+#include "src/gpu/ganesh/GrThreadSafeCache.h"
+#include "src/gpu/ganesh/SurfaceDrawContext.h"
+#include "src/gpu/ganesh/ops/GrDrawOp.h"
+#include "src/gpu/ganesh/ops/GrOp.h"
+#include "tests/CtsEnforcement.h"
 #include "tests/Test.h"
 #include "tests/TestUtils.h"
 #include "tools/gpu/ProxyUtils.h"
 
+#include <chrono>
+#include <cstddef>
+#include <cstdint>
+#include <functional>
+#include <memory>
 #include <thread>
+#include <utility>
+
+class GrDstProxyView;
+class GrProgramInfo;
+class GrThreadSafeVertexTestOp;
+class SkArenaAlloc;
+enum class GrXferBarrierFlags;
+struct GrContextOptions;
 
 static constexpr int kImageWH = 32;
 static constexpr auto kImageOrigin = kBottomLeft_GrSurfaceOrigin;
@@ -38,24 +96,25 @@ static SkImageInfo default_ii(int wh) {
     return SkImageInfo::Make(wh, wh, kRGBA_8888_SkColorType, kPremul_SkAlphaType);
 }
 
-static std::unique_ptr<skgpu::v1::SurfaceDrawContext> new_SDC(GrRecordingContext* rContext,
-                                                              int wh) {
-    return skgpu::v1::SurfaceDrawContext::Make(rContext,
-                                               GrColorType::kRGBA_8888,
-                                               nullptr,
-                                               SkBackingFit::kExact,
-                                               {wh, wh},
-                                               SkSurfaceProps(),
-                                               1,
-                                               GrMipMapped::kNo,
-                                               GrProtected::kNo,
-                                               kImageOrigin,
-                                               SkBudgeted::kYes);
+static std::unique_ptr<skgpu::ganesh::SurfaceDrawContext> new_SDC(GrRecordingContext* rContext,
+                                                                  int wh) {
+    return skgpu::ganesh::SurfaceDrawContext::Make(rContext,
+                                                   GrColorType::kRGBA_8888,
+                                                   nullptr,
+                                                   SkBackingFit::kExact,
+                                                   {wh, wh},
+                                                   SkSurfaceProps(),
+                                                   /*label=*/{},
+                                                   1,
+                                                   GrMipmapped::kNo,
+                                                   GrProtected::kNo,
+                                                   kImageOrigin,
+                                                   skgpu::Budgeted::kYes);
 }
 
-static void create_view_key(GrUniqueKey* key, int wh, int id) {
-    static const GrUniqueKey::Domain kViewDomain = GrUniqueKey::GenerateDomain();
-    GrUniqueKey::Builder builder(key, kViewDomain, 1);
+static void create_view_key(skgpu::UniqueKey* key, int wh, int id) {
+    static const skgpu::UniqueKey::Domain kViewDomain = skgpu::UniqueKey::GenerateDomain();
+    skgpu::UniqueKey::Builder builder(key, kViewDomain, 1);
     builder[0] = wh;
     builder.finish();
 
@@ -64,9 +123,9 @@ static void create_view_key(GrUniqueKey* key, int wh, int id) {
     }
 }
 
-static void create_vert_key(GrUniqueKey* key, int wh, int id) {
-    static const GrUniqueKey::Domain kVertDomain = GrUniqueKey::GenerateDomain();
-    GrUniqueKey::Builder builder(key, kVertDomain, 1);
+static void create_vert_key(skgpu::UniqueKey* key, int wh, int id) {
+    static const skgpu::UniqueKey::Domain kVertDomain = skgpu::UniqueKey::GenerateDomain();
+    skgpu::UniqueKey::Builder builder(key, kVertDomain, 1);
     builder[0] = wh;
     builder.finish();
 
@@ -100,8 +159,6 @@ static SkBitmap create_bitmap(int wh) {
     return bitmap;
 }
 
-class GrThreadSafeVertexTestOp;
-
 class TestHelper {
 public:
     struct Stats {
@@ -117,8 +174,7 @@ public:
                GrThreadSafeCache::IsNewerBetter isNewerBetter = default_is_newer_better)
             : fDContext(dContext)
             , fIsNewerBetter(isNewerBetter) {
-
-        fDst = SkSurface::MakeRenderTarget(dContext, SkBudgeted::kNo, default_ii(kImageWH));
+        fDst = SkSurface::MakeRenderTarget(dContext, skgpu::Budgeted::kNo, default_ii(kImageWH));
         SkAssertResult(fDst);
 
         SkSurfaceCharacterization characterization;
@@ -198,7 +254,6 @@ public:
                          {1.0f, 1.0f, 1.0f, 1.0f},
                          SkRect::MakeWH(wh, wh),
                          SkRect::MakeWH(wh, wh),
-                         GrAA::kNo,
                          GrQuadAAFlags::kNone,
                          SkCanvas::kFast_SrcRectConstraint,
                          SkMatrix::I(),
@@ -215,7 +270,7 @@ public:
             return false;
         }
 
-        GrUniqueKey key;
+        skgpu::UniqueKey key;
         create_view_key(&key, wh, kNoID);
 
         auto threadSafeCache = this->threadSafeCache();
@@ -301,7 +356,7 @@ public:
             return false;
         }
 
-        GrUniqueKey key;
+        skgpu::UniqueKey key;
         create_vert_key(&key, wh, kNoID);
 
         auto threadSafeCache = this->threadSafeCache();
@@ -372,9 +427,8 @@ public:
     }
 
     bool checkImage(skiatest::Reporter* reporter, sk_sp<SkDeferredDisplayList> ddl) {
-        sk_sp<SkSurface> tmp = SkSurface::MakeRenderTarget(fDContext,
-                                                           SkBudgeted::kNo,
-                                                           default_ii(kImageWH));
+        sk_sp<SkSurface> tmp =
+                SkSurface::MakeRenderTarget(fDContext, skgpu::Budgeted::kNo, default_ii(kImageWH));
         if (!tmp) {
             return false;
         }
@@ -391,7 +445,7 @@ public:
                                                                  GrRenderable::kNo);
 
         return GrSurface::ComputeSize(format, {wh, wh}, /*colorSamplesPerPixel=*/1,
-                                      GrMipMapped::kNo, /*binSize=*/false);
+                                      GrMipmapped::kNo, /*binSize=*/false);
     }
 
 private:
@@ -457,6 +511,7 @@ private:
     GrProgramInfo* createProgramInfo(const GrCaps* caps,
                                      SkArenaAlloc* arena,
                                      const GrSurfaceProxyView& writeView,
+                                     bool usesMSAASurface,
                                      GrAppliedClip&& appliedClip,
                                      const GrDstProxyView& dstProxyView,
                                      GrXferBarrierFlags renderPassXferBarriers,
@@ -470,7 +525,7 @@ private:
                                      LocalCoords::kUnused_Type,
                                      SkMatrix::I());
 
-        return sk_gpu_test::CreateProgramInfo(caps, arena, writeView,
+        return sk_gpu_test::CreateProgramInfo(caps, arena, writeView, usesMSAASurface,
                                               std::move(appliedClip), dstProxyView,
                                               gp, SkBlendMode::kSrcOver,
                                               GrPrimitiveType::kTriangleStrip,
@@ -481,6 +536,7 @@ private:
         return this->createProgramInfo(&flushState->caps(),
                                        flushState->allocator(),
                                        flushState->writeView(),
+                                       flushState->usesMSAASurface(),
                                        flushState->detachAppliedClip(),
                                        flushState->dstProxyView(),
                                        flushState->renderPassBarriers(),
@@ -498,7 +554,7 @@ private:
                 ++fStats->fNumLazyCreations;
             }
 
-            GrUniqueKey key;
+            skgpu::UniqueKey key;
             create_vert_key(&key, fWH, fID);
 
             // We can "fail the lookup" to simulate a threaded race condition
@@ -538,10 +594,10 @@ private:
             if (!failFillingIn) {
                 ++fStats->fNumHWCreations;
 
-                sk_sp<GrGpuBuffer> tmp = rp->createBuffer(fVertexData->size(),
+                sk_sp<GrGpuBuffer> tmp = rp->createBuffer(fVertexData->vertices(),
+                                                          fVertexData->size(),
                                                           GrGpuBufferType::kVertex,
-                                                          kStatic_GrAccessPattern,
-                                                          fVertexData->vertices());
+                                                          kStatic_GrAccessPattern);
                 fVertexData->setGpuBuffer(std::move(tmp));
             }
         }
@@ -555,12 +611,15 @@ private:
                       GrLoadOp colorLoadOp) override {
         SkArenaAlloc* arena = rContext->priv().recordTimeAllocator();
 
+        // DMSAA is not supported on DDL.
+        bool usesMSAASurface = writeView.asRenderTargetProxy()->numSamples() > 1;
+
         // This is equivalent to a GrOpFlushState::detachAppliedClip
         GrAppliedClip appliedClip = clip ? std::move(*clip) : GrAppliedClip::Disabled();
 
         fProgramInfo = this->createProgramInfo(rContext->priv().caps(), arena, writeView,
-                                               std::move(appliedClip), dstProxyView,
-                                               renderPassXferBarriers, colorLoadOp);
+                                               usesMSAASurface, std::move(appliedClip),
+                                               dstProxyView, renderPassXferBarriers, colorLoadOp);
 
         rContext->priv().recordProgramInfo(fProgramInfo);
 
@@ -626,16 +685,14 @@ GrSurfaceProxyView TestHelper::CreateViewOnCpu(GrRecordingContext* rContext,
                                                Stats* stats) {
     GrProxyProvider* proxyProvider = rContext->priv().proxyProvider();
 
-    sk_sp<GrTextureProxy> proxy = proxyProvider->createProxyFromBitmap(create_bitmap(wh),
-                                                                       GrMipmapped::kNo,
-                                                                       SkBackingFit::kExact,
-                                                                       SkBudgeted::kYes);
+    sk_sp<GrTextureProxy> proxy = proxyProvider->createProxyFromBitmap(
+            create_bitmap(wh), GrMipmapped::kNo, SkBackingFit::kExact, skgpu::Budgeted::kYes);
     if (!proxy) {
         return {};
     }
 
-    GrSwizzle swizzle = rContext->priv().caps()->getReadSwizzle(proxy->backendFormat(),
-                                                                GrColorType::kRGBA_8888);
+    skgpu::Swizzle swizzle = rContext->priv().caps()->getReadSwizzle(proxy->backendFormat(),
+                                                                     GrColorType::kRGBA_8888);
     ++stats->fNumSWCreations;
     return {std::move(proxy), kImageOrigin, swizzle};
 }
@@ -643,8 +700,7 @@ GrSurfaceProxyView TestHelper::CreateViewOnCpu(GrRecordingContext* rContext,
 bool TestHelper::FillInViewOnGpu(GrDirectContext* dContext, int wh, Stats* stats,
                                  const GrSurfaceProxyView& lazyView,
                                  sk_sp<GrThreadSafeCache::Trampoline> trampoline) {
-
-    std::unique_ptr<skgpu::v1::SurfaceDrawContext> sdc = new_SDC(dContext, wh);
+    std::unique_ptr<skgpu::ganesh::SurfaceDrawContext> sdc = new_SDC(dContext, wh);
 
     GrPaint paint;
     paint.setColor4f({0.0f, 0.0f, 1.0f, 1.0f});
@@ -668,7 +724,7 @@ GrSurfaceProxyView TestHelper::AccessCachedView(GrRecordingContext* rContext,
                                                 int wh,
                                                 bool failLookup, bool failFillingIn, int id,
                                                 Stats* stats) {
-    GrUniqueKey key;
+    skgpu::UniqueKey key;
     create_view_key(&key, wh, id);
 
     if (GrDirectContext* dContext = rContext->asDirectContext()) {
@@ -754,11 +810,17 @@ static void test_1(GrDirectContext* dContext, skiatest::Reporter* reporter,
     helper.checkImage(reporter, helper.snap2());
 }
 
-DEF_GPUTEST_FOR_RENDERING_CONTEXTS(GrThreadSafeCache1View, reporter, ctxInfo) {
+DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(GrThreadSafeCache1View,
+                                       reporter,
+                                       ctxInfo,
+                                       CtsEnforcement::kNever) {
     test_1(ctxInfo.directContext(), reporter, &TestHelper::addViewAccess, &TestHelper::checkView);
 }
 
-DEF_GPUTEST_FOR_RENDERING_CONTEXTS(GrThreadSafeCache1Verts, reporter, ctxInfo) {
+DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(GrThreadSafeCache1Verts,
+                                       reporter,
+                                       ctxInfo,
+                                       CtsEnforcement::kNever) {
     test_1(ctxInfo.directContext(), reporter, &TestHelper::addVertAccess, &TestHelper::checkVert);
 }
 
@@ -792,11 +854,17 @@ static void test_2(GrDirectContext* dContext, skiatest::Reporter* reporter,
     helper.checkImage(reporter, helper.snap2());
 }
 
-DEF_GPUTEST_FOR_RENDERING_CONTEXTS(GrThreadSafeCache2View, reporter, ctxInfo) {
+DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(GrThreadSafeCache2View,
+                                       reporter,
+                                       ctxInfo,
+                                       CtsEnforcement::kNever) {
     test_2(ctxInfo.directContext(), reporter, &TestHelper::addViewAccess, &TestHelper::checkView);
 }
 
-DEF_GPUTEST_FOR_RENDERING_CONTEXTS(GrThreadSafeCache2Verts, reporter, ctxInfo) {
+DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(GrThreadSafeCache2Verts,
+                                       reporter,
+                                       ctxInfo,
+                                       CtsEnforcement::kNever) {
     test_2(ctxInfo.directContext(), reporter, &TestHelper::addVertAccess, &TestHelper::checkVert);
 }
 
@@ -824,11 +892,17 @@ static void test_3(GrDirectContext* dContext, skiatest::Reporter* reporter,
     helper.checkImage(reporter, helper.snap1());
 }
 
-DEF_GPUTEST_FOR_RENDERING_CONTEXTS(GrThreadSafeCache3View, reporter, ctxInfo) {
+DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(GrThreadSafeCache3View,
+                                       reporter,
+                                       ctxInfo,
+                                       CtsEnforcement::kNever) {
     test_3(ctxInfo.directContext(), reporter, &TestHelper::addViewAccess, &TestHelper::checkView);
 }
 
-DEF_GPUTEST_FOR_RENDERING_CONTEXTS(GrThreadSafeCache3Verts, reporter, ctxInfo) {
+DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(GrThreadSafeCache3Verts,
+                                       reporter,
+                                       ctxInfo,
+                                       CtsEnforcement::kNever) {
     test_3(ctxInfo.directContext(), reporter, &TestHelper::addVertAccess, &TestHelper::checkVert);
 }
 
@@ -858,11 +932,17 @@ static void test_4(GrDirectContext* dContext, skiatest::Reporter* reporter,
     helper.checkImage(reporter, helper.snap2());
 }
 
-DEF_GPUTEST_FOR_RENDERING_CONTEXTS(GrThreadSafeCache4View, reporter, ctxInfo) {
+DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(GrThreadSafeCache4View,
+                                       reporter,
+                                       ctxInfo,
+                                       CtsEnforcement::kNever) {
     test_4(ctxInfo.directContext(), reporter, &TestHelper::addViewAccess, &TestHelper::checkView);
 }
 
-DEF_GPUTEST_FOR_RENDERING_CONTEXTS(GrThreadSafeCache4Verts, reporter, ctxInfo) {
+DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(GrThreadSafeCache4Verts,
+                                       reporter,
+                                       ctxInfo,
+                                       CtsEnforcement::kNever) {
     test_4(ctxInfo.directContext(), reporter, &TestHelper::addVertAccess, &TestHelper::checkVert);
 }
 
@@ -897,12 +977,18 @@ static void test_4_5(GrDirectContext* dContext, skiatest::Reporter* reporter,
     helper.checkImage(reporter, helper.snap1());
 }
 
-DEF_GPUTEST_FOR_RENDERING_CONTEXTS(GrThreadSafeCache4_5View, reporter, ctxInfo) {
+DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(GrThreadSafeCache4_5View,
+                                       reporter,
+                                       ctxInfo,
+                                       CtsEnforcement::kNever) {
     test_4_5(ctxInfo.directContext(), reporter,
              &TestHelper::addViewAccess, &TestHelper::checkView);
 }
 
-DEF_GPUTEST_FOR_RENDERING_CONTEXTS(GrThreadSafeCache4_5Verts, reporter, ctxInfo) {
+DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(GrThreadSafeCache4_5Verts,
+                                       reporter,
+                                       ctxInfo,
+                                       CtsEnforcement::kNever) {
     test_4_5(ctxInfo.directContext(), reporter,
              &TestHelper::addVertAccess, &TestHelper::checkVert);
 }
@@ -937,12 +1023,18 @@ static void test_4_75(GrDirectContext* dContext, skiatest::Reporter* reporter,
     REPORTER_ASSERT(reporter, helper.stats()->fNumSWCreations == 0);
 }
 
-DEF_GPUTEST_FOR_RENDERING_CONTEXTS(GrThreadSafeCache4_75View, reporter, ctxInfo) {
+DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(GrThreadSafeCache4_75View,
+                                       reporter,
+                                       ctxInfo,
+                                       CtsEnforcement::kNever) {
     test_4_75(ctxInfo.directContext(), reporter,
               &TestHelper::addViewAccess, &TestHelper::checkView);
 }
 
-DEF_GPUTEST_FOR_RENDERING_CONTEXTS(GrThreadSafeCache4_75Verts, reporter, ctxInfo) {
+DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(GrThreadSafeCache4_75Verts,
+                                       reporter,
+                                       ctxInfo,
+                                       CtsEnforcement::kNever) {
     test_4_75(ctxInfo.directContext(), reporter,
               &TestHelper::addVertAccess, &TestHelper::checkVert);
 }
@@ -976,11 +1068,17 @@ static void test_5(GrDirectContext* dContext, skiatest::Reporter* reporter,
     }
 }
 
-DEF_GPUTEST_FOR_RENDERING_CONTEXTS(GrThreadSafeCache5View, reporter, ctxInfo) {
+DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(GrThreadSafeCache5View,
+                                       reporter,
+                                       ctxInfo,
+                                       CtsEnforcement::kNever) {
     test_5(ctxInfo.directContext(), reporter, &TestHelper::addViewAccess, &TestHelper::checkView);
 }
 
-DEF_GPUTEST_FOR_RENDERING_CONTEXTS(GrThreadSafeCache5Verts, reporter, ctxInfo) {
+DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(GrThreadSafeCache5Verts,
+                                       reporter,
+                                       ctxInfo,
+                                       CtsEnforcement::kNever) {
     test_5(ctxInfo.directContext(), reporter, &TestHelper::addVertAccess, &TestHelper::checkVert);
 }
 
@@ -1019,11 +1117,17 @@ static void test_6(GrDirectContext* dContext, skiatest::Reporter* reporter,
                                               /*hits*/ 1, /*misses*/ 1, /*refs*/ 0, kNoID));
 }
 
-DEF_GPUTEST_FOR_RENDERING_CONTEXTS(GrThreadSafeCache6View, reporter, ctxInfo) {
+DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(GrThreadSafeCache6View,
+                                       reporter,
+                                       ctxInfo,
+                                       CtsEnforcement::kNever) {
     test_6(ctxInfo.directContext(), reporter, &TestHelper::addViewAccess, &TestHelper::checkView);
 }
 
-DEF_GPUTEST_FOR_RENDERING_CONTEXTS(GrThreadSafeCache6Verts, reporter, ctxInfo) {
+DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(GrThreadSafeCache6Verts,
+                                       reporter,
+                                       ctxInfo,
+                                       CtsEnforcement::kNever) {
     test_6(ctxInfo.directContext(), reporter, &TestHelper::addVertAccess, &TestHelper::checkVert);
 }
 
@@ -1063,11 +1167,17 @@ static void test_7(GrDirectContext* dContext, skiatest::Reporter* reporter,
     ddl2 = nullptr;
 }
 
-DEF_GPUTEST_FOR_RENDERING_CONTEXTS(GrThreadSafeCache7View, reporter, ctxInfo) {
+DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(GrThreadSafeCache7View,
+                                       reporter,
+                                       ctxInfo,
+                                       CtsEnforcement::kNever) {
     test_7(ctxInfo.directContext(), reporter, &TestHelper::addViewAccess, &TestHelper::checkView);
 }
 
-DEF_GPUTEST_FOR_RENDERING_CONTEXTS(GrThreadSafeCache7Verts, reporter, ctxInfo) {
+DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(GrThreadSafeCache7Verts,
+                                       reporter,
+                                       ctxInfo,
+                                       CtsEnforcement::kNever) {
     test_7(ctxInfo.directContext(), reporter, &TestHelper::addVertAccess, &TestHelper::checkVert);
 }
 
@@ -1108,11 +1218,17 @@ static void test_8(GrDirectContext* dContext, skiatest::Reporter* reporter,
     ddl2 = nullptr;
 }
 
-DEF_GPUTEST_FOR_RENDERING_CONTEXTS(GrThreadSafeCache8View, reporter, ctxInfo) {
+DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(GrThreadSafeCache8View,
+                                       reporter,
+                                       ctxInfo,
+                                       CtsEnforcement::kNever) {
     test_8(ctxInfo.directContext(), reporter, &TestHelper::addViewAccess, &TestHelper::checkView);
 }
 
-DEF_GPUTEST_FOR_RENDERING_CONTEXTS(GrThreadSafeCache8Verts, reporter, ctxInfo) {
+DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(GrThreadSafeCache8Verts,
+                                       reporter,
+                                       ctxInfo,
+                                       CtsEnforcement::kNever) {
     test_8(ctxInfo.directContext(), reporter, &TestHelper::addVertAccess, &TestHelper::checkVert);
 }
 
@@ -1153,11 +1269,17 @@ static void test_9(GrDirectContext* dContext, skiatest::Reporter* reporter,
     ddl2 = nullptr;
 }
 
-DEF_GPUTEST_FOR_RENDERING_CONTEXTS(GrThreadSafeCache9View, reporter, ctxInfo) {
+DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(GrThreadSafeCache9View,
+                                       reporter,
+                                       ctxInfo,
+                                       CtsEnforcement::kNever) {
     test_9(ctxInfo.directContext(), reporter, &TestHelper::addViewAccess, &TestHelper::checkView);
 }
 
-DEF_GPUTEST_FOR_RENDERING_CONTEXTS(GrThreadSafeCache9Verts, reporter, ctxInfo) {
+DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(GrThreadSafeCache9Verts,
+                                       reporter,
+                                       ctxInfo,
+                                       CtsEnforcement::kNever) {
     test_9(ctxInfo.directContext(), reporter, &TestHelper::addVertAccess, &TestHelper::checkVert);
 }
 
@@ -1227,15 +1349,19 @@ static void test_10(GrDirectContext* dContext, skiatest::Reporter* reporter,
                                               /*hits*/ 2, /*misses*/ 2, /*refs*/ 0, kNoID));
 }
 
-DEF_GPUTEST_FOR_RENDERING_CONTEXTS(GrThreadSafeCache10View, reporter, ctxInfo) {
+DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(GrThreadSafeCache10View,
+                                       reporter,
+                                       ctxInfo,
+                                       CtsEnforcement::kNever) {
     test_10(ctxInfo.directContext(), reporter, &TestHelper::addViewAccess, &TestHelper::checkView);
 }
 
 // To enable test_10 with verts would require a bit more work, namely:
 //    have a different # of verts based on size
 //    also pass in a gpuSize function to 'test_10'
-//DEF_GPUTEST_FOR_RENDERING_CONTEXTS(GrThreadSafeCache10Verts, reporter, ctxInfo) {
-//    test_10(ctxInfo.directContext(), reporter, &TestHelper::addVertAccess, &TestHelper::checkVert);
+// DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(GrThreadSafeCache10Verts, reporter, ctxInfo) {
+//    test_10(ctxInfo.directContext(), reporter, &TestHelper::addVertAccess,
+//    &TestHelper::checkVert);
 //}
 
 // Case 11: This checks that scratch-only variant of GrContext::purgeUnlockedResources works as
@@ -1274,11 +1400,17 @@ static void test_11(GrDirectContext* dContext, skiatest::Reporter* reporter,
     REPORTER_ASSERT(reporter, helper.numCacheEntries() == 0);
 }
 
-DEF_GPUTEST_FOR_RENDERING_CONTEXTS(GrThreadSafeCache11View, reporter, ctxInfo) {
+DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(GrThreadSafeCache11View,
+                                       reporter,
+                                       ctxInfo,
+                                       CtsEnforcement::kNever) {
     test_11(ctxInfo.directContext(), reporter, &TestHelper::addViewAccess, &TestHelper::checkView);
 }
 
-DEF_GPUTEST_FOR_RENDERING_CONTEXTS(GrThreadSafeCache11Verts, reporter, ctxInfo) {
+DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(GrThreadSafeCache11Verts,
+                                       reporter,
+                                       ctxInfo,
+                                       CtsEnforcement::kNever) {
     test_11(ctxInfo.directContext(), reporter, &TestHelper::addVertAccess, &TestHelper::checkVert);
 }
 
@@ -1324,11 +1456,17 @@ static void test_12(GrDirectContext* dContext, skiatest::Reporter* reporter,
     REPORTER_ASSERT(reporter, helper.numCacheEntries() == 0);
 }
 
-DEF_GPUTEST_FOR_RENDERING_CONTEXTS(GrThreadSafeCache12View, reporter, ctxInfo) {
+DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(GrThreadSafeCache12View,
+                                       reporter,
+                                       ctxInfo,
+                                       CtsEnforcement::kNever) {
     test_12(ctxInfo.directContext(), reporter, &TestHelper::addViewAccess, &TestHelper::checkView);
 }
 
-DEF_GPUTEST_FOR_RENDERING_CONTEXTS(GrThreadSafeCache12Verts, reporter, ctxInfo) {
+DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(GrThreadSafeCache12Verts,
+                                       reporter,
+                                       ctxInfo,
+                                       CtsEnforcement::kNever) {
     test_12(ctxInfo.directContext(), reporter, &TestHelper::addVertAccess, &TestHelper::checkVert);
 }
 
@@ -1345,7 +1483,7 @@ static void test_13(GrDirectContext* dContext, skiatest::Reporter* reporter,
     sk_sp<SkDeferredDisplayList> ddl1 = helper.snap1();
 
     std::this_thread::sleep_for(std::chrono::milliseconds(5));
-    auto firstTime = GrStdSteadyClock::now();
+    auto firstTime = skgpu::StdSteadyClock::now();
     std::this_thread::sleep_for(std::chrono::milliseconds(5));
 
     (helper.*addAccess)(helper.ddlCanvas2(), 2*kImageWH, kNoID, false, false);
@@ -1359,7 +1497,7 @@ static void test_13(GrDirectContext* dContext, skiatest::Reporter* reporter,
 
     REPORTER_ASSERT(reporter, helper.numCacheEntries() == 2);
 
-    auto secondTime = GrStdSteadyClock::now();
+    auto secondTime = skgpu::StdSteadyClock::now();
 
     auto msecs = std::chrono::duration_cast<std::chrono::milliseconds>(secondTime - firstTime);
     dContext->performDeferredCleanup(msecs);
@@ -1369,17 +1507,26 @@ static void test_13(GrDirectContext* dContext, skiatest::Reporter* reporter,
                                               /*hits*/ 0, /*misses*/ 2, /*refs*/ 0, kNoID));
 }
 
-DEF_GPUTEST_FOR_RENDERING_CONTEXTS(GrThreadSafeCache13View, reporter, ctxInfo) {
+DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(GrThreadSafeCache13View,
+                                       reporter,
+                                       ctxInfo,
+                                       CtsEnforcement::kNever) {
     test_13(ctxInfo.directContext(), reporter, &TestHelper::addViewAccess, &TestHelper::checkView);
 }
 
-DEF_GPUTEST_FOR_RENDERING_CONTEXTS(GrThreadSafeCache13Verts, reporter, ctxInfo) {
+DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(GrThreadSafeCache13Verts,
+                                       reporter,
+                                       ctxInfo,
+                                       CtsEnforcement::kNever) {
     test_13(ctxInfo.directContext(), reporter, &TestHelper::addVertAccess, &TestHelper::checkVert);
 }
 
 // Case 14: Test out mixing & matching view & vertex data w/ recycling of the cache entries to
 //          wring out the anonymous union code. This is mainly for the MSAN bot's consumption.
-DEF_GPUTEST_FOR_RENDERING_CONTEXTS(GrThreadSafeCache14, reporter, ctxInfo) {
+DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(GrThreadSafeCache14,
+                                       reporter,
+                                       ctxInfo,
+                                       CtsEnforcement::kNever) {
     constexpr int kBestPrimeNumber = 73; // palindromic in binary
     SkRandom rand(kBestPrimeNumber);
 
@@ -1417,7 +1564,7 @@ DEF_GPUTEST_FOR_RENDERING_CONTEXTS(GrThreadSafeCache14, reporter, ctxInfo) {
 static void test_15(GrDirectContext* dContext, skiatest::Reporter* reporter,
                     TestHelper::addAccessFP addAccess,
                     TestHelper::checkFP check,
-                    void (*create_key)(GrUniqueKey*, int wh, int id)) {
+                    void (*create_key)(skgpu::UniqueKey*, int wh, int id)) {
 
     TestHelper helper(dContext);
 
@@ -1428,13 +1575,13 @@ static void test_15(GrDirectContext* dContext, skiatest::Reporter* reporter,
 
     REPORTER_ASSERT(reporter, helper.numCacheEntries() == 1);
 
-    GrUniqueKey key;
+    skgpu::UniqueKey key;
     (*create_key)(&key, kImageWH, kNoID);
 
-    GrUniqueKeyInvalidatedMessage msg(key, dContext->priv().contextID(),
+    skgpu::UniqueKeyInvalidatedMessage msg(key, dContext->priv().contextID(),
                                       /* inThreadSafeCache */ true);
 
-    SkMessageBus<GrUniqueKeyInvalidatedMessage, uint32_t>::Post(msg);
+    SkMessageBus<skgpu::UniqueKeyInvalidatedMessage, uint32_t>::Post(msg);
 
     // This purge call is needed to process the invalidation messages
     dContext->purgeUnlockedResources(/* scratchResourcesOnly */ true);
@@ -1452,12 +1599,18 @@ static void test_15(GrDirectContext* dContext, skiatest::Reporter* reporter,
     helper.checkImage(reporter, std::move(ddl2));
 }
 
-DEF_GPUTEST_FOR_RENDERING_CONTEXTS(GrThreadSafeCache15View, reporter, ctxInfo) {
+DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(GrThreadSafeCache15View,
+                                       reporter,
+                                       ctxInfo,
+                                       CtsEnforcement::kNever) {
     test_15(ctxInfo.directContext(), reporter, &TestHelper::addViewAccess, &TestHelper::checkView,
             create_view_key);
 }
 
-DEF_GPUTEST_FOR_RENDERING_CONTEXTS(GrThreadSafeCache15Verts, reporter, ctxInfo) {
+DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(GrThreadSafeCache15Verts,
+                                       reporter,
+                                       ctxInfo,
+                                       CtsEnforcement::kNever) {
     test_15(ctxInfo.directContext(), reporter, &TestHelper::addVertAccess, &TestHelper::checkVert,
             create_vert_key);
 }
@@ -1470,10 +1623,13 @@ DEF_GPUTEST_FOR_RENDERING_CONTEXTS(GrThreadSafeCache15Verts, reporter, ctxInfo) 
 
 static bool newer_is_always_better(SkData* /* incumbent */, SkData* /* challenger */) {
     return true;
-};
+}
 
-DEF_GPUTEST_FOR_RENDERING_CONTEXTS(GrThreadSafeCache16Verts, reporter, ctxInfo) {
-    GrUniqueKey key;
+DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(GrThreadSafeCache16Verts,
+                                       reporter,
+                                       ctxInfo,
+                                       CtsEnforcement::kNever) {
+    skgpu::UniqueKey key;
     create_vert_key(&key, kImageWH, kNoID);
 
     TestHelper helper(ctxInfo.directContext(), newer_is_always_better);

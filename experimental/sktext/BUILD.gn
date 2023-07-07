@@ -10,7 +10,7 @@ declare_args() {
   text_bench_enabled = false
 }
 
-if (skia_enable_sktext && skia_enable_skshaper && skia_use_icu &&
+if (skia_use_icu && skia_enable_sktext && skia_enable_skshaper &&
     skia_use_harfbuzz) {
   config("public_config") {
     include_dirs = [ "include" ]
@@ -47,7 +47,13 @@ if (skia_enable_sktext && skia_enable_skshaper && skia_use_icu &&
     source_set("tests") {
       if (text_tests_enabled) {
         testonly = true
-        sources = []
+        sources = [
+          "tests/FontResolvedText.cpp",
+          "tests/SelectableText.cpp",
+          "tests/ShapedText.cpp",
+          "tests/UnicodeText.cpp",
+          "tests/WrappedText.cpp",
+        ]
         deps = [
           ":sktext",
           "../..:gpu_tool_utils",
@@ -73,7 +79,7 @@ if (skia_enable_sktext && skia_enable_skshaper && skia_use_icu &&
       }
     }
 
-    source_set("samples") {
+    source_set("slides") {
       testonly = true
       sources = [
         "editor/Cursor.cpp",
@@ -81,7 +87,7 @@ if (skia_enable_sktext && skia_enable_skshaper && skia_use_icu &&
         "editor/Mouse.cpp",
         "editor/Selection.cpp",
         "editor/Texts.cpp",
-        "samples/Text.cpp",
+        "slides/Text.cpp",
       ]
       deps = [
         ":sktext",
@@ -113,6 +119,8 @@ if (skia_enable_sktext && skia_enable_skshaper && skia_use_icu &&
   }
   group("bench") {
   }
-  group("samples") {
+  group("slides") {
+  }
+  group("text_editor") {
   }
 }

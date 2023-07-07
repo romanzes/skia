@@ -13,7 +13,7 @@
 #include "include/core/SkRect.h"
 #include "include/core/SkTypes.h"
 #include "include/private/SkEncodedInfo.h"
-#include "include/private/SkNoncopyable.h"
+#include "include/private/base/SkNoncopyable.h"
 
 /**
  *  Base class for a single frame of an animated image.
@@ -151,7 +151,7 @@ protected:
     virtual SkEncodedInfo::Alpha onReportedAlpha() const = 0;
 
 private:
-    static constexpr int kUninitialized = -2;
+    inline static constexpr int kUninitialized = -2;
 
     const int                           fId;
     bool                                fHasAlpha;

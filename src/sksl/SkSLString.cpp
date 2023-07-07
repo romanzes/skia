@@ -5,160 +5,109 @@
  * found in the LICENSE file.
  */
 
-#include "include/private/SkSLString.h"
-#include "src/sksl/SkSLUtil.h"
-#include <algorithm>
-#include <cinttypes>
-#include <errno.h>
-#include <limits.h>
+#include "include/private/SkSLDefines.h"
+#include "src/base/SkStringView.h"
+#include "src/sksl/SkSLString.h"
+
+#include <cerrno>
+#include <cmath>
+#include <cstdio>
+#include <cstdlib>
 #include <locale>
+#include <memory>
 #include <sstream>
 #include <string>
+#include <string_view>
 
-namespace SkSL {
+template <typename RoundtripType, int kFullPrecision>
+static std::string to_string_impl(RoundtripType value) {
+    std::stringstream buffer;
+    buffer.imbue(std::locale::classic());
+    buffer.precision(7);
+    buffer << value;
+    std::string text = buffer.str();
 
-String String::printf(const char* fmt, ...) {
+    double roundtripped;
+    buffer >> roundtripped;
+    if (value != (RoundtripType)roundtripped && std::isfinite(value)) {
+        buffer.str({});
+        buffer.clear();
+        buffer.precision(kFullPrecision);
+        buffer << value;
+        text = buffer.str();
+        SkASSERTF((buffer >> roundtripped, value == (RoundtripType)roundtripped),
+                  "%.17g -> %s -> %.17g", value, text.c_str(), roundtripped);
+    }
+
+    // We need to emit a decimal point to distinguish floats from ints.
+    if (!skstd::contains(text, '.') && !skstd::contains(text, 'e')) {
+        text += ".0";
+    }
+
+    return text;
+}
+
+std::string skstd::to_string(float value) {
+    return to_string_impl<float, 9>(value);
+}
+
+std::string skstd::to_string(double value) {
+    return to_string_impl<double, 17>(value);
+}
+
+bool SkSL::stod(std::string_view s, SKSL_FLOAT* value) {
+    std::string str(s.data(), s.size());
+    std::stringstream buffer(str);
+    buffer.imbue(std::locale::classic());
+    buffer >> *value;
+    return !buffer.fail() && std::isfinite(*value);
+}
+
+bool SkSL::stoi(std::string_view s, SKSL_INT* value) {
+    if (s.empty()) {
+        return false;
+    }
+    char suffix = s.back();
+    if (suffix == 'u' || suffix == 'U') {
+        s.remove_suffix(1);
+    }
+    std::string str(s);  // s is not null-terminated
+    const char* strEnd = str.data() + str.length();
+    char* p;
+    errno = 0;
+    unsigned long long result = strtoull(str.data(), &p, /*base=*/0);
+    *value = static_cast<SKSL_INT>(result);
+    return p == strEnd && errno == 0 && result <= 0xFFFFFFFF;
+}
+
+std::string SkSL::String::printf(const char* fmt, ...) {
     va_list args;
     va_start(args, fmt);
-    String result;
-    result.vappendf(fmt, args);
+    std::string result;
+    vappendf(&result, fmt, args);
     va_end(args);
     return result;
 }
 
-void String::appendf(const char* fmt, ...) {
+void SkSL::String::appendf(std::string *str, const char* fmt, ...) {
     va_list args;
     va_start(args, fmt);
-    this->vappendf(fmt, args);
+    vappendf(str, fmt, args);
     va_end(args);
 }
 
-void String::vappendf(const char* fmt, va_list args) {
+void SkSL::String::vappendf(std::string *str, const char* fmt, va_list args) {
     #define BUFFER_SIZE 256
     char buffer[BUFFER_SIZE];
     va_list reuse;
     va_copy(reuse, args);
     size_t size = vsnprintf(buffer, BUFFER_SIZE, fmt, args);
     if (BUFFER_SIZE >= size + 1) {
-        this->append(buffer, size);
+        str->append(buffer, size);
     } else {
         auto newBuffer = std::unique_ptr<char[]>(new char[size + 1]);
         vsnprintf(newBuffer.get(), size + 1, fmt, reuse);
-        this->append(newBuffer.get(), size);
+        str->append(newBuffer.get(), size);
     }
     va_end(reuse);
 }
-
-bool String::consumeSuffix(const char suffix[]) {
-    size_t suffixLength = strlen(suffix);
-    if (this->length() < suffixLength) {
-        return false;
-    }
-    if (0 != strncmp(this->data() + this->size() - suffixLength, suffix, suffixLength)) {
-        return false;
-    }
-    this->resize(this->length() - suffixLength);
-    return true;
-}
-
-String String::operator+(const char* s) const {
-    String result(*this);
-    result.append(s);
-    return result;
-}
-
-String String::operator+(const String& s) const {
-    String result(*this);
-    result.append(s);
-    return result;
-}
-
-String String::operator+(skstd::string_view s) const {
-    String result(*this);
-    result.append(s.data(), s.length());
-    return result;
-}
-
-String& String::operator+=(char c) {
-    INHERITED::operator+=(c);
-    return *this;
-}
-
-String& String::operator+=(const char* s) {
-    INHERITED::operator+=(s);
-    return *this;
-}
-
-String& String::operator+=(const String& s) {
-    INHERITED::operator+=(s);
-    return *this;
-}
-
-String& String::operator+=(skstd::string_view s) {
-    this->append(s.data(), s.length());
-    return *this;
-}
-
-String operator+(const char* s1, const String& s2) {
-    String result(s1);
-    result.append(s2);
-    return result;
-}
-
-String operator+(skstd::string_view left, skstd::string_view right) {
-    return String(left) + right;
-}
-
-String to_string(int32_t value) {
-    return SkSL::String(std::to_string(value));
-}
-
-String to_string(uint32_t value) {
-    return SkSL::String(std::to_string(value));
-}
-
-String to_string(int64_t value) {
-    return SkSL::String(std::to_string(value));
-}
-
-String to_string(uint64_t value) {
-    return SkSL::String(std::to_string(value));
-}
-
-String to_string(double value) {
-    std::stringstream buffer;
-    buffer.imbue(std::locale::classic());
-    buffer.precision(17);
-    buffer << value;
-    bool needsDotZero = true;
-    const std::string str = buffer.str();
-    for (int i = str.size() - 1; i >= 0; --i) {
-        char c = str[i];
-        if (c == '.' || c == 'e') {
-            needsDotZero = false;
-            break;
-        }
-    }
-    if (needsDotZero) {
-        buffer << ".0";
-    }
-    return String(buffer.str().c_str());
-}
-
-bool stod(const skstd::string_view& s, SKSL_FLOAT* value) {
-    std::string str(s.data(), s.size());
-    std::stringstream buffer(str);
-    buffer.imbue(std::locale::classic());
-    buffer >> *value;
-    return !buffer.fail();
-}
-
-bool stoi(const skstd::string_view& s, SKSL_INT* value) {
-    char* p;
-    errno = 0;
-    unsigned long long result = strtoull(s.begin(), &p, /*base=*/0);
-    *value = static_cast<SKSL_INT>(result);
-    return p == s.end() && errno == 0 && result <= 0xFFFFFFFF;
-}
-
-}  // namespace SkSL

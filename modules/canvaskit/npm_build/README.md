@@ -72,15 +72,14 @@ Then, add the following configuration change to the node section of the config:
 
 See `example.html` and `node.example.js` for demos of how to use the core API.
 
-See `extra.html` for some optional add-ins like an animation player (Skottie)
-and a particles system.
+See `extra.html` for some optional add-ins like an animation player (Skottie).
 
 See `types/index.d.ts` for a typescript definition file that contains all the
 APIs and some documentation about them.
 
 ## Drop-in Canvas2D replacement
 For environments where an HTML canvas is not available (e.g. Node, headless servers),
-CanvasKit has an optional API (included by default) that mirrors the HTML canvas.
+CanvasKit has an optional API (included by default) that mostly mirrors the HTML canvas.
 
     let skcanvas = CanvasKit.MakeCanvas(600, 600);
 
@@ -101,11 +100,16 @@ CanvasKit has an optional API (included by default) that mirrors the HTML canvas
 
 See more examples in `example.html` and `node.example.js`.
 
+### Known issues with Canvas2D Emulation layer
+ - measureText returns width only and does no shaping. It is only sort of valid with ASCII letters.
+ - textAlign is not supported.
+ - textBaseAlign is not supported.
+ - fillText does not support the width parameter.
 
 # Filing bugs
 
-Please file bugs at [skbug.com](skbug.com).
-It may be convenient to use [our online fiddle](jsfiddle.skia.org/canvaskit) to demonstrate any issues encountered.
+Please file bugs at [https://skbug.com](skbug.com).
+It may be convenient to use [our online fiddle](https://jsfiddle.skia.org/canvaskit) to demonstrate any issues encountered.
 
 See CONTRIBUTING.md for more information on sending pull requests.
 

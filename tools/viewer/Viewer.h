@@ -8,25 +8,38 @@
 #ifndef Viewer_DEFINED
 #define Viewer_DEFINED
 
-#include "gm/gm.h"
-#include "include/core/SkExecutor.h"
+#include "include/core/SkColorSpace.h"
+#include "include/core/SkData.h"
 #include "include/core/SkFont.h"
 #include "include/gpu/GrContextOptions.h"
-#include "include/private/SkSLString.h"
+#include "include/private/base/SkTArray.h"
+#include "include/private/gpu/ganesh/GrTypesPriv.h"
+#include "modules/skcms/skcms.h"
 #include "src/core/SkScan.h"
 #include "src/sksl/ir/SkSLProgram.h"
 #include "tools/gpu/MemoryCache.h"
 #include "tools/sk_app/Application.h"
 #include "tools/sk_app/CommandSet.h"
+#include "tools/sk_app/DisplayParams.h"
 #include "tools/sk_app/Window.h"
 #include "tools/viewer/AnimTimer.h"
 #include "tools/viewer/ImGuiLayer.h"
-#include "tools/viewer/Slide.h"
 #include "tools/viewer/StatsLayer.h"
 #include "tools/viewer/TouchGesture.h"
 
-class SkCanvas;
-class SkData;
+#include <cstdint>
+#include <atomic>
+#include <functional>
+#include <string>
+
+class SkImage;
+class SkSurface;
+class Slide;
+namespace skui {
+enum class InputState;
+enum class Key;
+enum class ModifierKey;
+}  // namespace skui
 
 class Viewer : public sk_app::Application, sk_app::Window::Layer {
 public:
@@ -151,6 +164,7 @@ private:
     int startupSlide() const;
     void setCurrentSlide(int);
     void setupCurrentSlide();
+    SkISize currentSlideSize() const;
     void listNames() const;
     void dumpShadersToResources();
 
@@ -174,7 +188,7 @@ private:
     StatsLayer::Timer      fAnimateTimer;
 
     AnimTimer              fAnimTimer;
-    SkTArray<sk_sp<Slide>> fSlides;
+    skia_private::TArray<sk_sp<Slide>> fSlides;
     int                    fCurrentSlide;
 
     bool                   fRefresh; // whether to continuously refresh for measuring render time
@@ -187,6 +201,7 @@ private:
     bool                   fShowImGuiDebugWindow;
     bool                   fShowSlidePicker;
     bool                   fShowImGuiTestWindow;
+    bool                   fShowHistogramWindow;
 
     bool                   fShowZoomWindow;
     bool                   fZoomWindowFixed;
@@ -234,7 +249,7 @@ private:
     PerspectiveMode        fPerspectiveMode;
     SkPoint                fPerspectivePoints[4];
 
-    SkTArray<std::function<void()>> fDeferredActions;
+    skia_private::TArray<std::function<void()>> fDeferredActions;
 
     // fPaint contains override values, fPaintOverrides controls if overrides are applied.
     SkPaint fPaint;
@@ -257,12 +272,12 @@ private:
         SkString            fKeyDescription;
 
         SkFourByteTag         fShaderType;
-        SkSL::String          fShader[kGrShaderTypeCount];
+        std::string           fShader[kGrShaderTypeCount];
         SkSL::Program::Inputs fInputs[kGrShaderTypeCount];
     };
 
     sk_gpu_test::MemoryCache fPersistentCache;
-    SkTArray<CachedShader>   fCachedShaders;
+    skia_private::TArray<CachedShader>   fCachedShaders;
 
     enum ShaderOptLevel : int {
         kShaderOptLevel_Source,

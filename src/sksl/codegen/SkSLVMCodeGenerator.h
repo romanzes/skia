@@ -8,34 +8,43 @@
 #ifndef SKSL_VMGENERATOR
 #define SKSL_VMGENERATOR
 
-#include "include/core/SkSpan.h"
-#include "include/private/SkSLString.h"
 #include "src/core/SkVM.h"
-#include "src/sksl/ir/SkSLType.h"
 
-#include <functional>
+#include <cstddef>
+
+template <typename T> class SkSpan;
+
+#if defined(SK_ENABLE_SKVM)
 
 namespace SkSL {
 
 class FunctionDefinition;
 struct Program;
+class DebugTracePriv;
 
-using SampleShaderFn = std::function<skvm::Color(int, skvm::Coord)>;
-using SampleColorFilterFn = std::function<skvm::Color(int, skvm::Color)>;
-using SampleBlenderFn = std::function<skvm::Color(int, skvm::Color, skvm::Color)>;
+class SkVMCallbacks {
+public:
+    virtual ~SkVMCallbacks() = default;
+
+    virtual skvm::Color sampleShader(int index, skvm::Coord coord) = 0;
+    virtual skvm::Color sampleColorFilter(int index, skvm::Color color) = 0;
+    virtual skvm::Color sampleBlender(int index, skvm::Color src, skvm::Color dst) = 0;
+
+    virtual skvm::Color toLinearSrgb(skvm::Color color) = 0;
+    virtual skvm::Color fromLinearSrgb(skvm::Color color) = 0;
+};
 
 // Convert 'function' to skvm instructions in 'builder', for use by blends, shaders, & color filters
 skvm::Color ProgramToSkVM(const Program& program,
                           const FunctionDefinition& function,
                           skvm::Builder* builder,
+                          DebugTracePriv* debugTrace,
                           SkSpan<skvm::Val> uniforms,
                           skvm::Coord device,
                           skvm::Coord local,
                           skvm::Color inputColor,
                           skvm::Color destColor,
-                          SampleShaderFn sampleShader,
-                          SampleColorFilterFn sampleColorFilter,
-                          SampleBlenderFn sampleBlender);
+                          SkVMCallbacks* callbacks);
 
 struct SkVMSignature {
     size_t fParameterSlots = 0;
@@ -59,27 +68,15 @@ struct SkVMSignature {
 bool ProgramToSkVM(const Program& program,
                    const FunctionDefinition& function,
                    skvm::Builder* b,
+                   DebugTracePriv* debugTrace,
                    SkSpan<skvm::Val> uniforms,
                    SkVMSignature* outSignature = nullptr);
 
-const FunctionDefinition* Program_GetFunction(const Program& program, const char* function);
-
-struct UniformInfo {
-    struct Uniform {
-        String fName;
-        Type::NumberKind fKind;
-        int fColumns;
-        int fRows;
-        int fSlot;
-    };
-    std::vector<Uniform> fUniforms;
-    int fUniformSlotCount = 0;
-};
-
-std::unique_ptr<UniformInfo> Program_GetUniformInfo(const Program& program);
-
-bool testingOnly_ProgramToSkVMShader(const Program& program, skvm::Builder* builder);
+bool testingOnly_ProgramToSkVMShader(const Program& program,
+                                     skvm::Builder* builder,
+                                     DebugTracePriv* debugTrace);
 
 }  // namespace SkSL
 
-#endif
+#endif  // defined(SK_ENABLE_SKVM)
+#endif  // SKSL_VMGENERATOR

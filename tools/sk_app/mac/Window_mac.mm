@@ -7,7 +7,7 @@
 
 #include <Carbon/Carbon.h>
 
-#include "src/core/SkUtils.h"
+#include "include/core/SkTypes.h"
 #include "tools/sk_app/mac/WindowContextFactory_mac.h"
 #include "tools/sk_app/mac/Window_mac.h"
 #include "tools/skui/ModifierKey.h"
@@ -126,6 +126,11 @@ bool Window_mac::attach(BackendType attachType) {
         case kDawn_BackendType:
             fWindowContext = MakeDawnMTLForMac(info, fRequestedDisplayParams);
             break;
+#if defined(SK_GRAPHITE)
+        case kGraphiteDawn_BackendType:
+            fWindowContext = MakeGraphiteDawnMetalForMac(info, fRequestedDisplayParams);
+            break;
+#endif
 #endif
 #ifdef SK_VULKAN
         case kVulkan_BackendType:
@@ -136,6 +141,11 @@ bool Window_mac::attach(BackendType attachType) {
         case kMetal_BackendType:
             fWindowContext = MakeMetalForMac(info, fRequestedDisplayParams);
             break;
+#if defined(SK_GRAPHITE)
+        case kGraphiteMetal_BackendType:
+            fWindowContext = MakeGraphiteMetalForMac(info, fRequestedDisplayParams);
+            break;
+#endif
 #endif
 #ifdef SK_GL
         case kNativeGL_BackendType:
@@ -232,7 +242,7 @@ static skui::Key get_key(unsigned short vk) {
         { kVK_ANSI_Z,        skui::Key::kZ },
     };
 
-    for (size_t i = 0; i < SK_ARRAY_COUNT(gPair); i++) {
+    for (size_t i = 0; i < std::size(gPair); i++) {
         if (gPair[i].fVK == vk) {
             return gPair[i].fKey;
         }

@@ -14,9 +14,9 @@
 #include "include/core/SkPaint.h"
 #include "include/core/SkPoint.h"
 #include "include/core/SkStream.h"
-#include "include/private/SkTArray.h"
-#include "include/private/SkTPin.h"
-#include "include/private/SkTo.h"
+#include "include/private/base/SkTArray.h"
+#include "include/private/base/SkTPin.h"
+#include "include/private/base/SkTo.h"
 #include "modules/skottie/include/ExternalLayer.h"
 #include "modules/skottie/include/SkottieProperty.h"
 #include "modules/skottie/src/Composition.h"
@@ -37,8 +37,9 @@
 #include <chrono>
 #include <cmath>
 #include <memory>
+#include <ratio>
 
-#include "stdlib.h"
+#include <stdlib.h>
 
 namespace skottie {
 
@@ -92,38 +93,6 @@ private:
     using INHERITED = DiscardableAdapterBase<OpacityAdapter, sksg::OpacityEffect>;
 };
 
-static SkBlendMode GetBlendMode(const skjson::ObjectValue& jobject,
-                                const AnimationBuilder* abuilder) {
-    static constexpr SkBlendMode kBlendModeMap[] = {
-        SkBlendMode::kSrcOver,    // 0:'normal'
-        SkBlendMode::kMultiply,   // 1:'multiply'
-        SkBlendMode::kScreen,     // 2:'screen'
-        SkBlendMode::kOverlay,    // 3:'overlay
-        SkBlendMode::kDarken,     // 4:'darken'
-        SkBlendMode::kLighten,    // 5:'lighten'
-        SkBlendMode::kColorDodge, // 6:'color-dodge'
-        SkBlendMode::kColorBurn,  // 7:'color-burn'
-        SkBlendMode::kHardLight,  // 8:'hard-light'
-        SkBlendMode::kSoftLight,  // 9:'soft-light'
-        SkBlendMode::kDifference, // 10:'difference'
-        SkBlendMode::kExclusion,  // 11:'exclusion'
-        SkBlendMode::kHue,        // 12:'hue'
-        SkBlendMode::kSaturation, // 13:'saturation'
-        SkBlendMode::kColor,      // 14:'color'
-        SkBlendMode::kLuminosity, // 15:'luminosity'
-        SkBlendMode::kPlus,       // 16:'add'
-    };
-
-    const auto bm_index = ParseDefault<size_t>(jobject["bm"], 0);
-    if (bm_index >= SK_ARRAY_COUNT(kBlendModeMap)) {
-            abuilder->log(Logger::Level::kWarning, &jobject,
-                          "Unsupported blend mode %lu\n", bm_index);
-            return SkBlendMode::kSrcOver;
-    }
-
-    return kBlendModeMap[bm_index];
-}
-
 } // namespace
 
 sk_sp<sksg::RenderNode> AnimationBuilder::attachOpacity(const skjson::ObjectValue& jobject,
@@ -132,10 +101,11 @@ sk_sp<sksg::RenderNode> AnimationBuilder::attachOpacity(const skjson::ObjectValu
         return nullptr;
 
     auto adapter = OpacityAdapter::Make(jobject, child_node, *this);
-    const auto dispatched = this->dispatchOpacityProperty(adapter->node());
-
     if (adapter->isStatic()) {
         adapter->seek(0);
+    }
+    const auto dispatched = this->dispatchOpacityProperty(adapter->node(), jobject["o"]);
+    if (adapter->isStatic()) {
         if (!dispatched && adapter->node()->getOpacity() >= 1) {
             // No obeservable effects - we can discard.
             return child_node;
@@ -145,17 +115,6 @@ sk_sp<sksg::RenderNode> AnimationBuilder::attachOpacity(const skjson::ObjectValu
     }
 
     return adapter->node();
-}
-
-sk_sp<sksg::RenderNode> AnimationBuilder::attachBlendMode(const skjson::ObjectValue& jobject,
-                                                          sk_sp<sksg::RenderNode> child) const {
-    const auto bm = GetBlendMode(jobject, this);
-    if (bm != SkBlendMode::kSrcOver) {
-        fHasNontrivialBlending = true;
-        child = sksg::BlendModeEffect::Make(std::move(child), bm);
-    }
-
-    return child;
 }
 
 AnimationBuilder::AnimationBuilder(sk_sp<ResourceProvider> rp, sk_sp<SkFontMgr> fontmgr,
@@ -182,11 +141,13 @@ AnimationBuilder::AnimationBuilder(sk_sp<ResourceProvider> rp, sk_sp<SkFontMgr> 
 AnimationBuilder::AnimationInfo AnimationBuilder::parse(const skjson::ObjectValue& jroot) {
     this->dispatchMarkers(jroot["markers"]);
 
-    this->parseAssets(jroot["assets"]);
-    this->parseFonts(jroot["fonts"], jroot["chars"]);
-
     AutoScope ascope(this);
     AutoPropertyTracker apt(this, jroot, PropertyObserver::NodeType::COMPOSITION);
+
+    this->parseAssets(jroot["assets"]);
+    this->parseFonts(jroot["fonts"], jroot["chars"]);
+    fSlotsRoot = jroot["slots"];
+
     auto root = CompositionBuilder(*this, fCompSize, jroot).build(*this);
 
     auto animators = ascope.release();
@@ -236,11 +197,18 @@ void AnimationBuilder::dispatchMarkers(const skjson::ArrayValue* jmarkers) const
     }
 }
 
-bool AnimationBuilder::dispatchColorProperty(const sk_sp<sksg::Color>& c) const {
+bool AnimationBuilder::dispatchColorProperty(const sk_sp<sksg::Color>& c,
+                                             const skjson::ObjectValue* jcolor) const {
     bool dispatched = false;
 
     if (fPropertyObserver) {
-        fPropertyObserver->onColorProperty(fPropertyObserverContext,
+        const char * node_name = fPropertyObserverContext;
+        if (jcolor) {
+            if (const skjson::StringValue* slotID = (*jcolor)["sid"]) {
+                node_name = slotID->begin();
+            }
+        }
+        fPropertyObserver->onColorProperty(node_name,
             [&]() {
                 dispatched = true;
                 return std::make_unique<ColorPropertyHandle>(c);
@@ -250,11 +218,18 @@ bool AnimationBuilder::dispatchColorProperty(const sk_sp<sksg::Color>& c) const 
     return dispatched;
 }
 
-bool AnimationBuilder::dispatchOpacityProperty(const sk_sp<sksg::OpacityEffect>& o) const {
+bool AnimationBuilder::dispatchOpacityProperty(const sk_sp<sksg::OpacityEffect>& o,
+                                               const skjson::ObjectValue* jopacity) const {
     bool dispatched = false;
 
     if (fPropertyObserver) {
-        fPropertyObserver->onOpacityProperty(fPropertyObserverContext,
+        const char * node_name = fPropertyObserverContext;
+        if (jopacity) {
+            if (const skjson::StringValue* slotID = (*jopacity)["sid"]) {
+                node_name = slotID->begin();
+            }
+        }
+        fPropertyObserver->onOpacityProperty(node_name,
             [&]() {
                 dispatched = true;
                 return std::make_unique<OpacityPropertyHandle>(o);
@@ -264,11 +239,18 @@ bool AnimationBuilder::dispatchOpacityProperty(const sk_sp<sksg::OpacityEffect>&
     return dispatched;
 }
 
-bool AnimationBuilder::dispatchTextProperty(const sk_sp<TextAdapter>& t) const {
+bool AnimationBuilder::dispatchTextProperty(const sk_sp<TextAdapter>& t,
+                                            const skjson::ObjectValue* jtext) const {
     bool dispatched = false;
 
     if (fPropertyObserver) {
-        fPropertyObserver->onTextProperty(fPropertyObserverContext,
+        const char * node_name = fPropertyObserverContext;
+        if (jtext) {
+            if (const skjson::StringValue* slotID = (*jtext)["sid"]) {
+                node_name = slotID->begin();
+            }
+        }
+        fPropertyObserver->onTextProperty(node_name,
             [&]() {
                 dispatched = true;
                 return std::make_unique<TextPropertyHandle>(t);
@@ -298,10 +280,8 @@ sk_sp<ExpressionManager> AnimationBuilder::expression_manager() const {
 
 void AnimationBuilder::AutoPropertyTracker::updateContext(PropertyObserver* observer,
                                                           const skjson::ObjectValue& obj) {
-
     const skjson::StringValue* name = obj["nm"];
-
-    fBuilder->fPropertyObserverContext = name ? name->begin() : nullptr;
+    fBuilder->fPropertyObserverContext = name ? name->begin() : fPrevContext;
 }
 
 } // namespace internal

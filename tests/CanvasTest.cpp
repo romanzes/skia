@@ -10,6 +10,7 @@
 #include "include/core/SkCanvas.h"
 #include "include/core/SkClipOp.h"
 #include "include/core/SkColor.h"
+#include "include/core/SkColorType.h"
 #include "include/core/SkDocument.h"
 #include "include/core/SkFlattenable.h"
 #include "include/core/SkImageFilter.h"
@@ -23,36 +24,45 @@
 #include "include/core/SkRect.h"
 #include "include/core/SkRefCnt.h"
 #include "include/core/SkRegion.h"
+#include "include/core/SkSamplingOptions.h"
 #include "include/core/SkScalar.h"
 #include "include/core/SkShader.h"
 #include "include/core/SkSize.h"
 #include "include/core/SkStream.h"
-#include "include/core/SkString.h"
 #include "include/core/SkSurface.h"
 #include "include/core/SkTypes.h"
 #include "include/core/SkVertices.h"
-#include "include/docs/SkPDFDocument.h"
 #include "include/effects/SkImageFilters.h"
-#include "include/private/SkMalloc.h"
-#include "include/private/SkTemplates.h"
+#include "include/private/base/SkMalloc.h"
+#include "include/private/base/SkTemplates.h"
 #include "include/utils/SkNWayCanvas.h"
 #include "include/utils/SkPaintFilterCanvas.h"
 #include "src/core/SkBigPicture.h"
 #include "src/core/SkImageFilter_Base.h"
 #include "src/core/SkRecord.h"
+#include "src/core/SkRecords.h"
 #include "src/core/SkSpecialImage.h"
 #include "src/utils/SkCanvasStack.h"
 #include "tests/Test.h"
+
+#include <cstddef>
+#include <initializer_list>
+#include <memory>
+#include <utility>
+
+using namespace skia_private;
+
+class SkPicture;
+class SkReadBuffer;
 
 #ifdef SK_BUILD_FOR_ANDROID_FRAMEWORK
 #include "include/core/SkColorSpace.h"
 #include "include/private/SkColorData.h"
 #endif
 
-#include <memory>
-#include <utility>
-
-class SkReadBuffer;
+#ifdef SK_SUPPORT_PDF
+#include "include/docs/SkPDFDocument.h"
+#endif
 
 struct ClipRectVisitor {
     skiatest::Reporter* r;
@@ -127,6 +137,8 @@ DEF_TEST(canvas_clipbounds, reporter) {
     }
 }
 
+#ifdef SK_SUPPORT_PDF
+
 // Will call proc with multiple styles of canvas (recording, raster, pdf)
 template <typename F> static void multi_canvas_driver(int w, int h, F proc) {
     proc(SkPictureRecorder().beginRecording(SkRect::MakeIWH(w, h)));
@@ -176,11 +188,13 @@ DEF_TEST(canvas_empty_clip, reporter) {
     });
 }
 
+#endif // SK_SUPPORT_PDF
+
 DEF_TEST(CanvasNewRasterTest, reporter) {
     SkImageInfo info = SkImageInfo::MakeN32Premul(10, 10);
     const size_t minRowBytes = info.minRowBytes();
     const size_t size = info.computeByteSize(minRowBytes);
-    SkAutoTMalloc<SkPMColor> storage(size);
+    AutoTMalloc<SkPMColor> storage(size);
     SkPMColor* baseAddr = storage.get();
     sk_bzero(baseAddr, size);
 
@@ -410,6 +424,7 @@ DEF_TEST(Canvas_bitmap, reporter) {
     }
 }
 
+#ifdef SK_SUPPORT_PDF
 DEF_TEST(Canvas_pdf, reporter) {
     for (const CanvasTest& test : kCanvasTests) {
         SkNullWStream outStream;
@@ -421,6 +436,7 @@ DEF_TEST(Canvas_pdf, reporter) {
         }
     }
 }
+#endif
 
 DEF_TEST(Canvas_SaveState, reporter) {
     SkCanvas canvas(10, 10);
@@ -587,11 +603,13 @@ DEF_TEST(CanvasClipType, r) {
     // test rasterclip backend
     test_cliptype(SkSurface::MakeRasterN32Premul(10, 10)->getCanvas(), r);
 
+#ifdef SK_SUPPORT_PDF
     // test clipstack backend
     SkDynamicMemoryWStream stream;
     if (auto doc = SkPDF::MakeDocument(&stream)) {
         test_cliptype(doc->beginPage(100, 100), r);
     }
+#endif
 }
 
 #ifdef SK_BUILD_FOR_ANDROID_FRAMEWORK
@@ -697,49 +715,6 @@ DEF_TEST(Canvas_ClippedOutImageFilter, reporter) {
     REPORTER_ASSERT(reporter, preCTM == postCTM);
 }
 
-DEF_TEST(canvas_markctm, reporter) {
-    SkCanvas canvas(10, 10);
-
-    SkM44    m;
-    const char* id_a = "a";
-    const char* id_b = "b";
-
-    REPORTER_ASSERT(reporter, !canvas.findMarkedCTM(id_a, nullptr));
-    REPORTER_ASSERT(reporter, !canvas.findMarkedCTM(id_b, nullptr));
-
-    // remember the starting state
-    SkM44 b = canvas.getLocalToDevice();
-    canvas.markCTM(id_b);
-
-    // test add
-    canvas.concat(SkM44::Scale(2, 4, 6));
-    SkM44 a = canvas.getLocalToDevice();
-    canvas.markCTM(id_a);
-    REPORTER_ASSERT(reporter, canvas.findMarkedCTM(id_a, &m) && m == a);
-
-    // test replace
-    canvas.translate(1, 2);
-    SkM44 a1 = canvas.getLocalToDevice();
-    SkASSERT(a != a1);
-    canvas.markCTM(id_a);
-    REPORTER_ASSERT(reporter, canvas.findMarkedCTM(id_a, &m) && m == a1);
-
-    // test nested
-    canvas.save();
-    // no change
-    REPORTER_ASSERT(reporter, canvas.findMarkedCTM(id_b, &m) && m == b);
-    REPORTER_ASSERT(reporter, canvas.findMarkedCTM(id_a, &m) && m == a1);
-    canvas.translate(2, 3);
-    SkM44 a2 = canvas.getLocalToDevice();
-    SkASSERT(a2 != a1);
-    canvas.markCTM(id_a);
-    // found the new one
-    REPORTER_ASSERT(reporter, canvas.findMarkedCTM(id_a, &m) && m == a2);
-    canvas.restore();
-    // found the previous one
-    REPORTER_ASSERT(reporter, canvas.findMarkedCTM(id_a, &m) && m == a1);
-}
-
 DEF_TEST(canvas_savelayer_destructor, reporter) {
     // What should happen in our destructor if we have unbalanced saveLayers?
 
@@ -752,36 +727,48 @@ DEF_TEST(canvas_savelayer_destructor, reporter) {
         const SkPMColor pmc = SkPreMultiplyColor(expected);
         for (int y = 0; y < pm.info().height(); ++y) {
             for (int x = 0; x < pm.info().width(); ++x) {
-                REPORTER_ASSERT(reporter, *pm.addr32(x, y) == pmc);
+                if (*pm.addr32(x, y) != pmc) {
+                    ERRORF(reporter, "check_pixels_failed");
+                    return;
+                }
             }
         }
     };
 
-    auto do_test = [&](bool doRestore) {
+    auto do_test = [&](int saveCount, int restoreCount) {
+        SkASSERT(restoreCount <= saveCount);
+
         auto surf = SkSurface::MakeRasterDirect(pm);
         auto canvas = surf->getCanvas();
 
         canvas->clear(SK_ColorRED);
         check_pixels(SK_ColorRED);
 
-        canvas->saveLayer(nullptr, nullptr);
+        for (int i = 0; i < saveCount; ++i) {
+            canvas->saveLayer(nullptr, nullptr);
+        }
+
         canvas->clear(SK_ColorBLUE);
-        // so far, we still expect to see the red
+        // so far, we still expect to see the red, since the blue was drawn in a layer
         check_pixels(SK_ColorRED);
 
-        if (doRestore) {
+        for (int i = 0; i < restoreCount; ++i) {
             canvas->restore();
         }
         // by returning, we are implicitly deleting the surface, and its associated canvas
     };
 
-    do_test(true);
+    do_test(1, 1);
     // since we called restore, we expect to see now see blue
     check_pixels(SK_ColorBLUE);
 
-    // Now we're repeat that, but delete the canvas before we restore it
-    do_test(false);
-    // *if* we restore the layers in the destructor, we expect to see blue, even though
-    // we didn't call restore() as a client.
-    check_pixels(SK_ColorBLUE);
+    // Now repeat that, but delete the canvas before we restore it
+    do_test(1, 0);
+    // We don't blit the unbalanced saveLayers, so we expect to see red (not the layer's blue)
+    check_pixels(SK_ColorRED);
+
+    // Finally, test with multiple unbalanced saveLayers. This led to a crash in an earlier
+    // implementation (crbug.com/1238731)
+    do_test(2, 0);
+    check_pixels(SK_ColorRED);
 }

@@ -5,6 +5,7 @@
  * found in the LICENSE file.
  */
 
+#include "bench/BigPath.h"
 #include "include/core/SkCanvas.h"
 #include "include/core/SkDeferredDisplayList.h"
 #include "include/core/SkGraphics.h"
@@ -17,9 +18,9 @@
 #include "include/gpu/GrDirectContext.h"
 #include "src/core/SkOSFile.h"
 #include "src/core/SkTaskGroup.h"
-#include "src/gpu/GrCaps.h"
-#include "src/gpu/GrDirectContextPriv.h"
-#include "src/gpu/SkGr.h"
+#include "src/gpu/ganesh/GrCaps.h"
+#include "src/gpu/ganesh/GrDirectContextPriv.h"
+#include "src/gpu/ganesh/SkGr.h"
 #include "src/utils/SkMultiPictureDocument.h"
 #include "src/utils/SkOSPath.h"
 #include "tools/DDLPromiseImageHelper.h"
@@ -33,7 +34,7 @@
 #include "tools/gpu/GpuTimer.h"
 #include "tools/gpu/GrContextFactory.h"
 
-#ifdef SK_XML
+#if defined(SK_ENABLE_SVG)
 #include "modules/svg/include/SkSVGDOM.h"
 #include "src/xml/SkDOM.h"
 #endif
@@ -498,13 +499,13 @@ int main(int argc, char** argv) {
     const SkCommandLineConfigGpu* config = nullptr; // Initialize for spurious warning.
     SkCommandLineConfigArray configs;
     ParseConfigs(FLAGS_config, &configs);
-    if (configs.count() != 1 || !(config = configs[0]->asConfigGpu())) {
+    if (configs.size() != 1 || !(config = configs[0]->asConfigGpu())) {
         exitf(ExitErr::kUsage, "invalid config '%s': must specify one (and only one) GPU config",
                                join(FLAGS_config).c_str());
     }
 
     // Parse the skp.
-    if (FLAGS_src.count() != 1) {
+    if (FLAGS_src.size() != 1) {
         exitf(ExitErr::kUsage,
               "invalid input '%s': must specify a single .skp or .svg file, or 'warmup'",
               join(FLAGS_src).c_str());
@@ -562,7 +563,7 @@ int main(int argc, char** argv) {
 
     // Create a context.
     GrContextOptions ctxOptions;
-    SetCtxOptionsFromCommonFlags(&ctxOptions);
+    CommonFlags::SetCtxOptions(&ctxOptions);
     sk_gpu_test::GrContextFactory factory(ctxOptions);
     sk_gpu_test::ContextInfo ctxInfo =
         factory.getContextInfo(config->getContextType(), config->getContextOverrides());
@@ -595,12 +596,11 @@ int main(int argc, char** argv) {
     }
 
     // Create a render target.
-    SkImageInfo info =
-            SkImageInfo::Make(width, height, config->getColorType(), config->getAlphaType(),
-                              sk_ref_sp(config->getColorSpace()));
+    SkImageInfo info = SkImageInfo::Make(
+            width, height, config->getColorType(), config->getAlphaType(), config->refColorSpace());
     SkSurfaceProps props(config->getSurfaceFlags(), kRGB_H_SkPixelGeometry);
-    sk_sp<SkSurface> surface =
-        SkSurface::MakeRenderTarget(ctx, SkBudgeted::kNo, info, config->getSamples(), &props);
+    sk_sp<SkSurface> surface = SkSurface::MakeRenderTarget(
+            ctx, skgpu::Budgeted::kNo, info, config->getSamples(), &props);
     if (!surface) {
         exitf(ExitErr::kUnavailable, "failed to create %ix%i render target for config %s",
                                      width, height, config->getTag().c_str());
@@ -649,7 +649,7 @@ int main(int argc, char** argv) {
         if (!mkdir_p(SkOSPath::Dirname(FLAGS_png[0]))) {
             exitf(ExitErr::kIO, "failed to create directory for png \"%s\"", FLAGS_png[0]);
         }
-        if (!ToolUtils::EncodeImageToFile(FLAGS_png[0], bmp, SkEncodedImageFormat::kPNG, 100)) {
+        if (!ToolUtils::EncodeImageToPngFile(FLAGS_png[0], bmp)) {
             exitf(ExitErr::kIO, "failed to save png to \"%s\"", FLAGS_png[0]);
         }
     }
@@ -688,7 +688,7 @@ static sk_sp<SkPicture> create_warmup_skp() {
     stroke.setStrokeWidth(2);
 
     // Use a big path to (theoretically) warmup the CPU.
-    SkPath bigPath = ToolUtils::make_big_path();
+    SkPath bigPath = BenchUtils::make_big_path();
     recording->drawPath(bigPath, stroke);
 
     // Use a perlin shader to warmup the GPU.
@@ -700,7 +700,7 @@ static sk_sp<SkPicture> create_warmup_skp() {
 }
 
 static sk_sp<SkPicture> create_skp_from_svg(SkStream* stream, const char* filename) {
-#ifdef SK_XML
+#if defined(SK_ENABLE_SVG)
     sk_sp<SkSVGDOM> svg = SkSVGDOM::MakeFromStream(*stream);
     if (!svg) {
         exitf(ExitErr::kData, "failed to build svg dom from file %s", filename);
@@ -715,7 +715,7 @@ static sk_sp<SkPicture> create_skp_from_svg(SkStream* stream, const char* filena
 
     return recorder.finishRecordingAsPicture();
 #endif
-    exitf(ExitErr::kData, "SK_XML is disabled; cannot open svg file %s", filename);
+    exitf(ExitErr::kData, "SK_ENABLE_SVG is disabled; cannot open svg file %s", filename);
     return nullptr;
 }
 
@@ -728,11 +728,13 @@ bool mkdir_p(const SkString& dirname) {
 
 static SkString join(const CommandLineFlags::StringArray& stringArray) {
     SkString joined;
-    for (int i = 0; i < stringArray.count(); ++i) {
+    for (int i = 0; i < stringArray.size(); ++i) {
         joined.appendf(i ? " %s" : "%s", stringArray[i]);
     }
     return joined;
 }
+
+static void exitf(ExitErr err, const char* format, ...) SK_PRINTF_LIKE(2, 3);
 
 static void exitf(ExitErr err, const char* format, ...) {
     fprintf(stderr, ExitErr::kSoftware == err ? "INTERNAL ERROR: " : "ERROR: ");
@@ -758,6 +760,6 @@ sk_gpu_test::FlushFinishTracker* GpuSync::newFlushTracker(GrDirectContext* conte
     // callback on the flush call. The finish callback will unref the tracker when called.
     tracker->ref();
 
-    fCurrentFlushIdx = (fCurrentFlushIdx + 1) % SK_ARRAY_COUNT(fFinishTrackers);
+    fCurrentFlushIdx = (fCurrentFlushIdx + 1) % std::size(fFinishTrackers);
     return tracker;
 }
