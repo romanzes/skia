@@ -39,7 +39,6 @@
 #include "modules/skparagraph/utils/TestFontCollection.h"
 #include "src/core/SkOSFile.h"
 #include "src/utils/SkOSPath.h"
-#include "src/utils/SkShaperJSONWriter.h"
 #include "tests/Test.h"
 #include "tools/Resources.h"
 
@@ -51,6 +50,8 @@
 #include <string>
 #include <utility>
 #include <vector>
+
+#if defined(SK_ENABLE_PARAGRAPH)
 
 using namespace skia::textlayout;
 namespace {
@@ -280,3 +281,5 @@ DEF_FUZZ(SkParagraph, fuzz) {
     paragraph->layout(layout_width);
     paragraph->paint(&canvas, 0, 0);
 }
+
+#endif // SK_ENABLE_PARAGRAPH

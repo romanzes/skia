@@ -7,6 +7,7 @@
 
 #include <jni.h>
 
+#include <string>
 #include "include/core/SkBlendMode.h"
 #include "include/core/SkSamplingOptions.h"
 #include "include/core/SkTileMode.h"
@@ -27,6 +28,7 @@ public:
         fEnv->ReleaseStringUTFChars(fJString, fCString);
     }
 
+    const char* str() const { return fCString; }
     operator const char*() const { return fCString; }
 
 private:
@@ -34,11 +36,37 @@ private:
     const jstring& fJString;
     const char*    fCString;
 
-
     CString(CString&&) = delete;
     CString(const CString&) = delete;
     CString& operator=(CString&&) = delete;
     CString& operator=(const CString&) = delete;
+};
+
+// RAII helper for jstring -> u16String conversions
+class U16String {
+public:
+    U16String(JNIEnv* env, const jstring& jstr)
+        : fEnv(env)
+        , fJString(jstr)
+        , fU16String(env->GetStringChars(jstr, nullptr))
+    {}
+
+    ~U16String() {
+        fEnv->ReleaseStringChars(fJString, fU16String);
+    }
+
+    operator const char16_t*() const { return reinterpret_cast<const char16_t*>(fU16String); }
+
+private:
+    JNIEnv*        fEnv;
+    const jstring& fJString;
+    const jchar*   fU16String;
+
+
+    U16String(U16String&&) = delete;
+    U16String(const U16String&) = delete;
+    U16String& operator=(U16String&&) = delete;
+    U16String& operator=(const U16String&) = delete;
 };
 
 // RAII helper for float array access

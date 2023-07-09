@@ -19,45 +19,6 @@ class SkSurface;
 ////////////////////////////////////////////////////////////////////////////////
 
 /**
- * Defines overloaded bitwise operators to make it easier to use an enum as a
- * bitfield.
- */
-#define GR_MAKE_BITFIELD_OPS(X) \
-    inline X operator |(X a, X b) { \
-        return (X) (+a | +b); \
-    } \
-    inline X& operator |=(X& a, X b) { \
-        return (a = a | b); \
-    } \
-    inline X operator &(X a, X b) { \
-        return (X) (+a & +b); \
-    } \
-    inline X& operator &=(X& a, X b) { \
-        return (a = a & b); \
-    } \
-    template <typename T> \
-    inline X operator &(T a, X b) { \
-        return (X) (+a & +b); \
-    } \
-    template <typename T> \
-    inline X operator &(X a, T b) { \
-        return (X) (+a & +b); \
-    } \
-
-#define GR_DECL_BITFIELD_OPS_FRIENDS(X) \
-    friend X operator |(X a, X b); \
-    friend X& operator |=(X& a, X b); \
-    \
-    friend X operator &(X a, X b); \
-    friend X& operator &=(X& a, X b); \
-    \
-    template <typename T> \
-    friend X operator &(T a, X b); \
-    \
-    template <typename T> \
-    friend X operator &(X a, T b); \
-
-/**
  * Wraps a C++11 enum that we use as a bitfield, and enables a limited amount of
  * masking with type safety. Instantiated with the ~ operator.
  */
@@ -75,37 +36,37 @@ private:
  * basic bitfield.
  */
 #define GR_MAKE_BITFIELD_CLASS_OPS(X) \
-    SK_MAYBE_UNUSED constexpr GrTFlagsMask<X> operator~(X a) { \
+    [[maybe_unused]] constexpr GrTFlagsMask<X> operator~(X a) { \
         return GrTFlagsMask<X>(~static_cast<int>(a)); \
     } \
-    SK_MAYBE_UNUSED constexpr X operator|(X a, X b) { \
+    [[maybe_unused]] constexpr X operator|(X a, X b) { \
         return static_cast<X>(static_cast<int>(a) | static_cast<int>(b)); \
     } \
-    SK_MAYBE_UNUSED inline X& operator|=(X& a, X b) { \
+    [[maybe_unused]] inline X& operator|=(X& a, X b) { \
         return (a = a | b); \
     } \
-    SK_MAYBE_UNUSED constexpr bool operator&(X a, X b) { \
+    [[maybe_unused]] constexpr bool operator&(X a, X b) { \
         return SkToBool(static_cast<int>(a) & static_cast<int>(b)); \
     } \
-    SK_MAYBE_UNUSED constexpr GrTFlagsMask<X> operator|(GrTFlagsMask<X> a, GrTFlagsMask<X> b) { \
+    [[maybe_unused]] constexpr GrTFlagsMask<X> operator|(GrTFlagsMask<X> a, GrTFlagsMask<X> b) { \
         return GrTFlagsMask<X>(a.value() | b.value()); \
     } \
-    SK_MAYBE_UNUSED constexpr GrTFlagsMask<X> operator|(GrTFlagsMask<X> a, X b) { \
+    [[maybe_unused]] constexpr GrTFlagsMask<X> operator|(GrTFlagsMask<X> a, X b) { \
         return GrTFlagsMask<X>(a.value() | static_cast<int>(b)); \
     } \
-    SK_MAYBE_UNUSED constexpr GrTFlagsMask<X> operator|(X a, GrTFlagsMask<X> b) { \
+    [[maybe_unused]] constexpr GrTFlagsMask<X> operator|(X a, GrTFlagsMask<X> b) { \
         return GrTFlagsMask<X>(static_cast<int>(a) | b.value()); \
     } \
-    SK_MAYBE_UNUSED constexpr X operator&(GrTFlagsMask<X> a, GrTFlagsMask<X> b) { \
+    [[maybe_unused]] constexpr X operator&(GrTFlagsMask<X> a, GrTFlagsMask<X> b) { \
         return static_cast<X>(a.value() & b.value()); \
     } \
-    SK_MAYBE_UNUSED constexpr X operator&(GrTFlagsMask<X> a, X b) { \
+    [[maybe_unused]] constexpr X operator&(GrTFlagsMask<X> a, X b) { \
         return static_cast<X>(a.value() & static_cast<int>(b)); \
     } \
-    SK_MAYBE_UNUSED constexpr X operator&(X a, GrTFlagsMask<X> b) { \
+    [[maybe_unused]] constexpr X operator&(X a, GrTFlagsMask<X> b) { \
         return static_cast<X>(static_cast<int>(a) & b.value()); \
     } \
-    SK_MAYBE_UNUSED inline X& operator&=(X& a, GrTFlagsMask<X> b) { \
+    [[maybe_unused]] inline X& operator&=(X& a, GrTFlagsMask<X> b) { \
         return (a = a & b); \
     } \
 

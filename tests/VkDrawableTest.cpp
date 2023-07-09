@@ -5,7 +5,7 @@
  * found in the LICENSE file.
  */
 
-// This is a GPU-backend specific test. It relies on static intializers to work
+// This is a GPU-backend specific test. It relies on static initializers to work
 
 #include "include/core/SkTypes.h"
 
@@ -18,12 +18,12 @@
 #include "include/core/SkSurface.h"
 #include "include/gpu/GrBackendDrawableInfo.h"
 #include "include/gpu/GrDirectContext.h"
-#include "src/gpu/GrDirectContextPriv.h"
-#include "src/gpu/vk/GrVkGpu.h"
-#include "src/gpu/vk/GrVkInterface.h"
-#include "src/gpu/vk/GrVkMemory.h"
-#include "src/gpu/vk/GrVkSecondaryCBDrawContext.h"
-#include "src/gpu/vk/GrVkUtil.h"
+#include "src/gpu/ganesh/GrDirectContextPriv.h"
+#include "src/gpu/ganesh/vk/GrVkGpu.h"
+#include "src/gpu/ganesh/vk/GrVkInterface.h"
+#include "src/gpu/ganesh/vk/GrVkMemory.h"
+#include "src/gpu/ganesh/vk/GrVkSecondaryCBDrawContext_impl.h"
+#include "src/gpu/ganesh/vk/GrVkUtil.h"
 #include "tests/Test.h"
 #include "tools/gpu/GrContextFactory.h"
 
@@ -269,11 +269,11 @@ void draw_drawable_test(skiatest::Reporter* reporter,
     }
 }
 
-DEF_GPUTEST_FOR_VULKAN_CONTEXT(VkDrawableTest, reporter, ctxInfo) {
+DEF_GPUTEST_FOR_VULKAN_CONTEXT(VkDrawableTest, reporter, ctxInfo, CtsEnforcement::kApiLevel_T) {
     draw_drawable_test(reporter, ctxInfo.directContext(), nullptr);
 }
 
-DEF_GPUTEST(VkDrawableImportTest, reporter, options) {
+DEF_GPUTEST(VkDrawableImportTest, reporter, options, CtsEnforcement::kApiLevel_T) {
     for (int typeInt = 0; typeInt < sk_gpu_test::GrContextFactory::kContextTypeCnt; ++typeInt) {
         sk_gpu_test::GrContextFactory::ContextType contextType =
                 (sk_gpu_test::GrContextFactory::ContextType) typeInt;
