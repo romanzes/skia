@@ -25,11 +25,21 @@ static SkVector map_as_vector(SkScalar x, SkScalar y, const SkMatrix& matrix) {
 }
 
 namespace skif {
+// This exists to cover up issues where infinite precision would produce integers but float
+// math produces values just larger/smaller than an int and roundOut/In on bounds would produce
+// nearly a full pixel error. One such case is crbug.com/1313579 where the caller has produced
+// near integer CTM and uses integer crop rects that would grab an extra row/column of the
+// input image when using a strict roundOut.
+static constexpr float kRoundEpsilon = 1e-3f;
 
-Mapping Mapping::DecomposeCTM(const SkMatrix& ctm, const SkImageFilter* filter,
-                              const skif::ParameterSpace<SkPoint>& representativePoint) {
+SkIRect RoundOut(SkRect r) { return r.makeInset(kRoundEpsilon, kRoundEpsilon).roundOut(); }
+
+SkIRect RoundIn(SkRect r) { return r.makeOutset(kRoundEpsilon, kRoundEpsilon).roundIn(); }
+
+bool Mapping::decomposeCTM(const SkMatrix& ctm, const SkImageFilter* filter,
+                           const skif::ParameterSpace<SkPoint>& representativePt) {
     SkMatrix remainder, layer;
-    SkSize scale;
+    SkSize decomposed;
     using MatrixCapability = SkImageFilter_Base::MatrixCapability;
     MatrixCapability capability =
             filter ? as_IFB(filter)->getCTMCapability() : MatrixCapability::kComplex;
@@ -42,14 +52,14 @@ Mapping Mapping::DecomposeCTM(const SkMatrix& ctm, const SkImageFilter* filter,
         // ctm is. In both cases, the layer space can be equivalent to device space.
         remainder = SkMatrix::I();
         layer = ctm;
-    } else if (ctm.decomposeScale(&scale, &remainder)) {
+    } else if (ctm.decomposeScale(&decomposed, &remainder)) {
         // This case implies some amount of sampling post-filtering, either due to skew or rotation
         // in the original matrix. As such, keep the layer matrix as simple as possible.
-        layer = SkMatrix::Scale(scale.fWidth, scale.fHeight);
+        layer = SkMatrix::Scale(decomposed.fWidth, decomposed.fHeight);
     } else {
         // Perspective, which has a non-uniform scaling effect on the filter. Pick a single scale
         // factor that best matches where the filter will be evaluated.
-        SkScalar scale = SkMatrixPriv::DifferentialAreaScale(ctm, SkPoint(representativePoint));
+        SkScalar scale = SkMatrixPriv::DifferentialAreaScale(ctm, SkPoint(representativePt));
         if (SkScalarIsFinite(scale) && !SkScalarNearlyZero(scale)) {
             // Now take the sqrt to go from an area scale factor to a scaling per X and Y
             // FIXME: It would be nice to be able to choose a non-uniform scale.
@@ -65,7 +75,19 @@ Mapping Mapping::DecomposeCTM(const SkMatrix& ctm, const SkImageFilter* filter,
         layer = SkMatrix::Scale(scale, scale);
     }
 
-    return Mapping(remainder, layer);
+    SkMatrix invRemainder;
+    if (!remainder.invert(&invRemainder)) {
+        // Under floating point arithmetic, it's possible to decompose an invertible matrix into
+        // a scaling matrix and a remainder and have the remainder be non-invertible. Generally
+        // when this happens the scale factors are so large and the matrix so ill-conditioned that
+        // it's unlikely that any drawing would be reasonable, so failing to make a layer is okay.
+        return false;
+    } else {
+        fParamToLayerMatrix = layer;
+        fLayerToDevMatrix = remainder;
+        fDevToLayerMatrix = invRemainder;
+        return true;
+    }
 }
 
 bool Mapping::adjustLayerSpace(const SkMatrix& layer) {
@@ -87,9 +109,7 @@ SkRect Mapping::map<SkRect>(const SkRect& geom, const SkMatrix& matrix) {
 
 template<>
 SkIRect Mapping::map<SkIRect>(const SkIRect& geom, const SkMatrix& matrix) {
-    SkRect mapped = matrix.mapRect(SkRect::Make(geom));
-    mapped.inset(1e-3f, 1e-3f);
-    return mapped.roundOut();
+    return RoundOut(matrix.mapRect(SkRect::Make(geom)));
 }
 
 template<>
@@ -126,6 +146,37 @@ template<>
 SkSize Mapping::map<SkSize>(const SkSize& geom, const SkMatrix& matrix) {
     SkVector v = map_as_vector(geom.fWidth, geom.fHeight, matrix);
     return SkSize::Make(v.fX, v.fY);
+}
+
+template<>
+SkMatrix Mapping::map<SkMatrix>(const SkMatrix& m, const SkMatrix& matrix) {
+    // If 'matrix' maps from the C1 coord space to the C2 coord space, and 'm' is a transform that
+    // operates on, and outputs to, the C1 coord space, we want to return a new matrix that is
+    // equivalent to 'm' that operates on and outputs to C2. This is the same as mapping the input
+    // from C2 to C1 (matrix^-1), then transforming by 'm', and then mapping from C1 to C2 (matrix).
+    SkMatrix inv;
+    SkAssertResult(matrix.invert(&inv));
+    inv.postConcat(m);
+    inv.postConcat(matrix);
+    return inv;
+}
+
+FilterResult FilterResult::resolveToBounds(const LayerSpace<SkIRect>& newBounds) const {
+    // NOTE(michaelludwig) - This implementation is based on the assumption that an image resolved
+    // to 'newBounds' will be decal tiled and that the current image is decal tiled. Because of this
+    // simplification, the resolved image is always a subset of 'fImage' that matches the
+    // intersection of 'newBounds' and 'layerBounds()' so no rendering/copying is needed.
+    LayerSpace<SkIRect> tightBounds = newBounds;
+    if (!fImage || !tightBounds.intersect(this->layerBounds())) {
+        return {}; //  Fully transparent
+    }
+
+    // Calculate offset from old origin to new origin, representing the relative subset in the image
+    LayerSpace<IVector> originShift = tightBounds.topLeft() - fOrigin;
+
+    auto subsetImage = fImage->makeSubset(SkIRect::MakeXYWH(originShift.x(), originShift.y(),
+                                          tightBounds.width(), tightBounds.height()));
+    return {std::move(subsetImage), tightBounds.topLeft()};
 }
 
 } // end namespace skif

@@ -98,16 +98,16 @@ protected:
         for (int i = 0; i < kRows; ++i) {
             for (int j = 0; j < kCols; ++j) {
                 for (int k = 0; k < 5; ++k) {
-                    fOps[j*kRows+i][k] = ops[r.nextU() % SK_ARRAY_COUNT(ops)];
+                    fOps[j*kRows+i][k] = ops[r.nextU() % std::size(ops)];
                 }
             }
         }
     }
 
-    static constexpr int kRows = 5;
-    static constexpr int kCols = 5;
-    static constexpr int kPadX = 20;
-    static constexpr int kPadY = 20;
+    inline static constexpr int kRows = 5;
+    inline static constexpr int kCols = 5;
+    inline static constexpr int kPadX = 20;
+    inline static constexpr int kPadY = 20;
 
     static const char* ClipStr(Clip clip) {
         switch (clip) {

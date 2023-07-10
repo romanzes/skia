@@ -108,7 +108,7 @@ protected:
                                      tile.y() + 2 * (tile.height() - phase_vec.fY) }};
 
             auto mask_shader = SkGradientShader::MakeLinear(pts, colors, pos,
-                                                            SK_ARRAY_COUNT(colors),
+                                                            std::size(colors),
                                                             SkTileMode::kRepeat);
 
             // First drawing pass: in-place masked layer content.
@@ -138,6 +138,11 @@ protected:
 
         SkPaint paint;
         paint.setAntiAlias(true);
+
+        if (ctx) {
+            // apply any pending paint effects via the shader paint
+            ctx->modulatePaint(canvas->getLocalToDeviceAs3x3(), &paint);
+        }
 
         paint.setShader(fMainPassShader);
         canvas->drawRect(this->bounds(), paint);

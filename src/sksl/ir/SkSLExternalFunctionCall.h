@@ -20,10 +20,10 @@ namespace SkSL {
  */
 class ExternalFunctionCall final : public Expression {
 public:
-    static constexpr Kind kExpressionKind = Kind::kExternalFunctionCall;
+    inline static constexpr Kind kExpressionKind = Kind::kExternalFunctionCall;
 
-    ExternalFunctionCall(int offset, const ExternalFunction* function, ExpressionArray arguments)
-        : INHERITED(offset, kExpressionKind, &function->type())
+    ExternalFunctionCall(Position pos, const ExternalFunction* function, ExpressionArray arguments)
+        : INHERITED(pos, kExpressionKind, &function->type())
         , fFunction(*function)
         , fArguments(std::move(arguments)) {}
 
@@ -39,31 +39,14 @@ public:
         return fFunction;
     }
 
-    bool hasProperty(Property property) const override {
-        if (property == Property::kSideEffects) {
-            return true;
-        }
-        for (const auto& arg : this->arguments()) {
-            if (arg->hasProperty(property)) {
-                return true;
-            }
-        }
-        return false;
+    std::unique_ptr<Expression> clone(Position pos) const override {
+        return std::make_unique<ExternalFunctionCall>(pos, &this->function(),
+                                                      this->arguments().clone());
     }
 
-    std::unique_ptr<Expression> clone() const override {
-        ExpressionArray cloned;
-        cloned.reserve_back(this->arguments().size());
-        for (const auto& arg : this->arguments()) {
-            cloned.push_back(arg->clone());
-        }
-        return std::make_unique<ExternalFunctionCall>(fOffset, &this->function(),
-                                                      std::move(cloned));
-    }
-
-    String description() const override {
-        String result = String(this->function().name()) + "(";
-        String separator;
+    std::string description() const override {
+        std::string result = std::string(this->function().name()) + "(";
+        std::string separator;
         for (const std::unique_ptr<Expression>& arg : this->arguments()) {
             result += separator;
             result += arg->description();
