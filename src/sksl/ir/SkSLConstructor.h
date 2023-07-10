@@ -9,72 +9,45 @@
 #define SKSL_CONSTRUCTOR
 
 #include "include/core/SkSpan.h"
-#include "src/sksl/SkSLIRGenerator.h"
+#include "include/private/SkSLDefines.h"
+#include "src/sksl/SkSLPosition.h"
 #include "src/sksl/ir/SkSLExpression.h"
+#include "src/sksl/ir/SkSLType.h"
+
+#include <cstdint>
+#include <memory>
+#include <optional>
+#include <string>
+#include <utility>
 
 namespace SkSL {
+
+class Context;
+enum class OperatorPrecedence : uint8_t;
 
 /**
  * Base class representing a constructor with unknown arguments.
  */
 class AnyConstructor : public Expression {
 public:
-    AnyConstructor(int offset, Kind kind, const Type* type)
-            : INHERITED(offset, kind, type) {}
+    AnyConstructor(Position pos, Kind kind, const Type* type)
+            : INHERITED(pos, kind, type) {}
 
     virtual SkSpan<std::unique_ptr<Expression>> argumentSpan() = 0;
     virtual SkSpan<const std::unique_ptr<Expression>> argumentSpan() const = 0;
 
-    bool hasProperty(Property property) const override {
-        for (const std::unique_ptr<Expression>& arg : this->argumentSpan()) {
-            if (arg->hasProperty(property)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    String description() const override {
-        String result = this->type().description() + "(";
-        const char* separator = "";
-        for (const std::unique_ptr<Expression>& arg : this->argumentSpan()) {
-            result += separator;
-            result += arg->description();
-            separator = ", ";
-        }
-        result += ")";
-        return result;
-    }
+    std::string description(OperatorPrecedence) const override;
 
     const Type& componentType() const {
         return this->type().componentType();
     }
 
-    bool isCompileTimeConstant() const override {
-        for (const std::unique_ptr<Expression>& arg : this->argumentSpan()) {
-            if (!arg->isCompileTimeConstant()) {
-                return false;
-            }
-        }
-        return true;
-    }
-
-    bool isConstantOrUniform() const override {
-        for (const std::unique_ptr<Expression>& arg : this->argumentSpan()) {
-            if (!arg->isConstantOrUniform()) {
-                return false;
-            }
-        }
-        return true;
-    }
-
-    const Expression* getConstantSubexpression(int n) const override;
+    bool supportsConstantValues() const override { return true; }
+    std::optional<double> getConstantValue(int n) const override;
 
     ComparisonResult compareConstant(const Expression& other) const override;
 
 private:
-    std::unique_ptr<Expression> fArgument;
-
     using INHERITED = Expression;
 };
 
@@ -83,9 +56,9 @@ private:
  */
 class SingleArgumentConstructor : public AnyConstructor {
 public:
-    SingleArgumentConstructor(int offset, Kind kind, const Type* type,
+    SingleArgumentConstructor(Position pos, Kind kind, const Type* type,
                               std::unique_ptr<Expression> argument)
-            : INHERITED(offset, kind, type)
+            : INHERITED(pos, kind, type)
             , fArgument(std::move(argument)) {}
 
     std::unique_ptr<Expression>& argument() {
@@ -115,9 +88,10 @@ private:
  */
 class MultiArgumentConstructor : public AnyConstructor {
 public:
-    MultiArgumentConstructor(int offset, Kind kind, const Type* type, ExpressionArray arguments)
-            : INHERITED(offset, kind, type)
-            , fArguments(std::move(arguments)) {}
+    MultiArgumentConstructor(Position pos, Kind kind, const Type* type,
+            ExpressionArray arguments)
+        : INHERITED(pos, kind, type)
+        , fArguments(std::move(arguments)) {}
 
     ExpressionArray& arguments() {
         return fArguments;
@@ -125,15 +99,6 @@ public:
 
     const ExpressionArray& arguments() const {
         return fArguments;
-    }
-
-    ExpressionArray cloneArguments() const {
-        ExpressionArray clonedArgs;
-        clonedArgs.reserve_back(this->arguments().size());
-        for (const std::unique_ptr<Expression>& arg: this->arguments()) {
-            clonedArgs.push_back(arg->clone());
-        }
-        return clonedArgs;
     }
 
     SkSpan<std::unique_ptr<Expression>> argumentSpan() final {
@@ -168,10 +133,10 @@ namespace Constructor {
     // Constructor expression types; this class chooses the proper one based on context, e.g.
     // `ConstructorCompound`, `ConstructorScalarCast`, or `ConstructorMatrixResize`.
     std::unique_ptr<Expression> Convert(const Context& context,
-                                        int offset,
+                                        Position pos,
                                         const Type& type,
                                         ExpressionArray args);
-};
+}
 
 }  // namespace SkSL
 

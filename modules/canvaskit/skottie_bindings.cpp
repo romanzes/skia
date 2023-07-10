@@ -9,25 +9,20 @@
 #include "include/core/SkImage.h"
 #include "include/core/SkString.h"
 #include "include/core/SkTypes.h"
+#include "modules/canvaskit/WasmCommon.h"
 #include "modules/skottie/include/Skottie.h"
+#include "modules/skottie/include/SkottieProperty.h"
+#include "modules/skottie/utils/SkottieUtils.h"
+#include "modules/skresources/include/SkResources.h"
 #include "modules/sksg/include/SkSGInvalidationController.h"
 
 #include <string>
 #include <vector>
-
 #include <emscripten.h>
 #include <emscripten/bind.h>
-#include "modules/canvaskit/WasmCommon.h"
-
-#if SK_INCLUDE_MANAGED_SKOTTIE
-#include "modules/skottie/include/SkottieProperty.h"
-#include "modules/skottie/utils/SkottieUtils.h"
-#include "modules/skresources/include/SkResources.h"
-#endif // SK_INCLUDE_MANAGED_SKOTTIE
 
 using namespace emscripten;
 
-#if SK_INCLUDE_MANAGED_SKOTTIE
 namespace {
 
 // WebTrack wraps a JS object that has a 'seek' method.
@@ -140,8 +135,8 @@ private:
         fLogger.call<void>(func, std::string(msg), std::string(json));
     }
 
-    static constexpr char kWrnFunc[] = "onWarning",
-                          kErrFunc[] = "onError";
+    inline static constexpr char kWrnFunc[] = "onWarning",
+                                 kErrFunc[] = "onError";
 
     const emscripten::val fLogger;
 };
@@ -238,6 +233,31 @@ public:
         return props;
     }
 
+    JSArray getTransformProps() const {
+        JSArray props = emscripten::val::array();
+
+        for (const auto& key : fPropMgr->getTransformProps()) {
+            const auto transform = fPropMgr->getTransform(key);
+            JSObject trans_val = emscripten::val::object();
+            const float anchor[] = {transform.fAnchorPoint.fX, transform.fAnchorPoint.fY};
+            const float position[] = {transform.fPosition.fX, transform.fPosition.fY};
+            const float scale[] = {transform.fScale.fX, transform.fScale.fY};
+            trans_val.set("anchor", MakeTypedArray(2, anchor));
+            trans_val.set("position", MakeTypedArray(2, position));
+            trans_val.set("scale", MakeTypedArray(2, scale));
+            trans_val.set("rotation", transform.fRotation);
+            trans_val.set("skew", transform.fSkew);
+            trans_val.set("skew_axis", transform.fSkewAxis);
+
+            JSObject prop = emscripten::val::object();
+            prop.set("key", key);
+            prop.set("value", trans_val);
+            props.call<void>("push", prop);
+        }
+
+        return props;
+    }
+
     bool setColor(const std::string& key, SkColor c) {
         return fPropMgr->setColor(key, c);
     }
@@ -254,6 +274,20 @@ public:
         t.fTextSize = size;
 
         return fPropMgr->setText(key, t);
+    }
+
+    bool setTransform(const std::string& key, SkScalar anchorX, SkScalar anchorY,
+                                              SkScalar posX, SkScalar posY,
+                                              SkScalar scaleX, SkScalar scaleY,
+                                              SkScalar rotation, SkScalar skew, SkScalar skewAxis) {
+        skottie::TransformPropertyValue transform;
+        transform.fAnchorPoint = {anchorX, anchorY};
+        transform.fPosition = {posX, posY};
+        transform.fScale = {scaleX, scaleY};
+        transform.fRotation = rotation;
+        transform.fSkew = skew;
+        transform.fSkewAxis = skewAxis;
+        return fPropMgr->setTransform(key, transform);
     }
 
     JSArray getMarkers() const {
@@ -280,7 +314,6 @@ private:
 };
 
 } // anonymous ns
-#endif // SK_INCLUDE_MANAGED_SKOTTIE
 
 EMSCRIPTEN_BINDINGS(Skottie) {
     // Animation things (may eventually go in own library)
@@ -313,7 +346,6 @@ EMSCRIPTEN_BINDINGS(Skottie) {
     }));
     constant("skottie", true);
 
-#if SK_INCLUDE_MANAGED_SKOTTIE
     class_<ManagedAnimation>("ManagedAnimation")
         .smart_ptr<sk_sp<ManagedAnimation>>("sk_sp<ManagedAnimation>")
         .function("version"   , &ManagedAnimation::version)
@@ -345,12 +377,22 @@ EMSCRIPTEN_BINDINGS(Skottie) {
             SkColor4f color = { fourFloats[0], fourFloats[1], fourFloats[2], fourFloats[3] };
             return self.setColor(key, color.toSkColor());
         }))
-        .function("setOpacity", &ManagedAnimation::setOpacity)
-        .function("getMarkers", &ManagedAnimation::getMarkers)
-        .function("getColorProps"  , &ManagedAnimation::getColorProps)
-        .function("getOpacityProps", &ManagedAnimation::getOpacityProps)
-        .function("getTextProps"   , &ManagedAnimation::getTextProps)
-        .function("setText"        , &ManagedAnimation::setText);
+        .function("_setTransform"  , optional_override([](ManagedAnimation& self,
+                                                          const std::string& key,
+                                                          WASMPointerF32 transformData) {
+            // transform value info is passed in as an array of 9 scalars in the following order:
+            // anchor xy, position xy, scalexy, rotation, skew, skew axis
+            auto transform = reinterpret_cast<SkScalar*>(transformData);
+            return self.setTransform(key, transform[0], transform[1], transform[2], transform[3],
+                                     transform[4], transform[5], transform[6], transform[7], transform[8]);
+                                                          }))
+        .function("getMarkers"       , &ManagedAnimation::getMarkers)
+        .function("getColorProps"    , &ManagedAnimation::getColorProps)
+        .function("getOpacityProps"  , &ManagedAnimation::getOpacityProps)
+        .function("setOpacity"       , &ManagedAnimation::setOpacity)
+        .function("getTextProps"     , &ManagedAnimation::getTextProps)
+        .function("setText"          , &ManagedAnimation::setText)
+        .function("getTransformProps", &ManagedAnimation::getTransformProps);
 
     function("_MakeManagedAnimation", optional_override([](std::string json,
                                                            size_t assetCount,
@@ -381,5 +423,4 @@ EMSCRIPTEN_BINDINGS(Skottie) {
                                       prop_prefix, std::move(logger));
     }));
     constant("managed_skottie", true);
-#endif // SK_INCLUDE_MANAGED_SKOTTIE
 }

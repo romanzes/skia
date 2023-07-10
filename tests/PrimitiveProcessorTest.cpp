@@ -7,25 +7,51 @@
 
 // This is a GPU-backend specific test. It relies on static initializers to work
 
-#include <memory>
-
+#include "include/core/SkColorSpace.h"
+#include "include/core/SkRect.h"
+#include "include/core/SkString.h"
+#include "include/core/SkSurfaceProps.h"
 #include "include/core/SkTypes.h"
+#include "include/gpu/GrDirectContext.h"
+#include "include/private/gpu/ganesh/GrTypesPriv.h"
+#include "src/base/SkArenaAlloc.h"
+#include "src/core/SkPointPriv.h"
+#include "src/core/SkSLTypeShared.h"
+#include "src/gpu/KeyBuilder.h"
+#include "src/gpu/SkBackingFit.h"
+#include "src/gpu/ganesh/GrAppliedClip.h"
+#include "src/gpu/ganesh/GrCaps.h"
+#include "src/gpu/ganesh/GrDirectContextPriv.h"
+#include "src/gpu/ganesh/GrGeometryProcessor.h"
+#include "src/gpu/ganesh/GrGpu.h"
+#include "src/gpu/ganesh/GrOpFlushState.h"
+#include "src/gpu/ganesh/GrPaint.h"
+#include "src/gpu/ganesh/GrPipeline.h"
+#include "src/gpu/ganesh/GrProcessorSet.h"
+#include "src/gpu/ganesh/GrProgramInfo.h"
+#include "src/gpu/ganesh/SurfaceDrawContext.h"
+#include "src/gpu/ganesh/glsl/GrGLSLFragmentShaderBuilder.h"
+#include "src/gpu/ganesh/glsl/GrGLSLVarying.h"
+#include "src/gpu/ganesh/ops/GrMeshDrawOp.h"
+#include "src/gpu/ganesh/ops/GrOp.h"
+#include "src/gpu/ganesh/ops/GrSimpleMeshDrawOpHelper.h"
+#include "tests/CtsEnforcement.h"
 #include "tests/Test.h"
 
-#include "include/core/SkString.h"
-#include "include/gpu/GrDirectContext.h"
-#include "src/core/SkPointPriv.h"
-#include "src/gpu/GrDirectContextPriv.h"
-#include "src/gpu/GrGeometryProcessor.h"
-#include "src/gpu/GrGpu.h"
-#include "src/gpu/GrMemoryPool.h"
-#include "src/gpu/GrOpFlushState.h"
-#include "src/gpu/GrProgramInfo.h"
-#include "src/gpu/glsl/GrGLSLFragmentShaderBuilder.h"
-#include "src/gpu/glsl/GrGLSLVarying.h"
-#include "src/gpu/ops/GrMeshDrawOp.h"
-#include "src/gpu/ops/GrSimpleMeshDrawOpHelper.h"
-#include "src/gpu/v1/SurfaceDrawContext_v1.h"
+#include <cstddef>
+#include <memory>
+#include <utility>
+
+class GrDstProxyView;
+class GrGLSLProgramDataManager;
+class GrMeshDrawTarget;
+class GrRecordingContext;
+class GrSurfaceProxyView;
+enum class GrXferBarrierFlags;
+struct GrContextOptions;
+struct GrShaderCaps;
+struct GrSimpleMesh;
+struct SkPoint;
 
 namespace {
 class Op : public GrMeshDrawOp {
@@ -94,7 +120,7 @@ private:
 
                 return std::make_unique<Impl>();
             }
-            void addToKey(const GrShaderCaps&, GrProcessorKeyBuilder* builder) const override {
+            void addToKey(const GrShaderCaps&, skgpu::KeyBuilder* builder) const override {
                 builder->add32(fNumAttribs);
             }
 
@@ -109,13 +135,13 @@ private:
                     // component count to fit within the limits for iOS Metal.
                     if (i & 0x1) {
                         fAttributes[i] = {fAttribNames[i].c_str(), kFloat_GrVertexAttribType,
-                                                                   kFloat_GrSLType};
+                                                                   SkSLType::kFloat};
                     } else {
                         fAttributes[i] = {fAttribNames[i].c_str(), kFloat2_GrVertexAttribType,
-                                                                   kFloat2_GrSLType};
+                                                                   SkSLType::kFloat2};
                     }
                 }
-                this->setVertexAttributes(fAttributes.get(), numAttribs);
+                this->setVertexAttributesWithImplicitOffsets(fAttributes.get(), numAttribs);
             }
 
             int fNumAttribs;
@@ -130,6 +156,7 @@ private:
         fProgramInfo = GrSimpleMeshDrawOpHelper::CreateProgramInfo(caps,
                                                                    arena,
                                                                    writeView,
+                                                                   usesMSAASurface,
                                                                    std::move(appliedClip),
                                                                    dstProxyView,
                                                                    gp,
@@ -170,18 +197,22 @@ private:
 };
 }  // namespace
 
-DEF_GPUTEST_FOR_ALL_CONTEXTS(VertexAttributeCount, reporter, ctxInfo) {
+DEF_GANESH_TEST_FOR_ALL_CONTEXTS(VertexAttributeCount,
+                                 reporter,
+                                 ctxInfo,
+                                 CtsEnforcement::kApiLevel_T) {
     auto dContext = ctxInfo.directContext();
 #if GR_GPU_STATS
     GrGpu* gpu = dContext->priv().getGpu();
 #endif
 
-    auto sdc = skgpu::v1::SurfaceDrawContext::Make(dContext,
-                                                   GrColorType::kRGBA_8888,
-                                                   nullptr,
-                                                   SkBackingFit::kApprox,
-                                                   {1, 1},
-                                                   SkSurfaceProps());
+    auto sdc = skgpu::ganesh::SurfaceDrawContext::Make(dContext,
+                                                       GrColorType::kRGBA_8888,
+                                                       nullptr,
+                                                       SkBackingFit::kApprox,
+                                                       {1, 1},
+                                                       SkSurfaceProps(),
+                                                       /*label=*/{});
     if (!sdc) {
         ERRORF(reporter, "Could not create render target context.");
         return;

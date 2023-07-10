@@ -10,10 +10,11 @@
 #include "include/core/SkImage.h"
 #include "include/core/SkImageInfo.h"
 #include "include/core/SkPixmap.h"
+#include "include/core/SkStream.h"
 #include "include/encode/SkJpegEncoder.h"
 #include "include/encode/SkPngEncoder.h"
 #include "include/encode/SkWebpEncoder.h"
-#include "include/utils/SkRandom.h"
+#include "src/base/SkRandom.h"
 #include "src/core/SkOSFile.h"
 
 #include <vector>
@@ -78,7 +79,7 @@ DEF_FUZZ(WEBPEncoder, fuzz) {
 DEF_FUZZ(_MakeEncoderCorpus, fuzz) {
     auto bytes = fuzz->fBytes;
     SkDebugf("bytes %zu\n", bytes->size());
-    auto img = SkImage::MakeFromEncoded(bytes);
+    auto img = SkImages::DeferredFromEncodedData(bytes);
     if (nullptr == img.get()) {
         SkDebugf("invalid image, could not decode\n");
         return;

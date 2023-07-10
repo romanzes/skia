@@ -8,16 +8,16 @@
 #include "include/core/SkDataTable.h"
 #include "include/core/SkFontMgr.h"
 #include "include/core/SkFontStyle.h"
-#include "include/core/SkMath.h"
 #include "include/core/SkRefCnt.h"
 #include "include/core/SkStream.h"
 #include "include/core/SkString.h"
 #include "include/core/SkTypeface.h"
 #include "include/core/SkTypes.h"
-#include "include/private/SkFixed.h"
-#include "include/private/SkMutex.h"
-#include "include/private/SkTDArray.h"
-#include "include/private/SkTemplates.h"
+#include "include/private/base/SkFixed.h"
+#include "include/private/base/SkMath.h"
+#include "include/private/base/SkMutex.h"
+#include "include/private/base/SkTDArray.h"
+#include "include/private/base/SkTemplates.h"
 #include "src/core/SkAdvancedTypefaceMetrics.h"
 #include "src/core/SkFontDescriptor.h"
 #include "src/core/SkOSFile.h"
@@ -26,6 +26,8 @@
 
 #include <fontconfig/fontconfig.h>
 #include <string.h>
+
+using namespace skia_private;
 
 class SkData;
 
@@ -66,7 +68,7 @@ static SkMutex& f_c_mutex() {
 }
 
 class FCLocker {
-    static constexpr int FontConfigThreadSafeVersion = 21393;
+    inline static constexpr int FontConfigThreadSafeVersion = 21393;
 
     // Assume FcGetVersion() has always been thread safe.
     static void lock() SK_NO_THREAD_SAFETY_ANALYSIS {
@@ -220,7 +222,7 @@ static SkWeakReturn is_weak(FcPattern* pattern, const char object[], int id) {
     // However, there appears to be no way to match/sort without it.
     SkAutoFcConfig config;
     FcFontSet* fontSets[1] = { fontSet };
-    SkAutoFcPattern match(FcFontSetMatch(config, fontSets, SK_ARRAY_COUNT(fontSets),
+    SkAutoFcPattern match(FcFontSetMatch(config, fontSets, std::size(fontSets),
                                          minimal, &result));
 
     FcLangSet* matchLangSet;
@@ -321,7 +323,7 @@ static SkFontStyle skfontstyle_from_fcpattern(FcPattern* pattern) {
         { FC_WEIGHT_EXTRABLACK, SkFS::kExtraBlack_Weight },
     };
     SkScalar weight = map_ranges(get_int(pattern, FC_WEIGHT, FC_WEIGHT_REGULAR),
-                                 weightRanges, SK_ARRAY_COUNT(weightRanges));
+                                 weightRanges, std::size(weightRanges));
 
     static constexpr MapRanges widthRanges[] = {
         { FC_WIDTH_ULTRACONDENSED, SkFS::kUltraCondensed_Width },
@@ -335,7 +337,7 @@ static SkFontStyle skfontstyle_from_fcpattern(FcPattern* pattern) {
         { FC_WIDTH_ULTRAEXPANDED,  SkFS::kUltraExpanded_Width },
     };
     SkScalar width = map_ranges(get_int(pattern, FC_WIDTH, FC_WIDTH_NORMAL),
-                                widthRanges, SK_ARRAY_COUNT(widthRanges));
+                                widthRanges, std::size(widthRanges));
 
     SkFS::Slant slant = SkFS::kUpright_Slant;
     switch (get_int(pattern, FC_SLANT, FC_SLANT_ROMAN)) {
@@ -368,7 +370,7 @@ static void fcpattern_from_skfontstyle(SkFontStyle style, FcPattern* pattern) {
         { SkFS::kBlack_Weight,      FC_WEIGHT_BLACK },
         { SkFS::kExtraBlack_Weight, FC_WEIGHT_EXTRABLACK },
     };
-    int weight = map_ranges(style.weight(), weightRanges, SK_ARRAY_COUNT(weightRanges));
+    int weight = map_ranges(style.weight(), weightRanges, std::size(weightRanges));
 
     static constexpr MapRanges widthRanges[] = {
         { SkFS::kUltraCondensed_Width, FC_WIDTH_ULTRACONDENSED },
@@ -381,7 +383,7 @@ static void fcpattern_from_skfontstyle(SkFontStyle style, FcPattern* pattern) {
         { SkFS::kExtraExpanded_Width,  FC_WIDTH_EXTRAEXPANDED },
         { SkFS::kUltraExpanded_Width,  FC_WIDTH_ULTRAEXPANDED },
     };
-    int width = map_ranges(style.width(), widthRanges, SK_ARRAY_COUNT(widthRanges));
+    int width = map_ranges(style.width(), widthRanges, std::size(widthRanges));
 
     int slant = FC_SLANT_ROMAN;
     switch (style.slant()) {
@@ -395,50 +397,6 @@ static void fcpattern_from_skfontstyle(SkFontStyle style, FcPattern* pattern) {
     FcPatternAddInteger(pattern, FC_WIDTH , width);
     FcPatternAddInteger(pattern, FC_SLANT , slant);
 }
-
-class SkTypeface_stream : public SkTypeface_FreeType {
-public:
-    SkTypeface_stream(std::unique_ptr<SkFontData> data,
-                      SkString familyName, const SkFontStyle& style, bool fixedWidth)
-        : INHERITED(style, fixedWidth)
-        , fFamilyName(std::move(familyName))
-        , fData(std::move(data))
-    { }
-
-    void onGetFamilyName(SkString* familyName) const override {
-        *familyName = fFamilyName;
-    }
-
-    void onGetFontDescriptor(SkFontDescriptor* desc, bool* serialize) const override {
-        *serialize = true;
-    }
-
-    std::unique_ptr<SkStreamAsset> onOpenStream(int* ttcIndex) const override {
-        *ttcIndex = fData->getIndex();
-        return fData->getStream()->duplicate();
-    }
-
-    std::unique_ptr<SkFontData> onMakeFontData() const override {
-        return std::make_unique<SkFontData>(*fData);
-    }
-
-    sk_sp<SkTypeface> onMakeClone(const SkFontArguments& args) const override {
-        std::unique_ptr<SkFontData> data = this->cloneFontData(args);
-        if (!data) {
-            return nullptr;
-        }
-        return sk_make_sp<SkTypeface_stream>(std::move(data),
-                                             fFamilyName,
-                                             this->fontStyle(),
-                                             this->isFixedPitch());
-    }
-
-private:
-    SkString fFamilyName;
-    const std::unique_ptr<const SkFontData> fData;
-
-    using INHERITED = SkTypeface_FreeType;
-};
 
 class SkTypeface_fontconfig : public SkTypeface_FreeType {
 public:
@@ -454,11 +412,13 @@ public:
     }
 
     void onGetFontDescriptor(SkFontDescriptor* desc, bool* serialize) const override {
+        // TODO: need to serialize FC_MATRIX and FC_EMBOLDEN
         FCLocker lock;
         desc->setFamilyName(get_string(fPattern, FC_FAMILY));
         desc->setFullName(get_string(fPattern, FC_FULLNAME));
         desc->setPostscriptName(get_string(fPattern, FC_POSTSCRIPT_NAME));
         desc->setStyle(this->fontStyle());
+        desc->setFactoryId(SkTypeface_FreeType::FactoryId);
         *serialize = false;
     }
 
@@ -525,13 +485,11 @@ public:
             return nullptr;
         }
 
+        // TODO: need to clone FC_MATRIX and FC_EMBOLDEN
         SkString familyName;
         this->getFamilyName(&familyName);
-
-        return sk_make_sp<SkTypeface_stream>(std::move(data),
-                                             familyName,
-                                             this->fontStyle(),
-                                             this->isFixedPitch());
+        return sk_make_sp<SkTypeface_FreeTypeStream>(
+            std::move(data), familyName, this->fontStyle(), this->isFixedPitch());
     }
 
     std::unique_ptr<SkFontData> onMakeFontData() const override {
@@ -541,7 +499,7 @@ public:
             return nullptr;
         }
         // TODO: FC_VARIABLE and FC_FONT_VARIATIONS
-        return std::make_unique<SkFontData>(std::move(stream), index, nullptr, 0);
+        return std::make_unique<SkFontData>(std::move(stream), index, 0, nullptr, 0, nullptr, 0);
     }
 
     ~SkTypeface_fontconfig() override {
@@ -595,7 +553,7 @@ class SkFontMgr_fontconfig : public SkFontMgr {
             }
         }
 
-        SkTypeface* createTypeface(int index) override {
+        sk_sp<SkTypeface> createTypeface(int index) override {
             if (index < 0 || fFontSet->nfont <= index) {
                 return nullptr;
             }
@@ -604,10 +562,10 @@ class SkFontMgr_fontconfig : public SkFontMgr {
                 FcPatternReference(fFontSet->fonts[index]);
                 return fFontSet->fonts[index];
             }());
-            return fFontMgr->createTypefaceFromFcPattern(std::move(match)).release();
+            return fFontMgr->createTypefaceFromFcPattern(std::move(match));
         }
 
-        SkTypeface* matchStyle(const SkFontStyle& style) override {
+        sk_sp<SkTypeface> matchStyle(const SkFontStyle& style) override {
             SkAutoFcPattern match([this, &style]() {
                 FCLocker lock;
 
@@ -619,11 +577,11 @@ class SkFontMgr_fontconfig : public SkFontMgr {
                 FcResult result;
                 FcFontSet* fontSets[1] = { fFontSet };
                 return FcFontSetMatch(fFontMgr->fFC,
-                                      fontSets, SK_ARRAY_COUNT(fontSets),
+                                      fontSets, std::size(fontSets),
                                       pattern, &result);
 
             }());
-            return fFontMgr->createTypefaceFromFcPattern(std::move(match)).release();
+            return fFontMgr->createTypefaceFromFcPattern(std::move(match));
         }
 
     private:
@@ -632,7 +590,7 @@ class SkFontMgr_fontconfig : public SkFontMgr {
     };
 
     static bool FindName(const SkTDArray<const char*>& list, const char* str) {
-        int count = list.count();
+        int count = list.size();
         for (int i = 0; i < count; ++i) {
             if (!strcmp(list[i], str)) {
                 return true;
@@ -648,7 +606,7 @@ class SkFontMgr_fontconfig : public SkFontMgr {
         SkTDArray<size_t> sizes;
 
         static const FcSetName fcNameSet[] = { FcSetSystem, FcSetApplication };
-        for (int setIndex = 0; setIndex < (int)SK_ARRAY_COUNT(fcNameSet); ++setIndex) {
+        for (int setIndex = 0; setIndex < (int)std::size(fcNameSet); ++setIndex) {
             // Return value of FcConfigGetFonts must not be destroyed.
             FcFontSet* allFonts(FcConfigGetFonts(fcconfig, fcNameSet[setIndex]));
             if (nullptr == allFonts) {
@@ -676,7 +634,7 @@ class SkFontMgr_fontconfig : public SkFontMgr {
         }
 
         return SkDataTable::MakeCopyArrays((void const *const *)names.begin(),
-                                           sizes.begin(), names.count());
+                                           sizes.begin(), names.size());
     }
 
     static bool FindByFcPattern(SkTypeface* cached, void* ctx) {
@@ -737,7 +695,7 @@ protected:
         familyName->set(fFamilyNames->atStr(index));
     }
 
-    SkFontStyleSet* onCreateStyleSet(int index) const override {
+    sk_sp<SkFontStyleSet> onCreateStyleSet(int index) const override {
         return this->onMatchFamily(fFamilyNames->atStr(index));
     }
 
@@ -824,7 +782,7 @@ protected:
         return false;
     }
 
-    SkFontStyleSet* onMatchFamily(const char familyName[]) const override {
+    sk_sp<SkFontStyleSet> onMatchFamily(const char familyName[]) const override {
         if (!familyName) {
             return nullptr;
         }
@@ -850,7 +808,7 @@ protected:
         // The patterns are exactly the same except for the FC_FILE.
         // It should be possible to collapse these patterns by normalizing.
         static const FcSetName fcNameSet[] = { FcSetSystem, FcSetApplication };
-        for (int setIndex = 0; setIndex < (int)SK_ARRAY_COUNT(fcNameSet); ++setIndex) {
+        for (int setIndex = 0; setIndex < (int)std::size(fcNameSet); ++setIndex) {
             // Return value of FcConfigGetFonts must not be destroyed.
             FcFontSet* allFonts(FcConfigGetFonts(fFC, fcNameSet[setIndex]));
             if (nullptr == allFonts) {
@@ -865,11 +823,11 @@ protected:
             }
         }
 
-        return new StyleSet(sk_ref_sp(this), std::move(matches));
+        return sk_sp<SkFontStyleSet>(new StyleSet(sk_ref_sp(this), std::move(matches)));
     }
 
-    SkTypeface* onMatchFamilyStyle(const char familyName[],
-                                   const SkFontStyle& style) const override
+    sk_sp<SkTypeface> onMatchFamilyStyle(const char familyName[],
+                                         const SkFontStyle& style) const override
     {
         SkAutoFcPattern font([this, &familyName, &style]() {
             FCLocker lock;
@@ -905,14 +863,14 @@ protected:
             }
             return font;
         }());
-        return createTypefaceFromFcPattern(std::move(font)).release();
+        return createTypefaceFromFcPattern(std::move(font));
     }
 
-    SkTypeface* onMatchFamilyStyleCharacter(const char familyName[],
-                                            const SkFontStyle& style,
-                                            const char* bcp47[],
-                                            int bcp47Count,
-                                            SkUnichar character) const override
+    sk_sp<SkTypeface> onMatchFamilyStyleCharacter(const char familyName[],
+                                                  const SkFontStyle& style,
+                                                  const char* bcp47[],
+                                                  int bcp47Count,
+                                                  SkUnichar character) const override
     {
         SkAutoFcPattern font([&](){
             FCLocker lock;
@@ -949,49 +907,22 @@ protected:
             }
             return font;
         }());
-        return createTypefaceFromFcPattern(std::move(font)).release();
+        return createTypefaceFromFcPattern(std::move(font));
     }
 
     sk_sp<SkTypeface> onMakeFromStreamIndex(std::unique_ptr<SkStreamAsset> stream,
                                             int ttcIndex) const override {
-        const size_t length = stream->getLength();
-        if (length <= 0 || (1u << 30) < length) {
-            return nullptr;
-        }
-
-        SkString name;
-        SkFontStyle style;
-        bool isFixedWidth = false;
-        if (!fScanner.scanFont(stream.get(), ttcIndex, &name, &style, &isFixedWidth, nullptr)) {
-            return nullptr;
-        }
-
-        auto data = std::make_unique<SkFontData>(std::move(stream), ttcIndex, nullptr, 0);
-        return sk_sp<SkTypeface>(new SkTypeface_stream(std::move(data), std::move(name),
-                                                       style, isFixedWidth));
+        return this->makeFromStream(std::move(stream),
+                                    SkFontArguments().setCollectionIndex(ttcIndex));
     }
 
     sk_sp<SkTypeface> onMakeFromStreamArgs(std::unique_ptr<SkStreamAsset> stream,
                                            const SkFontArguments& args) const override {
-        using Scanner = SkTypeface_FreeType::Scanner;
-        bool isFixedPitch;
-        SkFontStyle style;
-        SkString name;
-        Scanner::AxisDefinitions axisDefinitions;
-        if (!fScanner.scanFont(stream.get(), args.getCollectionIndex(),
-                               &name, &style, &isFixedPitch, &axisDefinitions))
-        {
+        const size_t length = stream->getLength();
+        if (length <= 0 || (1u << 30) < length) {
             return nullptr;
         }
-
-        SkAutoSTMalloc<4, SkFixed> axisValues(axisDefinitions.count());
-        Scanner::computeAxisValues(axisDefinitions, args.getVariationDesignPosition(),
-                                   axisValues, name);
-
-        auto data = std::make_unique<SkFontData>(std::move(stream), args.getCollectionIndex(),
-                                                   axisValues.get(), axisDefinitions.count());
-        return sk_sp<SkTypeface>(new SkTypeface_stream(std::move(data), std::move(name),
-                                                       style, isFixedPitch));
+        return SkTypeface_FreeType::MakeFromStream(std::move(stream), args);
     }
 
     sk_sp<SkTypeface> onMakeFromData(sk_sp<SkData> data, int ttcIndex) const override {

@@ -8,14 +8,19 @@
 #ifndef SKSL_CONSTRUCTOR_MATRIX_RESIZE
 #define SKSL_CONSTRUCTOR_MATRIX_RESIZE
 
-#include "src/sksl/SkSLContext.h"
+#include "src/sksl/SkSLPosition.h"
 #include "src/sksl/ir/SkSLConstructor.h"
 #include "src/sksl/ir/SkSLExpression.h"
-#include "src/sksl/ir/SkSLFloatLiteral.h"
+#include "src/sksl/ir/SkSLIRNode.h"
 
 #include <memory>
+#include <optional>
+#include <utility>
 
 namespace SkSL {
+
+class Context;
+class Type;
 
 /**
  * Represents the construction of a matrix resize operation, such as `mat4x4(myMat2x2)`.
@@ -25,29 +30,25 @@ namespace SkSL {
  */
 class ConstructorMatrixResize final : public SingleArgumentConstructor {
 public:
-    static constexpr Kind kExpressionKind = Kind::kConstructorMatrixResize;
+    inline static constexpr Kind kIRNodeKind = Kind::kConstructorMatrixResize;
 
-    ConstructorMatrixResize(int offset, const Type& type, std::unique_ptr<Expression> arg)
-            : INHERITED(offset, kExpressionKind, &type, std::move(arg))
-            , fZeroLiteral(offset, /*value=*/0.0f, &type.componentType())
-            , fOneLiteral(offset, /*value=*/1.0f, &type.componentType()) {}
+    ConstructorMatrixResize(Position pos, const Type& type, std::unique_ptr<Expression> arg)
+            : INHERITED(pos, kIRNodeKind, &type, std::move(arg)) {}
 
     static std::unique_ptr<Expression> Make(const Context& context,
-                                            int offset,
+                                            Position pos,
                                             const Type& type,
                                             std::unique_ptr<Expression> arg);
 
-    std::unique_ptr<Expression> clone() const override {
-        return std::make_unique<ConstructorMatrixResize>(fOffset, this->type(),
-                                                         argument()->clone());
+    std::unique_ptr<Expression> clone(Position pos) const override {
+        return std::make_unique<ConstructorMatrixResize>(pos, this->type(), argument()->clone());
     }
 
-    const Expression* getConstantSubexpression(int n) const override;
+    bool supportsConstantValues() const override { return true; }
+    std::optional<double> getConstantValue(int n) const override;
 
 private:
     using INHERITED = SingleArgumentConstructor;
-    const FloatLiteral fZeroLiteral;
-    const FloatLiteral fOneLiteral;
 };
 
 }  // namespace SkSL

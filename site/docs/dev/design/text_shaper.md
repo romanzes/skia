@@ -1,10 +1,13 @@
-Shaped Text
-=============
+---
+title: 'Shaped Text'
+linkTitle: 'Shaped Text'
+---
+
 A series of object models for describing a low-level builder for multi-line formatted text, and the resulting objects that expose the results of shaping that text. These are done outside of DOM Text nodes, and outside of any particular rendering model (e.g. canvas2d or webgl).
 
-A related explainer focuses on suggested [extensions to canvas2d](text_c2d.md) to allow it to efficiently render the shaped results, and to offer helper objects for inspecting useful properties from a typeface.
+A related explainer focuses on suggested [extensions to canvas2d](/docs/dev/design/text_c2d) to allow it to efficiently render the shaped results, and to offer helper objects for inspecting useful properties from a typeface.
 
-[Overview document](text_overview.md)
+[Overview document](/docs/dev/design/text_overview)
 
 ## Target audience
 
@@ -12,7 +15,7 @@ We want to target web apps that have already chosen to render their content eith
 or webgl, or in some other fashion, but still want access to the powerful international text shaping
 and layout services inherent in the browser. In the case of canvas2d, which already has some facilities
 for text, we want to address the missing services and low-level results needed for creating interactive
-text editing or high-perferformance rendering and animations.
+text editing or high-performance rendering and animations.
 
 Rather than 'extend' the existing canvas2d fillText() method, we propose an explicit 2-step model:
 process the 'rich' text input into shaped results, and then expose those results to the client, allowing
@@ -20,7 +23,7 @@ them to draw or edit or consume the results as they choose.
 
 JavaScript frameworks are another target audience. This proposal is heavily influenced by successful
 APIs on native platforms (desktop and mobile) and seeks to deliver similar control and performance.
-Thus it may be quite natural that sophiticated frameworks build upon these interfaces, providing more
+Thus it may be quite natural that sophisticated frameworks build upon these interfaces, providing more
 'friendly', constrained versions of the features. This is expected, since multiple 'high level' models
 for text are valid, each with its own opinions and tradeoffs. The goal of this API is to expose the
 core services and results, and leave the opinionated layers to the JavaScript community.
@@ -34,7 +37,7 @@ vary widely with rendering technologies (and client imagination).
 ## Sequence of calls
 
 For maximum re-use and efficiency, the process of going from rich-text description to final shaped
-and formated results is broken into stages. Each 'stage' carries out specific processing, and in-turn
+and formatted results is broken into stages. Each 'stage' carries out specific processing, and in-turn
 becomes a factory to return an instances of the next stage.
 
 `TextBuilder`, `ShapedText` and `FormattedText` objects are used in sequence:
@@ -49,6 +52,21 @@ A Block is a descriptor for a run of text. Currently there are two specializatio
 added without breaking the design.
 
 ```WebIDL
+interface Typeface {
+    // Number or opaque object: Whatever is needed for the client to know exactly
+    // what font-resource (e.g. file, byte-array, etc.) is being used.
+    // Without this, the glyph IDs would be meaningless.
+    //
+    // This interface is really an “instance” of the font-resource. It includes
+    // any font-wide modifies that the client (or the shaper) may have requested:
+    //    e.g. variations, synthetic-bold, …
+    //
+    // Factories to create Typeface can be described elsewhere. The point here
+    // is that such a unique identifier exists for each font-asset-instance,
+    // and that they can be passed around (in/out of the browser), and compared
+    // to each other.
+};
+
 interface TextBlock {
     unsigned long length;  // number of codepoints in this block
 };
@@ -147,29 +165,35 @@ array of Runs (either Glyphs or Placeholders for now).
 
 ```WebIDL
 // Shared by all output runs, specifying the range of code-points that produced
-// this run.
+// this run. Known subclasses: TextRun, PlaceholderRun.
 interface TextRun {
     readonly attribute TextIndex startIndex;
     readonly attribute TextIndex endIndex;
 };
 
-interface OutFont {
-    attribute Typeface typeface;
-    attribute double size;
-    attribute double scaleX?;   // 1.0 if not specified
-    attribute double skewX?:    // 0.0 if not specified (for oblique)
+interface GlyphRunFont {
+    // Information to know which font-resource (typeface) to use,
+    // and at what transformation (size, etc.) to use it.
+    //
+    readonly attribute Typeface typeface;
+    readonly attribute double size;
+    readonly attribute double scaleX?;   // 1.0 if not specified
+    readonly attribute double skewX?:    // 0.0 if not specified (could be a bool)
 };
 
-// Corresponds to a FontBlock specified during shaping.
 interface GlyphRun : TextRun {
-    readonly attribute OutFont font;
+    readonly attribute GlyphRunFont font;
 
+    // Information to know what positioned glyphs are in the run,
+    // and what the corresponding text offsets are for those glyphs.
+    // These “offsets” are not needed to correctly draw the glyphs, but are needed
+    // during selections and editing, to know the mapping back to the original text.
+    //
     readonly attribute sequence<unsigned short> glyphs;     // N glyphs
     readonly attribute sequence<float> positions;           // N+1 x,y pairs
     readonly attribute sequence<TextIndex> indices;         // N+1 indices
 };
 
-// Corresponds to a PlaceholderBlock specified during shaping.
 interface PlaceholderRun : TextRun {
     readonly attribute Rect bounds;
 };
@@ -187,11 +211,11 @@ interface TextLine {
 ```
 
 With these data results (specifically glyphs and positions for specific Typeface objects)
-callers will have all they need to draw the results in any fasion they wish. The corresponding
+callers will have all they need to draw the results in any fashion they wish. The corresponding
 start/end text indices allows them to map each run back to the original text.
 
 This last point is fundamental to the design. It is recognized that a client creating richly
-annoated text will associate both shaping (e.g. Font) information, as well as arbitrary decoration
+annotated text will associate both shaping (e.g. Font) information, as well as arbitrary decoration
 and other annotations with each block of text. Returning in each Run the corresponding text range
 allows the client to "look-up" all of their bespoke additional information for that run (e.g.
 colors, shadows, underlines, placeholders, etc.). This frees the Browser from having to support
@@ -209,12 +233,12 @@ appropriate, but we posit that with the right primitives and data exposed, such 
 can be constructed by the JavaScript community itself, either as formal Frameworks or as refined
 sample / example code.
 
-One excelent example of a higher-level data model is [Formatted Text](https://github.com/WICG/canvas-formatted-text/blob/main/explainer-datamodel.md) and we hope to explore ways to layer these
+One excellent example of a higher-level data model is [Formatted Text](https://github.com/WICG/canvas-formatted-text/blob/main/explainer-datamodel.md) and we hope to explore ways to layer these
 two proposals, allowing high-level clients to utilize their data model, but still have the option
 to access our lower level accessors (as they wish).
 
 ## Rendering in Canvas2D
-The [next explainer](text_c2d.md) describes how to take these results and render them
+The [next explainer](/docs/dev/design/text_c2d) describes how to take these results and render them
 into an (extended) Canvas context.
 
 ## Contributors:

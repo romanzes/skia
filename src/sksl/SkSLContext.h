@@ -8,38 +8,28 @@
 #ifndef SKSL_CONTEXT
 #define SKSL_CONTEXT
 
-#include <memory>
-
-#include "src/sksl/SkSLBuiltinTypes.h"
-#include "src/sksl/SkSLErrorReporter.h"
-#include "src/sksl/SkSLPool.h"
-#include "src/sksl/SkSLUtil.h"
-#include "src/sksl/ir/SkSLExpression.h"
-#include "src/sksl/ir/SkSLType.h"
-
 namespace SkSL {
 
+class BuiltinTypes;
+class ErrorReporter;
+class ModifiersPool;
+struct Module;
 struct ProgramConfig;
+struct ShaderCaps;
 
 /**
  * Contains compiler-wide objects, which currently means the core types.
  */
 class Context {
 public:
-    Context(ErrorReporter& errors, const ShaderCapsClass& caps);
+    Context(const BuiltinTypes& types, const ShaderCaps* caps, ErrorReporter& errors);
+    ~Context();
 
-    ~Context() {
-        SkASSERT(!Pool::IsAttached());
-    }
-
-    // Returns the current error handler
-    ErrorReporter& errors() const { return fErrors; }
-
-    // The Context holds all of the built-in types.
-    BuiltinTypes fTypes;
+    // The Context holds a reference to all of the built-in types.
+    const BuiltinTypes& fTypes;
 
     // The Context holds a reference to our shader caps bits.
-    const ShaderCapsClass& fCaps;
+    const ShaderCaps* fCaps;
 
     // The Context holds a pointer to our pool of modifiers.
     ModifiersPool* fModifiersPool = nullptr;
@@ -47,9 +37,11 @@ public:
     // The Context holds a pointer to the configuration of the program being compiled.
     ProgramConfig* fConfig = nullptr;
 
-private:
-    // The Context holds a reference to our error reporter.
-    ErrorReporter& fErrors;
+    // The Context holds a pointer to our error reporter.
+    ErrorReporter* fErrors;
+
+    // The Context holds a pointer to our module with built-in declarations.
+    const Module* fModule = nullptr;
 };
 
 }  // namespace SkSL

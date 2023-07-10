@@ -11,27 +11,25 @@
 #include "include/core/SkImageInfo.h"
 #include "include/core/SkMatrix.h"
 #include "include/core/SkPath.h"
+#include "include/core/SkPathTypes.h"
 #include "include/core/SkRect.h"
-#include "include/core/SkRefCnt.h"
 #include "include/core/SkStrokeRec.h"
-#include "include/core/SkSurface.h"
+#include "include/core/SkSurfaceProps.h"
 #include "include/core/SkTypes.h"
-#include "include/gpu/GrBackendSurface.h"
 #include "include/gpu/GrContextOptions.h"
 #include "include/gpu/GrDirectContext.h"
-#include "include/gpu/GrTypes.h"
-#include "include/private/GrTypesPriv.h"
 #include "include/private/SkColorData.h"
-#include "src/gpu/GrCaps.h"
-#include "src/gpu/GrDirectContextPriv.h"
-#include "src/gpu/GrFragmentProcessor.h"
-#include "src/gpu/GrImageInfo.h"
-#include "src/gpu/GrPaint.h"
-#include "src/gpu/GrStyle.h"
-#include "src/gpu/v1/SurfaceDrawContext_v1.h"
+#include "include/private/gpu/ganesh/GrTypesPriv.h"
+#include "src/gpu/SkBackingFit.h"
+#include "src/gpu/ganesh/GrDirectContextPriv.h"
+#include "src/gpu/ganesh/GrFragmentProcessor.h"
+#include "src/gpu/ganesh/GrPaint.h"
+#include "src/gpu/ganesh/GrStyle.h"
+#include "src/gpu/ganesh/SurfaceDrawContext.h"
+#include "tests/CtsEnforcement.h"
 #include "tests/Test.h"
-#include "tools/gpu/GrContextFactory.h"
 
+#include <memory>
 #include <utility>
 
 static void only_allow_default(GrContextOptions* options) {
@@ -39,9 +37,9 @@ static void only_allow_default(GrContextOptions* options) {
 }
 
 static SkBitmap read_back(GrDirectContext* dContext,
-                          skgpu::v1::SurfaceDrawContext* sdc,
-                          int width, int height) {
-
+                          skgpu::ganesh::SurfaceDrawContext* sdc,
+                          int width,
+                          int height) {
     SkImageInfo dstII = SkImageInfo::MakeN32Premul(width, height);
 
     SkBitmap bm;
@@ -72,7 +70,7 @@ static const int kPad = 3;
 //   create a new render target context that will reuse the prior GrSurface
 //   draw a normally wound concave path that touches outside of the approx fit RTC's content rect
 //
-// When the bug manifests the GrDefaultPathRenderer/GrMSAAPathRenderer is/was leaving the stencil
+// When the bug manifests the DefaultPathRenderer/GrMSAAPathRenderer is/was leaving the stencil
 // buffer outside of the first content rect in a bad state and the second draw would be incorrect.
 
 static void run_test(GrDirectContext* dContext, skiatest::Reporter* reporter) {
@@ -84,10 +82,13 @@ static void run_test(GrDirectContext* dContext, skiatest::Reporter* reporter) {
     GrStyle style(SkStrokeRec::kFill_InitStyle);
 
     {
-        auto sdc = skgpu::v1::SurfaceDrawContext::Make(dContext, GrColorType::kRGBA_8888, nullptr,
-                                                       SkBackingFit::kApprox,
-                                                       {kBigSize/2 + 1, kBigSize/2 + 1},
-                                                       SkSurfaceProps());
+        auto sdc = skgpu::ganesh::SurfaceDrawContext::Make(dContext,
+                                                           GrColorType::kRGBA_8888,
+                                                           nullptr,
+                                                           SkBackingFit::kApprox,
+                                                           {kBigSize / 2 + 1, kBigSize / 2 + 1},
+                                                           SkSurfaceProps(),
+                                                           /*label=*/{});
 
         sdc->clear(SK_PMColor4fBLACK);
 
@@ -103,9 +104,13 @@ static void run_test(GrDirectContext* dContext, skiatest::Reporter* reporter) {
     }
 
     {
-        auto sdc = skgpu::v1::SurfaceDrawContext::Make(dContext, GrColorType::kRGBA_8888, nullptr,
-                                                       SkBackingFit::kExact, {kBigSize, kBigSize},
-                                                       SkSurfaceProps());
+        auto sdc = skgpu::ganesh::SurfaceDrawContext::Make(dContext,
+                                                           GrColorType::kRGBA_8888,
+                                                           nullptr,
+                                                           SkBackingFit::kExact,
+                                                           {kBigSize, kBigSize},
+                                                           SkSurfaceProps(),
+                                                           /*label=*/{});
 
         sdc->clear(SK_PMColor4fBLACK);
 
@@ -130,9 +135,12 @@ static void run_test(GrDirectContext* dContext, skiatest::Reporter* reporter) {
     }
 }
 
-DEF_GPUTEST_FOR_CONTEXTS(GrDefaultPathRendererTest,
-                         sk_gpu_test::GrContextFactory::IsRenderingContext,
-                         reporter, ctxInfo, only_allow_default) {
+DEF_GANESH_TEST_FOR_CONTEXTS(DefaultPathRendererTest,
+                             sk_gpu_test::GrContextFactory::IsRenderingContext,
+                             reporter,
+                             ctxInfo,
+                             only_allow_default,
+                             CtsEnforcement::kApiLevel_T) {
     auto ctx = ctxInfo.directContext();
 
     run_test(ctx, reporter);

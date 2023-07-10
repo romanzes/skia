@@ -14,11 +14,14 @@
 #include "include/core/SkRefCnt.h"
 #include "include/core/SkSize.h"
 #include "include/core/SkString.h"
-#include "include/private/SkTArray.h"
-#include "include/private/SkTDArray.h"
+#include "include/private/base/SkTArray.h"
+#include "include/private/base/SkTDArray.h"
 #include "tools/Resources.h"
+#include "tools/ToolUtils.h"
 
 #include <initializer_list>
+
+using namespace skia_private;
 
 static sk_sp<SkImage> make_image1() { return GetResourceAsImage("images/mandrill_128.png"); }
 
@@ -44,10 +47,10 @@ protected:
 
     void onDraw(SkCanvas* canvas) override {
         SkTDArray<SkMatrix> matrices;
-        matrices.push()->setAll(1.f, 0.f,    0.f,
+        matrices.append()->setAll(1.f, 0.f,    0.f,
                                 0.f, 1.f,    0.f,
                                 0.f, 0.005f, 1.f);
-        matrices.push()->setAll(1.f,     0.f,    0.f,
+        matrices.append()->setAll(1.f,     0.f,    0.f,
                                 0.f,     1.f,    0.f,
                                 0.007f, -0.005f, 1.f);
         matrices[1].preSkew(0.2f, -0.1f);
@@ -82,27 +85,30 @@ protected:
                         SkSamplingOptions(SkFilterMode::kLinear),
                         SkSamplingOptions(SkFilterMode::kLinear, SkMipmapMode::kLinear),
                         SkSamplingOptions(SkCubicResampler::Mitchell())}) {
-                        for (const auto& img : fImages) {
-                            canvas->save();
-                            canvas->concat(m);
-                            SkRect src = {img->width() / 4.f, img->height() / 4.f,
-                                          3.f * img->width() / 4.f, 3.f * img->height() / 4};
-                            SkRect dst = {0, 0,
-                                          3.f / 4.f * img->width(), 3.f / 4.f * img->height()};
-                            switch (type) {
-                                case DrawType::kDrawImage:
-                                    canvas->drawImage(img, 0, 0, sampling, &paint);
-                                    break;
-                                case DrawType::kDrawImageRectStrict:
-                                    canvas->drawImageRect(img, src, dst, sampling, &paint,
-                                                          SkCanvas::kStrict_SrcRectConstraint);
-                                    break;
-                                case DrawType::kDrawImageRectFast:
-                                    canvas->drawImageRect(img, src, dst, sampling, &paint,
-                                                          SkCanvas::kFast_SrcRectConstraint);
-                                    break;
+                        for (const auto& origImage : fImages) {
+                            sk_sp<SkImage> img = ToolUtils::MakeTextureImage(canvas, origImage);
+                            if (img) {
+                                canvas->save();
+                                canvas->concat(m);
+                                SkRect src = { img->width() / 4.f, img->height() / 4.f,
+                                               3.f * img->width() / 4.f, 3.f * img->height() / 4 };
+                                SkRect dst = { 0, 0,
+                                               3.f / 4.f * img->width(), 3.f / 4.f * img->height()};
+                                switch (type) {
+                                    case DrawType::kDrawImage:
+                                        canvas->drawImage(img, 0, 0, sampling, &paint);
+                                        break;
+                                    case DrawType::kDrawImageRectStrict:
+                                        canvas->drawImageRect(img, src, dst, sampling, &paint,
+                                                              SkCanvas::kStrict_SrcRectConstraint);
+                                        break;
+                                    case DrawType::kDrawImageRectFast:
+                                        canvas->drawImageRect(img, src, dst, sampling, &paint,
+                                                              SkCanvas::kFast_SrcRectConstraint);
+                                        break;
+                                }
+                                canvas->restore();
                             }
-                            canvas->restore();
                             ++n;
                             if (n < 8) {
                                 canvas->translate(bounds.width() + 10.f, 0);
@@ -121,8 +127,8 @@ protected:
     }
 
 private:
-    static constexpr int kNumImages = 4;
-    SkTArray<sk_sp<SkImage>> fImages;
+    inline static constexpr int kNumImages = 4;
+    TArray<sk_sp<SkImage>> fImages;
 
     using INHERITED = GM;
 };

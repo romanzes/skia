@@ -8,14 +8,23 @@
 #ifndef SKSL_INTERFACEBLOCK
 #define SKSL_INTERFACEBLOCK
 
-#include <memory>
+#include "include/core/SkTypes.h"
+#include "src/sksl/SkSLPosition.h"
+#include "src/sksl/ir/SkSLIRNode.h"
+#include "src/sksl/ir/SkSLProgramElement.h"
+#include "src/sksl/ir/SkSLType.h"
+#include "src/sksl/ir/SkSLVariable.h"
 
-#include "include/core/SkStringView.h"
-#include "include/private/SkSLProgramElement.h"
-#include "src/sksl/ir/SkSLSymbolTable.h"
-#include "src/sksl/ir/SkSLVarDeclarations.h"
+#include <memory>
+#include <optional>
+#include <string>
+#include <string_view>
+#include <utility>
 
 namespace SkSL {
+
+class Context;
+class SymbolTable;
 
 /**
  * An interface block, as in:
@@ -29,32 +38,56 @@ namespace SkSL {
  */
 class InterfaceBlock final : public ProgramElement {
 public:
-    static constexpr Kind kProgramElementKind = Kind::kInterfaceBlock;
+    inline static constexpr Kind kIRNodeKind = Kind::kInterfaceBlock;
 
-    InterfaceBlock(int offset, const Variable* var, skstd::string_view typeName,
-                   skstd::string_view instanceName, int arraySize,
+    InterfaceBlock(Position pos,
+                   Variable* var,
                    std::shared_ptr<SymbolTable> typeOwner)
-    : INHERITED(offset, kProgramElementKind)
-    , fVariable(var)
-    , fTypeName(typeName)
-    , fInstanceName(instanceName)
-    , fArraySize(arraySize)
-    , fTypeOwner(std::move(typeOwner)) {}
-
-    const Variable& variable() const {
-        return *fVariable;
+            : INHERITED(pos, kIRNodeKind)
+            , fVariable(var)
+            , fTypeOwner(std::move(typeOwner)) {
+        SkASSERT(fVariable->type().componentType().isInterfaceBlock());
+        fVariable->setInterfaceBlock(this);
     }
 
-    void setVariable(const Variable* var) {
-        fVariable = var;
+    ~InterfaceBlock() override;
+
+    // Returns an InterfaceBlock; errors are reported to the ErrorReporter.
+    // The caller is responsible for adding the InterfaceBlock to the program elements.
+    // The program's RTAdjustData will be updated if the InterfaceBlock contains sk_RTAdjust.
+    // The passed-in symbol table will be updated with a reference to the interface block variable
+    // (if it is named) or each of the interface block fields (if it is anonymous).
+    static std::unique_ptr<InterfaceBlock> Convert(const Context& context,
+                                                   Position pos,
+                                                   Variable* variable,
+                                                   std::shared_ptr<SymbolTable> symbols);
+
+    // Returns an InterfaceBlock; errors are reported via SkASSERT.
+    // The caller is responsible for adding the InterfaceBlock to the program elements.
+    // If the InterfaceBlock contains sk_RTAdjust, the caller is responsible for passing its field
+    // index in `rtAdjustIndex`.
+    // The passed-in symbol table will be updated with a reference to the interface block variable
+    // (if it is named) or each of the interface block fields (if it is anonymous).
+    static std::unique_ptr<InterfaceBlock> Make(const Context& context,
+                                                Position pos,
+                                                Variable* variable,
+                                                std::optional<int> rtAdjustIndex,
+                                                std::shared_ptr<SymbolTable> symbols);
+
+    Variable* var() const {
+        return fVariable;
     }
 
-    skstd::string_view typeName() const {
-        return fTypeName;
+    void detachDeadVariable() {
+        fVariable = nullptr;
     }
 
-    skstd::string_view instanceName() const {
-        return fInstanceName;
+    std::string_view typeName() const {
+        return fVariable->type().componentType().name();
+    }
+
+    std::string_view instanceName() const {
+        return fVariable->name();
     }
 
     const std::shared_ptr<SymbolTable>& typeOwner() const {
@@ -62,41 +95,15 @@ public:
     }
 
     int arraySize() const {
-        return fArraySize;
+        return fVariable->type().isArray() ? fVariable->type().columns() : 0;
     }
 
-    std::unique_ptr<ProgramElement> clone() const override {
-        return std::make_unique<InterfaceBlock>(fOffset, &this->variable(), this->typeName(),
-                                                this->instanceName(), this->arraySize(),
-                                                SymbolTable::WrapIfBuiltin(this->typeOwner()));
-    }
+    std::unique_ptr<ProgramElement> clone() const override;
 
-    String description() const override {
-        String result = this->variable().modifiers().description() + this->typeName() + " {\n";
-        const Type* structType = &this->variable().type();
-        if (structType->isArray()) {
-            structType = &structType->componentType();
-        }
-        for (const auto& f : structType->fields()) {
-            result += f.description() + "\n";
-        }
-        result += "}";
-        if (!this->instanceName().empty()) {
-            result += " " + this->instanceName();
-            if (this->arraySize() > 0) {
-                result.appendf("[%d]", this->arraySize());
-            } else if (this->arraySize() == Type::kUnsizedArray){
-                result += "[]";
-            }
-        }
-        return result + ";";
-    }
+    std::string description() const override;
 
 private:
-    const Variable* fVariable;
-    skstd::string_view fTypeName;
-    skstd::string_view fInstanceName;
-    int fArraySize;
+    Variable* fVariable;
     std::shared_ptr<SymbolTable> fTypeOwner;
 
     using INHERITED = ProgramElement;

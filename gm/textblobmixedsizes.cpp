@@ -25,7 +25,8 @@
 #include "include/core/SkTextBlob.h"
 #include "include/core/SkTypeface.h"
 #include "include/core/SkTypes.h"
-#include "include/utils/SkRandom.h"
+#include "include/gpu/GpuTypes.h"
+#include "src/base/SkRandom.h"
 #include "src/core/SkBlurMask.h"
 #include "tools/Resources.h"
 #include "tools/ToolUtils.h"
@@ -115,7 +116,7 @@ protected:
             SkSurfaceProps props(
                     SkSurfaceProps::kUseDeviceIndependentFonts_Flag | inputProps.flags(),
                     inputProps.pixelGeometry());
-            surface = SkSurface::MakeRenderTarget(ctx, SkBudgeted::kNo, info, 0, &props);
+            surface = SkSurface::MakeRenderTarget(ctx, skgpu::Budgeted::kNo, info, 0, &props);
             canvas = surface ? surface->getCanvas() : inputCanvas;
             // init our new canvas with the old canvas's matrix
             canvas->setMatrix(inputCanvas->getTotalMatrix());

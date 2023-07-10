@@ -7,66 +7,73 @@
 
 #include "src/sksl/ir/SkSLFunctionDeclaration.h"
 
+#include "include/core/SkSpan.h"
+#include "include/core/SkTypes.h"
+#include "include/private/SkSLDefines.h"
+#include "include/private/base/SkTo.h"
+#include "src/base/SkStringView.h"
+#include "src/sksl/SkSLBuiltinTypes.h"
 #include "src/sksl/SkSLCompiler.h"
-#include "src/sksl/SkSLIRGenerator.h"
-#include "src/sksl/ir/SkSLUnresolvedFunction.h"
+#include "src/sksl/SkSLContext.h"
+#include "src/sksl/SkSLErrorReporter.h"
+#include "src/sksl/SkSLModifiersPool.h"
+#include "src/sksl/SkSLPosition.h"
+#include "src/sksl/SkSLProgramKind.h"
+#include "src/sksl/SkSLProgramSettings.h"
+#include "src/sksl/SkSLString.h"
+#include "src/sksl/ir/SkSLExpression.h"
+#include "src/sksl/ir/SkSLLayout.h"
+#include "src/sksl/ir/SkSLModifiers.h"
+#include "src/sksl/ir/SkSLSymbolTable.h"
+#include "src/sksl/ir/SkSLType.h"
+#include "src/sksl/ir/SkSLVariable.h"
+
+#include <algorithm>
+#include <cstddef>
+#include <utility>
 
 namespace SkSL {
 
-static IntrinsicKind identify_intrinsic(const String& functionName) {
-    #define SKSL_INTRINSIC(name) {#name, k_##name##_IntrinsicKind},
-    static const auto* kAllIntrinsics = new std::unordered_map<String, IntrinsicKind>{
-        SKSL_INTRINSIC_LIST
-    };
-    #undef SKSL_INTRINSIC
-
-    auto iter = kAllIntrinsics->find(functionName);
-    if (iter != kAllIntrinsics->end()) {
-        return iter->second;
-    }
-
-    return kNotIntrinsic;
-}
-
-static bool check_modifiers(const Context& context, int offset, const Modifiers& modifiers) {
-    IRGenerator::CheckModifiers(
-            context,
-            offset,
-            modifiers,
-            Modifiers::kHasSideEffects_Flag | Modifiers::kInline_Flag | Modifiers::kNoInline_Flag,
-            /*permittedLayoutFlags=*/0);
+static bool check_modifiers(const Context& context,
+                            Position pos,
+                            const Modifiers& modifiers) {
+    const int permitted = Modifiers::kInline_Flag |
+                          Modifiers::kNoInline_Flag |
+                          (context.fConfig->fIsBuiltinCode ? (Modifiers::kES3_Flag |
+                                                              Modifiers::kPure_Flag |
+                                                              Modifiers::kExport_Flag) : 0);
+    modifiers.checkPermitted(context, pos, permitted, /*permittedLayoutFlags=*/0);
     if ((modifiers.fFlags & Modifiers::kInline_Flag) &&
         (modifiers.fFlags & Modifiers::kNoInline_Flag)) {
-        context.errors().error(offset, "functions cannot be both 'inline' and 'noinline'");
+        context.fErrors->error(pos, "functions cannot be both 'inline' and 'noinline'");
         return false;
     }
     return true;
 }
 
-static bool check_return_type(const Context& context, int offset, const Type& returnType,
-                              bool isBuiltin) {
-    ErrorReporter& errors = context.errors();
+static bool check_return_type(const Context& context, Position pos, const Type& returnType) {
+    ErrorReporter& errors = *context.fErrors;
     if (returnType.isArray()) {
-        errors.error(offset, "functions may not return type '" + returnType.displayName() + "'");
+        errors.error(pos, "functions may not return type '" + returnType.displayName() + "'");
         return false;
     }
     if (context.fConfig->strictES2Mode() && returnType.isOrContainsArray()) {
-        errors.error(offset, "functions may not return structs containing arrays");
+        errors.error(pos, "functions may not return structs containing arrays");
         return false;
     }
-    if (!isBuiltin && !returnType.isVoid() && returnType.componentType().isOpaque()) {
-        errors.error(offset, "functions may not return opaque type '" + returnType.displayName() +
-                             "'");
+    if (!context.fConfig->fIsBuiltinCode && returnType.componentType().isOpaque()) {
+        errors.error(pos, "functions may not return opaque type '" + returnType.displayName() +
+                "'");
         return false;
     }
     return true;
 }
 
 static bool check_parameters(const Context& context,
-                             std::vector<std::unique_ptr<Variable>>& parameters, bool isMain,
-                             bool isBuiltin) {
+                             std::vector<std::unique_ptr<Variable>>& parameters,
+                             bool isMain) {
     auto typeIsValidForColor = [&](const Type& type) {
-        return type == *context.fTypes.fHalf4 || type == *context.fTypes.fFloat4;
+        return type.matches(*context.fTypes.fHalf4) || type.matches(*context.fTypes.fFloat4);
     };
 
     // The first color parameter passed to main() is the input color; the second is the dest color.
@@ -75,65 +82,92 @@ static bool check_parameters(const Context& context,
 
     // Check modifiers on each function parameter.
     for (auto& param : parameters) {
-        IRGenerator::CheckModifiers(context, param->fOffset, param->modifiers(),
-                                    Modifiers::kConst_Flag | Modifiers::kIn_Flag |
-                                    Modifiers::kOut_Flag, /*permittedLayoutFlags=*/0);
         const Type& type = param->type();
+        int permittedFlags = Modifiers::kConst_Flag | Modifiers::kIn_Flag;
+        if (!type.isOpaque()) {
+            permittedFlags |= Modifiers::kOut_Flag;
+        }
+        if (type.typeKind() == Type::TypeKind::kTexture) {
+            permittedFlags |= Modifiers::kReadOnly_Flag | Modifiers::kWriteOnly_Flag;
+        }
+        param->modifiers().checkPermitted(context,
+                                          param->modifiersPosition(),
+                                          permittedFlags,
+                                          /*permittedLayoutFlags=*/0);
         // Only the (builtin) declarations of 'sample' are allowed to have shader/colorFilter or FP
         // parameters. You can pass other opaque types to functions safely; this restriction is
         // specific to "child" objects.
-        if (type.isEffectChild() && !isBuiltin) {
-            context.errors().error(param->fOffset, "parameters of type '" + type.displayName() +
-                                                   "' not allowed");
+        if (type.isEffectChild() && !context.fConfig->fIsBuiltinCode) {
+            context.fErrors->error(param->fPosition, "parameters of type '" + type.displayName() +
+                                                     "' not allowed");
             return false;
         }
 
         Modifiers m = param->modifiers();
+        bool modifiersChanged = false;
+
+        // The `in` modifier on function parameters is implicit, so we can replace `in float x` with
+        // `float x`. This prevents any ambiguity when matching a function by its param types.
+        if (Modifiers::kIn_Flag == (m.fFlags & (Modifiers::kOut_Flag | Modifiers::kIn_Flag))) {
+            m.fFlags &= ~(Modifiers::kOut_Flag | Modifiers::kIn_Flag);
+            modifiersChanged = true;
+        }
+
         if (isMain) {
-            if (ProgramConfig::IsRuntimeEffect(context.fConfig->fKind)) {
+            if (ProgramConfig::IsRuntimeEffect(context.fConfig->fKind) &&
+                context.fConfig->fKind != ProgramKind::kMeshFragment &&
+                context.fConfig->fKind != ProgramKind::kMeshVertex) {
                 // We verify that the signature is fully correct later. For now, if this is a
                 // runtime effect of any flavor, a float2 param is supposed to be the coords, and a
                 // half4/float parameter is supposed to be the input or destination color:
-                if (type == *context.fTypes.fFloat2) {
+                if (type.matches(*context.fTypes.fFloat2)) {
                     m.fLayout.fBuiltin = SK_MAIN_COORDS_BUILTIN;
+                    modifiersChanged = true;
                 } else if (typeIsValidForColor(type) &&
-                           builtinColorIndex < SK_ARRAY_COUNT(kBuiltinColorIDs)) {
+                           builtinColorIndex < std::size(kBuiltinColorIDs)) {
                     m.fLayout.fBuiltin = kBuiltinColorIDs[builtinColorIndex++];
+                    modifiersChanged = true;
                 }
-                if (m.fLayout.fBuiltin) {
-                    param->setModifiers(context.fModifiersPool->add(m));
-                }
-            } else if (context.fConfig->fKind == ProgramKind::kFragment) {
+            } else if (ProgramConfig::IsFragment(context.fConfig->fKind)) {
                 // For testing purposes, we have .sksl inputs that are treated as both runtime
                 // effects and fragment shaders. To make that work, fragment shaders are allowed to
-                // have a coords parameter. We turn it into sk_FragCoord.
-                if (type == *context.fTypes.fFloat2) {
-                    m.fLayout.fBuiltin = SK_FRAGCOORD_BUILTIN;
-                    param->setModifiers(context.fModifiersPool->add(m));
+                // have a coords parameter.
+                if (type.matches(*context.fTypes.fFloat2)) {
+                    m.fLayout.fBuiltin = SK_MAIN_COORDS_BUILTIN;
+                    modifiersChanged = true;
                 }
             }
+        }
+
+        if (modifiersChanged) {
+            param->setModifiers(context.fModifiersPool->add(m));
         }
     }
     return true;
 }
 
-static bool check_main_signature(const Context& context, int offset, const Type& returnType,
-                                 std::vector<std::unique_ptr<Variable>>& parameters,
-                                 bool isBuiltin) {
-    ErrorReporter& errors = context.errors();
+static bool check_main_signature(const Context& context, Position pos, const Type& returnType,
+                                 std::vector<std::unique_ptr<Variable>>& parameters) {
+    ErrorReporter& errors = *context.fErrors;
     ProgramKind kind = context.fConfig->fKind;
 
     auto typeIsValidForColor = [&](const Type& type) {
-        return type == *context.fTypes.fHalf4 || type == *context.fTypes.fFloat4;
+        return type.matches(*context.fTypes.fHalf4) || type.matches(*context.fTypes.fFloat4);
+    };
+
+    auto typeIsValidForAttributes = [&](const Type& type) {
+        return type.isStruct() && type.name() == "Attributes";
+    };
+
+    auto typeIsValidForVaryings = [&](const Type& type) {
+        return type.isStruct() && type.name() == "Varyings";
     };
 
     auto paramIsCoords = [&](int idx) {
         const Variable& p = *parameters[idx];
-        return p.type() == *context.fTypes.fFloat2 &&
+        return p.type().matches(*context.fTypes.fFloat2) &&
                p.modifiers().fFlags == 0 &&
-               p.modifiers().fLayout.fBuiltin == (kind == ProgramKind::kFragment
-                                                           ? SK_FRAGCOORD_BUILTIN
-                                                           : SK_MAIN_COORDS_BUILTIN);
+               p.modifiers().fLayout.fBuiltin == SK_MAIN_COORDS_BUILTIN;
     };
 
     auto paramIsBuiltinColor = [&](int idx, int builtinID) {
@@ -143,72 +177,191 @@ static bool check_main_signature(const Context& context, int offset, const Type&
                p.modifiers().fLayout.fBuiltin == builtinID;
     };
 
+    auto paramIsConstInAttributes = [&](int idx) {
+        const Variable& p = *parameters[idx];
+        return typeIsValidForAttributes(p.type()) && p.modifiers().fFlags == Modifiers::kConst_Flag;
+    };
+
+    auto paramIsConstInVaryings = [&](int idx) {
+        const Variable& p = *parameters[idx];
+        return typeIsValidForVaryings(p.type()) && p.modifiers().fFlags == Modifiers::kConst_Flag;
+    };
+
+    auto paramIsOutColor = [&](int idx) {
+        const Variable& p = *parameters[idx];
+        return typeIsValidForColor(p.type()) && p.modifiers().fFlags == Modifiers::kOut_Flag;
+    };
+
     auto paramIsInputColor = [&](int n) { return paramIsBuiltinColor(n, SK_INPUT_COLOR_BUILTIN); };
     auto paramIsDestColor  = [&](int n) { return paramIsBuiltinColor(n, SK_DEST_COLOR_BUILTIN); };
 
     switch (kind) {
-        case ProgramKind::kRuntimeColorFilter: {
+        case ProgramKind::kRuntimeColorFilter:
+        case ProgramKind::kPrivateRuntimeColorFilter: {
             // (half4|float4) main(half4|float4)
             if (!typeIsValidForColor(returnType)) {
-                errors.error(offset, "'main' must return: 'vec4', 'float4', or 'half4'");
+                errors.error(pos, "'main' must return: 'vec4', 'float4', or 'half4'");
                 return false;
             }
             bool validParams = (parameters.size() == 1 && paramIsInputColor(0));
             if (!validParams) {
-                errors.error(offset, "'main' parameter must be 'vec4', 'float4', or 'half4'");
+                errors.error(pos, "'main' parameter must be 'vec4', 'float4', or 'half4'");
                 return false;
             }
             break;
         }
-        case ProgramKind::kRuntimeShader: {
-            // (half4|float4) main(float2)  -or-  (half4|float4) main(float2, half4|float4)
+        case ProgramKind::kRuntimeShader:
+        case ProgramKind::kPrivateRuntimeShader: {
+            // (half4|float4) main(float2)
             if (!typeIsValidForColor(returnType)) {
-                errors.error(offset, "'main' must return: 'vec4', 'float4', or 'half4'");
+                errors.error(pos, "'main' must return: 'vec4', 'float4', or 'half4'");
                 return false;
             }
-            bool validParams =
-                    (parameters.size() == 1 && paramIsCoords(0)) ||
-                    (parameters.size() == 2 && paramIsCoords(0) && paramIsInputColor(1));
-            if (!validParams) {
-                errors.error(offset, "'main' parameters must be (float2, (vec4|float4|half4)?)");
+            if (!(parameters.size() == 1 && paramIsCoords(0))) {
+                errors.error(pos, "'main' parameter must be 'float2' or 'vec2'");
                 return false;
             }
             break;
         }
-        case ProgramKind::kRuntimeBlender: {
+        case ProgramKind::kRuntimeBlender:
+        case ProgramKind::kPrivateRuntimeBlender: {
             // (half4|float4) main(half4|float4, half4|float4)
             if (!typeIsValidForColor(returnType)) {
-                errors.error(offset, "'main' must return: 'vec4', 'float4', or 'half4'");
+                errors.error(pos, "'main' must return: 'vec4', 'float4', or 'half4'");
                 return false;
             }
             if (!(parameters.size() == 2 &&
                   paramIsInputColor(0) &&
                   paramIsDestColor(1))) {
-                errors.error(offset, "'main' parameters must be (vec4|float4|half4, "
-                                                                "vec4|float4|half4)");
+                errors.error(pos, "'main' parameters must be (vec4|float4|half4, "
+                        "vec4|float4|half4)");
                 return false;
             }
             break;
         }
-        case ProgramKind::kGeneric:
-            // No rules apply here
+        case ProgramKind::kMeshVertex: {
+            // Varyings main(const Attributes)
+            if (!typeIsValidForVaryings(returnType)) {
+                errors.error(pos, "'main' must return 'Varyings'.");
+                return false;
+            }
+            if (!(parameters.size() == 1 && paramIsConstInAttributes(0))) {
+                errors.error(pos, "'main' parameter must be 'const Attributes'.");
+                return false;
+            }
             break;
-        case ProgramKind::kFragment: {
+        }
+        case ProgramKind::kMeshFragment: {
+            // float2 main(const Varyings) -or- float2 main(const Varyings, out half4|float4)
+            if (!returnType.matches(*context.fTypes.fFloat2)) {
+                errors.error(pos, "'main' must return: 'vec2' or 'float2'");
+                return false;
+            }
+            if (!((parameters.size() == 1 && paramIsConstInVaryings(0)) ||
+                  (parameters.size() == 2 && paramIsConstInVaryings(0) && paramIsOutColor(1)))) {
+                errors.error(pos,
+                             "'main' parameters must be (const Varyings, (out (half4|float4))?)");
+                return false;
+            }
+            break;
+        }
+        case ProgramKind::kFragment:
+        case ProgramKind::kGraphiteFragment: {
             bool validParams = (parameters.size() == 0) ||
                                (parameters.size() == 1 && paramIsCoords(0));
             if (!validParams) {
-                errors.error(offset, "shader 'main' must be main() or main(float2)");
+                errors.error(pos, "shader 'main' must be main() or main(float2)");
                 return false;
             }
             break;
         }
         case ProgramKind::kVertex:
-        case ProgramKind::kGeometry:
+        case ProgramKind::kGraphiteVertex:
+        case ProgramKind::kCompute:
+            if (!returnType.matches(*context.fTypes.fVoid)) {
+                errors.error(pos, "'main' must return 'void'");
+                return false;
+            }
             if (parameters.size()) {
-                errors.error(offset, "shader 'main' must have zero parameters");
+                errors.error(pos, "shader 'main' must have zero parameters");
                 return false;
             }
             break;
+    }
+    return true;
+}
+
+/**
+ * Given a concrete type (`float3`) and a generic type (`$genType`), returns the index of the
+ * concrete type within the generic type's typelist. Returns -1 if there is no match.
+ */
+static int find_generic_index(const Type& concreteType,
+                              const Type& genericType,
+                              bool allowNarrowing) {
+    SkSpan<const Type* const> genericTypes = genericType.coercibleTypes();
+    for (size_t index = 0; index < genericTypes.size(); ++index) {
+        if (concreteType.canCoerceTo(*genericTypes[index], allowNarrowing)) {
+            return index;
+        }
+    }
+    return -1;
+}
+
+/** Returns true if the types match, or if `concreteType` can be found in `maybeGenericType`. */
+static bool type_generically_matches(const Type& concreteType, const Type& maybeGenericType) {
+    return maybeGenericType.isGeneric()
+                ? find_generic_index(concreteType, maybeGenericType, /*allowNarrowing=*/false) != -1
+                : concreteType.matches(maybeGenericType);
+}
+
+/**
+ * Checks a parameter list (params) against the parameters of a function that was declared earlier
+ * (otherParams). Returns true if they match, even if the parameters in `otherParams` contain
+ * generic types.
+ */
+static bool parameters_match(const std::vector<std::unique_ptr<Variable>>& params,
+                             const std::vector<Variable*>& otherParams) {
+    // If the param lists are different lengths, they're definitely not a match.
+    if (params.size() != otherParams.size()) {
+        return false;
+    }
+
+    // Figure out a consistent generic index (or bail if we find a contradiction).
+    int genericIndex = -1;
+    for (size_t i = 0; i < params.size(); ++i) {
+        const Type* paramType = &params[i]->type();
+        const Type* otherParamType = &otherParams[i]->type();
+
+        if (otherParamType->isGeneric()) {
+            int genericIndexForThisParam = find_generic_index(*paramType, *otherParamType,
+                                                              /*allowNarrowing=*/false);
+            if (genericIndexForThisParam == -1) {
+                // The type wasn't a match for this generic at all; these params can't be a match.
+                return false;
+            }
+            if (genericIndex != -1 && genericIndex != genericIndexForThisParam) {
+                // The generic index mismatches from what we determined on a previous parameter.
+                return false;
+            }
+            genericIndex = genericIndexForThisParam;
+        }
+    }
+
+    // Now that we've determined a generic index (if we needed one), do a parameter check.
+    for (size_t i = 0; i < params.size(); i++) {
+        const Type* paramType = &params[i]->type();
+        const Type* otherParamType = &otherParams[i]->type();
+
+        // Make generic types concrete.
+        if (otherParamType->isGeneric()) {
+            SkASSERT(genericIndex != -1);
+            SkASSERT(genericIndex < (int)otherParamType->coercibleTypes().size());
+            otherParamType = otherParamType->coercibleTypes()[genericIndex];
+        }
+        // Detect type mismatches.
+        if (!paramType->matches(*otherParamType)) {
+            return false;
+        }
     }
     return true;
 }
@@ -218,109 +371,112 @@ static bool check_main_signature(const Context& context, int offset, const Type&
  * incompatible symbol. Returns true and sets outExistingDecl to point to the existing declaration
  * (or null if none) on success, returns false on error.
  */
-static bool find_existing_declaration(const Context& context, SymbolTable& symbols, int offset,
-                                      skstd::string_view name,
+static bool find_existing_declaration(const Context& context,
+                                      SymbolTable& symbols,
+                                      Position pos,
+                                      const Modifiers* modifiers,
+                                      std::string_view name,
                                       std::vector<std::unique_ptr<Variable>>& parameters,
-                                      const Type* returnType, bool isBuiltin,
-                                      const FunctionDeclaration** outExistingDecl) {
-    ErrorReporter& errors = context.errors();
-    const Symbol* entry = symbols[name];
+                                      Position returnTypePos,
+                                      const Type* returnType,
+                                      FunctionDeclaration** outExistingDecl) {
+    auto invalidDeclDescription = [&]() -> std::string {
+        std::vector<Variable*> paramPtrs;
+        paramPtrs.reserve(parameters.size());
+        for (std::unique_ptr<Variable>& param : parameters) {
+            paramPtrs.push_back(param.get());
+        }
+        return FunctionDeclaration(pos,
+                                   modifiers,
+                                   name,
+                                   std::move(paramPtrs),
+                                   returnType,
+                                   context.fConfig->fIsBuiltinCode)
+                .description();
+    };
+
+    ErrorReporter& errors = *context.fErrors;
+    Symbol* entry = symbols.findMutable(name);
     *outExistingDecl = nullptr;
     if (entry) {
-        std::vector<const FunctionDeclaration*> functions;
-        switch (entry->kind()) {
-            case Symbol::Kind::kUnresolvedFunction:
-                functions = entry->as<UnresolvedFunction>().functions();
-                break;
-            case Symbol::Kind::kFunctionDeclaration:
-                functions.push_back(&entry->as<FunctionDeclaration>());
-                break;
-            default:
-                errors.error(offset, "symbol '" + name + "' was already defined");
-                return false;
+        if (!entry->is<FunctionDeclaration>()) {
+            errors.error(pos, "symbol '" + std::string(name) + "' was already defined");
+            return false;
         }
-        for (const FunctionDeclaration* other : functions) {
+        for (FunctionDeclaration* other = &entry->as<FunctionDeclaration>(); other;
+             other = other->mutableNextOverload()) {
             SkASSERT(name == other->name());
-            if (parameters.size() != other->parameters().size()) {
+            if (!parameters_match(parameters, other->parameters())) {
                 continue;
             }
-            bool match = true;
-            for (size_t i = 0; i < parameters.size(); i++) {
-                if (parameters[i]->type() != other->parameters()[i]->type()) {
-                    match = false;
-                    break;
-                }
-            }
-            if (!match) {
-                continue;
-            }
-            if (*returnType != other->returnType()) {
-                std::vector<const Variable*> paramPtrs;
-                paramPtrs.reserve(parameters.size());
-                for (std::unique_ptr<Variable>& param : parameters) {
-                    paramPtrs.push_back(param.get());
-                }
-                FunctionDeclaration invalidDecl(offset,
-                                                &other->modifiers(),
-                                                name,
-                                                std::move(paramPtrs),
-                                                returnType,
-                                                isBuiltin);
-                errors.error(offset,
-                             "functions '" + invalidDecl.description() + "' and '" +
+            if (!type_generically_matches(*returnType, other->returnType())) {
+                errors.error(returnTypePos,
+                             "functions '" + invalidDeclDescription() + "' and '" +
                              other->description() + "' differ only in return type");
                 return false;
             }
             for (size_t i = 0; i < parameters.size(); i++) {
                 if (parameters[i]->modifiers() != other->parameters()[i]->modifiers()) {
-                    errors.error(offset,
-                                 "modifiers on parameter " + to_string((uint64_t)i + 1) +
+                    errors.error(parameters[i]->fPosition,
+                                 "modifiers on parameter " + std::to_string(i + 1) +
                                  " differ between declaration and definition");
                     return false;
                 }
             }
-            if (other->definition() && !other->isBuiltin()) {
-                errors.error(offset, "duplicate definition of " + other->description());
+            if (*modifiers != other->modifiers() || other->definition() || other->isIntrinsic()) {
+                errors.error(pos, "duplicate definition of '" + invalidDeclDescription() + "'");
                 return false;
             }
             *outExistingDecl = other;
             break;
         }
+        if (!*outExistingDecl && entry->as<FunctionDeclaration>().isMain()) {
+            errors.error(pos, "duplicate definition of 'main'");
+            return false;
+        }
     }
     return true;
 }
 
-FunctionDeclaration::FunctionDeclaration(int offset,
+FunctionDeclaration::FunctionDeclaration(Position pos,
                                          const Modifiers* modifiers,
-                                         skstd::string_view name,
-                                         std::vector<const Variable*> parameters,
+                                         std::string_view name,
+                                         std::vector<Variable*> parameters,
                                          const Type* returnType,
                                          bool builtin)
-        : INHERITED(offset, kSymbolKind, name, /*type=*/nullptr)
+        : INHERITED(pos, kIRNodeKind, name, /*type=*/nullptr)
         , fDefinition(nullptr)
         , fModifiers(modifiers)
         , fParameters(std::move(parameters))
         , fReturnType(returnType)
         , fBuiltin(builtin)
         , fIsMain(name == "main")
-        , fIntrinsicKind(builtin ? identify_intrinsic(String(name)) : kNotIntrinsic) {}
+        , fIntrinsicKind(builtin ? FindIntrinsicKind(name) : kNotIntrinsic) {
+    // None of the parameters are allowed to be be null.
+    SkASSERT(std::count(fParameters.begin(), fParameters.end(), nullptr) == 0);
+}
 
-const FunctionDeclaration* FunctionDeclaration::Convert(const Context& context,
-        SymbolTable& symbols, int offset, const Modifiers* modifiers,
-        skstd::string_view name, std::vector<std::unique_ptr<Variable>> parameters,
-        const Type* returnType, bool isBuiltin) {
+FunctionDeclaration* FunctionDeclaration::Convert(const Context& context,
+                                                  SymbolTable& symbols,
+                                                  Position pos,
+                                                  Position modifiersPosition,
+                                                  const Modifiers* modifiers,
+                                                  std::string_view name,
+                                                  std::vector<std::unique_ptr<Variable>> parameters,
+                                                  Position returnTypePos,
+                                                  const Type* returnType) {
     bool isMain = (name == "main");
 
-    const FunctionDeclaration* decl = nullptr;
-    if (!check_modifiers(context, offset, *modifiers) ||
-        !check_return_type(context, offset, *returnType, isBuiltin) ||
-        !check_parameters(context, parameters, isMain, isBuiltin) ||
-        (isMain && !check_main_signature(context, offset, *returnType, parameters, isBuiltin)) ||
-        !find_existing_declaration(context, symbols, offset, name, parameters, returnType,
-                                   isBuiltin, &decl)) {
+    FunctionDeclaration* decl = nullptr;
+    if (!check_modifiers(context, modifiersPosition, *modifiers) ||
+        !check_return_type(context, returnTypePos, *returnType) ||
+        !check_parameters(context, parameters, isMain) ||
+        (isMain && !check_main_signature(context, pos, *returnType, parameters)) ||
+        !find_existing_declaration(context, symbols, pos, modifiers, name, parameters,
+                                   returnTypePos, returnType, &decl)) {
         return nullptr;
     }
-    std::vector<const Variable*> finalParameters;
+    std::vector<Variable*> finalParameters;
     finalParameters.reserve(parameters.size());
     for (std::unique_ptr<Variable>& param : parameters) {
         finalParameters.push_back(symbols.takeOwnershipOfSymbol(std::move(param)));
@@ -328,33 +484,50 @@ const FunctionDeclaration* FunctionDeclaration::Convert(const Context& context,
     if (decl) {
         return decl;
     }
-    auto result = std::make_unique<FunctionDeclaration>(offset, modifiers, name,
-                                                        std::move(finalParameters), returnType,
-                                                        isBuiltin);
+    auto result = std::make_unique<FunctionDeclaration>(pos,
+                                                        modifiers,
+                                                        name,
+                                                        std::move(finalParameters),
+                                                        returnType,
+                                                        context.fConfig->fIsBuiltinCode);
     return symbols.add(std::move(result));
 }
 
-String FunctionDeclaration::mangledName() const {
+std::string FunctionDeclaration::mangledName() const {
     if ((this->isBuiltin() && !this->definition()) || this->isMain()) {
         // Builtins without a definition (like `sin` or `sqrt`) must use their real names.
-        return String(this->name());
+        return std::string(this->name());
     }
-    // GLSL forbids two underscores in a row; add an extra character if necessary to avoid this.
-    const char* splitter = this->name().ends_with("_") ? "x_" : "_";
+    // Built-in functions can have a $ prefix, which will fail to compile in GLSL. Remove the
+    // $ and add a unique mangling specifier, so user code can't conflict with the name.
+    std::string_view name = this->name();
+    const char* builtinMarker = "";
+    if (skstd::starts_with(name, '$')) {
+        name.remove_prefix(1);
+        builtinMarker = "Q";  // a unique, otherwise-unused mangle character
+    }
     // Rename function to `funcname_returntypeparamtypes`.
-    String result = this->name() + splitter + this->returnType().abbreviatedName();
+    std::string result = std::string(name) + "_" + builtinMarker +
+                         this->returnType().abbreviatedName();
     for (const Variable* p : this->parameters()) {
         result += p->type().abbreviatedName();
     }
     return result;
 }
 
-String FunctionDeclaration::description() const {
-    String result = this->returnType().displayName() + " " + this->name() + "(";
-    String separator;
+std::string FunctionDeclaration::description() const {
+    int modifierFlags = this->modifiers().fFlags;
+    std::string result =
+            (modifierFlags ? Modifiers::DescribeFlags(modifierFlags) + " " : std::string()) +
+            this->returnType().displayName() + " " + std::string(this->name()) + "(";
+    auto separator = SkSL::String::Separator();
     for (const Variable* p : this->parameters()) {
-        result += separator;
-        separator = ", ";
+        result += separator();
+        // We can't just say `p->description()` here, because occasionally might have added layout
+        // flags onto parameters (like `layout(builtin=10009)`) and don't want to reproduce that.
+        if (p->modifiers().fFlags) {
+            result += Modifiers::DescribeFlags(p->modifiers().fFlags) + " ";
+        }
         result += p->type().displayName();
         result += " ";
         result += p->name();
@@ -367,13 +540,13 @@ bool FunctionDeclaration::matches(const FunctionDeclaration& f) const {
     if (this->name() != f.name()) {
         return false;
     }
-    const std::vector<const Variable*>& parameters = this->parameters();
-    const std::vector<const Variable*>& otherParameters = f.parameters();
+    const std::vector<Variable*>& parameters = this->parameters();
+    const std::vector<Variable*>& otherParameters = f.parameters();
     if (parameters.size() != otherParameters.size()) {
         return false;
     }
     for (size_t i = 0; i < parameters.size(); i++) {
-        if (parameters[i]->type() != otherParameters[i]->type()) {
+        if (!parameters[i]->type().matches(otherParameters[i]->type())) {
             return false;
         }
     }
@@ -383,39 +556,34 @@ bool FunctionDeclaration::matches(const FunctionDeclaration& f) const {
 bool FunctionDeclaration::determineFinalTypes(const ExpressionArray& arguments,
                                               ParamTypes* outParameterTypes,
                                               const Type** outReturnType) const {
-    const std::vector<const Variable*>& parameters = this->parameters();
-    SkASSERT(arguments.size() == parameters.size());
+    const std::vector<Variable*>& parameters = this->parameters();
+    SkASSERT(SkToSizeT(arguments.size()) == parameters.size());
 
     outParameterTypes->reserve_back(arguments.size());
     int genericIndex = -1;
-    for (size_t i = 0; i < arguments.size(); i++) {
+    for (int i = 0; i < arguments.size(); i++) {
         // Non-generic parameters are final as-is.
         const Type& parameterType = parameters[i]->type();
-        if (parameterType.typeKind() != Type::TypeKind::kGeneric) {
+        if (!parameterType.isGeneric()) {
             outParameterTypes->push_back(&parameterType);
             continue;
         }
         // We use the first generic parameter we find to lock in the generic index;
         // e.g. if we find `float3` here, all `$genType`s will be assumed to be `float3`.
-        const std::vector<const Type*>& types = parameterType.coercibleTypes();
         if (genericIndex == -1) {
-            for (size_t j = 0; j < types.size(); j++) {
-                if (arguments[i]->type().canCoerceTo(*types[j], /*allowNarrowing=*/true)) {
-                    genericIndex = j;
-                    break;
-                }
-            }
+            genericIndex = find_generic_index(arguments[i]->type(), parameterType,
+                                              /*allowNarrowing=*/true);
             if (genericIndex == -1) {
                 // The passed-in type wasn't a match for ANY of the generic possibilities.
                 // This function isn't a match at all.
                 return false;
             }
         }
-        outParameterTypes->push_back(types[genericIndex]);
+        outParameterTypes->push_back(parameterType.coercibleTypes()[genericIndex]);
     }
     // Apply the generic index to our return type.
     const Type& returnType = this->returnType();
-    if (returnType.typeKind() == Type::TypeKind::kGeneric) {
+    if (returnType.isGeneric()) {
         if (genericIndex == -1) {
             // We don't support functions with a generic return type and no other generics.
             return false;

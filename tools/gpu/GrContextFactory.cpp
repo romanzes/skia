@@ -7,7 +7,7 @@
  */
 
 #include "include/gpu/GrDirectContext.h"
-#include "src/gpu/GrDirectContextPriv.h"
+#include "src/gpu/ganesh/GrDirectContextPriv.h"
 #include "tools/gpu/GrContextFactory.h"
 #ifdef SK_GL
 #include "tools/gpu/gl/GLTestContext.h"
@@ -16,7 +16,6 @@
 #if SK_ANGLE
 #include "tools/gpu/gl/angle/GLTestContext_angle.h"
 #endif
-#include "tools/gpu/gl/command_buffer/GLTestContext_command_buffer.h"
 #ifdef SK_VULKAN
 #include "tools/gpu/vk/VkTestContext.h"
 #endif
@@ -29,8 +28,7 @@
 #ifdef SK_DAWN
 #include "tools/gpu/dawn/DawnTestContext.h"
 #endif
-#include "src/gpu/GrCaps.h"
-#include "src/gpu/gl/GrGLGpu.h"
+#include "src/gpu/ganesh/GrCaps.h"
 #include "tools/gpu/mock/MockTestContext.h"
 
 #if defined(SK_BUILD_FOR_WIN) && defined(SK_ENABLE_DISCRETE_GPU)
@@ -63,7 +61,7 @@ void GrContextFactory::destroyContexts() {
     // deleted before a parent context. This relies on the fact that when we make a new context we
     // append it to the end of fContexts array.
     // TODO: Look into keeping a dependency dag for contexts and deletion order
-    for (int i = fContexts.count() - 1; i >= 0; --i) {
+    for (int i = fContexts.size() - 1; i >= 0; --i) {
         Context& context = fContexts[i];
         SkScopeExit restore(nullptr);
         if (context.fTestContext) {
@@ -76,7 +74,7 @@ void GrContextFactory::destroyContexts() {
         context.fGrContext->unref();
         delete context.fTestContext;
     }
-    fContexts.reset();
+    fContexts.clear();
 }
 
 void GrContextFactory::abandonContexts() {
@@ -84,7 +82,7 @@ void GrContextFactory::abandonContexts() {
     // abandoned before a parent context. This relies on the fact that when we make a new context we
     // append it to the end of fContexts array.
     // TODO: Look into keeping a dependency dag for contexts and deletion order
-    for (int i = fContexts.count() - 1; i >= 0; --i) {
+    for (int i = fContexts.size() - 1; i >= 0; --i) {
         Context& context = fContexts[i];
         if (!context.fAbandoned) {
             if (context.fTestContext) {
@@ -113,7 +111,7 @@ void GrContextFactory::releaseResourcesAndAbandonContexts() {
     // abandoned before a parent context. This relies on the fact that when we make a new context we
     // append it to the end of fContexts array.
     // TODO: Look into keeping a dependency dag for contexts and deletion order
-    for (int i = fContexts.count() - 1; i >= 0; --i) {
+    for (int i = fContexts.size() - 1; i >= 0; --i) {
         Context& context = fContexts[i];
         SkScopeExit restore(nullptr);
         if (!context.fAbandoned) {
@@ -140,7 +138,7 @@ ContextInfo GrContextFactory::getContextInfoInternal(ContextType type, ContextOv
     // (shareIndex != 0) -> (shareContext != nullptr)
     SkASSERT((shareIndex == 0) || (shareContext != nullptr));
 
-    for (int i = 0; i < fContexts.count(); ++i) {
+    for (int i = 0; i < fContexts.size(); ++i) {
         Context& context = fContexts[i];
         if (context.fType == type &&
             context.fOverrides == overrides &&
@@ -156,7 +154,7 @@ ContextInfo GrContextFactory::getContextInfoInternal(ContextType type, ContextOv
     // If we're trying to create a context in a share group, find the primary context
     Context* primaryContext = nullptr;
     if (shareContext) {
-        for (int i = 0; i < fContexts.count(); ++i) {
+        for (int i = 0; i < fContexts.size(); ++i) {
             if (!fContexts[i].fAbandoned && fContexts[i].fGrContext == shareContext) {
                 primaryContext = &fContexts[i];
                 break;
@@ -211,13 +209,13 @@ ContextInfo GrContextFactory::getContextInfoInternal(ContextType type, ContextOv
                     glCtx = MakeANGLETestContext(ANGLEBackend::kOpenGL, ANGLEContextVersion::kES3,
                                                  glShareContext).release();
                     break;
-#endif
-#ifndef SK_NO_COMMAND_BUFFER
-                case kCommandBuffer_ES2_ContextType:
-                    glCtx = CommandBufferGLTestContext::Create(2, glShareContext);
+                case kANGLE_Metal_ES2_ContextType:
+                    glCtx = MakeANGLETestContext(ANGLEBackend::kMetal, ANGLEContextVersion::kES2,
+                                                 glShareContext).release();
                     break;
-                case kCommandBuffer_ES3_ContextType:
-                    glCtx = CommandBufferGLTestContext::Create(3, glShareContext);
+                case kANGLE_Metal_ES3_ContextType:
+                    glCtx = MakeANGLETestContext(ANGLEBackend::kMetal, ANGLEContextVersion::kES3,
+                                                 glShareContext).release();
                     break;
 #endif
                 default:
@@ -243,10 +241,10 @@ ContextInfo GrContextFactory::getContextInfoInternal(ContextType type, ContextOv
             if (!testCtx) {
                 return ContextInfo();
             }
-
+#ifdef SK_GL
             // We previously had an issue where the VkDevice destruction would occasionally hang
-            // on systems with NVIDIA GPUs and having an existing GL context fixed it. Now (March
-            // 2020) we still need the GL context to keep Vulkan/TSAN bots from running incredibly
+            // on systems with NVIDIA GPUs and having an existing GL context fixed it. Now (Feb
+            // 2022) we still need the GL context to keep Vulkan/TSAN bots from running incredibly
             // slow. Perhaps this prevents repeated driver loading/unloading? Note that keeping
             // a persistent VkTestContext around instead was tried and did not work.
             if (!fSentinelGLContext) {
@@ -255,6 +253,7 @@ ContextInfo GrContextFactory::getContextInfoInternal(ContextType type, ContextOv
                     fSentinelGLContext.reset(CreatePlatformGLTestContext(kGLES_GrGLStandard));
                 }
             }
+#endif
             break;
         }
 #endif
@@ -350,7 +349,7 @@ ContextInfo GrContextFactory::getContextInfo(ContextType type, ContextOverrides 
 ContextInfo GrContextFactory::getSharedContextInfo(GrDirectContext* shareContext,
                                                    uint32_t shareIndex) {
     SkASSERT(shareContext);
-    for (int i = 0; i < fContexts.count(); ++i) {
+    for (int i = 0; i < fContexts.size(); ++i) {
         if (!fContexts[i].fAbandoned && fContexts[i].fGrContext == shareContext) {
             return this->getContextInfoInternal(fContexts[i].fType, fContexts[i].fOverrides,
                                                 shareContext, shareIndex);

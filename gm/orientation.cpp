@@ -7,6 +7,7 @@
 
 #include "gm/gm.h"
 #include "include/codec/SkEncodedOrigin.h"
+#include "include/core/SkBlurTypes.h"
 #include "include/core/SkCanvas.h"
 #include "include/core/SkFont.h"
 #include "include/core/SkImage.h"
@@ -17,6 +18,7 @@
 #include "include/core/SkSurface.h"
 #include "tools/Resources.h"
 #include "tools/ToolUtils.h"
+
 
 static constexpr int kImgW = 100;
 static constexpr int kImgH =  80;
@@ -114,7 +116,7 @@ static void make_images() {
         num.append(".png");
         SkPixmap pm;
         surf->makeImageSnapshot()->peekPixels(&pm);
-        ToolUtils::EncodeImageToFile(num.c_str(), pm, SkEncodedImageFormat::kPNG, 100);
+        ToolUtils::EncodeImageToPngFile(num.c_str(), pm);
     }
 }
 
@@ -125,7 +127,7 @@ static void make_images() {
 // EXIF tag for that image's jpg file.
 static void draw(SkCanvas* canvas, const char* suffix) {
     // Avoid unused function warning.
-    if (0) {
+    if ((false)) {
         make_images();
     }
     canvas->save();

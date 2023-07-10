@@ -5,10 +5,17 @@
  * found in the LICENSE file.
  */
 
+#include "include/core/SkMatrix.h"
+#include "include/core/SkPoint.h"
+#include "include/core/SkRect.h"
+#include "include/core/SkTypes.h"
+#include "src/base/SkRandom.h"
+#include "src/gpu/tessellate/CullTest.h"
 #include "tests/Test.h"
 
-#include "include/utils/SkRandom.h"
-#include "src/gpu/tessellate/GrCullTest.h"
+#include <initializer_list>
+
+namespace skgpu::tess {
 
 const SkMatrix gMatrices[] = {
     SkMatrix::I(),
@@ -34,7 +41,7 @@ DEF_TEST(CullTestTest, reporter) {
     float valuesR[4] = {r+20, r+10, r-10, r-20};
     float valuesB[4] = {b+20, b+10, b-10, b-20};
     for (SkMatrix m : gMatrices) {
-        GrCullTest cullTest(viewportRect, m);
+        CullTest cullTest(viewportRect, m);
         SkMatrix inverse;
         SkAssertResult(m.invert(&inverse));
         for (const float* y : {valuesT, valuesB}) {
@@ -75,3 +82,5 @@ DEF_TEST(CullTestTest, reporter) {
         }}}
     }
 }
+
+}  // namespace skgpu::tess

@@ -12,12 +12,13 @@
 #include "include/core/SkCanvasVirtualEnforcer.h"
 #include "include/core/SkFlattenable.h"
 #include "include/core/SkPicture.h"
+#include "include/core/SkTextBlob.h"
 #include "include/core/SkVertices.h"
-#include "include/private/SkTArray.h"
-#include "include/private/SkTDArray.h"
-#include "include/private/SkTHash.h"
-#include "include/private/SkTo.h"
+#include "include/private/base/SkTArray.h"
+#include "include/private/base/SkTDArray.h"
+#include "include/private/base/SkTo.h"
 #include "src/core/SkPictureData.h"
+#include "src/core/SkTHash.h"
 #include "src/core/SkWriter32.h"
 
 // These macros help with packing and unpacking a single byte value and
@@ -35,23 +36,29 @@ public:
 
     SkPictureRecord(const SkIRect& dimensions, uint32_t recordFlags);
 
-    const SkTArray<sk_sp<const SkPicture>>& getPictures() const {
+    const skia_private::TArray<sk_sp<const SkPicture>>& getPictures() const {
         return fPictures;
     }
 
-    const SkTArray<sk_sp<SkDrawable>>& getDrawables() const {
+    const skia_private::TArray<sk_sp<SkDrawable>>& getDrawables() const {
         return fDrawables;
     }
 
-    const SkTArray<sk_sp<const SkTextBlob>>& getTextBlobs() const {
+    const skia_private::TArray<sk_sp<const SkTextBlob>>& getTextBlobs() const {
         return fTextBlobs;
     }
 
-    const SkTArray<sk_sp<const SkVertices>>& getVertices() const {
+#if defined(SK_GANESH)
+    const skia_private::TArray<sk_sp<const sktext::gpu::Slug>>& getSlugs() const {
+        return fSlugs;
+    }
+#endif
+
+    const skia_private::TArray<sk_sp<const SkVertices>>& getVertices() const {
         return fVertices;
     }
 
-    const SkTArray<sk_sp<const SkImage>>& getImages() const {
+    const skia_private::TArray<sk_sp<const SkImage>>& getImages() const {
         return fImages;
     }
 
@@ -102,7 +109,7 @@ private:
     size_t addDraw(DrawType drawType, size_t* size) {
         size_t offset = fWriter.bytesWritten();
 
-        this->predrawNotify();
+        SkASSERT_RELEASE(this->predrawNotify());
 
         SkASSERT(0 != *size);
         SkASSERT(((uint8_t) drawType) == drawType);
@@ -144,6 +151,7 @@ private:
     void addSampling(const SkSamplingOptions&);
     void addText(const void* text, size_t byteLength);
     void addTextBlob(const SkTextBlob* blob);
+    void addSlug(const sktext::gpu::Slug* slug);
     void addVertices(const SkVertices*);
 
     int find(const SkBitmap& bitmap);
@@ -163,7 +171,6 @@ protected:
     bool onDoSaveBehind(const SkRect*) override;
     void willRestore() override;
 
-    void onMarkCTM(const char*) override;
     void didConcat44(const SkM44&) override;
     void didSetM44(const SkM44&) override;
     void didScale(SkScalar, SkScalar) override;
@@ -173,7 +180,9 @@ protected:
 
     void onDrawTextBlob(const SkTextBlob* blob, SkScalar x, SkScalar y,
                                 const SkPaint& paint) override;
-
+#if defined(SK_GANESH)
+    void onDrawSlug(const sktext::gpu::Slug* slug) override;
+#endif
     void onDrawPatch(const SkPoint cubics[12], const SkColor colors[4],
                      const SkPoint texCoords[4], SkBlendMode, const SkPaint& paint) override;
 
@@ -233,20 +242,23 @@ protected:
     void recordRestore(bool fillInSkips = true);
 
 private:
-    SkTArray<SkPaint>  fPaints;
+    skia_private::TArray<SkPaint>  fPaints;
 
     struct PathHash {
         uint32_t operator()(const SkPath& p) { return p.getGenerationID(); }
     };
-    SkTHashMap<SkPath, int, PathHash> fPaths;
+    skia_private::THashMap<SkPath, int, PathHash> fPaths;
 
     SkWriter32 fWriter;
 
-    SkTArray<sk_sp<const SkImage>>    fImages;
-    SkTArray<sk_sp<const SkPicture>>  fPictures;
-    SkTArray<sk_sp<SkDrawable>>       fDrawables;
-    SkTArray<sk_sp<const SkTextBlob>> fTextBlobs;
-    SkTArray<sk_sp<const SkVertices>> fVertices;
+    skia_private::TArray<sk_sp<const SkImage>>    fImages;
+    skia_private::TArray<sk_sp<const SkPicture>>  fPictures;
+    skia_private::TArray<sk_sp<SkDrawable>>       fDrawables;
+    skia_private::TArray<sk_sp<const SkTextBlob>> fTextBlobs;
+    skia_private::TArray<sk_sp<const SkVertices>> fVertices;
+#if defined(SK_GANESH)
+    skia_private::TArray<sk_sp<const sktext::gpu::Slug>> fSlugs;
+#endif
 
     uint32_t fRecordFlags;
     int      fInitialSaveCount;

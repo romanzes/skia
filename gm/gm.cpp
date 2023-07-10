@@ -6,7 +6,8 @@
  */
 
 #include "gm/gm.h"
-#include "gm/verifiers/gmverifier.h"
+
+#include "gm/verifiers/gmverifier.h"  // IWYU pragma: keep
 #include "include/core/SkBitmap.h"
 #include "include/core/SkBlendMode.h"
 #include "include/core/SkCanvas.h"
@@ -15,21 +16,22 @@
 #include "include/core/SkMatrix.h"
 #include "include/core/SkPaint.h"
 #include "include/core/SkRect.h"
-#include "include/core/SkShader.h"
+#include "include/core/SkSamplingOptions.h"
+#include "include/core/SkShader.h"  // IWYU pragma: keep
 #include "include/core/SkTileMode.h"
-#include "include/core/SkTypeface.h"
 #include "include/gpu/GrRecordingContext.h"
-#include "src/core/SkCanvasPriv.h"
 #include "src/core/SkTraceEvent.h"
 #include "tools/ToolUtils.h"
 
-#include <stdarg.h>
+#include <atomic>
+#include <cstdarg>
+#include <cstdint>
 
 using namespace skiagm;
 
-constexpr char GM::kErrorMsg_DrawSkippedGpuOnly[];
+static void draw_failure_message(SkCanvas* canvas, const char format[], ...) SK_PRINTF_LIKE(2, 3);
 
-static void draw_failure_message(SkCanvas* canvas, const char format[], ...)  {
+static void draw_failure_message(SkCanvas* canvas, const char format[], ...) {
     SkString failureMsg;
 
     va_list argp;
@@ -81,13 +83,13 @@ GM::GM(SkColor bgColor) {
 
 GM::~GM() {}
 
-DrawResult GM::gpuSetup(GrDirectContext* context, SkCanvas* canvas, SkString* errorMsg) {
+DrawResult GM::gpuSetup(SkCanvas* canvas, SkString* errorMsg) {
     TRACE_EVENT1("GM", TRACE_FUNC, "name", TRACE_STR_COPY(this->getName()));
     if (!fGpuSetup) {
         // When drawn in viewer, gpuSetup will be called multiple times with the same
         // GrContext.
         fGpuSetup = true;
-        fGpuSetupResult = this->onGpuSetup(context, errorMsg);
+        fGpuSetupResult = this->onGpuSetup(canvas, errorMsg);
     }
     if (DrawResult::kOk != fGpuSetupResult) {
         handle_gm_failure(canvas, fGpuSetupResult, *errorMsg);
@@ -185,6 +187,10 @@ void GM::drawSizeBounds(SkCanvas* canvas, SkColor color) {
 
 // need to explicitly declare this, or we get some weird infinite loop llist
 template GMRegistry* GMRegistry::gHead;
+
+std::unique_ptr<verifiers::VerifierList> GpuGM::getVerifiers() const {
+    return nullptr;
+}
 
 DrawResult GpuGM::onDraw(GrRecordingContext* rContext, SkCanvas* canvas, SkString* errorMsg) {
     this->onDraw(rContext, canvas);

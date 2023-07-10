@@ -9,25 +9,25 @@
 
 #include "include/core/SkCanvas.h"
 #include "include/core/SkRect.h"
-#include "include/private/SkSafe32.h"
+#include "include/private/base/SkSafe32.h"
 #include "src/core/SkFuzzLogging.h"
 #include "src/core/SkImageFilterCache.h"
 #include "src/core/SkImageFilter_Base.h"
 #include "src/core/SkLocalMatrixImageFilter.h"
-#include "src/core/SkMatrixImageFilter.h"
 #include "src/core/SkReadBuffer.h"
 #include "src/core/SkSpecialImage.h"
 #include "src/core/SkSpecialSurface.h"
 #include "src/core/SkValidationUtils.h"
 #include "src/core/SkWriteBuffer.h"
-#if SK_SUPPORT_GPU
+#if defined(SK_GANESH)
 #include "include/gpu/GrRecordingContext.h"
-#include "src/gpu/GrColorSpaceXform.h"
-#include "src/gpu/GrDirectContextPriv.h"
-#include "src/gpu/GrRecordingContextPriv.h"
-#include "src/gpu/GrTextureProxy.h"
-#include "src/gpu/SkGr.h"
-#include "src/gpu/SurfaceFillContext.h"
+#include "src/gpu/SkBackingFit.h"
+#include "src/gpu/ganesh/GrColorSpaceXform.h"
+#include "src/gpu/ganesh/GrDirectContextPriv.h"
+#include "src/gpu/ganesh/GrRecordingContextPriv.h"
+#include "src/gpu/ganesh/GrTextureProxy.h"
+#include "src/gpu/ganesh/SkGr.h"
+#include "src/gpu/ganesh/SurfaceFillContext.h"
 #endif
 #include <atomic>
 
@@ -60,7 +60,7 @@ SkIRect SkImageFilter::filterBounds(const SkIRect& src, const SkMatrix& ctm,
     // The old filterBounds() function uses SkIRects that are defined in layer space so, while
     // we still are supporting it, bypass SkIF_B's new public filter bounds functions and go right
     // to the internal layer-space calculations.
-    skif::Mapping mapping(SkMatrix::I(), ctm);
+    skif::Mapping mapping{ctm};
     if (kReverse_MapDirection == direction) {
         skif::LayerSpace<SkIRect> targetOutput(src);
         if (as_IFB(this)->cropRectIsSet()) {
@@ -139,8 +139,6 @@ sk_sp<SkImageFilter> SkImageFilter::makeWithLocalMatrix(const SkMatrix& matrix) 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 // SkImageFilter_Base
 ///////////////////////////////////////////////////////////////////////////////////////////////////
-
-SK_USE_FLUENT_IMAGE_FILTER_TYPES
 
 static int32_t next_image_filter_unique_id() {
     static std::atomic<int32_t> nextID{1};
@@ -221,15 +219,18 @@ void SkImageFilter_Base::flatten(SkWriteBuffer& buffer) const {
     buffer.writeUInt(fCropRect.flags());
 }
 
-skif::FilterResult<For::kOutput> SkImageFilter_Base::filterImage(const skif::Context& context) const {
+skif::FilterResult SkImageFilter_Base::filterImage(const skif::Context& context) const {
     // TODO (michaelludwig) - Old filters have an implicit assumption that the source image
     // (originally passed separately) has an origin of (0, 0). SkComposeImageFilter makes an effort
     // to ensure that remains the case. Once everyone uses the new type systems for bounds, non
     // (0, 0) source origins will be easy to support.
-    SkASSERT(context.source().layerOrigin().x() == 0 && context.source().layerOrigin().y() == 0);
+    SkASSERT(context.source().layerBounds().left() == 0 &&
+             context.source().layerBounds().top() == 0 &&
+             context.source().layerBounds().right() == context.source().image()->width() &&
+             context.source().layerBounds().bottom() == context.source().image()->height());
 
-    skif::FilterResult<For::kOutput> result;
-    if (!context.isValid()) {
+    skif::FilterResult result;
+    if (context.desiredOutput().isEmpty() || !context.isValid()) {
         return result;
     }
 
@@ -284,6 +285,11 @@ skif::LayerSpace<SkIRect> SkImageFilter_Base::getInputBounds(
             mapping, desiredBounds, contentBounds);
     // If we know what's actually going to be drawn into the layer, and we don't change transparent
     // black, then we can further restrict the layer to what the known content is
+    // TODO (michaelludwig) - This logic could be moved into visitInputLayerBounds() when an input
+    // filter is null. Additionally, once all filters are robust to FilterResults with tile modes,
+    // we can always restrict the required input by content bounds since any additional transparent
+    // black is handled when producing the output result and sampling outside the input image with
+    // a decal tile mode.
     if (knownContentBounds && !this->affectsTransparentBlack()) {
         if (!requiredInput.intersect(contentBounds)) {
             // Nothing would be output by the filter, so return empty rect
@@ -313,10 +319,10 @@ skif::DeviceSpace<SkIRect> SkImageFilter_Base::getOutputBounds(
 
 // TODO (michaelludwig) - Default to using the old onFilterImage, as filters are updated one by one.
 // Once the old function is gone, this onFilterImage() will be made a pure virtual.
-skif::FilterResult<For::kOutput> SkImageFilter_Base::onFilterImage(const skif::Context& context) const {
-    SkIPoint origin;
+skif::FilterResult SkImageFilter_Base::onFilterImage(const skif::Context& context) const {
+    SkIPoint origin = {0, 0};
     auto image = this->onFilterImage(context, &origin);
-    return skif::FilterResult<For::kOutput>(std::move(image), skif::LayerSpace<SkIPoint>(origin));
+    return skif::FilterResult(std::move(image), skif::LayerSpace<SkIPoint>(origin));
 }
 
 SkImageFilter_Base::MatrixCapability SkImageFilter_Base::getCTMCapability() const {
@@ -475,7 +481,8 @@ skif::LayerSpace<SkIRect> SkImageFilter_Base::visitInputLayerBounds(
         // TODO (michaelludwig) - if a filter doesn't have any inputs, it doesn't need any
         // implicit source image, so arguably we could return an empty rect here. 'desiredOutput' is
         // consistent with original behavior, so empty bounds may have unintended side effects
-        // but should be explored later.
+        // but should be explored later. Of note is that right now an empty layer bounds assumes
+        // that there's no need to filter on restore, which is not the case for these filters.
         return desiredOutput;
     }
 
@@ -484,6 +491,10 @@ skif::LayerSpace<SkIRect> SkImageFilter_Base::visitInputLayerBounds(
         const SkImageFilter* filter = this->getInput(i);
         // The required input for this input filter, or 'targetOutput' if the filter is null and
         // the source image is used (so must be sized to cover 'targetOutput').
+        // TODO (michaelludwig) - Right now contentBounds is applied conditionally at the end of
+        // the root getInputLayerBounds() based on affecting transparent black. Once that bit only
+        // changes output behavior, we can have the required bounds for a null input filter be the
+        // intersection of the desired output and the content bounds.
         skif::LayerSpace<SkIRect> requiredInput =
                 filter ? as_IFB(filter)->onGetInputLayerBounds(mapping, desiredOutput,
                                                                contentBounds)
@@ -529,7 +540,7 @@ skif::LayerSpace<SkIRect> SkImageFilter_Base::onGetInputLayerBounds(
         const skif::Mapping& mapping, const skif::LayerSpace<SkIRect>& desiredOutput,
         const skif::LayerSpace<SkIRect>& contentBounds, VisitChildren recurse) const {
     // Call old functions for now since they may have been overridden by a subclass that's not been
-    // updated yet; normally this would just default to visitInputLayerBounds()
+    // updated yet; eventually this will be a pure virtual and impls control visiting children
     SkIRect content = SkIRect(contentBounds);
     SkIRect input = this->onFilterNodeBounds(SkIRect(desiredOutput), mapping.layerMatrix(),
                                              kReverse_MapDirection, &content);
@@ -544,7 +555,7 @@ skif::LayerSpace<SkIRect> SkImageFilter_Base::onGetInputLayerBounds(
 
 skif::LayerSpace<SkIRect> SkImageFilter_Base::onGetOutputLayerBounds(
         const skif::Mapping& mapping, const skif::LayerSpace<SkIRect>& contentBounds) const {
-    // Call old functions for now; normally this would default to visitOutputLayerBounds()
+    // Call old functions for now; eventually this will be a pure virtual
     SkIRect aggregate = this->onFilterBounds(SkIRect(contentBounds), mapping.layerMatrix(),
                                              kForward_MapDirection, nullptr);
     SkIRect output = this->onFilterNodeBounds(aggregate, mapping.layerMatrix(),
@@ -552,28 +563,18 @@ skif::LayerSpace<SkIRect> SkImageFilter_Base::onGetOutputLayerBounds(
     return skif::LayerSpace<SkIRect>(output);
 }
 
-template<skif::Usage kU>
-skif::FilterResult<kU> SkImageFilter_Base::filterInput(int index, const skif::Context& ctx) const {
-    SkASSERT(kU != skif::Usage::kInput0 || index == 0);
-    SkASSERT(kU != skif::Usage::kInput1 || index == 1);
-
+skif::FilterResult SkImageFilter_Base::filterInput(int index, const skif::Context& ctx) const {
     const SkImageFilter* input = this->getInput(index);
     if (!input) {
-        // Convert from the generic kInput of the source image to kU
-        return static_cast<skif::FilterResult<kU>>(ctx.source());
+        // Null image filters late bind to the source image
+        return ctx.source();
     }
 
-    skif::FilterResult<For::kOutput> result = as_IFB(input)->filterImage(this->mapContext(ctx));
+    skif::FilterResult result = as_IFB(input)->filterImage(this->mapContext(ctx));
     SkASSERT(!result.image() || ctx.gpuBacked() == result.image()->isTextureBacked());
 
-    // Map the output result of the input image filter to the input usage requested for this filter
-    return static_cast<skif::FilterResult<kU>>(std::move(result));
+    return result;
 }
-// Instantiate filterInput() for kInput, kInput0, and kInput1. This does not provide a definition
-// for kOutput, which should never be used anyways, and this way the linker will fail for us then.
-template skif::FilterResult<For::kInput> SkImageFilter_Base::filterInput(int, const skif::Context&) const;
-template skif::FilterResult<For::kInput0> SkImageFilter_Base::filterInput(int, const skif::Context&) const;
-template skif::FilterResult<For::kInput1> SkImageFilter_Base::filterInput(int, const skif::Context&) const;
 
 SkImageFilter_Base::Context SkImageFilter_Base::mapContext(const Context& ctx) const {
     // We don't recurse through the child input filters because that happens automatically
@@ -584,13 +585,14 @@ SkImageFilter_Base::Context SkImageFilter_Base::mapContext(const Context& ctx) c
     return ctx.withNewDesiredOutput(childOutput);
 }
 
-#if SK_SUPPORT_GPU
+#if defined(SK_GANESH)
 sk_sp<SkSpecialImage> SkImageFilter_Base::DrawWithFP(GrRecordingContext* rContext,
                                                      std::unique_ptr<GrFragmentProcessor> fp,
                                                      const SkIRect& bounds,
                                                      SkColorType colorType,
                                                      const SkColorSpace* colorSpace,
                                                      const SkSurfaceProps& surfaceProps,
+                                                     GrSurfaceOrigin surfaceOrigin,
                                                      GrProtected isProtected) {
     GrImageInfo info(SkColorTypeToGrColorType(colorType),
                      kPremul_SkAlphaType,
@@ -598,11 +600,12 @@ sk_sp<SkSpecialImage> SkImageFilter_Base::DrawWithFP(GrRecordingContext* rContex
                      bounds.size());
 
     auto sfc = rContext->priv().makeSFC(info,
+                                        "ImageFilterBase_DrawWithFP",
                                         SkBackingFit::kApprox,
                                         1,
                                         GrMipmapped::kNo,
                                         isProtected,
-                                        kBottomLeft_GrSurfaceOrigin);
+                                        surfaceOrigin);
     if (!sfc) {
         return nullptr;
     }
@@ -615,8 +618,7 @@ sk_sp<SkSpecialImage> SkImageFilter_Base::DrawWithFP(GrRecordingContext* rContex
                                                dstIRect,
                                                kNeedNewImageUniqueID_SpecialImage,
                                                sfc->readSurfaceView(),
-                                               sfc->colorInfo().colorType(),
-                                               sfc->colorInfo().refColorSpace(),
+                                               sfc->colorInfo(),
                                                surfaceProps);
 }
 

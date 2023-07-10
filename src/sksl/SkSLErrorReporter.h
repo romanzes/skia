@@ -1,59 +1,55 @@
 /*
- * Copyright 2016 Google Inc.
+ * Copyright 2021 Google LLC.
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
 
-#ifndef SKSL_ERRORREPORTER
-#define SKSL_ERRORREPORTER
+#ifndef SKSL_ERROR_REPORTER
+#define SKSL_ERROR_REPORTER
 
-#include "include/sksl/DSLErrorHandling.h"
-#include "src/sksl/SkSLPosition.h"
-#include "src/sksl/SkSLPosition.h"
+#include "include/core/SkTypes.h"
+
+#include <string_view>
 
 namespace SkSL {
 
+class Position;
+
 /**
- * Extends dsl::ErrorHandler to add offset-based error reporting for usage by Compiler.
+ * Class which is notified in the event of an error.
  */
-class ErrorReporter : public dsl::ErrorHandler {
+class ErrorReporter {
 public:
     ErrorReporter() {}
 
-    ErrorReporter(const char* filename, const char* source)
-        : fFilename(filename)
-        , fSource(source) {}
+    virtual ~ErrorReporter() {}
 
-    /** Reports an error message at the given character offset of the source text. */
-    void error(int offset, String msg) {
-        this->handleError(msg.c_str(), this->position(offset));
+    void error(Position position, std::string_view msg);
+
+    std::string_view source() const { return fSource; }
+
+    void setSource(std::string_view source) { fSource = source; }
+
+    int errorCount() const {
+        return fErrorCount;
     }
 
-    void error(int offset, const char* msg) {
-        this->handleError(msg, this->position(offset));
+    void resetErrorCount() {
+        fErrorCount = 0;
     }
 
-    /** Returns the number of errors that have been reported. */
-    virtual int errorCount() = 0;
-
-    const char* fFilename = nullptr;
-    const char* fSource = nullptr;
+protected:
+    /**
+     * Called when an error is reported.
+     */
+    virtual void handleError(std::string_view msg, Position position) = 0;
 
 private:
-    dsl::PositionInfo position(int offset) const {
-        if (fSource && offset >= 0) {
-            int line = 1;
-            for (int i = 0; i < offset; i++) {
-                if (fSource[i] == '\n') {
-                    ++line;
-                }
-            }
-            return dsl::PositionInfo(fFilename, line);
-        } else {
-            return dsl::PositionInfo(fFilename, -1);
-        }
-    }
+    Position position(int offset) const;
+
+    std::string_view fSource;
+    int fErrorCount = 0;
 };
 
 /**
@@ -61,10 +57,9 @@ private:
  */
 class TestingOnly_AbortErrorReporter : public ErrorReporter {
 public:
-    void handleError(const char* msg, dsl::PositionInfo pos) override { SK_ABORT("%s", msg); }
-    int errorCount() override { return 0; }
+    void handleError(std::string_view msg, Position pos) override;
 };
 
-}  // namespace SkSL
+} // namespace SkSL
 
 #endif

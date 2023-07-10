@@ -10,6 +10,7 @@
 #include "include/core/SkRefCnt.h"
 #include "include/core/SkSurface.h"
 #include "include/ports/SkCFObject.h"
+#include "include/private/gpu/ganesh/GrMtlTypesPriv.h"
 
 #include "tools/sk_app/WindowContext.h"
 
@@ -23,8 +24,6 @@ public:
     sk_sp<SkSurface> getBackbufferSurface() override;
 
     bool isValid() override { return fValid; }
-
-    void swapBuffers() override;
 
     void setDisplayParams(const DisplayParams& params) override;
 
@@ -44,6 +43,8 @@ protected:
     // onDestroyContext().
     void destroyContext();
     virtual void onDestroyContext() = 0;
+
+    void onSwapBuffers() override;
 
     bool                        fValid;
     sk_cfp<id<MTLDevice>>       fDevice;

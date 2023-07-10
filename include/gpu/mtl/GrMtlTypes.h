@@ -8,14 +8,16 @@
 #ifndef GrMtlTypes_DEFINED
 #define GrMtlTypes_DEFINED
 
-#include "include/gpu/GrTypes.h"
+#include "include/gpu/GpuTypes.h"
 #include "include/ports/SkCFObject.h"
 
 /**
  * Declares typedefs for Metal types used in Ganesh cpp code
  */
-typedef unsigned int GrMTLPixelFormat;
-typedef const void*  GrMTLHandle;
+using GrMTLPixelFormat = unsigned int;
+using GrMTLTextureUsage = unsigned int;
+using GrMTLStorageMode = unsigned int;
+using GrMTLHandle = const void*;
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -42,6 +44,18 @@ public:
     bool operator==(const GrMtlTextureInfo& that) const {
         return fTexture == that.fTexture;
     }
+};
+
+struct GrMtlSurfaceInfo {
+    uint32_t fSampleCount = 1;
+    uint32_t fLevelCount = 0;
+    skgpu::Protected fProtected = skgpu::Protected::kNo;
+
+    // Since we aren't in an Obj-C header we can't directly use Mtl types here. Each of these can
+    // cast to their mapped Mtl types list below.
+    GrMTLPixelFormat fFormat = 0;       // MTLPixelFormat fFormat = MTLPixelFormatInvalid;
+    GrMTLTextureUsage fUsage = 0;       // MTLTextureUsage fUsage = MTLTextureUsageUnknown;
+    GrMTLStorageMode fStorageMode = 0;  // MTLStorageMode fStorageMode = MTLStorageModeShared;
 };
 
 #endif

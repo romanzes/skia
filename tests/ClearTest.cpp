@@ -5,34 +5,47 @@
  * found in the LICENSE file.
  */
 
+#include "include/core/SkAlphaType.h"
 #include "include/core/SkBitmap.h"
 #include "include/core/SkCanvas.h"
 #include "include/core/SkColor.h"
 #include "include/core/SkColorSpace.h"
+#include "include/core/SkColorType.h"
 #include "include/core/SkImageInfo.h"
 #include "include/core/SkPaint.h"
 #include "include/core/SkRect.h"
 #include "include/core/SkRefCnt.h"
 #include "include/core/SkSurface.h"
+#include "include/core/SkSurfaceProps.h"
 #include "include/core/SkTypes.h"
+#include "include/gpu/GpuTypes.h"
 #include "include/gpu/GrContextOptions.h"
 #include "include/gpu/GrDirectContext.h"
-#include "include/private/GrTypesPriv.h"
 #include "include/private/SkColorData.h"
+#include "include/private/gpu/ganesh/GrTypesPriv.h"
 #include "src/core/SkAutoPixmapStorage.h"
-#include "src/gpu/GrColor.h"
-#include "src/gpu/GrDirectContextPriv.h"
-#include "src/gpu/GrImageInfo.h"
-#include "src/gpu/ops/GrClearOp.h"
-#include "src/gpu/v1/SurfaceDrawContext_v1.h"
+#include "src/gpu/SkBackingFit.h"
+#include "src/gpu/ganesh/GrCaps.h"
+#include "src/gpu/ganesh/GrColor.h"
+#include "src/gpu/ganesh/GrDirectContextPriv.h"
+#include "src/gpu/ganesh/SurfaceDrawContext.h"
+#include "src/gpu/ganesh/ops/ClearOp.h"
+#include "src/gpu/ganesh/ops/GrOp.h"
+#include "src/gpu/ganesh/ops/OpsTask.h"
+#include "tests/CtsEnforcement.h"
 #include "tests/Test.h"
-#include "tools/gpu/GrContextFactory.h"
 
+#include <array>
 #include <cstdint>
 #include <memory>
 
+class GrRecordingContext;
+
+using SurfaceDrawContext = skgpu::ganesh::SurfaceDrawContext;
+using ClearOp = skgpu::ganesh::ClearOp;
+
 static bool check_rect(GrDirectContext* dContext,
-                       skgpu::v1::SurfaceDrawContext* sdc,
+                       SurfaceDrawContext* sdc,
                        const SkIRect& rect,
                        uint32_t expectedValue,
                        uint32_t* actualValue,
@@ -65,10 +78,10 @@ static bool check_rect(GrDirectContext* dContext,
     return true;
 }
 
-std::unique_ptr<skgpu::v1::SurfaceDrawContext> newSDC(GrRecordingContext* rContext, int w, int h) {
-    return skgpu::v1::SurfaceDrawContext::Make(
-            rContext, GrColorType::kRGBA_8888, nullptr, SkBackingFit::kExact, {w, h},
-            SkSurfaceProps());
+std::unique_ptr<SurfaceDrawContext> newSDC(GrRecordingContext* rContext, int w, int h) {
+    return SurfaceDrawContext::Make(rContext, GrColorType::kRGBA_8888, nullptr,
+                                    SkBackingFit::kExact, {w, h}, SkSurfaceProps(),
+                                    /*label=*/{});
 }
 
 static void clear_op_test(skiatest::Reporter* reporter, GrDirectContext* dContext) {
@@ -76,7 +89,7 @@ static void clear_op_test(skiatest::Reporter* reporter, GrDirectContext* dContex
     static const int kH = 10;
 
     SkIRect fullRect = SkIRect::MakeWH(kW, kH);
-    std::unique_ptr<skgpu::v1::SurfaceDrawContext> sdc;
+    std::unique_ptr<SurfaceDrawContext> sdc;
 
     // A rectangle that is inset by one on all sides and the 1-pixel wide rectangles that surround
     // it.
@@ -250,10 +263,10 @@ static void clear_op_test(skiatest::Reporter* reporter, GrDirectContext* dContex
             // This should combine w/ the prior combined clear and overwrite the color
             sdc->clear(kScissorRect, SK_PMColor4fBLACK);
 
-            GrOpsTask* ops = sdc->getOpsTask();
-            REPORTER_ASSERT(reporter, ops->numOpChains() == 1);
+            auto opsTask = sdc->getOpsTask();
+            REPORTER_ASSERT(reporter, opsTask->numOpChains() == 1);
 
-            const GrClearOp& clearOp = ops->getChain(0)->cast<GrClearOp>();
+            const ClearOp& clearOp = opsTask->getChain(0)->cast<ClearOp>();
 
             constexpr std::array<float, 4> kExpected { 0, 0, 0, 1 };
             REPORTER_ASSERT(reporter, clearOp.color() == kExpected);
@@ -276,10 +289,10 @@ static void clear_op_test(skiatest::Reporter* reporter, GrDirectContext* dContex
             // field
             sdc->clearStencilClip(kScissorRect, false);
 
-            GrOpsTask* ops = sdc->getOpsTask();
-            REPORTER_ASSERT(reporter, ops->numOpChains() == 1);
+            auto opsTask = sdc->getOpsTask();
+            REPORTER_ASSERT(reporter, opsTask->numOpChains() == 1);
 
-            const GrClearOp& clearOp = ops->getChain(0)->cast<GrClearOp>();
+            const ClearOp& clearOp = opsTask->getChain(0)->cast<ClearOp>();
 
             constexpr std::array<float, 4> kExpected { 1, 1, 1, 1 };
             REPORTER_ASSERT(reporter, clearOp.color() == kExpected);
@@ -290,7 +303,7 @@ static void clear_op_test(skiatest::Reporter* reporter, GrDirectContext* dContex
     }
 }
 
-DEF_GPUTEST_FOR_RENDERING_CONTEXTS(ClearOp, reporter, ctxInfo) {
+DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(ClearOp, reporter, ctxInfo, CtsEnforcement::kApiLevel_T) {
     // Regular clear
     clear_op_test(reporter, ctxInfo.directContext());
 
@@ -304,7 +317,7 @@ DEF_GPUTEST_FOR_RENDERING_CONTEXTS(ClearOp, reporter, ctxInfo) {
 void fullscreen_clear_with_layer_test(skiatest::Reporter* reporter, GrRecordingContext* rContext) {
     const SkImageInfo ii = SkImageInfo::Make(400, 77, kRGBA_8888_SkColorType, kPremul_SkAlphaType);
 
-    sk_sp<SkSurface> surf = SkSurface::MakeRenderTarget(rContext, SkBudgeted::kYes, ii);
+    sk_sp<SkSurface> surf = SkSurface::MakeRenderTarget(rContext, skgpu::Budgeted::kYes, ii);
     SkCanvas* canvas = surf->getCanvas();
 
     SkPaint paints[2];
@@ -356,7 +369,10 @@ void fullscreen_clear_with_layer_test(skiatest::Reporter* reporter, GrRecordingC
     REPORTER_ASSERT(reporter, isCorrect);
 }
 // From crbug.com/768134
-DEF_GPUTEST_FOR_RENDERING_CONTEXTS(FullScreenClearWithLayers, reporter, ctxInfo) {
+DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(FullScreenClearWithLayers,
+                                       reporter,
+                                       ctxInfo,
+                                       CtsEnforcement::kApiLevel_T) {
     // Regular clear
     fullscreen_clear_with_layer_test(reporter, ctxInfo.directContext());
 

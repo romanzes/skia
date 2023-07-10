@@ -6,6 +6,7 @@
  */
 
 #include "include/core/SkStream.h"
+#include "include/ports/SkFontMgr_data.h"
 #include "src/core/SkFontDescriptor.h"
 #include "src/ports/SkFontMgr_custom.h"
 
@@ -65,7 +66,7 @@ public:
 static SkFontStyleSet_Custom* find_family(SkFontMgr_Custom::Families& families,
                                           const char familyName[])
 {
-   for (int i = 0; i < families.count(); ++i) {
+   for (int i = 0; i < families.size(); ++i) {
         if (families[i]->getFamilyName().equals(familyName)) {
             return families[i].get();
         }
@@ -99,10 +100,10 @@ static void load_font_from_data(const SkTypeface_FreeType::Scanner& scanner,
             addTo = new SkFontStyleSet_Custom(realname);
             families->push_back().reset(addTo);
         }
-        auto data = std::make_unique<SkFontData>(stream->duplicate(), faceIndex, nullptr, 0);
-        addTo->appendTypeface(sk_make_sp<SkTypeface_Stream>(std::move(data),
-                                                            style, isFixedPitch,
-                                                            true, realname));
+        auto data = std::make_unique<SkFontData>(stream->duplicate(), faceIndex, 0,
+                                                 nullptr, 0, nullptr, 0);
+        addTo->appendTypeface(sk_make_sp<SkTypeface_FreeTypeStream>(
+            std::move(data), realname, style, isFixedPitch));
     }
 }
 
@@ -110,9 +111,7 @@ sk_sp<SkFontMgr> SkFontMgr_New_Custom_Embedded(const SkEmbeddedResourceHeader* h
     return sk_make_sp<SkFontMgr_Custom>(EmbeddedSystemFontLoader(header));
 }
 
-// SkFontMgr_New_Custom_Data expects to be called with the data for n font files.
-sk_sp<SkFontMgr> SkFontMgr_New_Custom_Data(sk_sp<SkData>* datas, int n) {
-    SkASSERT(datas != nullptr);
-    SkASSERT(n > 0);
-    return sk_make_sp<SkFontMgr_Custom>(DataFontLoader(datas, n));
+sk_sp<SkFontMgr> SkFontMgr_New_Custom_Data(SkSpan<sk_sp<SkData>> datas) {
+    SkASSERT(!datas.empty());
+    return sk_make_sp<SkFontMgr_Custom>(DataFontLoader(datas.data(), datas.size()));
 }

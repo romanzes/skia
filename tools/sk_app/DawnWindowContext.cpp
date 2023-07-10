@@ -8,7 +8,7 @@
 #include "include/core/SkSurface.h"
 #include "include/gpu/GrBackendSurface.h"
 #include "include/gpu/GrDirectContext.h"
-#include "src/core/SkAutoMalloc.h"
+#include "src/base/SkAutoMalloc.h"
 #include "tools/sk_app/DawnWindowContext.h"
 
 #include "dawn/dawn_proc.h"
@@ -21,13 +21,25 @@ static void PrintDeviceError(WGPUErrorType, const char* message, void*) {
     SkASSERT(false);
 }
 
+static wgpu::SwapChainDescriptor CreateSwapChainDesc(int width,
+                                                     int height,
+                                                     wgpu::TextureFormat format) {
+    wgpu::SwapChainDescriptor desc;
+    desc.format = format;
+    desc.usage = kUsage;
+    desc.width = width;
+    desc.height = height;
+    desc.presentMode = wgpu::PresentMode::Mailbox;
+    return desc;
+}
+
 namespace sk_app {
 
 DawnWindowContext::DawnWindowContext(const DisplayParams& params,
                                      wgpu::TextureFormat swapChainFormat)
     : WindowContext(params)
     , fSwapChainFormat(swapChainFormat)
-    , fInstance(std::make_unique<dawn_native::Instance>()) {
+    , fInstance(std::make_unique<dawn::native::Instance>()) {
 }
 
 void DawnWindowContext::initializeContext(int width, int height) {
@@ -41,15 +53,15 @@ void DawnWindowContext::initializeContext(int width, int height) {
     if (!fContext) {
         return;
     }
-    fSwapChainImplementation = this->createSwapChainImplementation(-1, -1, fDisplayParams);
-    wgpu::SwapChainDescriptor swapChainDesc;
-    swapChainDesc.implementation = reinterpret_cast<int64_t>(&fSwapChainImplementation);
-    fSwapChain = fDevice.CreateSwapChain(nullptr, &swapChainDesc);
+
+    wgpu::SwapChainDescriptor swapChainDesc =
+        CreateSwapChainDesc(width, height, fSwapChainFormat);
+    fSwapChain = fDevice.CreateSwapChain(fDawnSurface, &swapChainDesc);
     if (!fSwapChain) {
         fContext.reset();
         return;
     }
-    fSwapChain.Configure(fSwapChainFormat, kUsage, width, height);
+
     fDevice.SetUncapturedErrorCallback(PrintDeviceError, 0);
 }
 
@@ -83,37 +95,36 @@ sk_sp<SkSurface> DawnWindowContext::getBackbufferSurface() {
     return fSurface;
 }
 
-void DawnWindowContext::swapBuffers() {
+void DawnWindowContext::onSwapBuffers() {
     fSwapChain.Present();
-    this->onSwapBuffers();
 }
 
 void DawnWindowContext::resize(int w, int h) {
     fWidth = w;
     fHeight = h;
-    fSwapChainImplementation = this->createSwapChainImplementation(w, h, fDisplayParams);
-    wgpu::SwapChainDescriptor swapChainDesc;
-    swapChainDesc.implementation = reinterpret_cast<int64_t>(&fSwapChainImplementation);
-    fSwapChain = fDevice.CreateSwapChain(nullptr, &swapChainDesc);
+    wgpu::SwapChainDescriptor swapChainDesc =
+        CreateSwapChainDesc(w, h, fSwapChainFormat);
+    fSwapChain = fDevice.CreateSwapChain(fDawnSurface, &swapChainDesc);
     if (!fSwapChain) {
         fContext.reset();
         return;
     }
-    fSwapChain.Configure(fSwapChainFormat, kUsage, fWidth, fHeight);
 }
 
 void DawnWindowContext::setDisplayParams(const DisplayParams& params) {
     fDisplayParams = params;
 }
 
-wgpu::Device DawnWindowContext::createDevice(dawn_native::BackendType type) {
+wgpu::Device DawnWindowContext::createDevice(wgpu::BackendType type) {
     fInstance->DiscoverDefaultAdapters();
-    DawnProcTable backendProcs = dawn_native::GetProcs();
+    DawnProcTable backendProcs = dawn::native::GetProcs();
     dawnProcSetProcs(&backendProcs);
 
-    std::vector<dawn_native::Adapter> adapters = fInstance->GetAdapters();
-    for (dawn_native::Adapter adapter : adapters) {
-        if (adapter.GetBackendType() == type) {
+    std::vector<dawn::native::Adapter> adapters = fInstance->GetAdapters();
+    for (dawn::native::Adapter adapter : adapters) {
+        wgpu::AdapterProperties properties;
+        adapter.GetProperties(&properties);
+        if (properties.backendType == type) {
             return adapter.CreateDevice();
         }
     }
