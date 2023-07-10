@@ -6,21 +6,25 @@
 namespace skia {
 namespace textlayout {
 
-const std::vector<SkString> TextStyle::kDefaultFontFamilies = { SkString(DEFAULT_FONT_FAMILY) };
+const std::vector<SkString>* TextStyle::kDefaultFontFamilies =
+        new std::vector<SkString>{SkString(DEFAULT_FONT_FAMILY)};
 
-TextStyle::TextStyle(const TextStyle& other, bool placeholder) {
-    fColor = other.fColor;
-    fFontSize = other.fFontSize;
-    fFontFamilies = other.fFontFamilies;
-    fDecoration = other.fDecoration;
-    fHasBackground = other.fHasBackground;
-    fHasForeground = other.fHasForeground;
-    fBackground = other.fBackground;
-    fForeground = other.fForeground;
-    fHeightOverride = other.fHeightOverride;
-    fIsPlaceholder = placeholder;
-    fFontFeatures = other.fFontFeatures;
-    fHalfLeading = other.fHalfLeading;
+TextStyle TextStyle::cloneForPlaceholder() {
+    TextStyle result;
+    result.fColor = fColor;
+    result.fFontSize = fFontSize;
+    result.fFontFamilies = fFontFamilies;
+    result.fDecoration = fDecoration;
+    result.fHasBackground = fHasBackground;
+    result.fHasForeground = fHasForeground;
+    result.fBackground = fBackground;
+    result.fForeground = fForeground;
+    result.fHeightOverride = fHeightOverride;
+    result.fIsPlaceholder = true;
+    result.fFontFeatures = fFontFeatures;
+    result.fHalfLeading = fHalfLeading;
+    result.fFontArguments = fFontArguments;
+    return result;
 }
 
 bool TextStyle::equals(const TextStyle& other) const {
@@ -48,6 +52,9 @@ bool TextStyle::equals(const TextStyle& other) const {
         return false;
     }
     if (fHeight != other.fHeight) {
+        return false;
+    }
+    if (fHeightOverride != other.fHeightOverride) {
         return false;
     }
     if (fHalfLeading != other.fHalfLeading) {
@@ -81,6 +88,9 @@ bool TextStyle::equals(const TextStyle& other) const {
             return false;
         }
     }
+    if (fFontArguments != other.fFontArguments) {
+        return false;
+    }
 
     return true;
 }
@@ -91,6 +101,7 @@ bool TextStyle::equalsByFonts(const TextStyle& that) const {
            fFontStyle == that.fFontStyle &&
            fFontFamilies == that.fFontFamilies &&
            fFontFeatures == that.fFontFeatures &&
+           fFontArguments == that.getFontArguments() &&
            nearlyEqual(fLetterSpacing, that.fLetterSpacing) &&
            nearlyEqual(fWordSpacing, that.fWordSpacing) &&
            nearlyEqual(fHeight, that.fHeight) &&
@@ -139,7 +150,8 @@ bool TextStyle::matchOneAttribute(StyleType styleType, const TextStyle& other) c
                    fFontFamilies == other.fFontFamilies &&
                    fFontSize == other.fFontSize &&
                    fHeight == other.fHeight &&
-                   fHalfLeading == other.fHalfLeading;
+                   fHalfLeading == other.fHalfLeading &&
+                   fFontArguments == other.fFontArguments;
         default:
             SkASSERT(false);
             return false;
@@ -162,6 +174,15 @@ void TextStyle::getFontMetrics(SkFontMetrics* metrics) const {
         metrics->fAscent = (metrics->fAscent - metrics->fLeading / 2);
         metrics->fDescent = (metrics->fDescent + metrics->fLeading / 2);
     }
+}
+
+void TextStyle::setFontArguments(const std::optional<SkFontArguments>& args) {
+    if (!args) {
+        fFontArguments.reset();
+        return;
+    }
+
+    fFontArguments.emplace(*args);
 }
 
 bool PlaceholderStyle::equals(const PlaceholderStyle& other) const {

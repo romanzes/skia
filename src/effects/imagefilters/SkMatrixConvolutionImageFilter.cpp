@@ -5,23 +5,44 @@
  * found in the LICENSE file.
  */
 
+#include "include/core/SkAlphaType.h"
 #include "include/core/SkBitmap.h"
+#include "include/core/SkColor.h"
+#include "include/core/SkColorPriv.h"
+#include "include/core/SkColorType.h"
+#include "include/core/SkFlattenable.h"
+#include "include/core/SkImageFilter.h"
+#include "include/core/SkImageInfo.h"
+#include "include/core/SkMath.h"
+#include "include/core/SkPoint.h"
 #include "include/core/SkRect.h"
+#include "include/core/SkRefCnt.h"
+#include "include/core/SkScalar.h"
+#include "include/core/SkSize.h"
 #include "include/core/SkTileMode.h"
-#include "include/core/SkUnPreMultiply.h"
+#include "include/core/SkTypes.h"
 #include "include/effects/SkImageFilters.h"
-#include "include/private/SkColorData.h"
 #include "include/private/SkTPin.h"
+#include "include/private/SkTemplates.h"
 #include "src/core/SkImageFilter_Base.h"
 #include "src/core/SkReadBuffer.h"
 #include "src/core/SkSpecialImage.h"
 #include "src/core/SkWriteBuffer.h"
 
+#include <cstdint>
+#include <cstring>
+#include <memory>
+#include <utility>
+class SkMatrix;
+
 #if SK_SUPPORT_GPU
-#include "src/gpu/GrRecordingContextPriv.h"
-#include "src/gpu/GrTextureProxy.h"
-#include "src/gpu/SkGr.h"
-#include "src/gpu/effects/GrMatrixConvolutionEffect.h"
+#include "include/gpu/GrRecordingContext.h"
+#include "src/gpu/ganesh/GrFragmentProcessor.h"
+#include "src/gpu/ganesh/GrRecordingContextPriv.h"
+#include "src/gpu/ganesh/GrSurfaceProxy.h"
+#include "src/gpu/ganesh/GrSurfaceProxyView.h"
+#include "src/gpu/ganesh/SkGr.h"
+#include "src/gpu/ganesh/effects/GrMatrixConvolutionEffect.h"
 #endif
 
 namespace {
@@ -372,6 +393,7 @@ sk_sp<SkSpecialImage> SkMatrixConvolutionImageFilter::onFilterImage(const Contex
         SkASSERT(inputView.asTextureProxy());
 
         const auto isProtected = inputView.proxy()->isProtected();
+        const auto origin = inputView.origin();
 
         offset->fX = dstBounds.left();
         offset->fY = dstBounds.top();
@@ -403,7 +425,7 @@ sk_sp<SkSpecialImage> SkMatrixConvolutionImageFilter::onFilterImage(const Contex
         // evaluating the FP, and the dst rect just uses the size of dstBounds.
         dstBounds.offset(input->subset().x(), input->subset().y());
         return DrawWithFP(context, std::move(fp), dstBounds, ctx.colorType(), ctx.colorSpace(),
-                          ctx.surfaceProps(), isProtected);
+                          ctx.surfaceProps(), origin, isProtected);
     }
 #endif
 

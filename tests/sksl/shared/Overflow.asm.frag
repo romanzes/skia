@@ -1,10 +1,10 @@
 OpCapability Shader
 %1 = OpExtInstImport "GLSL.std.450"
 OpMemoryModel Logical GLSL450
-OpEntryPoint Fragment %_entrypoint_v "_entrypoint" %sk_FragColor %sk_Clockwise
+OpEntryPoint Fragment %_entrypoint_v "_entrypoint" %sk_Clockwise %sk_FragColor
 OpExecutionMode %_entrypoint_v OriginUpperLeft
-OpName %sk_FragColor "sk_FragColor"
 OpName %sk_Clockwise "sk_Clockwise"
+OpName %sk_FragColor "sk_FragColor"
 OpName %_UniformBuffer "_UniformBuffer"
 OpMemberName %_UniformBuffer 0 "colorGreen"
 OpName %_entrypoint_v "_entrypoint_v"
@@ -16,10 +16,14 @@ OpName %hugeS "hugeS"
 OpName %hugeUS "hugeUS"
 OpName %hugeNI "hugeNI"
 OpName %hugeNS "hugeNS"
+OpName %i4 "i4"
+OpName %hugeIvec "hugeIvec"
+OpName %u4 "u4"
+OpName %hugeUvec "hugeUvec"
+OpDecorate %sk_Clockwise BuiltIn FrontFacing
 OpDecorate %sk_FragColor RelaxedPrecision
 OpDecorate %sk_FragColor Location 0
 OpDecorate %sk_FragColor Index 0
-OpDecorate %sk_Clockwise BuiltIn FrontFacing
 OpMemberDecorate %_UniformBuffer 0 Offset 0
 OpMemberDecorate %_UniformBuffer 0 RelaxedPrecision
 OpDecorate %_UniformBuffer Block
@@ -78,43 +82,51 @@ OpDecorate %161 RelaxedPrecision
 OpDecorate %162 RelaxedPrecision
 OpDecorate %163 RelaxedPrecision
 OpDecorate %164 RelaxedPrecision
-OpDecorate %168 RelaxedPrecision
-OpDecorate %170 RelaxedPrecision
-OpDecorate %172 RelaxedPrecision
-OpDecorate %175 RelaxedPrecision
-OpDecorate %176 RelaxedPrecision
-OpDecorate %179 RelaxedPrecision
-OpDecorate %180 RelaxedPrecision
-OpDecorate %182 RelaxedPrecision
-OpDecorate %183 RelaxedPrecision
-OpDecorate %184 RelaxedPrecision
-OpDecorate %186 RelaxedPrecision
-OpDecorate %187 RelaxedPrecision
-OpDecorate %188 RelaxedPrecision
-OpDecorate %191 RelaxedPrecision
-OpDecorate %192 RelaxedPrecision
-OpDecorate %194 RelaxedPrecision
-OpDecorate %195 RelaxedPrecision
-OpDecorate %196 RelaxedPrecision
+OpDecorate %209 RelaxedPrecision
+OpDecorate %212 RelaxedPrecision
+OpDecorate %214 RelaxedPrecision
+OpDecorate %215 RelaxedPrecision
+OpDecorate %217 RelaxedPrecision
+OpDecorate %218 RelaxedPrecision
+OpDecorate %220 RelaxedPrecision
+OpDecorate %221 RelaxedPrecision
+OpDecorate %223 RelaxedPrecision
+OpDecorate %224 RelaxedPrecision
+OpDecorate %226 RelaxedPrecision
+OpDecorate %227 RelaxedPrecision
+OpDecorate %229 RelaxedPrecision
+OpDecorate %230 RelaxedPrecision
+OpDecorate %233 RelaxedPrecision
+OpDecorate %235 RelaxedPrecision
+OpDecorate %237 RelaxedPrecision
+OpDecorate %239 RelaxedPrecision
+OpDecorate %240 RelaxedPrecision
+OpDecorate %243 RelaxedPrecision
+OpDecorate %246 RelaxedPrecision
+OpDecorate %248 RelaxedPrecision
+OpDecorate %250 RelaxedPrecision
+OpDecorate %252 RelaxedPrecision
+OpDecorate %253 RelaxedPrecision
+OpDecorate %254 RelaxedPrecision
+%bool = OpTypeBool
+%_ptr_Input_bool = OpTypePointer Input %bool
+%sk_Clockwise = OpVariable %_ptr_Input_bool Input
 %float = OpTypeFloat 32
 %v4float = OpTypeVector %float 4
 %_ptr_Output_v4float = OpTypePointer Output %v4float
 %sk_FragColor = OpVariable %_ptr_Output_v4float Output
-%bool = OpTypeBool
-%_ptr_Input_bool = OpTypePointer Input %bool
-%sk_Clockwise = OpVariable %_ptr_Input_bool Input
 %_UniformBuffer = OpTypeStruct %v4float
 %_ptr_Uniform__UniformBuffer = OpTypePointer Uniform %_UniformBuffer
 %10 = OpVariable %_ptr_Uniform__UniformBuffer Uniform
 %void = OpTypeVoid
 %15 = OpTypeFunction %void
-%v2float = OpTypeVector %float 2
 %float_0 = OpConstant %float 0
+%v2float = OpTypeVector %float 2
 %19 = OpConstantComposite %v2float %float_0 %float_0
 %_ptr_Function_v2float = OpTypePointer Function %v2float
 %23 = OpTypeFunction %v4float %_ptr_Function_v2float
 %_ptr_Function_float = OpTypePointer Function %float
-%float_9_99999962e_35 = OpConstant %float 9.99999962e+35
+%float_9_00000076e_35 = OpConstant %float 9.00000076e+35
 %float_1e_09 = OpConstant %float 1e+09
 %int = OpTypeInt 32 1
 %_ptr_Function_int = OpTypePointer Function %int
@@ -128,9 +140,19 @@ OpDecorate %196 RelaxedPrecision
 %uint_32768 = OpConstant %uint 32768
 %int_n2147483648 = OpConstant %int -2147483648
 %int_n32768 = OpConstant %int -32768
+%v4int = OpTypeVector %int 4
+%_ptr_Function_v4int = OpTypePointer Function %v4int
+%168 = OpConstantComposite %v4int %int_2 %int_2 %int_2 %int_2
+%170 = OpConstantComposite %v4int %int_1073741824 %int_1073741824 %int_1073741824 %int_1073741824
+%v4uint = OpTypeVector %uint 4
+%_ptr_Function_v4uint = OpTypePointer Function %v4uint
+%189 = OpConstantComposite %v4uint %uint_2 %uint_2 %uint_2 %uint_2
+%191 = OpConstantComposite %v4uint %uint_2147483648 %uint_2147483648 %uint_2147483648 %uint_2147483648
 %_ptr_Uniform_v4float = OpTypePointer Uniform %v4float
 %int_0 = OpConstant %int 0
 %float_1 = OpConstant %float 1
+%241 = OpConstantComposite %v4float %float_0 %float_0 %float_0 %float_0
+%242 = OpConstantComposite %v4float %float_1 %float_1 %float_1 %float_1
 %_entrypoint_v = OpFunction %void None %15
 %16 = OpLabel
 %20 = OpVariable %_ptr_Function_v2float Function
@@ -149,7 +171,11 @@ OpFunctionEnd
 %hugeUS = OpVariable %_ptr_Function_uint Function
 %hugeNI = OpVariable %_ptr_Function_int Function
 %hugeNS = OpVariable %_ptr_Function_int Function
-%30 = OpFMul %float %float_9_99999962e_35 %float_1e_09
+%i4 = OpVariable %_ptr_Function_v4int Function
+%hugeIvec = OpVariable %_ptr_Function_v4int Function
+%u4 = OpVariable %_ptr_Function_v4uint Function
+%hugeUvec = OpVariable %_ptr_Function_v4uint Function
+%30 = OpFMul %float %float_9_00000076e_35 %float_1e_09
 %31 = OpFMul %float %30 %float_1e_09
 %32 = OpFMul %float %31 %float_1e_09
 %33 = OpFMul %float %32 %float_1e_09
@@ -273,34 +299,82 @@ OpStore %hugeNI %146
 %163 = OpIMul %int %162 %int_2
 %164 = OpIMul %int %163 %int_2
 OpStore %hugeNS %164
-%165 = OpAccessChain %_ptr_Uniform_v4float %10 %int_0
-%168 = OpLoad %v4float %165
-%170 = OpLoad %float %huge
-%169 = OpExtInst %float %1 FClamp %170 %float_0 %float_1
-%172 = OpVectorTimesScalar %v4float %168 %169
-%174 = OpLoad %int %hugeI
-%175 = OpConvertSToF %float %174
-%173 = OpExtInst %float %1 FClamp %175 %float_0 %float_1
-%176 = OpVectorTimesScalar %v4float %172 %173
-%178 = OpLoad %uint %hugeU
-%179 = OpConvertUToF %float %178
-%177 = OpExtInst %float %1 FClamp %179 %float_0 %float_1
-%180 = OpVectorTimesScalar %v4float %176 %177
-%182 = OpLoad %int %hugeS
-%183 = OpConvertSToF %float %182
-%181 = OpExtInst %float %1 FClamp %183 %float_0 %float_1
-%184 = OpVectorTimesScalar %v4float %180 %181
-%186 = OpLoad %uint %hugeUS
-%187 = OpConvertUToF %float %186
-%185 = OpExtInst %float %1 FClamp %187 %float_0 %float_1
-%188 = OpVectorTimesScalar %v4float %184 %185
-%190 = OpLoad %int %hugeNI
-%191 = OpConvertSToF %float %190
-%189 = OpExtInst %float %1 FClamp %191 %float_0 %float_1
-%192 = OpVectorTimesScalar %v4float %188 %189
-%194 = OpLoad %int %hugeNS
-%195 = OpConvertSToF %float %194
-%193 = OpExtInst %float %1 FClamp %195 %float_0 %float_1
-%196 = OpVectorTimesScalar %v4float %192 %193
-OpReturnValue %196
+OpStore %i4 %168
+%171 = OpIMul %v4int %170 %168
+%172 = OpIMul %v4int %171 %168
+%173 = OpIMul %v4int %172 %168
+%174 = OpIMul %v4int %173 %168
+%175 = OpIMul %v4int %174 %168
+%176 = OpIMul %v4int %175 %168
+%177 = OpIMul %v4int %176 %168
+%178 = OpIMul %v4int %177 %168
+%179 = OpIMul %v4int %178 %168
+%180 = OpIMul %v4int %179 %168
+%181 = OpIMul %v4int %180 %168
+%182 = OpIMul %v4int %181 %168
+%183 = OpIMul %v4int %182 %168
+%184 = OpIMul %v4int %183 %168
+%185 = OpIMul %v4int %184 %168
+OpStore %hugeIvec %185
+OpStore %u4 %189
+%192 = OpIMul %v4uint %191 %189
+%193 = OpIMul %v4uint %192 %189
+%194 = OpIMul %v4uint %193 %189
+%195 = OpIMul %v4uint %194 %189
+%196 = OpIMul %v4uint %195 %189
+%197 = OpIMul %v4uint %196 %189
+%198 = OpIMul %v4uint %197 %189
+%199 = OpIMul %v4uint %198 %189
+%200 = OpIMul %v4uint %199 %189
+%201 = OpIMul %v4uint %200 %189
+%202 = OpIMul %v4uint %201 %189
+%203 = OpIMul %v4uint %202 %189
+%204 = OpIMul %v4uint %203 %189
+%205 = OpIMul %v4uint %204 %189
+OpStore %hugeUvec %205
+%206 = OpAccessChain %_ptr_Uniform_v4float %10 %int_0
+%209 = OpLoad %v4float %206
+%210 = OpExtInst %float %1 FClamp %39 %float_0 %float_1
+%212 = OpVectorTimesScalar %v4float %209 %210
+%214 = OpConvertSToF %float %64
+%213 = OpExtInst %float %1 FClamp %214 %float_0 %float_1
+%215 = OpVectorTimesScalar %v4float %212 %213
+%217 = OpConvertUToF %float %88
+%216 = OpExtInst %float %1 FClamp %217 %float_0 %float_1
+%218 = OpVectorTimesScalar %v4float %215 %216
+%220 = OpConvertSToF %float %107
+%219 = OpExtInst %float %1 FClamp %220 %float_0 %float_1
+%221 = OpVectorTimesScalar %v4float %218 %219
+%223 = OpConvertUToF %float %125
+%222 = OpExtInst %float %1 FClamp %223 %float_0 %float_1
+%224 = OpVectorTimesScalar %v4float %221 %222
+%226 = OpConvertSToF %float %146
+%225 = OpExtInst %float %1 FClamp %226 %float_0 %float_1
+%227 = OpVectorTimesScalar %v4float %224 %225
+%229 = OpConvertSToF %float %164
+%228 = OpExtInst %float %1 FClamp %229 %float_0 %float_1
+%230 = OpVectorTimesScalar %v4float %227 %228
+%232 = OpCompositeExtract %int %185 0
+%233 = OpConvertSToF %float %232
+%234 = OpCompositeExtract %int %185 1
+%235 = OpConvertSToF %float %234
+%236 = OpCompositeExtract %int %185 2
+%237 = OpConvertSToF %float %236
+%238 = OpCompositeExtract %int %185 3
+%239 = OpConvertSToF %float %238
+%240 = OpCompositeConstruct %v4float %233 %235 %237 %239
+%231 = OpExtInst %v4float %1 FClamp %240 %241 %242
+%243 = OpFMul %v4float %230 %231
+%245 = OpCompositeExtract %uint %205 0
+%246 = OpConvertUToF %float %245
+%247 = OpCompositeExtract %uint %205 1
+%248 = OpConvertUToF %float %247
+%249 = OpCompositeExtract %uint %205 2
+%250 = OpConvertUToF %float %249
+%251 = OpCompositeExtract %uint %205 3
+%252 = OpConvertUToF %float %251
+%253 = OpCompositeConstruct %v4float %246 %248 %250 %252
+%244 = OpExtInst %v4float %1 FClamp %253 %241 %242
+%254 = OpFMul %v4float %243 %244
+OpReturnValue %254
 OpFunctionEnd
