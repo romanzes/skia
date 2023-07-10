@@ -1,4 +1,6 @@
 ### Compilation failed:
 
-error: runtime-sized arrays are not supported in SPIR-V
+error: 1: unsized arrays are not permitted here
+T { int x; } f[];
+               ^
 1 error

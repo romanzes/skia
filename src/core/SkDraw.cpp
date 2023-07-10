@@ -17,6 +17,7 @@
 #include "include/core/SkString.h"
 #include "include/core/SkStrokeRec.h"
 #include "include/private/SkColorData.h"
+#include "include/private/SkImageInfoPriv.h"
 #include "include/private/SkMacros.h"
 #include "include/private/SkTemplates.h"
 #include "include/private/SkTo.h"
@@ -246,7 +247,7 @@ bool PtProcRec::init(SkCanvas::PointMode mode, const SkPaint& paint,
     if ((unsigned)mode > (unsigned)SkCanvas::kPolygon_PointMode) {
         return false;
     }
-    if (paint.getPathEffect()) {
+    if (paint.getPathEffect() || paint.getMaskFilter()) {
         return false;
     }
     SkScalar width = paint.getStrokeWidth();
@@ -358,6 +359,10 @@ void SkDraw::drawPoints(SkCanvas::PointMode mode, size_t count,
         return;
     }
 
+    if (!SkScalarsAreFinite(&pts[0].fX, count * 2)) {
+        return;
+    }
+
     SkMatrix ctm = fMatrixProvider->localToDevice();
     PtProcRec rec;
     if (!device && rec.init(mode, paint, &ctm, fRC)) {
@@ -437,14 +442,15 @@ void SkDraw::drawPoints(SkCanvas::PointMode mode, size_t count,
                 if (2 == count && paint.getPathEffect()) {
                     // most likely a dashed line - see if it is one of the ones
                     // we can accelerate
-                    SkStrokeRec rec(paint);
+                    SkStrokeRec stroke(paint);
                     SkPathEffectBase::PointData pointData;
 
                     SkPath path = SkPath::Line(pts[0], pts[1]);
 
                     SkRect cullRect = SkRect::Make(fRC->getBounds());
 
-                    if (as_PEB(paint.getPathEffect())->asPoints(&pointData, path, rec, ctm, &cullRect)) {
+                    if (as_PEB(paint.getPathEffect())->asPoints(&pointData, path, stroke, ctm,
+                                                                &cullRect)) {
                         // 'asPoints' managed to find some fast path
 
                         SkPaint newP(paint);
@@ -699,6 +705,7 @@ void SkDraw::drawRect(const SkRect& prePaintRect, const SkPaint& paint,
     }
 }
 
+#if defined(SK_SUPPORT_LEGACY_ALPHA_BITMAP_AS_COVERAGE)
 void SkDraw::drawDevMask(const SkMask& srcM, const SkPaint& paint) const {
     if (srcM.fBounds.isEmpty()) {
         return;
@@ -729,6 +736,7 @@ void SkDraw::drawDevMask(const SkMask& srcM, const SkPaint& paint) const {
     }
     blitter->blitMaskRegion(*mask, *clipRgn);
 }
+#endif
 
 static SkScalar fast_len(const SkVector& vec) {
     SkScalar x = SkScalarAbs(vec.fX);
@@ -845,9 +853,6 @@ void SkDraw::drawDevPath(const SkPath& devPath, const SkPaint& paint, bool drawC
                 case SkPaint::kRound_Cap:
                     proc = SkScan::AntiHairRoundPath;
                     break;
-                default:
-                    proc SK_INIT_TO_AVOID_WARNING;
-                    SkDEBUGFAIL("unknown paint cap type");
             }
         } else {
             switch (paint.getStrokeCap()) {
@@ -860,9 +865,6 @@ void SkDraw::drawDevPath(const SkPath& devPath, const SkPaint& paint, bool drawC
                 case SkPaint::kRound_Cap:
                     proc = SkScan::HairRoundPath;
                     break;
-                default:
-                    proc SK_INIT_TO_AVOID_WARNING;
-                    SkDEBUGFAIL("unknown paint cap type");
             }
         }
     }
@@ -956,6 +958,7 @@ void SkDraw::drawPath(const SkPath& origSrcPath, const SkPaint& origPaint,
     this->drawDevPath(*devPathPtr, *paint, drawCoverage, customBlitter, doFill);
 }
 
+#if defined(SK_SUPPORT_LEGACY_ALPHA_BITMAP_AS_COVERAGE)
 void SkDraw::drawBitmapAsMask(const SkBitmap& bitmap, const SkSamplingOptions& sampling,
                               const SkPaint& paint) const {
     SkASSERT(bitmap.colorType() == kAlpha_8_SkColorType);
@@ -1041,6 +1044,7 @@ void SkDraw::drawBitmapAsMask(const SkBitmap& bitmap, const SkSamplingOptions& s
         this->drawDevMask(mask, paint);
     }
 }
+#endif
 
 static bool clipped_out(const SkMatrix& m, const SkRasterClip& c,
                         const SkRect& srcR) {
@@ -1057,7 +1061,7 @@ static bool clipped_out(const SkMatrix& matrix, const SkRasterClip& clip,
 }
 
 static bool clipHandlesSprite(const SkRasterClip& clip, int x, int y, const SkPixmap& pmap) {
-    return clip.isBW() || clip.quickContains(x, y, x + pmap.width(), y + pmap.height());
+    return clip.isBW() || clip.quickContains(SkIRect::MakeXYWH(x, y, pmap.width(), pmap.height()));
 }
 
 void SkDraw::drawBitmap(const SkBitmap& bitmap, const SkMatrix& prematrix,
@@ -1084,8 +1088,8 @@ void SkDraw::drawBitmap(const SkBitmap& bitmap, const SkMatrix& prematrix,
         return;
     }
 
-    if (bitmap.colorType() != kAlpha_8_SkColorType
-        && SkTreatAsSprite(matrix, bitmap.dimensions(), sampling, *paint)) {
+    if (!SkColorTypeIsAlphaOnly(bitmap.colorType()) &&
+        SkTreatAsSprite(matrix, bitmap.dimensions(), sampling, *paint)) {
         //
         // It is safe to call lock pixels now, since we know the matrix is
         // (more or less) identity.
@@ -1115,16 +1119,22 @@ void SkDraw::drawBitmap(const SkBitmap& bitmap, const SkMatrix& prematrix,
     SkDraw draw(*this);
     draw.fMatrixProvider = &matrixProvider;
 
+    // For a long time, the CPU backend treated A8 bitmaps as coverage, rather than alpha. This was
+    // inconsistent with the GPU backend (skbug.com/9692). When this was fixed, it altered behavior
+    // for some Android apps (b/231400686). Thus: keep the old behavior in the framework.
+#if defined(SK_SUPPORT_LEGACY_ALPHA_BITMAP_AS_COVERAGE)
     if (bitmap.colorType() == kAlpha_8_SkColorType && !paint->getColorFilter()) {
         draw.drawBitmapAsMask(bitmap, sampling, *paint);
+        return;
+    }
+#endif
+
+    SkPaint paintWithShader = make_paint_with_image(*paint, bitmap, sampling);
+    const SkRect srcBounds = SkRect::MakeIWH(bitmap.width(), bitmap.height());
+    if (dstBounds) {
+        this->drawRect(srcBounds, paintWithShader, &prematrix, dstBounds);
     } else {
-        SkPaint paintWithShader = make_paint_with_image(*paint, bitmap, sampling);
-        const SkRect srcBounds = SkRect::MakeIWH(bitmap.width(), bitmap.height());
-        if (dstBounds) {
-            this->drawRect(srcBounds, paintWithShader, &prematrix, dstBounds);
-        } else {
-            draw.drawRect(srcBounds, paintWithShader);
-        }
+        draw.drawRect(srcBounds, paintWithShader);
     }
 }
 
@@ -1173,7 +1183,7 @@ void SkDraw::drawSprite(const SkBitmap& bitmap, int x, int y, const SkPaint& ori
     matrix.setTranslate(r.fLeft, r.fTop);
     SkPaint paintWithShader = make_paint_with_image(paint, bitmap, SkSamplingOptions(), &matrix);
     SkDraw draw(*this);
-    SkOverrideDeviceMatrixProvider matrixProvider(*fMatrixProvider, SkMatrix::I());
+    SkOverrideDeviceMatrixProvider matrixProvider(SkMatrix::I());
     draw.fMatrixProvider = &matrixProvider;
     // call ourself with a rect
     draw.drawRect(r, paintWithShader);
@@ -1203,7 +1213,7 @@ void SkDraw::validate() const {
 #include "src/core/SkBlitter.h"
 #include "src/core/SkDraw.h"
 
-bool SkDraw::ComputeMaskBounds(const SkRect& devPathBounds, const SkIRect* clipBounds,
+bool SkDraw::ComputeMaskBounds(const SkRect& devPathBounds, const SkIRect& clipBounds,
                                const SkMaskFilter* filter, const SkMatrix* filterMatrix,
                                SkIRect* bounds) {
     //  init our bounds from the path
@@ -1222,20 +1232,17 @@ bool SkDraw::ComputeMaskBounds(const SkRect& devPathBounds, const SkIRect* clipB
         }
     }
 
-    // (possibly) trim the bounds to reflect the clip
-    // (plus whatever slop the filter needs)
-    if (clipBounds) {
-        // Ugh. Guard against gigantic margins from wacky filters. Without this
-        // check we can request arbitrary amounts of slop beyond our visible
-        // clip, and bring down the renderer (at least on finite RAM machines
-        // like handsets, etc.). Need to balance this invented value between
-        // quality of large filters like blurs, and the corresponding memory
-        // requests.
-        static const int MAX_MARGIN = 128;
-        if (!bounds->intersect(clipBounds->makeOutset(std::min(margin.fX, MAX_MARGIN),
-                                                      std::min(margin.fY, MAX_MARGIN)))) {
-            return false;
-        }
+    // trim the bounds to reflect the clip (plus whatever slop the filter needs)
+    // Ugh. Guard against gigantic margins from wacky filters. Without this
+    // check we can request arbitrary amounts of slop beyond our visible
+    // clip, and bring down the renderer (at least on finite RAM machines
+    // like handsets, etc.). Need to balance this invented value between
+    // quality of large filters like blurs, and the corresponding memory
+    // requests.
+    static constexpr int kMaxMargin = 128;
+    if (!bounds->intersect(clipBounds.makeOutset(std::min(margin.fX, kMaxMargin),
+                                                 std::min(margin.fY, kMaxMargin)))) {
+        return false;
     }
 
     return true;
@@ -1256,7 +1263,7 @@ static void draw_into_mask(const SkMask& mask, const SkPath& devPath,
     matrix.setTranslate(-SkIntToScalar(mask.fBounds.fLeft),
                         -SkIntToScalar(mask.fBounds.fTop));
 
-    SkSimpleMatrixProvider matrixProvider(matrix);
+    SkMatrixProvider matrixProvider(matrix);
     draw.fRC             = &clip;
     draw.fMatrixProvider = &matrixProvider;
     paint.setAntiAlias(true);
@@ -1273,7 +1280,7 @@ static void draw_into_mask(const SkMask& mask, const SkPath& devPath,
     draw.drawPath(devPath, paint);
 }
 
-bool SkDraw::DrawToMask(const SkPath& devPath, const SkIRect* clipBounds,
+bool SkDraw::DrawToMask(const SkPath& devPath, const SkIRect& clipBounds,
                         const SkMaskFilter* filter, const SkMatrix* filterMatrix,
                         SkMask* mask, SkMask::CreateMode mode,
                         SkStrokeRec::InitStyle style) {
@@ -1282,7 +1289,13 @@ bool SkDraw::DrawToMask(const SkPath& devPath, const SkIRect* clipBounds,
     }
 
     if (SkMask::kJustRenderImage_CreateMode != mode) {
-        if (!ComputeMaskBounds(devPath.getBounds(), clipBounds, filter,
+        // By using infinite bounds for inverse fills, ComputeMaskBounds is able to clip it to
+        // 'clipBounds' outset by whatever extra margin the mask filter requires.
+        static const SkRect kInverseBounds = { SK_ScalarNegativeInfinity, SK_ScalarNegativeInfinity,
+                                               SK_ScalarInfinity, SK_ScalarInfinity};
+        SkRect pathBounds = devPath.isInverseFillType() ? kInverseBounds
+                                                        : devPath.getBounds();
+        if (!ComputeMaskBounds(pathBounds, clipBounds, filter,
                                filterMatrix, &mask->fBounds))
             return false;
     }

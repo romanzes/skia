@@ -339,7 +339,7 @@ void TextWrapper::breakTextIntoLines(ParagraphImpl* parent,
         }
 
         // If the line is empty with the hard line break, let's take the paragraph font (flutter???)
-        if (fHardLineBreak && fEndLine.width() == 0) {
+        if (fEndLine.metrics().isClean()) {
             fEndLine.setMetrics(parent->getEmptyMetrics());
         }
 

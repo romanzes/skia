@@ -19,10 +19,12 @@
 #include "src/core/SkWriteBuffer.h"
 
 #if SK_SUPPORT_GPU
-#include "src/gpu/GrFragmentProcessor.h"
-#include "src/gpu/GrSurfaceProxyView.h"
-#include "src/gpu/GrTextureProxy.h"
-#include "src/gpu/text/GrSDFMaskFilter.h"
+#include "src/gpu/ganesh/GrFragmentProcessor.h"
+#include "src/gpu/ganesh/GrSurfaceProxyView.h"
+#include "src/gpu/ganesh/GrTextureProxy.h"
+#endif
+#if SK_SUPPORT_GPU || defined(SK_GRAPHITE_ENABLED)
+#include "src/text/gpu/SDFMaskFilter.h"
 #endif
 
 SkMaskFilterBase::NinePatch::~NinePatch() {
@@ -168,24 +170,24 @@ static void draw_nine_clipped(const SkMask& mask, const SkIRect& outerR,
     // left
     r.setLTRB(outerR.left(), innerR.top(), innerR.left(), innerR.bottom());
     if (r.intersect(clipR)) {
-        SkMask m;
-        m.fImage = mask.getAddr8(mask.fBounds.left() + r.left() - outerR.left(),
-                                 mask.fBounds.top() + cy);
-        m.fBounds = r;
-        m.fRowBytes = 0;    // so we repeat the scanline for our height
-        m.fFormat = SkMask::kA8_Format;
-        blitter->blitMask(m, r);
+        SkMask leftMask;
+        leftMask.fImage = mask.getAddr8(mask.fBounds.left() + r.left() - outerR.left(),
+                                        mask.fBounds.top() + cy);
+        leftMask.fBounds = r;
+        leftMask.fRowBytes = 0;    // so we repeat the scanline for our height
+        leftMask.fFormat = SkMask::kA8_Format;
+        blitter->blitMask(leftMask, r);
     }
     // right
     r.setLTRB(innerR.right(), innerR.top(), outerR.right(), innerR.bottom());
     if (r.intersect(clipR)) {
-        SkMask m;
-        m.fImage = mask.getAddr8(mask.fBounds.right() - outerR.right() + r.left(),
-                                 mask.fBounds.top() + cy);
-        m.fBounds = r;
-        m.fRowBytes = 0;    // so we repeat the scanline for our height
-        m.fFormat = SkMask::kA8_Format;
-        blitter->blitMask(m, r);
+        SkMask rightMask;
+        rightMask.fImage = mask.getAddr8(mask.fBounds.right() - outerR.right() + r.left(),
+                                         mask.fBounds.top() + cy);
+        rightMask.fBounds = r;
+        rightMask.fRowBytes = 0;    // so we repeat the scanline for our height
+        rightMask.fFormat = SkMask::kA8_Format;
+        blitter->blitMask(rightMask, r);
     }
 }
 
@@ -265,7 +267,7 @@ bool SkMaskFilterBase::filterPath(const SkPath& devPath, const SkMatrix& matrix,
         return false;
     }
 #endif
-    if (!SkDraw::DrawToMask(devPath, &clip.getBounds(), this, &matrix, &srcM,
+    if (!SkDraw::DrawToMask(devPath, clip.getBounds(), this, &matrix, &srcM,
                             SkMask::kComputeBoundsAndRenderImage_CreateMode,
                             style)) {
         return false;
@@ -377,8 +379,8 @@ SkRect SkMaskFilter::approximateFilteredBounds(const SkRect& src) const {
 
 void SkMaskFilter::RegisterFlattenables() {
     sk_register_blur_maskfilter_createproc();
-#if SK_SUPPORT_GPU
-    gr_register_sdf_maskfilter_createproc();
+#if SK_SUPPORT_GPU || defined(SK_GRAPHITE_ENABLED)
+    sktext::gpu::register_sdf_maskfilter_createproc();
 #endif
 }
 
