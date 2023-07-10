@@ -8,18 +8,19 @@
 #ifndef SKSL_EXPRESSION
 #define SKSL_EXPRESSION
 
+#include "include/core/SkTypes.h"
+#include "include/private/SkSLIRNode.h"
 #include "include/private/SkSLStatement.h"
-#include "include/private/SkTHash.h"
+#include "include/sksl/SkSLPosition.h"
 #include "src/sksl/ir/SkSLType.h"
 
-#include <unordered_map>
+#include <memory>
+#include <optional>
 
 namespace SkSL {
 
 class AnyConstructor;
-class Expression;
-class IRGenerator;
-class Variable;
+class Context;
 
 /**
  * Abstract supertype of all expressions.
@@ -28,8 +29,7 @@ class Expression : public IRNode {
 public:
     enum class Kind {
         kBinary = (int) Statement::Kind::kLast + 1,
-        kBoolLiteral,
-        kCodeString,
+        kChildCall,
         kConstructorArray,
         kConstructorArrayCast,
         kConstructorCompound,
@@ -41,12 +41,12 @@ public:
         kConstructorStruct,
         kExternalFunctionCall,
         kExternalFunctionReference,
-        kIntLiteral,
         kFieldAccess,
-        kFloatLiteral,
         kFunctionReference,
         kFunctionCall,
         kIndex,
+        kLiteral,
+        kMethodReference,
         kPoison,
         kPostfix,
         kPrefix,
@@ -60,13 +60,8 @@ public:
         kLast = kVariableReference
     };
 
-    enum class Property {
-        kSideEffects,
-        kContainsRTAdjust
-    };
-
-    Expression(int offset, Kind kind, const Type* type)
-        : INHERITED(offset, (int) kind)
+    Expression(Position pos, Kind kind, const Type* type)
+        : INHERITED(pos, (int) kind)
         , fType(type) {
         SkASSERT(kind >= Kind::kFirst && kind <= Kind::kLast);
     }
@@ -81,7 +76,7 @@ public:
 
     /**
      *  Use is<T> to check the type of an expression.
-     *  e.g. replace `e.kind() == Expression::Kind::kIntLiteral` with `e.is<IntLiteral>()`.
+     *  e.g. replace `e.kind() == Expression::Kind::kLiteral` with `e.is<Literal>()`.
      */
     template <typename T>
     bool is() const {
@@ -89,13 +84,25 @@ public:
     }
 
     bool isAnyConstructor() const {
-        static_assert((int)Kind::kConstructorArray - 1 == (int)Kind::kCodeString);
+        static_assert((int)Kind::kConstructorArray - 1 == (int)Kind::kChildCall);
         static_assert((int)Kind::kConstructorStruct + 1 == (int)Kind::kExternalFunctionCall);
         return this->kind() >= Kind::kConstructorArray && this->kind() <= Kind::kConstructorStruct;
     }
 
+    bool isIntLiteral() const {
+        return this->kind() == Kind::kLiteral && this->type().isInteger();
+    }
+
+    bool isFloatLiteral() const {
+        return this->kind() == Kind::kLiteral && this->type().isFloat();
+    }
+
+    bool isBoolLiteral() const {
+        return this->kind() == Kind::kLiteral && this->type().isBoolean();
+    }
+
     /**
-     *  Use as<T> to downcast expressions: e.g. replace `(IntLiteral&) i` with `i.as<IntLiteral>()`.
+     *  Use as<T> to downcast expressions: e.g. replace `(Literal&) i` with `i.as<Literal>()`.
      */
     template <typename T>
     const T& as() const {
@@ -113,12 +120,11 @@ public:
     const AnyConstructor& asAnyConstructor() const;
 
     /**
-     * Returns true if this expression is constant. compareConstant must be implemented for all
-     * constants!
+     * Returns true if this expression is incomplete. Specifically, dangling function/method-call
+     * references that were never invoked, or type references that were never constructed, are
+     * considered incomplete expressions and should result in an error.
      */
-    virtual bool isCompileTimeConstant() const {
-        return false;
-    }
+    bool isIncomplete(const Context& context) const;
 
     /**
      * Compares this constant expression against another constant expression. Returns kUnknown if
@@ -134,42 +140,43 @@ public:
         return ComparisonResult::kUnknown;
     }
 
-    /**
-     * Returns true if, given fixed values for uniforms, this expression always evaluates to the
-     * same result with no side effects.
-     */
-    virtual bool isConstantOrUniform() const {
-        SkASSERT(!this->isCompileTimeConstant() || !this->hasSideEffects());
-        return this->isCompileTimeConstant();
-    }
-
-    virtual bool hasProperty(Property property) const = 0;
-
-    bool hasSideEffects() const {
-        return this->hasProperty(Property::kSideEffects);
-    }
-
-    bool containsRTAdjust() const {
-        return this->hasProperty(Property::kContainsRTAdjust);
-    }
-
-    virtual CoercionCost coercionCost(const Type& target) const {
+    CoercionCost coercionCost(const Type& target) const {
         return this->type().coercionCost(target);
     }
 
     /**
-     * Returns the n'th compile-time constant expression within a literal or constructor.
-     * Use Type::slotCount to determine the number of subexpressions within an expression.
-     * Subexpressions which are not compile-time constants will return null.
-     * `vec4(1, vec2(2), 3)` contains four subexpressions: (1, 2, 2, 3)
-     * `mat2(f)` contains four subexpressions: (null, 0,
-     *                                          0, null)
+     * Returns true if this expression type supports `getConstantValue`. (This particular expression
+     * may or may not actually contain a constant value.) It's harmless to call `getConstantValue`
+     * on expressions which don't support constant values or don't contain any constant values, but
+     * if `supportsConstantValues` returns false, you can assume that `getConstantValue` will return
+     * nullopt for every slot of this expression. This allows for early-out opportunities in some
+     * cases. (Some expressions have tons of slots but never hold a constant value; e.g. a variable
+     * holding a very large array.)
      */
-    virtual const Expression* getConstantSubexpression(int n) const {
-        return nullptr;
+    virtual bool supportsConstantValues() const {
+        return false;
     }
 
-    virtual std::unique_ptr<Expression> clone() const = 0;
+    /**
+     * Returns the n'th compile-time constant value within a literal or constructor.
+     * Use Type::slotCount to determine the number of slots within an expression.
+     * Slots which do not contain compile-time constant values will return nullopt.
+     * `vec4(1, vec2(2), 3)` contains four compile-time constants: (1, 2, 2, 3)
+     * `mat2(f)` contains four slots, and two are constant: (nullopt, 0,
+     *                                                       0, nullopt)
+     * All classes which override this function must also implement `supportsConstantValues`.
+     */
+    virtual std::optional<double> getConstantValue(int n) const {
+        SkASSERT(!this->supportsConstantValues());
+        return std::nullopt;
+    }
+
+    virtual std::unique_ptr<Expression> clone(Position pos) const = 0;
+
+    /**
+     * Returns a clone at the same position.
+     */
+    std::unique_ptr<Expression> clone() const { return this->clone(fPosition); }
 
 private:
     const Type* fType;
