@@ -19,7 +19,6 @@ Run::Run(ParagraphImpl* owner,
          size_t firstChar,
          SkScalar heightMultiplier,
          bool useHalfLeading,
-         SkScalar baselineShift,
          size_t index,
          SkScalar offsetX)
     : fOwner(owner)
@@ -34,7 +33,6 @@ Run::Run(ParagraphImpl* owner,
     , fClusterIndexes(fGlyphData->clusterIndexes)
     , fHeightMultiplier(heightMultiplier)
     , fUseHalfLeading(useHalfLeading)
-    , fBaselineShift(baselineShift)
 {
     fBidiLevel = info.fBidiLevel;
     fAdvance = info.fAdvance;
@@ -76,9 +74,6 @@ void Run::calculateMetrics() {
         fCorrectAscent *= multiplier;
         fCorrectDescent *= multiplier;
     }
-    // If we shift the baseline we need to make sure the shifted text fits the line
-    fCorrectAscent += fBaselineShift;
-    fCorrectDescent += fBaselineShift;
 }
 
 SkShaper::RunHandler::Buffer Run::newRunBuffer() {

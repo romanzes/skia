@@ -226,9 +226,6 @@ public:
         fFontFamilies = std::move(families);
     }
 
-    SkScalar getBaselineShift() const { return fBaselineShift; }
-    void setBaselineShift(SkScalar baselineShift) { fBaselineShift = baselineShift; }
-
     void setHeight(SkScalar height) { fHeight = height; }
     SkScalar getHeight() const { return fHeightOverride ? fHeight : 0; }
 
@@ -279,7 +276,6 @@ private:
     SkScalar fFontSize = 14.0;
     SkScalar fHeight = 1.0;
     bool fHeightOverride = false;
-    SkScalar fBaselineShift = 0.0f;
     // true: half leading.
     // false: scale ascent/descent with fHeight.
     bool fHalfLeading = false;

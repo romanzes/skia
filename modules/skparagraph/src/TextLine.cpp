@@ -365,8 +365,7 @@ void TextLine::buildTextBlob(TextRange textRange, const TextStyle& style, const 
         record.fClipRect = context.clip.makeOffset(this->offset());
     }
 
-    SkASSERT(nearlyEqual(context.run->baselineShift(), style.getBaselineShift()));
-    SkScalar correctedBaseline = SkScalarFloorToScalar(this->baseline() + style.getBaselineShift() +  0.5);
+    SkScalar correctedBaseline = SkScalarFloorToScalar(this->baseline() + 0.5);
     record.fBlob = builder.make();
     if (record.fBlob != nullptr) {
         record.fBounds.joinPossiblyEmptyRect(record.fBlob->bounds());
@@ -405,7 +404,7 @@ void TextLine::paintShadow(SkCanvas* canvas,
                            TextRange textRange,
                            const TextStyle& style,
                            const ClipContext& context) const {
-    SkScalar correctedBaseline = SkScalarFloorToScalar(this->baseline() + style.getBaselineShift() + 0.5);
+    SkScalar correctedBaseline = SkScalarFloorToScalar(this->baseline() + 0.5);
 
     for (TextShadow shadow : style.getShadows()) {
         if (!shadow.hasShadow()) continue;
@@ -442,9 +441,9 @@ void TextLine::paintShadow(SkCanvas* canvas,
 void TextLine::paintDecorations(SkCanvas* canvas, SkScalar x, SkScalar y, TextRange textRange, const TextStyle& style, const ClipContext& context) const {
 
     SkAutoCanvasRestore acr(canvas, true);
-    canvas->translate(x + this->offset().fX, y + this->offset().fY + style.getBaselineShift());
+    canvas->translate(x + this->offset().fX, y + this->offset().fY);
     Decorations decorations;
-    SkScalar correctedBaseline = SkScalarFloorToScalar(this->baseline() + style.getBaselineShift() + 0.5);
+    SkScalar correctedBaseline = SkScalarFloorToScalar(this->baseline() + 0.5);
     decorations.paint(canvas, style, context, correctedBaseline);
 }
 
@@ -621,8 +620,8 @@ std::unique_ptr<Run> TextLine::shapeEllipsis(const SkString& ellipsis, const Run
 
     class ShapeHandler final : public SkShaper::RunHandler {
     public:
-        ShapeHandler(SkScalar lineHeight, bool useHalfLeading, SkScalar baselineShift, const SkString& ellipsis)
-            : fRun(nullptr), fLineHeight(lineHeight), fUseHalfLeading(useHalfLeading), fBaselineShift(baselineShift), fEllipsis(ellipsis) {}
+        ShapeHandler(SkScalar lineHeight, bool useHalfLeading, const SkString& ellipsis)
+            : fRun(nullptr), fLineHeight(lineHeight), fUseHalfLeading(useHalfLeading), fEllipsis(ellipsis) {}
         Run* run() & { return fRun.get(); }
         std::unique_ptr<Run> run() && { return std::move(fRun); }
 
@@ -635,7 +634,7 @@ std::unique_ptr<Run> TextLine::shapeEllipsis(const SkString& ellipsis, const Run
 
         Buffer runBuffer(const RunInfo& info) override {
             SkASSERT(!fRun);
-            fRun = std::make_unique<Run>(nullptr, info, 0, fLineHeight, fUseHalfLeading, fBaselineShift, 0, 0);
+            fRun = std::make_unique<Run>(nullptr, info, 0, fLineHeight, fUseHalfLeading, 0, 0);
             return fRun->newRunBuffer();
         }
 
@@ -651,11 +650,10 @@ std::unique_ptr<Run> TextLine::shapeEllipsis(const SkString& ellipsis, const Run
         std::unique_ptr<Run> fRun;
         SkScalar fLineHeight;
         bool fUseHalfLeading;
-        SkScalar fBaselineShift;
         SkString fEllipsis;
     };
 
-    ShapeHandler handler(run.heightMultiplier(), run.useHalfLeading(), run.baselineShift(), ellipsis);
+    ShapeHandler handler(run.heightMultiplier(), run.useHalfLeading(), ellipsis);
     std::unique_ptr<SkShaper> shaper = SkShaper::MakeShapeDontWrapOrReorder();
     SkASSERT_RELEASE(shaper != nullptr);
     shaper->shape(ellipsis.c_str(), ellipsis.size(), run.font(), true,

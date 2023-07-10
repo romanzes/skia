@@ -23,7 +23,6 @@ TextStyle TextStyle::cloneForPlaceholder() {
     result.fIsPlaceholder = true;
     result.fFontFeatures = fFontFeatures;
     result.fHalfLeading = fHalfLeading;
-    result.fBaselineShift = fBaselineShift;
     result.fFontArguments = fFontArguments;
     return result;
 }
@@ -59,9 +58,6 @@ bool TextStyle::equals(const TextStyle& other) const {
         return false;
     }
     if (fHalfLeading != other.fHalfLeading) {
-        return false;
-    }
-    if (fBaselineShift != other.fBaselineShift) {
         return false;
     }
     if (fFontSize != other.fFontSize) {
@@ -109,7 +105,6 @@ bool TextStyle::equalsByFonts(const TextStyle& that) const {
            nearlyEqual(fLetterSpacing, that.fLetterSpacing) &&
            nearlyEqual(fWordSpacing, that.fWordSpacing) &&
            nearlyEqual(fHeight, that.fHeight) &&
-           nearlyEqual(fBaselineShift, that.fBaselineShift) &&
            nearlyEqual(fFontSize, that.fFontSize) &&
            fLocale == that.fLocale;
 }
@@ -156,7 +151,6 @@ bool TextStyle::matchOneAttribute(StyleType styleType, const TextStyle& other) c
                    fFontSize == other.fFontSize &&
                    fHeight == other.fHeight &&
                    fHalfLeading == other.fHalfLeading &&
-                   fBaselineShift == other.fBaselineShift &&
                    fFontArguments == other.fFontArguments;
         default:
             SkASSERT(false);
@@ -180,9 +174,6 @@ void TextStyle::getFontMetrics(SkFontMetrics* metrics) const {
         metrics->fAscent = (metrics->fAscent - metrics->fLeading / 2);
         metrics->fDescent = (metrics->fDescent + metrics->fLeading / 2);
     }
-    // If we shift the baseline we need to make sure the shifted text fits the line
-    metrics->fAscent += fBaselineShift;
-    metrics->fDescent += fBaselineShift;
 }
 
 void TextStyle::setFontArguments(const std::optional<SkFontArguments>& args) {
