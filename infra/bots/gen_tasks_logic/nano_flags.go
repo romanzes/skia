@@ -123,6 +123,9 @@ func (b *taskBuilder) nanobenchFlags(doUpload bool) {
 					configs = append(configs, "vkmsaa8")
 				}
 			}
+			if b.gpu("QuadroP400", "MaliG77") {
+				configs = append(configs, "vkdmsaa")
+			}
 		}
 		if b.extraConfig("Metal") {
 			configs = []string{"mtl"}
@@ -157,10 +160,21 @@ func (b *taskBuilder) nanobenchFlags(doUpload bool) {
 			// Just run GLES for now - maybe add gles_msaa4 in the future
 			configs = []string{"gles"}
 		}
+		if b.extraConfig("SwiftShader") {
+			configs = []string{"gles", "glesdmsaa"}
+		}
 	}
 
 	args = append(args, "--config")
 	args = append(args, configs...)
+
+	// Use 4 internal msaa samples on mobile and AppleM1, otherwise 8.
+	args = append(args, "--internalSamples")
+	if b.os("Android") || b.os("iOS") || b.matchGpu("AppleM1") {
+		args = append(args, "4")
+	} else {
+		args = append(args, "8")
+	}
 
 	// By default, we test with GPU threading enabled, unless specifically
 	// disabled.
