@@ -9,18 +9,17 @@
 #include "include/gpu/GrDirectContext.h"
 #include "src/core/SkPathPriv.h"
 #include "src/core/SkRectPriv.h"
-#include "src/gpu/GrDirectContextPriv.h"
-#include "src/gpu/geometry/GrWangsFormula.h"
-#include "src/gpu/mock/GrMockOpTarget.h"
-#include "src/gpu/tessellate/GrMiddleOutPolygonTriangulator.h"
-#include "src/gpu/tessellate/GrPathCurveTessellator.h"
-#include "src/gpu/tessellate/GrPathWedgeTessellator.h"
-#include "src/gpu/tessellate/GrStrokeFixedCountTessellator.h"
-#include "src/gpu/tessellate/GrStrokeHardwareTessellator.h"
+#include "src/gpu/ganesh/GrDirectContextPriv.h"
+#include "src/gpu/ganesh/mock/GrMockOpTarget.h"
+#include "src/gpu/ganesh/tessellate/PathTessellator.h"
+#include "src/gpu/ganesh/tessellate/StrokeTessellator.h"
+#include "src/gpu/tessellate/AffineMatrix.h"
+#include "src/gpu/tessellate/MiddleOutPolygonTriangulator.h"
+#include "src/gpu/tessellate/WangsFormula.h"
 #include "tools/ToolUtils.h"
 #include <vector>
 
-using ShaderFlags = GrStrokeTessellationShader::ShaderFlags;
+namespace skgpu::v1 {
 
 // This is the number of cubics in desk_chalkboard.skp. (There are no quadratics in the chalkboard.)
 constexpr static int kNumCubicsInChalkboard = 47182;
@@ -28,7 +27,6 @@ constexpr static int kNumCubicsInChalkboard = 47182;
 static sk_sp<GrDirectContext> make_mock_context() {
     GrMockOptions mockOptions;
     mockOptions.fDrawInstancedSupport = true;
-    mockOptions.fMaxTessellationSegments = 64;
     mockOptions.fMapBufferFlags = GrCaps::kCanMap_MapFlag;
     mockOptions.fConfigOptions[(int)GrColorType::kAlpha_8].fRenderability =
             GrMockOptions::ConfigOptions::Renderability::kMSAA;
@@ -37,7 +35,6 @@ static sk_sp<GrDirectContext> make_mock_context() {
 
     GrContextOptions ctxOptions;
     ctxOptions.fGpuPathRenderers = GpuPathRenderers::kTessellation;
-    ctxOptions.fEnableExperimentalHardwareTessellation = true;
 
     return GrDirectContext::MakeMock(&mockOptions, ctxOptions);
 }
@@ -66,7 +63,27 @@ static SkPath make_conic_path() {
     return path;
 }
 
-// This serves as a base class for benchmarking individual methods on GrPathTessellateOp.
+[[maybe_unused]] static SkPath make_quad_path(int maxPow2) {
+    SkRandom rand;
+    SkPath path;
+    for (int i = 0; i < kNumCubicsInChalkboard; ++i) {
+        float x = std::ldexp(rand.nextF(), (i % maxPow2)) / 1e3f;
+        path.quadTo(111.625f * x, 308.188f * x, 764.62f * x, -435.688f * x);
+    }
+    return path;
+}
+
+[[maybe_unused]] static SkPath make_line_path(int maxPow2) {
+    SkRandom rand;
+    SkPath path;
+    for (int i = 0; i < kNumCubicsInChalkboard; ++i) {
+        float x = std::ldexp(rand.nextF(), (i % maxPow2)) / 1e3f;
+        path.lineTo(764.62f * x, -435.688f * x);
+    }
+    return path;
+}
+
+// This serves as a base class for benchmarking individual methods on PathTessellateOp.
 class PathTessellateBenchmark : public Benchmark {
 public:
     PathTessellateBenchmark(const char* subName, const SkPath& p, const SkMatrix& m)
@@ -118,35 +135,36 @@ static const SkMatrix gAlmostIdentity = SkMatrix::MakeAll(
 DEF_PATH_TESS_BENCH(GrPathCurveTessellator, make_cubic_path(8), SkMatrix::I()) {
     SkArenaAlloc arena(1024);
     GrPipeline noVaryingsPipeline(GrScissorTest::kDisabled, SkBlendMode::kSrcOver,
-                                  GrSwizzle::RGBA());
-    auto tess = GrPathCurveTessellator::Make(&arena, fMatrix, SK_PMColor4fTRANSPARENT,
-                                             GrPathCurveTessellator::DrawInnerFan::kNo,
-                                             fTarget->caps().minPathVerbsForHwTessellation(),
-                                             noVaryingsPipeline, fTarget->caps());
-    tess->prepare(fTarget.get(), SkRectPriv::MakeLargest(), {gAlmostIdentity, fPath},
+                                  skgpu::Swizzle::RGBA());
+    auto tess = PathCurveTessellator::Make(&arena,
+                                           fTarget->caps().shaderCaps()->fInfinitySupport);
+    tess->prepare(fTarget.get(),
+                  fMatrix,
+                  {gAlmostIdentity, fPath, SK_PMColor4fTRANSPARENT},
                   fPath.countVerbs());
 }
 
 DEF_PATH_TESS_BENCH(GrPathWedgeTessellator, make_cubic_path(8), SkMatrix::I()) {
     SkArenaAlloc arena(1024);
     GrPipeline noVaryingsPipeline(GrScissorTest::kDisabled, SkBlendMode::kSrcOver,
-                                  GrSwizzle::RGBA());
-    auto tess = GrPathWedgeTessellator::Make(&arena, fMatrix, SK_PMColor4fTRANSPARENT,
-                                             fTarget->caps().minPathVerbsForHwTessellation(),
-                                             noVaryingsPipeline, fTarget->caps());
-    tess->prepare(fTarget.get(), SkRectPriv::MakeLargest(), {gAlmostIdentity, fPath},
+                                  skgpu::Swizzle::RGBA());
+    auto tess = PathWedgeTessellator::Make(&arena,
+                                           fTarget->caps().shaderCaps()->fInfinitySupport);
+    tess->prepare(fTarget.get(),
+                  fMatrix,
+                  {gAlmostIdentity, fPath, SK_PMColor4fTRANSPARENT},
                   fPath.countVerbs());
 }
 
 static void benchmark_wangs_formula_cubic_log2(const SkMatrix& matrix, const SkPath& path) {
     int sum = 0;
-    GrVectorXform xform(matrix);
+    wangs_formula::VectorXform xform(matrix);
     for (auto [verb, pts, w] : SkPathPriv::Iterate(path)) {
         if (verb == SkPathVerb::kCubic) {
-            sum += GrWangsFormula::cubic_log2(4, pts, xform);
+            sum += wangs_formula::cubic_log2(4, pts, xform);
         }
     }
-    // Don't let the compiler optimize away GrWangsFormula::cubic_log2.
+    // Don't let the compiler optimize away wangs_formula::cubic_log2.
     if (sum <= 0) {
         SK_ABORT("sum should be > 0.");
     }
@@ -168,13 +186,13 @@ DEF_PATH_TESS_BENCH(wangs_formula_cubic_log2_affine, make_cubic_path(18),
 
 static void benchmark_wangs_formula_conic(const SkMatrix& matrix, const SkPath& path) {
     int sum = 0;
-    GrVectorXform xform(matrix);
+    wangs_formula::VectorXform xform(matrix);
     for (auto [verb, pts, w] : SkPathPriv::Iterate(path)) {
         if (verb == SkPathVerb::kConic) {
-            sum += GrWangsFormula::conic(4, pts, *w, xform);
+            sum += wangs_formula::conic(4, pts, *w, xform);
         }
     }
-    // Don't let the compiler optimize away GrWangsFormula::conic.
+    // Don't let the compiler optimize away wangs_formula::conic.
     if (sum <= 0) {
         SK_ABORT("sum should be > 0.");
     }
@@ -182,13 +200,13 @@ static void benchmark_wangs_formula_conic(const SkMatrix& matrix, const SkPath& 
 
 static void benchmark_wangs_formula_conic_log2(const SkMatrix& matrix, const SkPath& path) {
     int sum = 0;
-    GrVectorXform xform(matrix);
+    wangs_formula::VectorXform xform(matrix);
     for (auto [verb, pts, w] : SkPathPriv::Iterate(path)) {
         if (verb == SkPathVerb::kConic) {
-            sum += GrWangsFormula::conic_log2(4, pts, *w, xform);
+            sum += wangs_formula::conic_log2(4, pts, *w, xform);
         }
     }
-    // Don't let the compiler optimize away GrWangsFormula::conic.
+    // Don't let the compiler optimize away wangs_formula::conic.
     if (sum <= 0) {
         SK_ABORT("sum should be > 0.");
     }
@@ -205,39 +223,22 @@ DEF_PATH_TESS_BENCH(wangs_formula_conic_log2, make_conic_path(), SkMatrix::I()) 
 DEF_PATH_TESS_BENCH(middle_out_triangulation,
                     ToolUtils::make_star(SkRect::MakeWH(500, 500), kNumCubicsInChalkboard),
                     SkMatrix::I()) {
+    // Conservative estimate of triangulation (see PathStencilCoverOp)
+    const int maxVerts = 3 * (kNumCubicsInChalkboard - 2);
+
     sk_sp<const GrBuffer> buffer;
     int baseVertex;
-    GrVertexWriter vertexWriter = static_cast<SkPoint*>(fTarget->makeVertexSpace(
-            sizeof(SkPoint), kNumCubicsInChalkboard, &buffer, &baseVertex));
-    int numTrianglesWritten;
-    GrMiddleOutPolygonTriangulator::WritePathInnerFan(std::move(vertexWriter), 0, 0,
-                                                      gAlmostIdentity, fPath, &numTrianglesWritten);
+    VertexWriter vertexWriter = fTarget->makeVertexWriter(
+            sizeof(SkPoint), maxVerts, &buffer, &baseVertex);
+    tess::AffineMatrix m(gAlmostIdentity);
+    for (tess::PathMiddleOutFanIter it(fPath); !it.done();) {
+        for (auto [p0, p1, p2] : it.nextStack()) {
+            vertexWriter << m.map2Points(p0, p1) << m.mapPoint(p2);
+        }
+    }
 }
 
-using PathStrokeList = GrStrokeTessellator::PathStrokeList;
-using MakeTessellatorFn = std::unique_ptr<GrStrokeTessellator>(*)(ShaderFlags, const GrShaderCaps&,
-                                                                  const SkMatrix&, PathStrokeList*,
-                                                                  std::array<float, 2>, const
-                                                                  SkRect&);
-
-static std::unique_ptr<GrStrokeTessellator> make_hw_tessellator(
-        ShaderFlags shaderFlags, const GrShaderCaps& shaderCaps, const SkMatrix& viewMatrix,
-        PathStrokeList* pathStrokeList, std::array<float, 2> matrixMinMaxScales,
-        const SkRect& strokeCullBounds) {
-    return std::make_unique<GrStrokeHardwareTessellator>(shaderCaps, shaderFlags, viewMatrix,
-                                                         pathStrokeList, matrixMinMaxScales,
-                                                         strokeCullBounds);
-}
-
-static std::unique_ptr<GrStrokeTessellator> make_fixed_count_tessellator(
-        ShaderFlags shaderFlags, const GrShaderCaps& shaderCaps, const SkMatrix& viewMatrix,
-        PathStrokeList* pathStrokeList, std::array<float, 2> matrixMinMaxScales,
-        const SkRect& strokeCullBounds) {
-    return std::make_unique<GrStrokeFixedCountTessellator>(shaderCaps, shaderFlags, viewMatrix,
-                                                           pathStrokeList, matrixMinMaxScales,
-                                                           strokeCullBounds);
-}
-
+using PathStrokeList = StrokeTessellator::PathStrokeList;
 using MakePathStrokesFn = std::vector<PathStrokeList>(*)();
 
 static std::vector<PathStrokeList> make_simple_cubic_path() {
@@ -305,13 +306,16 @@ static std::vector<PathStrokeList> make_motionmark_paths() {
     return pathStrokes;
 }
 
+using PatchAttribs = tess::PatchAttribs;
+
 class TessPrepareBench : public Benchmark {
 public:
-    TessPrepareBench(MakePathStrokesFn makePathStrokesFn, MakeTessellatorFn makeTessellatorFn,
-                     ShaderFlags shaderFlags, float matrixScale, const char* suffix)
+    TessPrepareBench(MakePathStrokesFn makePathStrokesFn,
+                     PatchAttribs attribs,
+                     float matrixScale,
+                     const char* suffix)
             : fMakePathStrokesFn(makePathStrokesFn)
-            , fMakeTessellatorFn(makeTessellatorFn)
-            , fShaderFlags(shaderFlags)
+            , fPatchAttribs(attribs)
             , fMatrixScale(matrixScale) {
         fName.printf("tessellate_%s", suffix);
     }
@@ -335,57 +339,43 @@ private:
             fTotalVerbCount += fPathStrokes[i].fPath.countVerbs();
         }
 
-        fTessellator = fMakeTessellatorFn(fShaderFlags, *fTarget->caps().shaderCaps(),
-                                          SkMatrix::Scale(fMatrixScale, fMatrixScale),
-                                          fPathStrokes.data(), {fMatrixScale, fMatrixScale},
-                                          SkRectPriv::MakeLargest());
+        fTessellator = std::make_unique<StrokeTessellator>(fPatchAttribs);
     }
 
     void onDraw(int loops, SkCanvas*) final {
         for (int i = 0; i < loops; ++i) {
-            fTessellator->prepare(fTarget.get(), fTotalVerbCount);
+            fTessellator->prepare(fTarget.get(),
+                                  SkMatrix::Scale(fMatrixScale, fMatrixScale),
+                                  fPathStrokes.data(),
+                                  fTotalVerbCount);
             fTarget->resetAllocator();
         }
     }
 
     SkString fName;
     MakePathStrokesFn fMakePathStrokesFn;
-    MakeTessellatorFn fMakeTessellatorFn;
-    const ShaderFlags fShaderFlags;
+    const PatchAttribs fPatchAttribs;
     float fMatrixScale;
     std::unique_ptr<GrMockOpTarget> fTarget;
     std::vector<PathStrokeList> fPathStrokes;
-    std::unique_ptr<GrStrokeTessellator> fTessellator;
+    std::unique_ptr<StrokeTessellator> fTessellator;
     SkArenaAlloc fPersistentArena{1024};
     int fTotalVerbCount = 0;
 };
 
 DEF_BENCH(return new TessPrepareBench(
-        make_simple_cubic_path, make_hw_tessellator, ShaderFlags::kNone, 1,
-        "GrStrokeHardwareTessellator");
-)
-
-DEF_BENCH(return new TessPrepareBench(
-        make_simple_cubic_path, make_hw_tessellator, ShaderFlags::kNone, 5,
-        "GrStrokeHardwareTessellator_one_chop");
-)
-
-DEF_BENCH(return new TessPrepareBench(
-        make_motionmark_paths, make_hw_tessellator, ShaderFlags::kDynamicStroke, 1,
-        "GrStrokeHardwareTessellator_motionmark");
-)
-
-DEF_BENCH(return new TessPrepareBench(
-        make_simple_cubic_path, make_fixed_count_tessellator, ShaderFlags::kNone, 1,
+        make_simple_cubic_path, PatchAttribs::kNone, 1,
         "GrStrokeFixedCountTessellator");
 )
 
 DEF_BENCH(return new TessPrepareBench(
-        make_simple_cubic_path, make_fixed_count_tessellator, ShaderFlags::kNone, 5,
+        make_simple_cubic_path, PatchAttribs::kNone, 5,
         "GrStrokeFixedCountTessellator_one_chop");
 )
 
 DEF_BENCH(return new TessPrepareBench(
-        make_motionmark_paths, make_fixed_count_tessellator, ShaderFlags::kDynamicStroke, 1,
+        make_motionmark_paths, PatchAttribs::kStrokeParams, 1,
         "GrStrokeFixedCountTessellator_motionmark");
 )
+
+}  // namespace skgpu::v1

@@ -20,14 +20,15 @@ class CheckoutApi(recipe_api.RecipeApi):
   def assert_git_is_from_cipd(self):
     """Fail if git is not obtained from CIPD."""
     self.m.run(self.m.python.inline, 'Assert that Git is from CIPD', program='''
+from __future__ import print_function
 import subprocess
 import sys
 
 which = 'where' if sys.platform == 'win32' else 'which'
-git = subprocess.check_output([which, 'git'])
-print 'git was found at %s' % git
+git = subprocess.check_output([which, 'git']).decode('utf-8')
+print('git was found at %s' % git)
 if 'cipd_bin_packages' not in git:
-  print >> sys.stderr, 'Git must be obtained through CIPD.'
+  print('Git must be obtained through CIPD.', file=sys.stderr)
   sys.exit(1)
 ''')
 
@@ -45,27 +46,22 @@ if 'cipd_bin_packages' not in git:
       return self.m.properties['revision']
 
   def bot_update(self, checkout_root, gclient_cache=None,
-                 checkout_chromium=False, checkout_flutter=False,
-                 extra_gclient_env=None,
-                 flutter_android=False):
+                 checkout_flutter=False,
+                 flutter_android=False,
+                 ignore_trybot=False):
     """Run the steps to obtain a checkout using bot_update.
 
     Args:
       checkout_root: Root directory where the code will be synced.
       gclient_cache: Optional, directory of the gclient cache.
-      checkout_chromium: If True, will check out chromium/src.git in addition
-          to the primary repo.
       checkout_flutter: If True, will checkout flutter in addition to the
           primary repo.
-      extra_gclient_env: Map of extra environment variable names to their values
-          to supply while running gclient.
       flutter_android: Indicates that we're checking out flutter for Android.
+      ignore_trybot: Ignore changelist/patchset when syncing the Skia repo.
     """
     self.assert_git_is_from_cipd()
     if not gclient_cache:
       gclient_cache = self.m.vars.cache_dir.join('git')
-    if not extra_gclient_env:
-      extra_gclient_env = {}
 
     cfg_kwargs = {}
 
@@ -125,10 +121,6 @@ if 'cipd_bin_packages' not in git:
       m[skia_dep_path] = 'got_revision'
       patch_root = skia_dep_path
 
-    if checkout_chromium:
-      main.custom_vars['checkout_chromium'] = True
-      extra_gclient_env['GYP_CHROMIUM_NO_ACTION'] = '0'
-
     # TODO(rmistry): Remove the below block after there is a solution for
     #                crbug.com/616443
     entries_file = checkout_root.join('.gclient_entries')
@@ -139,7 +131,7 @@ if 'cipd_bin_packages' not in git:
     # Run bot_update.
     patch_refs = None
     patch_ref = self.m.properties.get('patch_ref')
-    if patch_ref:
+    if patch_ref and not ignore_trybot:
       patch_refs = ['%s@%s:%s' % (self.m.properties['patch_repo'],
                                   self.m.properties['revision'],
                                   patch_ref)]
@@ -154,12 +146,13 @@ if 'cipd_bin_packages' not in git:
           # always specify patch=True.
           patch=True,
           patch_refs=patch_refs,
+          # Download the patches of all changes with the same Gerrit topic.
+          # For context see go/sk-topics.
+          download_topics=True,
       )
 
-    if checkout_chromium or checkout_flutter:
+    if checkout_flutter:
       gclient_env = {'DEPOT_TOOLS_UPDATE': '0'}
-      if extra_gclient_env:
-        gclient_env.update(extra_gclient_env)
       with self.m.context(cwd=checkout_root, env=gclient_env):
         self.m.gclient.runhooks()
     return update_step.presentation.properties['got_revision']

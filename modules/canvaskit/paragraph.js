@@ -40,7 +40,7 @@
 
     // Registers the font (provided as an arrayBuffer) with the alias `family`.
     CanvasKit.TypefaceFontProvider.prototype.registerFont = function(font, family) {
-      var typeface = CanvasKit.FontMgr.RefDefault().MakeTypefaceFromData(font);
+      var typeface = CanvasKit.Typeface.MakeFreeTypeFaceFromData(font);
       if (!typeface) {
           Debug('Could not decode font data');
           // We do not need to free the data since the C++ will do that for us
@@ -246,13 +246,25 @@
         textStyle['_fontFeatureNamesPtr'] = nullptr;
         textStyle['_fontFeatureValuesPtr'] = nullptr;
       }
+
+      if (Array.isArray(textStyle['fontVariations']) && textStyle['fontVariations'].length) {
+        var fontVariations = textStyle['fontVariations'];
+        var fontVariationAxes = fontVariations.map(function (s) { return s['axis']; });
+        var fontVariationValues = fontVariations.map(function (s) { return s['value']; });
+        textStyle['_fontVariationLen'] = fontVariations.length;
+        textStyle['_fontVariationAxesPtr'] = naiveCopyStrArray(fontVariationAxes);
+        textStyle['_fontVariationValuesPtr'] = copy1dArray(fontVariationValues, 'HEAPF32');
+      } else {
+        textStyle['_fontVariationLen'] = 0;
+        textStyle['_fontVariationAxesPtr'] = nullptr;
+        textStyle['_fontVariationValuesPtr'] = nullptr;
+      }
     }
 
     function freeArrays(textStyle) {
       // The font family strings will get copied to a vector on the C++ side, which is owned by
       // the text style.
       CanvasKit._free(textStyle['_fontFamiliesPtr']);
-      CanvasKit._free(textStyle['_localePtr']);
       CanvasKit._free(textStyle['_shadowColorsPtr']);
       CanvasKit._free(textStyle['_shadowOffsetsPtr']);
       CanvasKit._free(textStyle['_shadowBlurRadiiPtr']);

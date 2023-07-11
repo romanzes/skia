@@ -11,16 +11,19 @@
 #include "include/gpu/GrTypes.h"
 #include "src/core/SkAutoPixmapStorage.h"
 #include "src/core/SkCanvasPriv.h"
-#include "src/gpu/GrDirectContextPriv.h"
-#include "src/gpu/GrProxyProvider.h"
-#include "src/gpu/GrSurfaceProxy.h"
-#include "src/gpu/SurfaceFillContext.h"
+#include "src/gpu/ganesh/GrDirectContextPriv.h"
+#include "src/gpu/ganesh/GrProxyProvider.h"
+#include "src/gpu/ganesh/GrSurfaceProxy.h"
+#include "src/gpu/ganesh/SurfaceFillContext.h"
 #include "tests/Test.h"
 #include "tests/TestUtils.h"
 #include "tools/gpu/BackendSurfaceFactory.h"
 #include "tools/gpu/ProxyUtils.h"
 
-DEF_GPUTEST_FOR_ALL_CONTEXTS(WrappedSurfaceCopyOnWrite, reporter, ctxInfo) {
+DEF_GPUTEST_FOR_ALL_CONTEXTS(WrappedSurfaceCopyOnWrite,
+                             reporter,
+                             ctxInfo,
+                             CtsEnforcement::kApiLevel_T) {
     GrDirectContext* dContext = ctxInfo.directContext();
 
     auto makeDirectBackendSurface = [&]() {
@@ -79,7 +82,7 @@ DEF_GPUTEST_FOR_ALL_CONTEXTS(WrappedSurfaceCopyOnWrite, reporter, ctxInfo) {
 }
 
 // Make sure GrCopyRenderTasks's skip actually skips the copy.
-DEF_GPUTEST_FOR_RENDERING_CONTEXTS(SkipCopyTaskTest, reporter, ctxInfo) {
+DEF_GPUTEST_FOR_RENDERING_CONTEXTS(SkipCopyTaskTest, reporter, ctxInfo, CtsEnforcement::kNever) {
     GrDirectContext* dContext = ctxInfo.directContext();
 
     GrImageInfo info(GrColorType::kRGBA_8888,
@@ -87,18 +90,18 @@ DEF_GPUTEST_FOR_RENDERING_CONTEXTS(SkipCopyTaskTest, reporter, ctxInfo) {
                      /*color space*/ nullptr,
                      10, 10);
 
-    auto dstSC = skgpu::SurfaceContext::Make(dContext,
-                                             info,
-                                             SkBackingFit::kExact,
-                                             kBottomLeft_GrSurfaceOrigin,
-                                             GrRenderable::kYes);
+    auto dstSC = CreateSurfaceContext(dContext,
+                                      info,
+                                      SkBackingFit::kExact,
+                                      kBottomLeft_GrSurfaceOrigin,
+                                      GrRenderable::kYes);
     dstSC->asFillContext()->clear(SkPMColor4f{1, 0, 0, 1});
 
-    auto srcSC = skgpu::SurfaceContext::Make(dContext,
-                                             info,
-                                             SkBackingFit::kExact,
-                                             kBottomLeft_GrSurfaceOrigin,
-                                             GrRenderable::kYes);
+    auto srcSC = CreateSurfaceContext(dContext,
+                                      info,
+                                      SkBackingFit::kExact,
+                                      kBottomLeft_GrSurfaceOrigin,
+                                      GrRenderable::kYes);
     srcSC->asFillContext()->clear(SkPMColor4f{0, 0, 1, 1});
 
     sk_sp<GrRenderTask> task =
@@ -129,8 +132,8 @@ DEF_GPUTEST_FOR_RENDERING_CONTEXTS(SkipCopyTaskTest, reporter, ctxInfo) {
 
 #if SK_GPU_V1
 
-// Make sure GrOpsTask are skippable
-DEF_GPUTEST_FOR_RENDERING_CONTEXTS(SkipOpsTaskTest, reporter, ctxInfo) {
+// Make sure OpsTask are skippable
+DEF_GPUTEST_FOR_RENDERING_CONTEXTS(SkipOpsTaskTest, reporter, ctxInfo, CtsEnforcement::kNever) {
     GrDirectContext* dContext = ctxInfo.directContext();
 
     GrImageInfo ii(GrColorType::kRGBA_8888, kPremul_SkAlphaType, /*color space*/ nullptr, 10, 10);

@@ -38,7 +38,8 @@ var CanvasKit = {
   GetWebGLContext: function() {},
   MakeCanvas: function() {},
   MakeCanvasSurface: function() {},
-  MakeGrContext: function() {},
+  MakeGrContext: function() {}, // deprecated
+  MakeWebGLContext: function() {},
   /** @return {CanvasKit.AnimatedImage} */
   MakeAnimatedImageFromEncoded: function() {},
   /** @return {CanvasKit.Image} */
@@ -54,32 +55,43 @@ var CanvasKit = {
   MakeParticles: function() {},
   MakeVertices: function() {},
   MakeSurface: function() {},
+  MakeGPUDeviceContext: function() {},
+  MakeGPUCanvasContext: function() {},
+  MakeGPUCanvasSurface: function() {},
+  MakeGPUTextureSurface: function() {},
   MakeRasterDirectSurface: function() {},
   MakeWebGLCanvasSurface: function() {},
   Malloc: function() {},
   MallocGlyphIDs: function() {},
+  MakeLazyImageFromTextureSource: function() {},
   Free: function() {},
   computeTonalColors: function() {},
-  currentContext: function() {},
   deleteContext: function() {},
   getColorComponents: function() {},
   getDecodeCacheLimitBytes: function() {},
   getDecodeCacheUsageBytes: function() {},
   multiplyByAlpha: function() {},
   parseColorString: function() {},
-  setCurrentContext: function() {},
   setDecodeCacheLimitBytes: function() {},
   getShadowLocalBounds: function() {},
   // Defined by emscripten.
   createContext: function() {},
 
+  // Added by debugger when it extends canvaskit
+  MinVersion: function() {},
+  SkpFilePlayer: function() {},
+
   // private API (i.e. things declared in the bindings that we use
   // in the pre-js file)
-  _computeTonalColors: function() {},
+  _MakeGrContext: function() {},
   _MakeImage: function() {},
   _MakeManagedAnimation: function() {},
+  _MakeOnScreenGLSurface: function() {},
   _MakeParticles: function() {},
   _MakePicture: function() {},
+  _MakeRenderTargetII: function() {},
+  _MakeRenderTargetWH: function() {},
+  _computeTonalColors: function() {},
   _decodeAnimatedImage: function() {},
   _decodeImage: function() {},
   _getShadowLocalBounds: function() {},
@@ -151,6 +163,7 @@ var CanvasKit = {
     addText: function() {},
     build: function() {},
     pop: function() {},
+    reset: function() {},
 
     prototype: {
       pushStyle: function() {},
@@ -200,23 +213,8 @@ var CanvasKit = {
   Canvas: {
     // public API (from C++ bindings)
     clipPath: function() {},
-    drawCircle: function() {},
-    drawColorInt: function() {},
-    drawImage: function() {},
-    drawImageCubic: function() {},
-    drawImageOptions: function() {},
-    drawLine: function() {},
-    drawPaint: function() {},
-    drawParagraph: function() {},
-    drawPath: function() {},
-    drawPicture: function() {},
-    drawRect4f: function() {},
-    drawTextBlob: function() {},
-    drawVertices: function() {},
     getSaveCount: function() {},
     makeSurface: function() {},
-    markCTM: function() {},
-    findMarkedCTM: function() {},
     restore: function() {},
     restoreToCount: function() {},
     rotate: function() {},
@@ -233,22 +231,35 @@ var CanvasKit = {
       concat: function() {},
       drawArc: function() {},
       drawAtlas: function() {},
+      drawCircle: function() {},
       drawColor: function() {},
       drawColorComponents: function() {},
+      drawColorInt: function() {},
       drawDRRect: function() {},
       drawGlyphs: function() {},
+      drawImage: function() {},
+      drawImageCubic: function() {},
       drawImageNine: function() {},
+      drawImageOptions: function() {},
       drawImageRect: function() {},
       drawImageRectCubic: function() {},
       drawImageRectOptions: function() {},
+      drawLine: function() {},
       drawOval: function() {},
+      drawPaint: function() {},
+      drawParagraph: function() {},
       drawPatch: function() {},
+      drawPath: function() {},
+      drawPicture: function() {},
       drawPoints: function() {},
-      drawRect: function() {},
       drawRRect:  function() {},
+      drawRect4f: function() {},
+      drawRect: function() {},
       drawShadow: function() {},
       drawText: function() {},
-      findMarkedCTM: function() {},
+      drawTextBlob: function() {},
+      drawVertices: function() {},
+      getDeviceClipBounds: function() {},
       getLocalToDevice: function() {},
       getTotalMatrix: function() {},
       readPixels: function() {},
@@ -262,23 +273,36 @@ var CanvasKit = {
     _clipRect: function() {},
     _concat: function() {},
     _drawArc: function() {},
-    _drawAtlasOptions: function() {},
     _drawAtlasCubic: function() {},
+    _drawAtlasOptions: function() {},
+    _drawCircle: function() {},
     _drawColor: function() {},
+    _drawColorInt: function() {},
     _drawDRRect:  function() {},
     _drawGlyphs: function() {},
+    _drawImage: function() {},
+    _drawImageCubic: function() {},
     _drawImageNine: function() {},
+    _drawImageOptions: function() {},
     _drawImageRect: function() {},
     _drawImageRectCubic: function() {},
     _drawImageRectOptions: function() {},
+    _drawLine: function() {},
     _drawOval: function() {},
+    _drawPaint: function() {},
+    _drawParagraph: function() {},
     _drawPatch: function() {},
+    _drawPath: function() {},
+    _drawPicture: function() {},
     _drawPoints: function() {},
-    _drawRect: function() {},
     _drawRRect:  function() {},
+    _drawRect4f: function() {},
+    _drawRect: function() {},
     _drawShadow: function() {},
     _drawSimpleText: function() {},
-    _findMarkedCTM: function() {},
+    _drawTextBlob: function() {},
+    _drawVertices: function() {},
+    _getDeviceClipBounds: function() {},
     _getLocalToDevice: function() {},
     _getTotalMatrix: function() {},
     _readPixels: function() {},
@@ -366,7 +390,6 @@ var CanvasKit = {
   FontMgr: {
     // public API (from C++ and JS bindings)
     FromData: function() {},
-    RefDefault: function() {},
     countFamilies: function() {},
     getFamilyName: function() {},
 
@@ -400,15 +423,28 @@ var CanvasKit = {
     // private API
     _makeShaderCubic: function() {},
     _makeShaderOptions: function() {},
+    _makeFromGenerator: function() {},
   },
 
   ImageFilter: {
+    MakeBlend: function() {},
     MakeBlur: function() {},
     MakeColorFilter: function() {},
     MakeCompose: function() {},
+    MakeDilate: function() {},
+    MakeDisplacementMap: function() {},
+    MakeDropShadow: function() {},
+    MakeDropShadowOnly: function() {},
+    MakeErode: function() {},
+    MakeImage: function() {},
     MakeMatrixTransform: function() {},
+    MakeOffset: function() {},
 
     // private API
+    _MakeDropShadow: function() {},
+    _MakeDropShadowOnly: function() {},
+    _MakeImageCubic: function() {},
+    _MakeImageOptions: function() {},
     _MakeMatrixTransformCubic: function() {},
     _MakeMatrixTransformOptions: function() {},
   },
@@ -489,9 +525,14 @@ var CanvasKit = {
     MakeCorner: function() {},
     MakeDash: function() {},
     MakeDiscrete: function() {},
+    MakePath1D: function() {},
+    MakeLine2D: function() {},
+    MakePath2D: function() {},
 
     // Private C++ API
     _MakeDash: function() {},
+    _MakeLine2D: function() {},
+    _MakePath2D: function() {},
   },
 
   ParticleEffect: {
@@ -517,7 +558,9 @@ var CanvasKit = {
 
   Path: {
     // public API (from C++ and JS bindings)
+    CanInterpolate: function() {},
     MakeFromCmds: function() {},
+    MakeFromPathInterpolation: function() {},
     MakeFromSVGString: function() {},
     MakeFromOp: function() {},
     MakeFromVerbsPointsWeights: function() {},
@@ -539,6 +582,7 @@ var CanvasKit = {
 
     prototype: {
       addArc: function() {},
+      addCircle: function() {},
       addOval: function() {},
       addPath: function() {},
       addPoly: function() {},
@@ -577,6 +621,7 @@ var CanvasKit = {
     _MakeFromCmds: function() {},
     _MakeFromVerbsPointsWeights: function() {},
     _addArc: function() {},
+    _addCircle: function() {},
     _addOval: function() {},
     _addPath: function() {},
     _addPoly: function() {},
@@ -615,6 +660,10 @@ var CanvasKit = {
 
   Picture: {
     serialize: function() {},
+    prototype: {
+      makeShader: function() {},
+    },
+    _makeShader: function() {},
   },
 
   PictureRecorder: {
@@ -650,28 +699,29 @@ var CanvasKit = {
 
   Surface: {
     // public API (from C++ bindings)
-    /** @return {CanvasKit.Canvas} */
-    getCanvas: function() {},
     imageInfo: function() {},
 
-    makeSurface: function() {},
     sampleCnt: function() {},
     reportBackendTypeIsGPU: function() {},
-    grContext: {},
-    openGLversion: {},
 
     prototype: {
+      getCanvas: function() {},
       makeImageFromTexture: function() {},
       makeImageFromTextureSource: function() {},
       /** @return {CanvasKit.Image} */
       makeImageSnapshot: function() {},
+      makeSurface: function() {},
+      updateTextureFromSource: function() {},
     },
 
     // private API
     _flush: function() {},
+    _getCanvas: function() {},
     _makeImageFromTexture: function() {},
     _makeImageSnapshot: function() {},
+    _makeSurface: function() {},
     _makeRasterDirect: function() {},
+    _resetContext: function() {},
     delete: function() {},
   },
 
@@ -732,6 +782,11 @@ var CanvasKit = {
   },
 
   TextStyle: function() {},
+
+  SkpDebugPlayer: {
+    // public API (from C++ bindings)
+    loadSkp: function() {},
+  },
 
   // Constants and Enums
   gpu: {},
@@ -1040,8 +1095,6 @@ CanvasKit.Surface.prototype.dispose = function() {};
 CanvasKit.Surface.prototype.flush = function() {};
 CanvasKit.Surface.prototype.requestAnimationFrame = function() {};
 CanvasKit.Surface.prototype.drawOnce = function() {};
-
-CanvasKit.FontMgr.prototype.MakeTypefaceFromData = function() {};
 
 CanvasKit.RuntimeEffect.prototype.makeShader = function() {};
 CanvasKit.RuntimeEffect.prototype.makeShaderWithChildren = function() {};

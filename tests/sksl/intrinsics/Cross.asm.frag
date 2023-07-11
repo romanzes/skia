@@ -1,20 +1,20 @@
 OpCapability Shader
 %1 = OpExtInstImport "GLSL.std.450"
 OpMemoryModel Logical GLSL450
-OpEntryPoint Fragment %main "main" %sk_FragColor %sk_Clockwise
+OpEntryPoint Fragment %main "main" %sk_Clockwise %sk_FragColor
 OpExecutionMode %main OriginUpperLeft
-OpName %sk_FragColor "sk_FragColor"
 OpName %sk_Clockwise "sk_Clockwise"
+OpName %sk_FragColor "sk_FragColor"
 OpName %_UniformBuffer "_UniformBuffer"
 OpMemberName %_UniformBuffer 0 "ah"
 OpMemberName %_UniformBuffer 1 "bh"
 OpMemberName %_UniformBuffer 2 "af"
 OpMemberName %_UniformBuffer 3 "bf"
 OpName %main "main"
+OpDecorate %sk_Clockwise BuiltIn FrontFacing
 OpDecorate %sk_FragColor RelaxedPrecision
 OpDecorate %sk_FragColor Location 0
 OpDecorate %sk_FragColor Index 0
-OpDecorate %sk_Clockwise BuiltIn FrontFacing
 OpMemberDecorate %_UniformBuffer 0 Offset 0
 OpMemberDecorate %_UniformBuffer 0 RelaxedPrecision
 OpMemberDecorate %_UniformBuffer 1 Offset 8
@@ -35,19 +35,17 @@ OpDecorate %32 RelaxedPrecision
 OpDecorate %33 RelaxedPrecision
 OpDecorate %34 RelaxedPrecision
 OpDecorate %35 RelaxedPrecision
-OpDecorate %60 RelaxedPrecision
 OpDecorate %61 RelaxedPrecision
 OpDecorate %62 RelaxedPrecision
-OpDecorate %66 RelaxedPrecision
 OpDecorate %67 RelaxedPrecision
 OpDecorate %68 RelaxedPrecision
+%bool = OpTypeBool
+%_ptr_Input_bool = OpTypePointer Input %bool
+%sk_Clockwise = OpVariable %_ptr_Input_bool Input
 %float = OpTypeFloat 32
 %v4float = OpTypeVector %float 4
 %_ptr_Output_v4float = OpTypePointer Output %v4float
 %sk_FragColor = OpVariable %_ptr_Output_v4float Output
-%bool = OpTypeBool
-%_ptr_Input_bool = OpTypePointer Input %bool
-%sk_Clockwise = OpVariable %_ptr_Input_bool Input
 %v2float = OpTypeVector %float 2
 %_UniformBuffer = OpTypeStruct %v2float %v2float %v2float %v2float
 %_ptr_Uniform__UniformBuffer = OpTypePointer Uniform %_UniformBuffer
@@ -62,8 +60,8 @@ OpDecorate %68 RelaxedPrecision
 %int_2 = OpConstant %int 2
 %int_3 = OpConstant %int 3
 %float_12 = OpConstant %float 12
-%v3float = OpTypeVector %float 3
 %float_n8 = OpConstant %float -8
+%v3float = OpTypeVector %float 3
 %60 = OpConstantComposite %v3float %float_n8 %float_n8 %float_12
 %float_9 = OpConstant %float 9
 %float_n18 = OpConstant %float -18

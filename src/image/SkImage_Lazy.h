@@ -23,7 +23,7 @@ public:
     struct Validator {
         Validator(sk_sp<SharedGenerator>, const SkColorType*, sk_sp<SkColorSpace>);
 
-        operator bool() const { return fSharedGenerator.get(); }
+        explicit operator bool() const { return fSharedGenerator.get(); }
 
         sk_sp<SharedGenerator> fSharedGenerator;
         SkImageInfo            fInfo;
@@ -67,13 +67,14 @@ public:
 
 private:
     void addUniqueIDListener(sk_sp<SkIDChangeListener>) const;
+    bool readPixelsProxy(GrDirectContext*, const SkPixmap&) const;
 #if SK_SUPPORT_GPU
     std::tuple<GrSurfaceProxyView, GrColorType> onAsView(GrRecordingContext*,
                                                          GrMipmapped,
                                                          GrImageTexGenPolicy) const override;
     std::unique_ptr<GrFragmentProcessor> onAsFragmentProcessor(GrRecordingContext*,
                                                                SkSamplingOptions,
-                                                               const SkTileMode[],
+                                                               const SkTileMode[2],
                                                                const SkMatrix&,
                                                                const SkRect*,
                                                                const SkRect*) const override;
