@@ -22,6 +22,8 @@
 #include "src/gpu/GrColor.h"
 #include "src/gpu/GrDirectContextPriv.h"
 #include "src/gpu/GrFragmentProcessor.h"
+#include "src/gpu/GrImageInfo.h"
+#include "src/gpu/SurfaceFillContext.h"
 #include "src/gpu/effects/GrSkSLFP.h"
 #include "tests/Test.h"
 
@@ -67,6 +69,26 @@ DEF_TEST(SkRuntimeEffectInvalid_SkCapsDisallowed, r) {
             r,
             "half4 main(float2 p) { return sk_Caps.integerSupport ? half4(1) : half4(0); }",
             "unknown identifier 'sk_Caps'");
+}
+
+DEF_TEST(SkRuntimeEffect_DeadCodeEliminationStackOverflow, r) {
+    // Verify that a deeply-nested loop does not cause stack overflow during SkVM dead-code
+    // elimination.
+    auto [effect, errorText] = SkRuntimeEffect::MakeForColorFilter(SkString(R"(
+        half4 main(half4 color) {
+            half value = color.r;
+
+            for (int a=0; a<10; ++a) { // 10
+            for (int b=0; b<10; ++b) { // 100
+            for (int c=0; c<10; ++c) { // 1000
+            for (int d=0; d<10; ++d) { // 10000
+                ++value;
+            }}}}
+
+            return value.xxxx;
+        }
+    )"));
+    REPORTER_ASSERT(r, effect, "%s", errorText.c_str());
 }
 
 DEF_TEST(SkRuntimeEffectCanDisableES2Restrictions, r) {
@@ -120,44 +142,15 @@ DEF_TEST(SkRuntimeEffectForColorFilter, r) {
 
     // Sampling a child shader requires that we pass explicit coords
     test_valid("uniform shader child;"
-               "half4 main(half4 c) { return sample(child, c.rg); }");
-    // Trying to pass a color as well. (Works internally with FPs, but not in runtime effects).
-    test_invalid("uniform shader child;"
-                 "half4 main(half4 c) { return sample(child, c.rg, c); }",
-                 "no match for sample(shader, half2, half4)");
+               "half4 main(half4 c) { return child.eval(c.rg); }");
 
-    // Shader with just a color
-    test_invalid("uniform shader child;"
-                 "half4 main(half4 c) { return sample(child, c); }",
-                 "no match for sample(shader, half4)");
-    // Coords and color in a different order
-    test_invalid("uniform shader child;"
-                 "half4 main(half4 c) { return sample(child, c, c.rg); }",
-                 "no match for sample(shader, half4, half2)");
-
-    // Older variants that are no longer allowed
-    test_invalid(
-            "uniform shader child;"
-            "half4 main(half4 c) { return sample(child); }",
-            "no match for sample(shader)");
-    test_invalid(
-            "uniform shader child;"
-            "half4 main(half4 c) { return sample(child, float3x3(1)); }",
-            "no match for sample(shader, float3x3)");
-
-    // Sampling a colorFilter requires a color. No other signatures are valid.
+    // Sampling a colorFilter requires a color
     test_valid("uniform colorFilter child;"
-               "half4 main(half4 c) { return sample(child, c); }");
+               "half4 main(half4 c) { return child.eval(c); }");
 
-    test_invalid("uniform colorFilter child;"
-                 "half4 main(half4 c) { return sample(child); }",
-                 "sample(colorFilter)");
-    test_invalid("uniform colorFilter child;"
-                 "half4 main(half4 c) { return sample(child, c.rg); }",
-                 "sample(colorFilter, half2)");
-    test_invalid("uniform colorFilter child;"
-                 "half4 main(half4 c) { return sample(child, c.rg, c); }",
-                 "sample(colorFilter, half2, half4)");
+    // Sampling a blender requires two colors
+    test_valid("uniform blender child;"
+               "half4 main(half4 c) { return child.eval(c, c); }");
 }
 
 DEF_TEST(SkRuntimeEffectForBlender, r) {
@@ -205,42 +198,15 @@ DEF_TEST(SkRuntimeEffectForBlender, r) {
 
     // Sampling a child shader requires that we pass explicit coords
     test_valid("uniform shader child;"
-               "half4 main(half4 s, half4 d) { return sample(child, s.rg); }");
-    // Trying to pass a color as well. (Works internally with FPs, but not in runtime effects).
-    test_invalid("uniform shader child;"
-                 "half4 main(half4 s, half4 d) { return sample(child, s.rg, d); }",
-                 "no match for sample(shader, half2, half4)");
+               "half4 main(half4 s, half4 d) { return child.eval(s.rg); }");
 
-    // Shader with just a color
-    test_invalid("uniform shader child;"
-                 "half4 main(half4 s, half4 d) { return sample(child, s); }",
-                 "no match for sample(shader, half4)");
-    // Coords and color in a different order
-    test_invalid("uniform shader child;"
-                 "half4 main(half4 s, half4 d) { return sample(child, s, d.rg); }",
-                 "no match for sample(shader, half4, half2)");
-
-    // Older variants that are no longer allowed
-    test_invalid("uniform shader child;"
-                 "half4 main(half4 s, half4 d) { return sample(child); }",
-                 "no match for sample(shader)");
-    test_invalid("uniform shader child;"
-                 "half4 main(half4 s, half4 d) { return sample(child, float3x3(1)); }",
-                 "no match for sample(shader, float3x3)");
-
-    // Sampling a colorFilter requires a color. No other signatures are valid.
+    // Sampling a colorFilter requires a color
     test_valid("uniform colorFilter child;"
-               "half4 main(half4 s, half4 d) { return sample(child, d); }");
+               "half4 main(half4 s, half4 d) { return child.eval(d); }");
 
-    test_invalid("uniform colorFilter child;"
-                 "half4 main(half4 s, half4 d) { return sample(child); }",
-                 "sample(colorFilter)");
-    test_invalid("uniform colorFilter child;"
-                 "half4 main(half4 s, half4 d) { return sample(child, d.rg); }",
-                 "sample(colorFilter, half2)");
-    test_invalid("uniform colorFilter child;"
-                 "half4 main(half4 s, half4 d) { return sample(child, d.rg, s); }",
-                 "sample(colorFilter, half2, half4)");
+    // Sampling a blender requires two colors
+    test_valid("uniform blender child;"
+               "half4 main(half4 s, half4 d) { return child.eval(s, d); }");
 }
 
 DEF_TEST(SkRuntimeEffectForShader, r) {
@@ -294,45 +260,15 @@ DEF_TEST(SkRuntimeEffectForShader, r) {
 
     // Sampling a child shader requires that we pass explicit coords
     test_valid("uniform shader child;"
-               "half4 main(float2 p) { return sample(child, p); }");
+               "half4 main(float2 p) { return child.eval(p); }");
 
-    // Trying to pass a color as well. (Works internally with FPs, but not in runtime effects).
-    test_invalid("uniform shader child;"
-                 "half4 main(float2 p, half4 c) { return sample(child, p, c); }",
-                 "no match for sample(shader, float2, half4)");
-
-    // Shader with just a color
-    test_invalid("uniform shader child;"
-                 "half4 main(float2 p, half4 c) { return sample(child, c); }",
-                 "no match for sample(shader, half4)");
-    // Coords and color in a different order
-    test_invalid("uniform shader child;"
-                 "half4 main(float2 p, half4 c) { return sample(child, c, p); }",
-                 "no match for sample(shader, half4, float2)");
-
-    // Older variants that are no longer allowed
-    test_invalid(
-            "uniform shader child;"
-            "half4 main(float2 p) { return sample(child); }",
-            "no match for sample(shader)");
-    test_invalid(
-            "uniform shader child;"
-            "half4 main(float2 p) { return sample(child, float3x3(1)); }",
-            "no match for sample(shader, float3x3)");
-
-    // Sampling a colorFilter requires a color. No other signatures are valid.
+    // Sampling a colorFilter requires a color
     test_valid("uniform colorFilter child;"
-               "half4 main(float2 p, half4 c) { return sample(child, c); }");
+               "half4 main(float2 p, half4 c) { return child.eval(c); }");
 
-    test_invalid("uniform colorFilter child;"
-                 "half4 main(float2 p) { return sample(child); }",
-                 "sample(colorFilter)");
-    test_invalid("uniform colorFilter child;"
-                 "half4 main(float2 p) { return sample(child, p); }",
-                 "sample(colorFilter, float2)");
-    test_invalid("uniform colorFilter child;"
-                 "half4 main(float2 p, half4 c) { return sample(child, p, c); }",
-                 "sample(colorFilter, float2, half4)");
+    // Sampling a blender requires two colors
+    test_valid("uniform blender child;"
+               "half4 main(float2 p, half4 c) { return child.eval(c, c); }");
 }
 
 using PreTestFn = std::function<void(SkCanvas*, SkPaint*)>;
@@ -505,14 +441,14 @@ static void test_RuntimeEffect_Shaders(skiatest::Reporter* r, GrRecordingContext
     effect.uniform("gColor") = float4{ 0.0f, 0.25f, 0.75f, 1.0f };
     effect.test(0xFFBF4000);
     effect.uniform("gColor") = float4{ 1.0f, 0.0f, 0.0f, 0.498f };
-    effect.test(0x7F00007F);  // Tests that we clamp to valid premul
+    effect.test(0x7F0000FF);  // Tests that we don't clamp to valid premul
 
     // Same, with integer uniforms
     effect.build("uniform int4 gColor; half4 main(float2 p) { return half4(gColor) / 255.0; }");
     effect.uniform("gColor") = int4{ 0x00, 0x40, 0xBF, 0xFF };
     effect.test(0xFFBF4000);
     effect.uniform("gColor") = int4{ 0xFF, 0x00, 0x00, 0x7F };
-    effect.test(0x7F00007F);  // Tests that we clamp to valid premul
+    effect.test(0x7F0000FF);  // Tests that we don't clamp to valid premul
 
     // Test sk_FragCoord (device coords). Rotate the canvas to be sure we're seeing device coords.
     // Since the surface is 2x2, we should see (0,0), (1,0), (0,1), (1,1). Multiply by 0.498 to
@@ -545,7 +481,7 @@ static void test_RuntimeEffect_Shaders(skiatest::Reporter* r, GrRecordingContext
 
     // Sampling a null child should return the paint color
     effect.build("uniform shader child;"
-                 "half4 main(float2 p) { return sample(child, p); }");
+                 "half4 main(float2 p) { return child.eval(p); }");
     effect.child("child") = nullptr;
     effect.test(0xFF00FFFF,
                 [](SkCanvas*, SkPaint* paint) { paint->setColor4f({1.0f, 1.0f, 0.0f, 1.0f}); });
@@ -554,15 +490,22 @@ static void test_RuntimeEffect_Shaders(skiatest::Reporter* r, GrRecordingContext
 
     // Sampling a simple child at our coordinates
     effect.build("uniform shader child;"
-                 "half4 main(float2 p) { return sample(child, p); }");
+                 "half4 main(float2 p) { return child.eval(p); }");
     effect.child("child") = rgbwShader;
     effect.test({0xFF0000FF, 0xFF00FF00, 0xFFFF0000, 0xFFFFFFFF});
 
     // Sampling with explicit coordinates (reflecting about the diagonal)
     effect.build("uniform shader child;"
-                 "half4 main(float2 p) { return sample(child, p.yx); }");
+                 "half4 main(float2 p) { return child.eval(p.yx); }");
     effect.child("child") = rgbwShader;
     effect.test({0xFF0000FF, 0xFFFF0000, 0xFF00FF00, 0xFFFFFFFF});
+
+    // Bind an image shader, but don't use it - ensure that we don't assert or generate bad shaders.
+    // (skbug.com/12429)
+    effect.build("uniform shader child;"
+                 "half4 main(float2 p) { return half4(0, 1, 0, 1); }");
+    effect.child("child") = rgbwShader;
+    effect.test(0xFF00FF00);
 
     //
     // Helper functions
@@ -599,7 +542,7 @@ static void test_RuntimeEffect_Blenders(skiatest::Reporter* r, GrRecordingContex
     effect.uniform("gColor") = float4{ 0.0f, 0.25f, 0.75f, 1.0f };
     effect.test(0xFFBF4000);
     effect.uniform("gColor") = float4{ 1.0f, 0.0f, 0.0f, 0.498f };
-    effect.test(0x7F0000FF);  // Unlike SkShaders, we don't clamp here
+    effect.test(0x7F0000FF);  // We don't clamp here either
 
     // Same, with integer uniforms
     effect.build("uniform int4 gColor;"
@@ -607,7 +550,7 @@ static void test_RuntimeEffect_Blenders(skiatest::Reporter* r, GrRecordingContex
     effect.uniform("gColor") = int4{ 0x00, 0x40, 0xBF, 0xFF };
     effect.test(0xFFBF4000);
     effect.uniform("gColor") = int4{ 0xFF, 0x00, 0x00, 0x7F };
-    effect.test(0x7F0000FF);  // Unlike SkShaders, we don't clamp here
+    effect.test(0x7F0000FF);  // We don't clamp here either
 
     // Verify that mutating the source and destination colors is allowed
     effect.build("half4 main(half4 s, half4 d) { s += d; d += s; return half4(1); }");
@@ -646,13 +589,13 @@ static void test_RuntimeEffect_Blenders(skiatest::Reporter* r, GrRecordingContex
 
     // Sampling a null shader/color filter should return the paint color.
     effect.build("uniform shader child;"
-                 "half4 main(half4 s, half4 d) { return sample(child, s.rg); }");
+                 "half4 main(half4 s, half4 d) { return child.eval(s.rg); }");
     effect.child("child") = nullptr;
     effect.test(0xFF00FFFF,
                 [](SkCanvas*, SkPaint* paint) { paint->setColor4f({1.0f, 1.0f, 0.0f, 1.0f}); });
 
     effect.build("uniform colorFilter child;"
-                 "half4 main(half4 s, half4 d) { return sample(child, s); }");
+                 "half4 main(half4 s, half4 d) { return child.eval(s); }");
     effect.child("child") = nullptr;
     effect.test(0xFF00FFFF,
                 [](SkCanvas*, SkPaint* paint) { paint->setColor4f({1.0f, 1.0f, 0.0f, 1.0f}); });
@@ -660,7 +603,7 @@ static void test_RuntimeEffect_Blenders(skiatest::Reporter* r, GrRecordingContex
     // Sampling a null blender should do a src-over blend. Draw 50% black over RGBW to verify this.
     surface->getCanvas()->drawPaint(rgbwPaint);
     effect.build("uniform blender child;"
-                 "half4 main(half4 s, half4 d) { return sample(child, s, d); }");
+                 "half4 main(half4 s, half4 d) { return child.eval(s, d); }");
     effect.child("child") = nullptr;
     effect.test({0xFF000080, 0xFF008000, 0xFF800000, 0xFF808080},
                 [](SkCanvas*, SkPaint* paint) { paint->setColor4f({0.0f, 0.0f, 0.0f, 0.497f}); });
@@ -668,7 +611,7 @@ static void test_RuntimeEffect_Blenders(skiatest::Reporter* r, GrRecordingContex
     // Sampling a shader at various coordinates
     effect.build("uniform shader child;"
                  "uniform half2 pos;"
-                 "half4 main(half4 s, half4 d) { return sample(child, pos); }");
+                 "half4 main(half4 s, half4 d) { return child.eval(pos); }");
     effect.child("child") = make_RGBW_shader();
     effect.uniform("pos") = float2{0, 0};
     effect.test(0xFF0000FF);
@@ -684,14 +627,14 @@ static void test_RuntimeEffect_Blenders(skiatest::Reporter* r, GrRecordingContex
 
     // Sampling a color filter
     effect.build("uniform colorFilter child;"
-                 "half4 main(half4 s, half4 d) { return sample(child, half4(1)); }");
+                 "half4 main(half4 s, half4 d) { return child.eval(half4(1)); }");
     effect.child("child") = SkColorFilters::Blend(0xFF012345, SkBlendMode::kSrc);
     effect.test(0xFF452301);
 
     // Sampling a built-in blender
     surface->getCanvas()->drawPaint(rgbwPaint);
     effect.build("uniform blender child;"
-                 "half4 main(half4 s, half4 d) { return sample(child, s, d); }");
+                 "half4 main(half4 s, half4 d) { return child.eval(s, d); }");
     effect.child("child") = SkBlender::Mode(SkBlendMode::kPlus);
     effect.test({0xFF4523FF, 0xFF45FF01, 0xFFFF2301, 0xFFFFFFFF},
                 [](SkCanvas*, SkPaint* paint) { paint->setColor(0xFF012345); });
@@ -699,7 +642,7 @@ static void test_RuntimeEffect_Blenders(skiatest::Reporter* r, GrRecordingContex
     // Sampling a runtime-effect blender
     surface->getCanvas()->drawPaint(rgbwPaint);
     effect.build("uniform blender child;"
-                 "half4 main(half4 s, half4 d) { return sample(child, s, d); }");
+                 "half4 main(half4 s, half4 d) { return child.eval(s, d); }");
     effect.child("child") = SkBlenders::Arithmetic(0, 1, 1, 0, /*enforcePremul=*/false);
     effect.test({0xFF4523FF, 0xFF45FF01, 0xFFFF2301, 0xFFFFFFFF},
                 [](SkCanvas*, SkPaint* paint) { paint->setColor(0xFF012345); });
@@ -822,7 +765,7 @@ static void test_RuntimeEffectStructNameReuse(skiatest::Reporter* r, GrRecording
         "uniform shader paint;"
         "struct S { half4 rgba; };"
         "void process(inout S s) { s.rgba.rgb *= 0.5; }"
-        "half4 main(float2 p) { S s; s.rgba = sample(paint, p); process(s); return s.rgba; }"
+        "half4 main(float2 p) { S s; s.rgba = paint.eval(p); process(s); return s.rgba; }"
     ));
     REPORTER_ASSERT(r, childEffect, "%s\n", err.c_str());
     sk_sp<SkShader> nullChild = nullptr;
@@ -841,7 +784,7 @@ static void test_RuntimeEffectStructNameReuse(skiatest::Reporter* r, GrRecording
             "uniform shader child;"
             "struct S { float2 coord; };"
             "void process(inout S s) { s.coord = s.coord.yx; }"
-            "half4 main(float2 p) { S s; s.coord = p; process(s); return sample(child, s.coord); "
+            "half4 main(float2 p) { S s; s.coord = p; process(s); return child.eval(s.coord); "
             "}");
     effect.child("child") = child;
     effect.test(0xFF00407F, [](SkCanvas*, SkPaint* paint) {
@@ -901,31 +844,31 @@ DEF_TEST(SkRuntimeShaderSampleCoords, r) {
 
     // Direct use of passed-in coords. Here, the only use of sample coords is for a sample call
     // converted to passthrough, so referenceSampleCoords is *false*, despite appearing in main.
-    test("half4 main(float2 xy) { return sample(child, xy); }", false, false);
+    test("half4 main(float2 xy) { return child.eval(xy); }", false, false);
     // Sample with passed-in coords, read (but don't write) sample coords elsewhere
-    test("half4 main(float2 xy) { return sample(child, xy) + sin(xy.x); }", false, true);
+    test("half4 main(float2 xy) { return child.eval(xy) + sin(xy.x); }", false, true);
 
     // Cases where our optimization is not valid, and does not happen:
 
     // Sampling with values completely unrelated to passed-in coords
-    test("half4 main(float2 xy) { return sample(child, float2(0, 0)); }", true, false);
+    test("half4 main(float2 xy) { return child.eval(float2(0, 0)); }", true, false);
     // Use of expression involving passed in coords
-    test("half4 main(float2 xy) { return sample(child, xy * 0.5); }", true, true);
+    test("half4 main(float2 xy) { return child.eval(xy * 0.5); }", true, true);
     // Use of coords after modification
-    test("half4 main(float2 xy) { xy *= 2; return sample(child, xy); }", true, true);
+    test("half4 main(float2 xy) { xy *= 2; return child.eval(xy); }", true, true);
     // Use of coords after modification via out-param call
     test("void adjust(inout float2 xy) { xy *= 2; }"
-         "half4 main(float2 xy) { adjust(xy); return sample(child, xy); }", true, true);
+         "half4 main(float2 xy) { adjust(xy); return child.eval(xy); }", true, true);
 
     // There should (must) not be any false-positive cases. There are false-negatives.
     // In all of these cases, our optimization would be valid, but does not happen:
 
     // Direct use of passed-in coords, modified after use
-    test("half4 main(float2 xy) { half4 c = sample(child, xy); xy *= 2; return c; }", true, true);
+    test("half4 main(float2 xy) { half4 c = child.eval(xy); xy *= 2; return c; }", true, true);
     // Passed-in coords copied to a temp variable
-    test("half4 main(float2 xy) { float2 p = xy; return sample(child, p); }", true, true);
+    test("half4 main(float2 xy) { float2 p = xy; return child.eval(p); }", true, true);
     // Use of coords passed to helper function
-    test("half4 helper(float2 xy) { return sample(child, xy); }"
+    test("half4 helper(float2 xy) { return child.eval(xy); }"
          "half4 main(float2 xy) { return helper(xy); }", true, true);
 }
 
@@ -963,4 +906,49 @@ DEF_GPUTEST_FOR_ALL_CONTEXTS(GrSkSLFP_Specialized, r, ctxInfo) {
     SkASSERT(sRed.key != uRed.key);
     SkASSERT(sGreen.key != uRed.key);
     SkASSERT(sRed.key != sGreen.key);
+}
+
+DEF_GPUTEST_FOR_RENDERING_CONTEXTS(GrSkSLFP_UniformArray, r, ctxInfo) {
+    // Make a fill-context to draw into.
+    GrDirectContext* directContext = ctxInfo.directContext();
+    SkImageInfo info = SkImageInfo::Make(1, 1, kRGBA_8888_SkColorType, kPremul_SkAlphaType);
+    std::unique_ptr<skgpu::SurfaceFillContext> testCtx =
+            directContext->priv().makeSFC(info, SkBackingFit::kExact);
+
+    // Make an effect that takes a uniform array as input.
+    static constexpr std::array<float, 4> kRed  {1.0f, 0.0f, 0.0f, 1.0f};
+    static constexpr std::array<float, 4> kGreen{0.0f, 1.0f, 0.0f, 1.0f};
+    static constexpr std::array<float, 4> kBlue {0.0f, 0.0f, 1.0f, 1.0f};
+    static constexpr std::array<float, 4> kGray {0.499f, 0.499f, 0.499f, 1.0f};
+
+    for (const auto& colorArray : {kRed, kGreen, kBlue, kGray}) {
+        // Compile our runtime effect.
+        auto effect = SkMakeRuntimeEffect(SkRuntimeEffect::MakeForShader, R"(
+            uniform half color[4];
+            half4 main(float2 xy) { return half4(color[0], color[1], color[2], color[3]); }
+        )");
+        // Render our shader into the fill-context with our various input colors.
+        testCtx->fillWithFP(GrSkSLFP::Make(std::move(effect), "test_fp",
+                                           /*inputFP=*/nullptr,
+                                           GrSkSLFP::OptFlags::kNone,
+                                           "color", SkMakeSpan(colorArray)));
+        // Read our color back and ensure it matches.
+        GrColor actual;
+        GrPixmap pixmap(info, &actual, sizeof(GrColor));
+        if (!testCtx->readPixels(directContext, pixmap, /*srcPt=*/{0, 0})) {
+            REPORT_FAILURE(r, "readPixels", SkString("readPixels failed"));
+            break;
+        }
+        if (actual != GrColorPackRGBA(255 * colorArray[0], 255 * colorArray[1],
+                                      255 * colorArray[2], 255 * colorArray[3])) {
+            REPORT_FAILURE(r, "Uniform array didn't match expectations",
+                           SkStringPrintf("\n"
+                                          "Expected: [ %g %g %g %g ]\n"
+                                          "Got     : [ %08x ]\n",
+                                          colorArray[0], colorArray[1],
+                                          colorArray[2], colorArray[3],
+                                          actual));
+            break;
+        }
+    }
 }

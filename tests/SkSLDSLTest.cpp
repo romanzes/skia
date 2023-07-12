@@ -7,9 +7,11 @@
 
 #include "include/private/SkSLIRNode.h"
 #include "include/sksl/DSL.h"
+#include "include/sksl/DSLRuntimeEffects.h"
 #include "src/gpu/GrDirectContextPriv.h"
 #include "src/gpu/GrGpu.h"
 #include "src/sksl/SkSLIRGenerator.h"
+#include "src/sksl/SkSLThreadContext.h"
 #include "src/sksl/dsl/priv/DSLWriter.h"
 
 #include "tests/Test.h"
@@ -50,29 +52,34 @@ public:
     }
 };
 
-class ExpectError : public ErrorHandler {
+class ExpectError : public SkSL::ErrorReporter {
 public:
     ExpectError(skiatest::Reporter* reporter, const char* msg)
         : fMsg(msg)
-        , fReporter(reporter) {
-        SetErrorHandler(this);
+        , fReporter(reporter)
+        , fOldReporter(&GetErrorReporter()) {
+        SetErrorReporter(this);
     }
 
     ~ExpectError() override {
         REPORTER_ASSERT(fReporter, !fMsg,
-                        "Error mismatch: expected:\n%sbut no error occurred\n", fMsg);
-        SetErrorHandler(nullptr);
+                        "Error mismatch: expected:\n%s\nbut no error occurred\n", fMsg);
+        SetErrorReporter(fOldReporter);
     }
 
-    void handleError(const char* msg, PositionInfo pos) override {
-        REPORTER_ASSERT(fReporter, !strcmp(msg, fMsg),
-                        "Error mismatch: expected:\n%sbut received:\n%s", fMsg, msg);
+    void handleError(skstd::string_view msg, SkSL::PositionInfo pos) override {
+        REPORTER_ASSERT(fReporter, fMsg, "Received unexpected extra error: %.*s\n",
+                (int)msg.length(), msg.data());
+        REPORTER_ASSERT(fReporter, !fMsg || msg == fMsg,
+                "Error mismatch: expected:\n%s\nbut received:\n%.*s", fMsg, (int)msg.length(),
+                msg.data());
         fMsg = nullptr;
     }
 
 private:
     const char* fMsg;
     skiatest::Reporter* fReporter;
+    ErrorReporter* fOldReporter;
 };
 
 static bool whitespace_insensitive_compare(const char* a, const char* b) {
@@ -209,24 +216,24 @@ DEF_GPUTEST_FOR_MOCK_CONTEXT(DSLFloat, r, ctxInfo) {
     EXPECT_EQUAL(y.x() = 1.0f, "(y.x = 1.0)");
 
     {
-        ExpectError error(r, "error: floating point value is infinite\n");
+        ExpectError error(r, "floating point value is infinite");
         Float(std::numeric_limits<float>::infinity()).release();
     }
 
     {
-        ExpectError error(r, "error: floating point value is NaN\n");
+        ExpectError error(r, "floating point value is NaN");
         Float(std::numeric_limits<float>::quiet_NaN()).release();
     }
 
     {
-        ExpectError error(r, "error: 'float4' is not a valid parameter to 'float2' constructor; "
-                             "use '.xy' instead\n");
+        ExpectError error(r, "'float4' is not a valid parameter to 'float2' constructor; use '.xy' "
+                             "instead");
         Float2(Float4(1)).release();
     }
 
     {
-        ExpectError error(r, "error: invalid arguments to 'float4' constructor (expected 4 scalars,"
-                             " but found 3)\n");
+        ExpectError error(r, "invalid arguments to 'float4' constructor (expected 4 scalars, but "
+                             "found 3)");
         Float4(Float3(1)).release();
     }
 }
@@ -261,24 +268,24 @@ DEF_GPUTEST_FOR_MOCK_CONTEXT(DSLHalf, r, ctxInfo) {
                 "half4(0.0, 1.0, 2.0, 3.0)");
 
     {
-        ExpectError error(r, "error: floating point value is infinite\n");
+        ExpectError error(r, "floating point value is infinite");
         Half(std::numeric_limits<float>::infinity()).release();
     }
 
     {
-        ExpectError error(r, "error: floating point value is NaN\n");
+        ExpectError error(r, "floating point value is NaN");
         Half(std::numeric_limits<float>::quiet_NaN()).release();
     }
 
     {
-        ExpectError error(r, "error: 'half4' is not a valid parameter to 'half2' constructor; use "
-                             "'.xy' instead\n");
+        ExpectError error(r, "'half4' is not a valid parameter to 'half2' constructor; use '.xy' "
+                             "instead");
         Half2(Half4(1)).release();
     }
 
     {
-        ExpectError error(r, "error: invalid arguments to 'half4' constructor (expected 4 scalars,"
-                             " but found 3)\n");
+        ExpectError error(r, "invalid arguments to 'half4' constructor (expected 4 scalars, but "
+                             "found 3)");
         Half4(Half3(1)).release();
     }
 }
@@ -308,14 +315,14 @@ DEF_GPUTEST_FOR_MOCK_CONTEXT(DSLInt, r, ctxInfo) {
                 "int4(0, 1, 2, 3)");
 
     {
-        ExpectError error(r, "error: 'int4' is not a valid parameter to 'int2' constructor; use "
-                             "'.xy' instead\n");
+        ExpectError error(r, "'int4' is not a valid parameter to 'int2' constructor; use '.xy' "
+                             "instead");
         Int2(Int4(1)).release();
     }
 
     {
-        ExpectError error(r, "error: invalid arguments to 'int4' constructor (expected 4 scalars,"
-                             " but found 3)\n");
+        ExpectError error(r, "invalid arguments to 'int4' constructor (expected 4 scalars, but "
+                             "found 3)");
         Int4(Int3(1)).release();
     }
 }
@@ -345,14 +352,14 @@ DEF_GPUTEST_FOR_MOCK_CONTEXT(DSLUInt, r, ctxInfo) {
                 "uint4(0, 1, 2, 3)");
 
     {
-        ExpectError error(r, "error: 'uint4' is not a valid parameter to 'uint2' constructor; use "
-                             "'.xy' instead\n");
+        ExpectError error(r, "'uint4' is not a valid parameter to 'uint2' constructor; use '.xy' "
+                             "instead");
         UInt2(UInt4(1)).release();
     }
 
     {
-        ExpectError error(r, "error: invalid arguments to 'uint4' constructor (expected 4 scalars,"
-                             " but found 3)\n");
+        ExpectError error(r, "invalid arguments to 'uint4' constructor (expected 4 scalars, but "
+                             "found 3)");
         UInt4(UInt3(1)).release();
     }
 }
@@ -382,14 +389,14 @@ DEF_GPUTEST_FOR_MOCK_CONTEXT(DSLShort, r, ctxInfo) {
                 "short4(0, 1, 2, 3)");
 
     {
-        ExpectError error(r, "error: 'short4' is not a valid parameter to 'short2' constructor; "
-                             "use '.xy' instead\n");
+        ExpectError error(r, "'short4' is not a valid parameter to 'short2' constructor; use '.xy' "
+                             "instead");
         Short2(Short4(1)).release();
     }
 
     {
-        ExpectError error(r, "error: invalid arguments to 'short4' constructor (expected 4 scalars,"
-                             " but found 3)\n");
+        ExpectError error(r, "invalid arguments to 'short4' constructor (expected 4 scalars, but "
+                             "found 3)");
         Short4(Short3(1)).release();
     }
 }
@@ -419,14 +426,14 @@ DEF_GPUTEST_FOR_MOCK_CONTEXT(DSLUShort, r, ctxInfo) {
                 "ushort4(0, 1, 2, 3)");
 
     {
-        ExpectError error(r, "error: 'ushort4' is not a valid parameter to 'ushort2' constructor; "
-                             "use '.xy' instead\n");
+        ExpectError error(r, "'ushort4' is not a valid parameter to 'ushort2' constructor; use "
+                             "'.xy' instead");
         UShort2(UShort4(1)).release();
     }
 
     {
-        ExpectError error(r, "error: invalid arguments to 'ushort4' constructor (expected 4 "
-                             "scalars, but found 3)\n");
+        ExpectError error(r, "invalid arguments to 'ushort4' constructor (expected 4 scalars, but "
+                             "found 3)");
         UShort4(UShort3(1)).release();
     }
 }
@@ -454,14 +461,14 @@ DEF_GPUTEST_FOR_MOCK_CONTEXT(DSLBool, r, ctxInfo) {
                 "bool4(false, true, false, true)");
 
     {
-        ExpectError error(r, "error: 'bool4' is not a valid parameter to 'bool2' constructor; use "
-                             "'.xy' instead\n");
+        ExpectError error(r, "'bool4' is not a valid parameter to 'bool2' constructor; use '.xy' "
+                             "instead");
         Bool2(Bool4(true)).release();
     }
 
     {
-        ExpectError error(r, "error: invalid arguments to 'bool4' constructor (expected 4 scalars,"
-                             " but found 3)\n");
+        ExpectError error(r, "invalid arguments to 'bool4' constructor (expected 4 scalars, but "
+                             "found 3)");
         Bool4(Bool3(true)).release();
     }
 }
@@ -558,12 +565,12 @@ DEF_GPUTEST_FOR_MOCK_CONTEXT(DSLType, r, ctxInfo) {
     e.release();
 
     {
-        ExpectError error(r, "error: array size must be positive\n");
+        ExpectError error(r, "array size must be positive");
         Array(kFloat_Type, -1);
     }
 
     {
-        ExpectError error(r, "error: multidimensional arrays are not permitted\n");
+        ExpectError error(r, "multi-dimensional arrays are not supported");
         Array(Array(kFloat_Type, 2), 2);
     }
 }
@@ -576,7 +583,7 @@ DEF_GPUTEST_FOR_MOCK_CONTEXT(DSLMatrices, r, ctxInfo) {
     EXPECT_EQUAL(f32 = Float3x2(1, 2, 3, 4, 5, 6),
                  "(f32 = float3x2(1.0, 2.0, 3.0, 4.0, 5.0, 6.0))");
     Var f42(kFloat4x2_Type, "f42");
-    EXPECT_EQUAL(f42 = Float4x2(Float4(1, 2, 3, 4), 5, 6, 7, 8),
+    EXPECT_EQUAL(f42 = Float4x2(Float2(1, 2), Float2(3, 4), 5, 6, 7, 8),
                  "(f42 = float4x2(1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0))");
     Var f23(kFloat2x3_Type, "f23");
     EXPECT_EQUAL(f23 = Float2x3(1, Float2(2, 3), 4, Float2(5, 6)),
@@ -585,13 +592,14 @@ DEF_GPUTEST_FOR_MOCK_CONTEXT(DSLMatrices, r, ctxInfo) {
     EXPECT_EQUAL(f33 = Float3x3(Float3(1, 2, 3), 4, Float2(5, 6), 7, 8, 9),
                  "(f33 = float3x3(1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0))");
     Var f43(kFloat4x3_Type, "f43");
-    EXPECT_EQUAL(f43 = Float4x3(Float4(1, 2, 3, 4), Float4(5, 6, 7, 8), Float4(9, 10, 11, 12)),
-                 "(f43 = float4x3(1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0))");
+    EXPECT_EQUAL(
+            f43 = Float4x3(Float3(1, 2, 3), Float3(4, 5, 6), Float3(7, 8, 9), Float3(10, 11, 12)),
+            "(f43 = float4x3(1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0))");
     Var f24(kFloat2x4_Type, "f24");
     EXPECT_EQUAL(f24 = Float2x4(1, 2, 3, 4, 5, 6, 7, 8),
                  "(f24 = float2x4(1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0))");
     Var f34(kFloat3x4_Type, "f34");
-    EXPECT_EQUAL(f34 = Float3x4(1, 2, 3, 4, 5, 6, 7, 8, 9, Float3(10, 11, 12)),
+    EXPECT_EQUAL(f34 = Float3x4(1, 2, 3, 4, 5, 6, 7, 8, Float4(9, 10, 11, 12)),
                  "(f34 = float3x4(1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0))");
     Var f44(kFloat4x4_Type, "f44");
     EXPECT_EQUAL(f44 = Float4x4(1), "(f44 = float4x4(1.0))");
@@ -602,7 +610,7 @@ DEF_GPUTEST_FOR_MOCK_CONTEXT(DSLMatrices, r, ctxInfo) {
     EXPECT_EQUAL(h32 = Half3x2(1, 2, 3, 4, 5, 6),
                  "(h32 = half3x2(1.0, 2.0, 3.0, 4.0, 5.0, 6.0))");
     Var h42(kHalf4x2_Type, "h42");
-    EXPECT_EQUAL(h42 = Half4x2(Half4(1, 2, 3, 4), 5, 6, 7, 8),
+    EXPECT_EQUAL(h42 = Half4x2(Half2(1, 2), Half2(3, 4), 5, 6, 7, 8),
                  "(h42 = half4x2(1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0))");
     Var h23(kHalf2x3_Type, "h23");
     EXPECT_EQUAL(h23 = Half2x3(1, Half2(2, 3), 4, Half2(5, 6)),
@@ -611,13 +619,13 @@ DEF_GPUTEST_FOR_MOCK_CONTEXT(DSLMatrices, r, ctxInfo) {
     EXPECT_EQUAL(h33 = Half3x3(Half3(1, 2, 3), 4, Half2(5, 6), 7, 8, 9),
                  "(h33 = half3x3(1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0))");
     Var h43(kHalf4x3_Type, "h43");
-    EXPECT_EQUAL(h43 = Half4x3(Half4(1, 2, 3, 4), Half4(5, 6, 7, 8), Half4(9, 10, 11, 12)),
+    EXPECT_EQUAL(h43 = Half4x3(Half3(1, 2, 3), Half3(4, 5, 6), Half3(7, 8, 9), Half3(10, 11, 12)),
                  "(h43 = half4x3(1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0))");
     Var h24(kHalf2x4_Type, "h24");
     EXPECT_EQUAL(h24 = Half2x4(1, 2, 3, 4, 5, 6, 7, 8),
                  "(h24 = half2x4(1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0))");
     Var h34(kHalf3x4_Type, "h34");
-    EXPECT_EQUAL(h34 = Half3x4(1, 2, 3, 4, 5, 6, 7, 8, 9, Half3(10, 11, 12)),
+    EXPECT_EQUAL(h34 = Half3x4(1, 2, 3, 4, 5, 6, 7, 8, Half4(9, 10, 11, 12)),
                  "(h34 = half3x4(1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0))");
     Var h44(kHalf4x4_Type, "h44");
     EXPECT_EQUAL(h44 = Half4x4(1), "(h44 = half4x4(1.0))");
@@ -630,37 +638,34 @@ DEF_GPUTEST_FOR_MOCK_CONTEXT(DSLMatrices, r, ctxInfo) {
     EXPECT_EQUAL(Inverse(f44), "inverse(f44)");
 
     {
-        ExpectError error(r, "error: invalid arguments to 'float3x3' constructor (expected 9 "
-                             "scalars, but found 2)\n");
+        ExpectError error(r, "invalid arguments to 'float3x3' constructor (expected 9 scalars, but "
+                             "found 2)");
         DSLExpression(Float3x3(Float2(1))).release();
     }
 
     {
-        ExpectError error(r, "error: invalid arguments to 'half2x2' constructor (expected 4 "
-                             "scalars, but found 5)\n");
+        ExpectError error(r, "invalid arguments to 'half2x2' constructor (expected 4 scalars, but "
+                             "found 5)");
         DSLExpression(Half2x2(1, 2, 3, 4, 5)).release();
     }
 
     {
-        ExpectError error(r, "error: type mismatch: '*' cannot operate on 'float4x3', 'float3'\n");
+        ExpectError error(r, "type mismatch: '*' cannot operate on 'float4x3', 'float3'");
         DSLExpression(f43 * Float3(1)).release();
     }
 
     {
-        ExpectError error(r, "error: type mismatch: '=' cannot operate on 'float4x3', "
-                             "'float3x3'\n");
+        ExpectError error(r, "type mismatch: '=' cannot operate on 'float4x3', 'float3x3'");
         DSLExpression(f43 = f33).release();
     }
 
     {
-        ExpectError error(r, "error: type mismatch: '=' cannot operate on 'half2x2', "
-                             "'float2x2'\n");
+        ExpectError error(r, "type mismatch: '=' cannot operate on 'half2x2', 'float2x2'");
         DSLExpression(h22 = f22).release();
     }
 
     {
-        ExpectError error(r,
-                          "error: no match for inverse(float4x3)\n");
+        ExpectError error(r, "no match for inverse(float4x3)");
         DSLExpression(Inverse(f43)).release();
     }
 }
@@ -683,22 +688,22 @@ DEF_GPUTEST_FOR_MOCK_CONTEXT(DSLPlus, r, ctxInfo) {
                  "(a + b)");
 
     {
-        ExpectError error(r, "error: type mismatch: '+' cannot operate on 'bool2', 'float'\n");
+        ExpectError error(r, "type mismatch: '+' cannot operate on 'bool2', 'float'");
         DSLExpression((Bool2(true) + a)).release();
     }
 
     {
-        ExpectError error(r, "error: type mismatch: '+=' cannot operate on 'float', 'bool2'\n");
+        ExpectError error(r, "type mismatch: '+=' cannot operate on 'float', 'bool2'");
         DSLExpression((a += Bool2(true))).release();
     }
 
     {
-        ExpectError error(r, "error: cannot assign to this expression\n");
+        ExpectError error(r, "cannot assign to this expression");
         DSLExpression((1.0 += a)).release();
     }
 
     {
-        ExpectError error(r, "error: '+' cannot operate on 'bool'\n");
+        ExpectError error(r, "'+' cannot operate on 'bool'");
         Var c(kBool_Type);
         DSLExpression(+c).release();
     }
@@ -722,22 +727,22 @@ DEF_GPUTEST_FOR_MOCK_CONTEXT(DSLMinus, r, ctxInfo) {
                 "-(a - b)");
 
     {
-        ExpectError error(r, "error: type mismatch: '-' cannot operate on 'bool2', 'int'\n");
+        ExpectError error(r, "type mismatch: '-' cannot operate on 'bool2', 'int'");
         DSLExpression(Bool2(true) - a).release();
     }
 
     {
-        ExpectError error(r, "error: type mismatch: '-=' cannot operate on 'int', 'bool2'\n");
+        ExpectError error(r, "type mismatch: '-=' cannot operate on 'int', 'bool2'");
         DSLExpression(a -= Bool2(true)).release();
     }
 
     {
-        ExpectError error(r, "error: cannot assign to this expression\n");
+        ExpectError error(r, "cannot assign to this expression");
         DSLExpression(1.0 -= a).release();
     }
 
     {
-        ExpectError error(r, "error: '-' cannot operate on 'bool'\n");
+        ExpectError error(r, "'-' cannot operate on 'bool'");
         Var c(kBool_Type);
         DSLExpression(-c).release();
     }
@@ -757,17 +762,17 @@ DEF_GPUTEST_FOR_MOCK_CONTEXT(DSLMultiply, r, ctxInfo) {
                "(a *= (b + 1.0))");
 
     {
-        ExpectError error(r, "error: type mismatch: '*' cannot operate on 'bool2', 'float'\n");
+        ExpectError error(r, "type mismatch: '*' cannot operate on 'bool2', 'float'");
         DSLExpression(Bool2(true) * a).release();
     }
 
     {
-        ExpectError error(r, "error: type mismatch: '*=' cannot operate on 'float', 'bool2'\n");
+        ExpectError error(r, "type mismatch: '*=' cannot operate on 'float', 'bool2'");
         DSLExpression(a *= Bool2(true)).release();
     }
 
     {
-        ExpectError error(r, "error: cannot assign to this expression\n");
+        ExpectError error(r, "cannot assign to this expression");
         DSLExpression(1.0 *= a).release();
     }
 }
@@ -788,28 +793,28 @@ DEF_GPUTEST_FOR_MOCK_CONTEXT(DSLDivide, r, ctxInfo) {
                "(a /= (b + 1.0))");
 
     {
-        ExpectError error(r, "error: type mismatch: '/' cannot operate on 'bool2', 'float'\n");
+        ExpectError error(r, "type mismatch: '/' cannot operate on 'bool2', 'float'");
         DSLExpression(Bool2(true) / a).release();
     }
 
     {
-        ExpectError error(r, "error: type mismatch: '/=' cannot operate on 'float', 'bool2'\n");
+        ExpectError error(r, "type mismatch: '/=' cannot operate on 'float', 'bool2'");
         DSLExpression(a /= Bool2(true)).release();
     }
 
     {
-        ExpectError error(r, "error: cannot assign to this expression\n");
+        ExpectError error(r, "cannot assign to this expression");
         DSLExpression(1.0 /= a).release();
     }
 
     {
-        ExpectError error(r, "error: division by zero\n");
+        ExpectError error(r, "division by zero");
         DSLExpression(a /= 0).release();
     }
 
     {
         Var c(kFloat2_Type, "c");
-        ExpectError error(r, "error: division by zero\n");
+        ExpectError error(r, "division by zero");
         DSLExpression(c /= Float2(Float(0), 1)).release();
     }
 }
@@ -830,28 +835,28 @@ DEF_GPUTEST_FOR_MOCK_CONTEXT(DSLMod, r, ctxInfo) {
     EXPECT_EQUAL(e4, "(a %= (b + 1))");
 
     {
-        ExpectError error(r, "error: type mismatch: '%' cannot operate on 'bool2', 'int'\n");
+        ExpectError error(r, "type mismatch: '%' cannot operate on 'bool2', 'int'");
         DSLExpression(Bool2(true) % a).release();
     }
 
     {
-        ExpectError error(r, "error: type mismatch: '%=' cannot operate on 'int', 'bool2'\n");
+        ExpectError error(r, "type mismatch: '%=' cannot operate on 'int', 'bool2'");
         DSLExpression(a %= Bool2(true)).release();
     }
 
     {
-        ExpectError error(r, "error: cannot assign to this expression\n");
+        ExpectError error(r, "cannot assign to this expression");
         DSLExpression(1 %= a).release();
     }
 
     {
-        ExpectError error(r, "error: division by zero\n");
+        ExpectError error(r, "division by zero");
         DSLExpression(a %= 0).release();
     }
 
     {
         Var c(kInt2_Type, "c");
-        ExpectError error(r, "error: division by zero\n");
+        ExpectError error(r, "division by zero");
         DSLExpression(c %= Int2(Int(0), 1)).release();
     }
 }
@@ -872,17 +877,17 @@ DEF_GPUTEST_FOR_MOCK_CONTEXT(DSLShl, r, ctxInfo) {
     EXPECT_EQUAL(e4, "(a <<= (b + 1))");
 
     {
-        ExpectError error(r, "error: type mismatch: '<<' cannot operate on 'bool2', 'int'\n");
+        ExpectError error(r, "type mismatch: '<<' cannot operate on 'bool2', 'int'");
         DSLExpression(Bool2(true) << a).release();
     }
 
     {
-        ExpectError error(r, "error: type mismatch: '<<=' cannot operate on 'int', 'bool2'\n");
+        ExpectError error(r, "type mismatch: '<<=' cannot operate on 'int', 'bool2'");
         DSLExpression(a <<= Bool2(true)).release();
     }
 
     {
-        ExpectError error(r, "error: cannot assign to this expression\n");
+        ExpectError error(r, "cannot assign to this expression");
         DSLExpression(1 <<= a).release();
     }
 }
@@ -903,17 +908,17 @@ DEF_GPUTEST_FOR_MOCK_CONTEXT(DSLShr, r, ctxInfo) {
     EXPECT_EQUAL(e4, "(a >>= (b + 1))");
 
     {
-        ExpectError error(r, "error: type mismatch: '>>' cannot operate on 'bool2', 'int'\n");
+        ExpectError error(r, "type mismatch: '>>' cannot operate on 'bool2', 'int'");
         DSLExpression(Bool2(true) >> a).release();
     }
 
     {
-        ExpectError error(r, "error: type mismatch: '>>=' cannot operate on 'int', 'bool2'\n");
+        ExpectError error(r, "type mismatch: '>>=' cannot operate on 'int', 'bool2'");
         DSLExpression(a >>= Bool2(true)).release();
     }
 
     {
-        ExpectError error(r, "error: cannot assign to this expression\n");
+        ExpectError error(r, "cannot assign to this expression");
         DSLExpression(1 >>= a).release();
     }
 }
@@ -934,17 +939,17 @@ DEF_GPUTEST_FOR_MOCK_CONTEXT(DSLBitwiseAnd, r, ctxInfo) {
     EXPECT_EQUAL(e4, "(a &= (b + 1))");
 
     {
-        ExpectError error(r, "error: type mismatch: '&' cannot operate on 'bool2', 'int'\n");
+        ExpectError error(r, "type mismatch: '&' cannot operate on 'bool2', 'int'");
         DSLExpression(Bool2(true) & a).release();
     }
 
     {
-        ExpectError error(r, "error: type mismatch: '&=' cannot operate on 'int', 'bool2'\n");
+        ExpectError error(r, "type mismatch: '&=' cannot operate on 'int', 'bool2'");
         DSLExpression(a &= Bool2(true)).release();
     }
 
     {
-        ExpectError error(r, "error: cannot assign to this expression\n");
+        ExpectError error(r, "cannot assign to this expression");
         DSLExpression(1 &= a).release();
     }
 }
@@ -965,17 +970,17 @@ DEF_GPUTEST_FOR_MOCK_CONTEXT(DSLBitwiseOr, r, ctxInfo) {
     EXPECT_EQUAL(e4, "(a |= (b + 1))");
 
     {
-        ExpectError error(r, "error: type mismatch: '|' cannot operate on 'bool2', 'int'\n");
+        ExpectError error(r, "type mismatch: '|' cannot operate on 'bool2', 'int'");
         DSLExpression(Bool2(true) | a).release();
     }
 
     {
-        ExpectError error(r, "error: type mismatch: '|=' cannot operate on 'int', 'bool2'\n");
+        ExpectError error(r, "type mismatch: '|=' cannot operate on 'int', 'bool2'");
         DSLExpression(a |= Bool2(true)).release();
     }
 
     {
-        ExpectError error(r, "error: cannot assign to this expression\n");
+        ExpectError error(r, "cannot assign to this expression");
         DSLExpression(1 |= a).release();
     }
 }
@@ -996,17 +1001,17 @@ DEF_GPUTEST_FOR_MOCK_CONTEXT(DSLBitwiseXor, r, ctxInfo) {
     EXPECT_EQUAL(e4, "(a ^= (b + 1))");
 
     {
-        ExpectError error(r, "error: type mismatch: '^' cannot operate on 'bool2', 'int'\n");
+        ExpectError error(r, "type mismatch: '^' cannot operate on 'bool2', 'int'");
         DSLExpression(Bool2(true) ^ a).release();
     }
 
     {
-        ExpectError error(r, "error: type mismatch: '^=' cannot operate on 'int', 'bool2'\n");
+        ExpectError error(r, "type mismatch: '^=' cannot operate on 'int', 'bool2'");
         DSLExpression(a ^= Bool2(true)).release();
     }
 
     {
-        ExpectError error(r, "error: cannot assign to this expression\n");
+        ExpectError error(r, "cannot assign to this expression");
         DSLExpression(1 ^= a).release();
     }
 }
@@ -1024,7 +1029,7 @@ DEF_GPUTEST_FOR_MOCK_CONTEXT(DSLLogicalAnd, r, ctxInfo) {
     EXPECT_EQUAL(e3, "false");
 
     {
-        ExpectError error(r, "error: type mismatch: '&&' cannot operate on 'bool', 'int'\n");
+        ExpectError error(r, "type mismatch: '&&' cannot operate on 'bool', 'int'");
         DSLExpression(a && 5).release();
     }
 }
@@ -1042,7 +1047,7 @@ DEF_GPUTEST_FOR_MOCK_CONTEXT(DSLLogicalOr, r, ctxInfo) {
     EXPECT_EQUAL(e3, "(a || b)");
 
     {
-        ExpectError error(r, "error: type mismatch: '||' cannot operate on 'bool', 'int'\n");
+        ExpectError error(r, "type mismatch: '||' cannot operate on 'bool', 'int'");
         DSLExpression(a || 5).release();
     }
 }
@@ -1054,7 +1059,7 @@ DEF_GPUTEST_FOR_MOCK_CONTEXT(DSLLogicalXor, r, ctxInfo) {
     EXPECT_EQUAL(e1, "(a ^^ b)");
 
     {
-        ExpectError error(r, "error: type mismatch: '^^' cannot operate on 'bool', 'int'\n");
+        ExpectError error(r, "type mismatch: '^^' cannot operate on 'bool', 'int'");
         DSLExpression(LogicalXor(a, 5)).release();
     }
 }
@@ -1079,7 +1084,7 @@ DEF_GPUTEST_FOR_MOCK_CONTEXT(DSLEqual, r, ctxInfo) {
     EXPECT_EQUAL(e2, "(a == 5)");
 
     {
-        ExpectError error(r, "error: type mismatch: '==' cannot operate on 'int', 'bool2'\n");
+        ExpectError error(r, "type mismatch: '==' cannot operate on 'int', 'bool2'");
         DSLExpression(a == Bool2(true)).release();
     }
 }
@@ -1094,7 +1099,7 @@ DEF_GPUTEST_FOR_MOCK_CONTEXT(DSLNotEqual, r, ctxInfo) {
     EXPECT_EQUAL(e2, "(a != 5)");
 
     {
-        ExpectError error(r, "error: type mismatch: '!=' cannot operate on 'int', 'bool2'\n");
+        ExpectError error(r, "type mismatch: '!=' cannot operate on 'int', 'bool2'");
         DSLExpression(a != Bool2(true)).release();
     }
 }
@@ -1109,7 +1114,7 @@ DEF_GPUTEST_FOR_MOCK_CONTEXT(DSLGreaterThan, r, ctxInfo) {
     EXPECT_EQUAL(e2, "(a > 5)");
 
     {
-        ExpectError error(r, "error: type mismatch: '>' cannot operate on 'int', 'bool2'\n");
+        ExpectError error(r, "type mismatch: '>' cannot operate on 'int', 'bool2'");
         DSLExpression(a > Bool2(true)).release();
     }
 }
@@ -1124,7 +1129,7 @@ DEF_GPUTEST_FOR_MOCK_CONTEXT(DSLGreaterThanOrEqual, r, ctxInfo) {
     EXPECT_EQUAL(e2, "(a >= 5)");
 
     {
-        ExpectError error(r, "error: type mismatch: '>=' cannot operate on 'int', 'bool2'\n");
+        ExpectError error(r, "type mismatch: '>=' cannot operate on 'int', 'bool2'");
         DSLExpression(a >= Bool2(true)).release();
     }
 }
@@ -1139,7 +1144,7 @@ DEF_GPUTEST_FOR_MOCK_CONTEXT(DSLLessThan, r, ctxInfo) {
     EXPECT_EQUAL(e2, "(a < 5)");
 
     {
-        ExpectError error(r, "error: type mismatch: '<' cannot operate on 'int', 'bool2'\n");
+        ExpectError error(r, "type mismatch: '<' cannot operate on 'int', 'bool2'");
         DSLExpression(a < Bool2(true)).release();
     }
 }
@@ -1154,7 +1159,7 @@ DEF_GPUTEST_FOR_MOCK_CONTEXT(DSLLessThanOrEqual, r, ctxInfo) {
     EXPECT_EQUAL(e2, "(a <= 5)");
 
     {
-        ExpectError error(r, "error: type mismatch: '<=' cannot operate on 'int', 'bool2'\n");
+        ExpectError error(r, "type mismatch: '<=' cannot operate on 'int', 'bool2'");
         DSLExpression(a <= Bool2(true)).release();
     }
 }
@@ -1166,7 +1171,7 @@ DEF_GPUTEST_FOR_MOCK_CONTEXT(DSLLogicalNot, r, ctxInfo) {
     EXPECT_EQUAL(e1, "!(a <= b)");
 
     {
-        ExpectError error(r, "error: '!' cannot operate on 'int'\n");
+        ExpectError error(r, "'!' cannot operate on 'int'");
         DSLExpression(!a).release();
     }
 }
@@ -1178,7 +1183,7 @@ DEF_GPUTEST_FOR_MOCK_CONTEXT(DSLBitwiseNot, r, ctxInfo) {
     EXPECT_EQUAL(e1, "~a");
 
     {
-        ExpectError error(r, "error: '~' cannot operate on 'bool'\n");
+        ExpectError error(r, "'~' cannot operate on 'bool'");
         DSLExpression(~b).release();
     }
 }
@@ -1193,22 +1198,22 @@ DEF_GPUTEST_FOR_MOCK_CONTEXT(DSLIncrement, r, ctxInfo) {
     EXPECT_EQUAL(e2, "a++");
 
     {
-        ExpectError error(r, "error: '++' cannot operate on 'bool'\n");
+        ExpectError error(r, "'++' cannot operate on 'bool'");
         DSLExpression(++b).release();
     }
 
     {
-        ExpectError error(r, "error: '++' cannot operate on 'bool'\n");
+        ExpectError error(r, "'++' cannot operate on 'bool'");
         DSLExpression(b++).release();
     }
 
     {
-        ExpectError error(r, "error: cannot assign to this expression\n");
+        ExpectError error(r, "cannot assign to this expression");
         DSLExpression(++(a + 1)).release();
     }
 
     {
-        ExpectError error(r, "error: cannot assign to this expression\n");
+        ExpectError error(r, "cannot assign to this expression");
         DSLExpression((a + 1)++).release();
     }
 }
@@ -1223,22 +1228,22 @@ DEF_GPUTEST_FOR_MOCK_CONTEXT(DSLDecrement, r, ctxInfo) {
     EXPECT_EQUAL(e2, "a--");
 
     {
-        ExpectError error(r, "error: '--' cannot operate on 'bool'\n");
+        ExpectError error(r, "'--' cannot operate on 'bool'");
         DSLExpression(--b).release();
     }
 
     {
-        ExpectError error(r, "error: '--' cannot operate on 'bool'\n");
+        ExpectError error(r, "'--' cannot operate on 'bool'");
         DSLExpression(b--).release();
     }
 
     {
-        ExpectError error(r, "error: cannot assign to this expression\n");
+        ExpectError error(r, "cannot assign to this expression");
         DSLExpression(--(a + 1)).release();
     }
 
     {
-        ExpectError error(r, "error: cannot assign to this expression\n");
+        ExpectError error(r, "cannot assign to this expression");
         DSLExpression((a + 1)--).release();
     }
 }
@@ -1246,14 +1251,15 @@ DEF_GPUTEST_FOR_MOCK_CONTEXT(DSLDecrement, r, ctxInfo) {
 DEF_GPUTEST_FOR_MOCK_CONTEXT(DSLCall, r, ctxInfo) {
     AutoDSLContext context(ctxInfo.directContext()->priv().getGpu());
     {
-        DSLExpression sqrt(DSLWriter::IRGenerator().convertIdentifier(/*offset=*/-1, "sqrt"));
+        DSLExpression sqrt(SkSL::ThreadContext::IRGenerator().convertIdentifier(/*line=*/-1,
+                "sqrt"));
         SkTArray<DSLWrapper<DSLExpression>> args;
         args.emplace_back(16);
         EXPECT_EQUAL(sqrt(std::move(args)), "4.0");  // sqrt(16) gets optimized to 4
     }
 
     {
-        DSLExpression pow(DSLWriter::IRGenerator().convertIdentifier(/*offset=*/-1, "pow"));
+        DSLExpression pow(SkSL::ThreadContext::IRGenerator().convertIdentifier(/*line=*/-1, "pow"));
         DSLVar a(kFloat_Type, "a");
         DSLVar b(kFloat_Type, "b");
         SkTArray<DSLWrapper<DSLExpression>> args;
@@ -1285,12 +1291,12 @@ DEF_GPUTEST_FOR_MOCK_CONTEXT(DSLBreak, r, ctxInfo) {
             If(i > 5, Break())
         ))
     );
-    REPORTER_ASSERT(r, DSLWriter::ProgramElements().size() == 1);
-    EXPECT_EQUAL(*DSLWriter::ProgramElements()[0],
+    REPORTER_ASSERT(r, SkSL::ThreadContext::ProgramElements().size() == 1);
+    EXPECT_EQUAL(*SkSL::ThreadContext::ProgramElements()[0],
                  "void success() { for (int i = 0; (i < 10); ++i) { if ((i > 5)) break; } }");
 
     {
-        ExpectError error(r, "error: break statement must be inside a loop or switch\n");
+        ExpectError error(r, "break statement must be inside a loop or switch");
         DSLFunction(kVoid_Type, "fail").define(
             Break()
         );
@@ -1305,12 +1311,12 @@ DEF_GPUTEST_FOR_MOCK_CONTEXT(DSLContinue, r, ctxInfo) {
             If(i < 5, Continue())
         ))
     );
-    REPORTER_ASSERT(r, DSLWriter::ProgramElements().size() == 1);
-    EXPECT_EQUAL(*DSLWriter::ProgramElements()[0],
+    REPORTER_ASSERT(r, SkSL::ThreadContext::ProgramElements().size() == 1);
+    EXPECT_EQUAL(*SkSL::ThreadContext::ProgramElements()[0],
                  "void success() { for (int i = 0; (i < 10); ++i) { if ((i < 5)) continue; } }");
 
     {
-        ExpectError error(r, "error: continue statement must be inside a loop\n");
+        ExpectError error(r, "continue statement must be inside a loop");
         DSLFunction(kVoid_Type, "fail").define(
             Continue()
         );
@@ -1335,31 +1341,31 @@ DEF_GPUTEST_FOR_MOCK_CONTEXT(DSLDeclare, r, ctxInfo) {
 
     {
         DSLWriter::Reset();
-        REPORTER_ASSERT(r, DSLWriter::ProgramElements().empty());
+        REPORTER_ASSERT(r, SkSL::ThreadContext::ProgramElements().empty());
         GlobalVar a(kHalf4_Type, "a"), b(kHalf4_Type, "b", Half4(1));
         Declare(a);
         Declare(b);
-        REPORTER_ASSERT(r, DSLWriter::ProgramElements().size() == 2);
-        EXPECT_EQUAL(*DSLWriter::ProgramElements()[0], "half4 a;");
-        EXPECT_EQUAL(*DSLWriter::ProgramElements()[1], "half4 b = half4(1.0);");
+        REPORTER_ASSERT(r, SkSL::ThreadContext::ProgramElements().size() == 2);
+        EXPECT_EQUAL(*SkSL::ThreadContext::ProgramElements()[0], "half4 a;");
+        EXPECT_EQUAL(*SkSL::ThreadContext::ProgramElements()[1], "half4 b = half4(1.0);");
     }
 
     {
         DSLWriter::Reset();
-        REPORTER_ASSERT(r, DSLWriter::ProgramElements().empty());
+        REPORTER_ASSERT(r, SkSL::ThreadContext::ProgramElements().empty());
         SkTArray<GlobalVar> vars;
         vars.push_back(GlobalVar(kHalf4_Type, "a"));
         vars.push_back(GlobalVar(kHalf4_Type, "b", Half4(1)));
         Declare(vars);
-        REPORTER_ASSERT(r, DSLWriter::ProgramElements().size() == 2);
-        EXPECT_EQUAL(*DSLWriter::ProgramElements()[0], "half4 a;");
-        EXPECT_EQUAL(*DSLWriter::ProgramElements()[1], "half4 b = half4(1.0);");
+        REPORTER_ASSERT(r, SkSL::ThreadContext::ProgramElements().size() == 2);
+        EXPECT_EQUAL(*SkSL::ThreadContext::ProgramElements()[0], "half4 a;");
+        EXPECT_EQUAL(*SkSL::ThreadContext::ProgramElements()[1], "half4 b = half4(1.0);");
     }
 
     {
         DSLWriter::Reset();
         Var a(kHalf4_Type, "a", 1);
-        ExpectError error(r, "error: expected 'half4', but found 'int'\n");
+        ExpectError error(r, "expected 'half4', but found 'int'");
         Declare(a).release();
     }
 
@@ -1367,14 +1373,14 @@ DEF_GPUTEST_FOR_MOCK_CONTEXT(DSLDeclare, r, ctxInfo) {
         DSLWriter::Reset();
         Var a(kInt_Type, "a");
         Declare(a).release();
-        ExpectError error(r, "error: variable has already been declared\n");
+        ExpectError error(r, "variable has already been declared");
         Declare(a).release();
     }
 
     {
         DSLWriter::Reset();
         Var a(kUniform_Modifier, kInt_Type, "a");
-        ExpectError error(r, "error: 'uniform' is not permitted here\n");
+        ExpectError error(r, "'uniform' is not permitted here");
         Declare(a).release();
     }
 }
@@ -1385,9 +1391,9 @@ DEF_GPUTEST_FOR_MOCK_CONTEXT(DSLDeclareGlobal, r, ctxInfo) {
     Declare(x);
     DSLGlobalVar y(kUniform_Modifier, kFloat2_Type, "y");
     Declare(y);
-    REPORTER_ASSERT(r, DSLWriter::ProgramElements().size() == 2);
-    EXPECT_EQUAL(*DSLWriter::ProgramElements()[0], "int x = 0;");
-    EXPECT_EQUAL(*DSLWriter::ProgramElements()[1], "uniform float2 y;");
+    REPORTER_ASSERT(r, SkSL::ThreadContext::ProgramElements().size() == 2);
+    EXPECT_EQUAL(*SkSL::ThreadContext::ProgramElements()[0], "int x = 0;");
+    EXPECT_EQUAL(*SkSL::ThreadContext::ProgramElements()[1], "uniform float2 y;");
 }
 
 DEF_GPUTEST_FOR_MOCK_CONTEXT(DSLDiscard, r, ctxInfo) {
@@ -1406,7 +1412,7 @@ DEF_GPUTEST_FOR_MOCK_CONTEXT(DSLDo, r, ctxInfo) {
     EXPECT_EQUAL(y, "do { a++; --b; } while ((a != b));");
 
     {
-        ExpectError error(r, "error: expected 'bool', but found 'int'\n");
+        ExpectError error(r, "expected 'bool', but found 'int'");
         Do(Block(), 7).release();
     }
 }
@@ -1431,12 +1437,12 @@ DEF_GPUTEST_FOR_MOCK_CONTEXT(DSLFor, r, ctxInfo) {
     )");
 
     {
-        ExpectError error(r, "error: expected 'bool', but found 'int'\n");
+        ExpectError error(r, "expected 'bool', but found 'int'");
         For(i = 0, i + 10, ++i, i += 5).release();
     }
 
     {
-        ExpectError error(r, "error: invalid for loop initializer\n");
+        ExpectError error(r, "invalid for loop initializer");
         For(If(i == 0, i = 1), i < 10, ++i, i += 5).release();
     }
 }
@@ -1447,8 +1453,8 @@ DEF_GPUTEST_FOR_MOCK_CONTEXT(DSLFunction, r, ctxInfo) {
     DSLFunction(kVoid_Type, "main", coords).define(
         sk_FragColor() = Half4(coords, 0, 1)
     );
-    REPORTER_ASSERT(r, DSLWriter::ProgramElements().size() == 1);
-    EXPECT_EQUAL(*DSLWriter::ProgramElements()[0],
+    REPORTER_ASSERT(r, SkSL::ThreadContext::ProgramElements().size() == 1);
+    EXPECT_EQUAL(*SkSL::ThreadContext::ProgramElements()[0],
                  "void main(float2 coords) { (sk_FragColor = half4(half2(coords), 0.0, 1.0)); }");
 
     {
@@ -1459,8 +1465,9 @@ DEF_GPUTEST_FOR_MOCK_CONTEXT(DSLFunction, r, ctxInfo) {
             Return(x * x)
         );
         EXPECT_EQUAL(sqr(sk_FragCoord().x()), "sqr(sk_FragCoord.x)");
-        REPORTER_ASSERT(r, DSLWriter::ProgramElements().size() == 1);
-        EXPECT_EQUAL(*DSLWriter::ProgramElements()[0], "float sqr(float x) { return (x * x); }");
+        REPORTER_ASSERT(r, SkSL::ThreadContext::ProgramElements().size() == 1);
+        EXPECT_EQUAL(*SkSL::ThreadContext::ProgramElements()[0],
+                "float sqr(float x) { return (x * x); }");
     }
 
     {
@@ -1473,8 +1480,8 @@ DEF_GPUTEST_FOR_MOCK_CONTEXT(DSLFunction, r, ctxInfo) {
         );
         EXPECT_EQUAL(dot(Float2(1.0f, 2.0f), Float2(3.0f, 4.0f)),
                      "dot(float2(1.0, 2.0), float2(3.0, 4.0))");
-        REPORTER_ASSERT(r, DSLWriter::ProgramElements().size() == 1);
-        EXPECT_EQUAL(*DSLWriter::ProgramElements()[0],
+        REPORTER_ASSERT(r, SkSL::ThreadContext::ProgramElements().size() == 1);
+        EXPECT_EQUAL(*SkSL::ThreadContext::ProgramElements()[0],
                 "float2 dot(float2 x, float2 y) { return ((x * x) + (y * y)); }");
     }
 
@@ -1494,7 +1501,7 @@ DEF_GPUTEST_FOR_MOCK_CONTEXT(DSLFunction, r, ctxInfo) {
     }
 
     {
-        ExpectError error(r, "error: expected 'float', but found 'bool'\n");
+        ExpectError error(r, "expected 'float', but found 'bool'");
         DSLWriter::Reset();
         DSLFunction(kFloat_Type, "broken").define(
             Return(true)
@@ -1502,7 +1509,7 @@ DEF_GPUTEST_FOR_MOCK_CONTEXT(DSLFunction, r, ctxInfo) {
     }
 
     {
-        ExpectError error(r, "error: expected function to return 'float'\n");
+        ExpectError error(r, "expected function to return 'float'");
         DSLWriter::Reset();
         DSLFunction(kFloat_Type, "broken").define(
             Return()
@@ -1510,7 +1517,7 @@ DEF_GPUTEST_FOR_MOCK_CONTEXT(DSLFunction, r, ctxInfo) {
     }
 
     {
-        ExpectError error(r, "error: function 'broken' can exit without returning a value\n");
+        ExpectError error(r, "function 'broken' can exit without returning a value");
         DSLWriter::Reset();
         Var x(kFloat_Type, "x", 0);
         DSLFunction(kFloat_Type, "broken").define(
@@ -1520,7 +1527,7 @@ DEF_GPUTEST_FOR_MOCK_CONTEXT(DSLFunction, r, ctxInfo) {
     }
 
     {
-        ExpectError error(r, "error: may not return a value from a void function\n");
+        ExpectError error(r, "may not return a value from a void function");
         DSLWriter::Reset();
         DSLFunction(kVoid_Type, "broken").define(
             Return(0)
@@ -1528,14 +1535,14 @@ DEF_GPUTEST_FOR_MOCK_CONTEXT(DSLFunction, r, ctxInfo) {
     }
 
     {
-        ExpectError error(r, "error: function 'broken' can exit without returning a value\n");
+        ExpectError error(r, "function 'broken' can exit without returning a value");
         DSLWriter::Reset();
         DSLFunction(kFloat_Type, "broken").define(
         );
     }
 
     {
-        ExpectError error(r, "error: parameter has already been used in another function\n");
+        ExpectError error(r, "parameter has already been used in another function");
         DSLWriter::Reset();
         DSLParameter p(kFloat_Type);
         DSLFunction(kVoid_Type, "ok", p).define(
@@ -1558,7 +1565,7 @@ DEF_GPUTEST_FOR_MOCK_CONTEXT(DSLIf, r, ctxInfo) {
     EXPECT_EQUAL(z, "@if ((a > b)) (a -= b); else (b -= a);");
 
     {
-        ExpectError error(r, "error: expected 'bool', but found 'float'\n");
+        ExpectError error(r, "expected 'bool', but found 'float'");
         If(a + b, a -= b).release();
     }
 }
@@ -1567,23 +1574,23 @@ DEF_GPUTEST_FOR_MOCK_CONTEXT(DSLInterfaceBlock, r, ctxInfo) {
     AutoDSLContext context(ctxInfo.directContext()->priv().getGpu());
     DSLGlobalVar intf = InterfaceBlock(kUniform_Modifier, "InterfaceBlock1",
                                        { Field(kFloat_Type, "a"), Field(kInt_Type, "b") });
-    REPORTER_ASSERT(r, DSLWriter::ProgramElements().size() == 1);
-    EXPECT_EQUAL(*DSLWriter::ProgramElements().back(),
+    REPORTER_ASSERT(r, SkSL::ThreadContext::ProgramElements().size() == 1);
+    EXPECT_EQUAL(*SkSL::ThreadContext::ProgramElements().back(),
                  "uniform InterfaceBlock1 { float a; int b; };");
     EXPECT_EQUAL(intf.field("a"), "InterfaceBlock1.a");
 
     DSLGlobalVar intf2 = InterfaceBlock(kUniform_Modifier, "InterfaceBlock2",
                                         { Field(kFloat2_Type, "x"), Field(kHalf2x2_Type, "y") },
                                   "blockVar");
-    REPORTER_ASSERT(r, DSLWriter::ProgramElements().size() == 2);
-    EXPECT_EQUAL(*DSLWriter::ProgramElements().back(),
+    REPORTER_ASSERT(r, SkSL::ThreadContext::ProgramElements().size() == 2);
+    EXPECT_EQUAL(*SkSL::ThreadContext::ProgramElements().back(),
                  "uniform InterfaceBlock2 { float2 x; half2x2 y; } blockVar;");
     EXPECT_EQUAL(intf2.field("x"), "blockVar.x");
 
     DSLGlobalVar intf3 = InterfaceBlock(kUniform_Modifier, "InterfaceBlock3",
                                         { Field(kFloat_Type, "z") },"arrayVar", 4);
-    REPORTER_ASSERT(r, DSLWriter::ProgramElements().size() == 3);
-    EXPECT_EQUAL(*DSLWriter::ProgramElements().back(),
+    REPORTER_ASSERT(r, SkSL::ThreadContext::ProgramElements().size() == 3);
+    EXPECT_EQUAL(*SkSL::ThreadContext::ProgramElements().back(),
                  "uniform InterfaceBlock3 { float z; } arrayVar[4];");
     EXPECT_EQUAL(intf3[1].field("z"), "arrayVar[1].z");
 }
@@ -1605,12 +1612,12 @@ DEF_GPUTEST_FOR_MOCK_CONTEXT(DSLSelect, r, ctxInfo) {
     EXPECT_EQUAL(x, "((a > 0) ? 1 : -1)");
 
     {
-        ExpectError error(r, "error: expected 'bool', but found 'int'\n");
+        ExpectError error(r, "expected 'bool', but found 'int'");
         Select(a, 1, -1).release();
     }
 
     {
-        ExpectError error(r, "error: ternary operator result mismatch: 'float2', 'float3'\n");
+        ExpectError error(r, "ternary operator result mismatch: 'float2', 'float3'");
         Select(a > 0, Float2(1), Float3(1)).release();
     }
 }
@@ -1660,17 +1667,17 @@ DEF_GPUTEST_FOR_MOCK_CONTEXT(DSLSwitch, r, ctxInfo) {
                 "switch (b) { default: case 0: case 1: }");
 
     {
-        ExpectError error(r, "error: duplicate case value '0'\n");
+        ExpectError error(r, "duplicate case value '0'");
         DSLStatement(Switch(0, Case(0), Case(0))).release();
     }
 
     {
-        ExpectError error(r, "error: duplicate default case\n");
+        ExpectError error(r, "duplicate default case");
         DSLStatement(Switch(0, Default(a = 0), Default(a = 1))).release();
     }
 
     {
-        ExpectError error(r, "error: case value must be a constant integer\n");
+        ExpectError error(r, "case value must be a constant integer");
         Var c(kInt_Type);
         DSLStatement(Switch(0, Case(c))).release();
     }
@@ -1733,7 +1740,7 @@ DEF_GPUTEST_FOR_MOCK_CONTEXT(DSLWhile, r, ctxInfo) {
     EXPECT_EQUAL(y, "for (; (a != b);) { a++; --b; }");
 
     {
-        ExpectError error(r, "error: expected 'bool', but found 'int'\n");
+        ExpectError error(r, "expected 'bool', but found 'int'");
         While(7, Block()).release();
     }
 }
@@ -1746,17 +1753,17 @@ DEF_GPUTEST_FOR_MOCK_CONTEXT(DSLIndex, r, ctxInfo) {
     EXPECT_EQUAL(a[b], "a[b]");
 
     {
-        ExpectError error(r, "error: expected 'int', but found 'bool'\n");
+        ExpectError error(r, "expected 'int', but found 'bool'");
         a[true].release();
     }
 
     {
-        ExpectError error(r, "error: expected array, but found 'int'\n");
+        ExpectError error(r, "expected array, but found 'int'");
         b[0].release();
     }
 
     {
-        ExpectError error(r, "error: index -1 out of range for 'int[5]'\n");
+        ExpectError error(r, "index -1 out of range for 'int[5]'");
         a[-1].release();
     }
 }
@@ -1804,6 +1811,7 @@ DEF_GPUTEST_FOR_MOCK_CONTEXT(DSLBuiltins, r, ctxInfo) {
     EXPECT_EQUAL(Radians(a),             "radians(a)");
     EXPECT_EQUAL(Reflect(a, b),          "reflect(a, b)");
     EXPECT_EQUAL(Refract(a, b, 1),       "refract(a, b, 1.0)");
+    EXPECT_EQUAL(Round(a),               "round(a)");
     EXPECT_EQUAL(Saturate(a),            "saturate(a)");
     EXPECT_EQUAL(Sign(a),                "sign(a)");
     EXPECT_EQUAL(Sin(a),                 "sin(a)");
@@ -1816,7 +1824,7 @@ DEF_GPUTEST_FOR_MOCK_CONTEXT(DSLBuiltins, r, ctxInfo) {
     // these calls all go through the normal channels, so it ought to be sufficient to prove that
     // one of them reports errors correctly
     {
-        ExpectError error(r, "error: no match for ceil(bool)\n");
+        ExpectError error(r, "no match for ceil(bool)");
         Ceil(a == b).release();
     }
 }
@@ -1881,67 +1889,65 @@ DEF_GPUTEST_FOR_MOCK_CONTEXT(DSLLayout, r, ctxInfo) {
     EXPECT_EQUAL(Declare(v5), "layout (blend_support_all_equations) half4 v5;");
 
     {
-        ExpectError error(r, "error: 'srgb_unpremul' is only permitted in runtime effects\n");
+        ExpectError error(r, "'srgb_unpremul' is only permitted in runtime effects");
         DSLGlobalVar v(DSLModifiers(DSLLayout().srgbUnpremul(), kUniform_Modifier), kHalf4_Type,
                        "v");
         Declare(v);
     }
 
     {
-        ExpectError error(r, "error: layout qualifier 'location' appears more than once\n");
+        ExpectError error(r, "layout qualifier 'location' appears more than once");
         DSLLayout().location(1).location(2);
     }
 
     {
-        ExpectError error(r, "error: layout qualifier 'set' appears more than once\n");
+        ExpectError error(r, "layout qualifier 'set' appears more than once");
         DSLLayout().set(1).set(2);
     }
 
     {
-        ExpectError error(r, "error: layout qualifier 'binding' appears more than once\n");
+        ExpectError error(r, "layout qualifier 'binding' appears more than once");
         DSLLayout().binding(1).binding(2);
     }
 
     {
-        ExpectError error(r, "error: layout qualifier 'offset' appears more than once\n");
+        ExpectError error(r, "layout qualifier 'offset' appears more than once");
         DSLLayout().offset(1).offset(2);
     }
 
     {
-        ExpectError error(r, "error: layout qualifier 'index' appears more than once\n");
+        ExpectError error(r, "layout qualifier 'index' appears more than once");
         DSLLayout().index(1).index(2);
     }
 
     {
-        ExpectError error(r, "error: layout qualifier 'builtin' appears more than once\n");
+        ExpectError error(r, "layout qualifier 'builtin' appears more than once");
         DSLLayout().builtin(1).builtin(2);
     }
 
     {
-        ExpectError error(r, "error: layout qualifier 'input_attachment_index' appears more than "
-                             "once\n");
+        ExpectError error(r, "layout qualifier 'input_attachment_index' appears more than once");
         DSLLayout().inputAttachmentIndex(1).inputAttachmentIndex(2);
     }
 
     {
-        ExpectError error(r, "error: layout qualifier 'origin_upper_left' appears more than "
-                             "once\n");
+        ExpectError error(r, "layout qualifier 'origin_upper_left' appears more than once");
         DSLLayout().originUpperLeft().originUpperLeft();
     }
 
     {
-        ExpectError error(r, "error: layout qualifier 'push_constant' appears more than once\n");
+        ExpectError error(r, "layout qualifier 'push_constant' appears more than once");
         DSLLayout().pushConstant().pushConstant();
     }
 
     {
-        ExpectError error(r, "error: layout qualifier 'blend_support_all_equations' appears more "
-                             "than once\n");
+        ExpectError error(r, "layout qualifier 'blend_support_all_equations' appears more than "
+                             "once");
         DSLLayout().blendSupportAllEquations().blendSupportAllEquations();
     }
 
     {
-        ExpectError error(r, "error: layout qualifier 'srgb_unpremul' appears more than once\n");
+        ExpectError error(r, "layout qualifier 'srgb_unpremul' appears more than once");
         DSLLayout().srgbUnpremul().srgbUnpremul();
     }
 }
@@ -1949,12 +1955,18 @@ DEF_GPUTEST_FOR_MOCK_CONTEXT(DSLLayout, r, ctxInfo) {
 DEF_GPUTEST_FOR_MOCK_CONTEXT(DSLSampleShader, r, ctxInfo) {
     AutoDSLContext context(ctxInfo.directContext()->priv().getGpu(), default_settings(),
                            SkSL::ProgramKind::kRuntimeShader);
-    DSLGlobalVar shader(kUniform_Modifier, kShader_Type, "shader");
-    EXPECT_EQUAL(Sample(shader, Float2(0, 0)), "sample(shader, float2(0.0, 0.0))");
+    DSLGlobalVar shader(kUniform_Modifier, kShader_Type, "child");
+    DSLGlobalVar notShader(kUniform_Modifier, kFloat_Type, "x");
+    EXPECT_EQUAL(shader.eval(Float2(0, 0)), "child.eval(float2(0.0, 0.0))");
 
     {
-        ExpectError error(r, "error: no match for sample(shader, half4)\n");
-        Sample(shader, Half4(1)).release();
+        ExpectError error(r, "no match for shader::eval(half4)");
+        shader.eval(Half4(1)).release();
+    }
+
+    {
+        ExpectError error(r, "type does not support method calls");
+        notShader.eval(Half4(1)).release();
     }
 }
 
@@ -1974,10 +1986,10 @@ DEF_GPUTEST_FOR_MOCK_CONTEXT(DSLStruct, r, ctxInfo) {
         result.field("a")[0] = result.field("x"),
         Return(result)
     );
-    REPORTER_ASSERT(r, DSLWriter::ProgramElements().size() == 2);
-    EXPECT_EQUAL(*DSLWriter::ProgramElements()[0],
+    REPORTER_ASSERT(r, SkSL::ThreadContext::ProgramElements().size() == 2);
+    EXPECT_EQUAL(*SkSL::ThreadContext::ProgramElements()[0],
                  "struct SimpleStruct { float x; bool b; float[3] a; };");
-    EXPECT_EQUAL(*DSLWriter::ProgramElements()[1],
+    EXPECT_EQUAL(*SkSL::ThreadContext::ProgramElements()[1],
                  "SimpleStruct returnStruct() { SimpleStruct result; (result.x = 123.0);"
                  "(result.b = (result.x > 0.0)); (result.a[0] = result.x); return result; }");
 
@@ -1985,8 +1997,8 @@ DEF_GPUTEST_FOR_MOCK_CONTEXT(DSLStruct, r, ctxInfo) {
         Field(kInt_Type, "x"),
         Field(simpleStruct, "simple")
     );
-    REPORTER_ASSERT(r, DSLWriter::ProgramElements().size() == 3);
-    EXPECT_EQUAL(*DSLWriter::ProgramElements()[2],
+    REPORTER_ASSERT(r, SkSL::ThreadContext::ProgramElements().size() == 3);
+    EXPECT_EQUAL(*SkSL::ThreadContext::ProgramElements()[2],
                  "struct NestedStruct { int x; SimpleStruct simple; };");
 }
 
@@ -2004,20 +2016,52 @@ DEF_GPUTEST_FOR_MOCK_CONTEXT(DSLWrapper, r, ctxInfo) {
 }
 
 DEF_GPUTEST_FOR_MOCK_CONTEXT(DSLRTAdjust, r, ctxInfo) {
-    AutoDSLContext context(ctxInfo.directContext()->priv().getGpu(), no_mark_vars_declared(),
-                           SkSL::ProgramKind::kVertex);
-    DSLGlobalVar rtAdjust(kUniform_Modifier, kFloat4_Type, "sk_RTAdjust");
-    Declare(rtAdjust);
-    DSLFunction(kVoid_Type, "main").define(
-        sk_Position() = Half4(0)
-    );
-    REPORTER_ASSERT(r, DSLWriter::ProgramElements().size() == 2);
-    EXPECT_EQUAL(*DSLWriter::ProgramElements()[1],
-        "void main() {"
-        "(sk_PerVertex.sk_Position = float4(0.0));"
-        "(sk_PerVertex.sk_Position = float4(((sk_PerVertex.sk_Position.xy * sk_RTAdjust.xz) + "
-        "(sk_PerVertex.sk_Position.ww * sk_RTAdjust.yw)), 0.0, sk_PerVertex.sk_Position.w));"
-        "}");
+    {
+        AutoDSLContext context(ctxInfo.directContext()->priv().getGpu(), no_mark_vars_declared(),
+                               SkSL::ProgramKind::kVertex);
+        DSLGlobalVar rtAdjust(kUniform_Modifier, kFloat4_Type, "sk_RTAdjust");
+        Declare(rtAdjust);
+        DSLFunction(kVoid_Type, "main").define(
+            sk_Position() = Half4(0)
+        );
+        REPORTER_ASSERT(r, SkSL::ThreadContext::ProgramElements().size() == 2);
+        EXPECT_EQUAL(*SkSL::ThreadContext::ProgramElements()[1],
+            "void main() {"
+            "(sk_PerVertex.sk_Position = float4(0.0));"
+            "(sk_PerVertex.sk_Position = float4(((sk_PerVertex.sk_Position.xy * sk_RTAdjust.xz) + "
+            "(sk_PerVertex.sk_Position.ww * sk_RTAdjust.yw)), 0.0, sk_PerVertex.sk_Position.w));"
+            "}");
+    }
+
+    {
+        AutoDSLContext context(ctxInfo.directContext()->priv().getGpu(), no_mark_vars_declared(),
+                               SkSL::ProgramKind::kVertex);
+        REPORTER_ASSERT(r, !SkSL::ThreadContext::IRGenerator().haveRTAdjustInterfaceBlock());
+
+        DSLGlobalVar intf = InterfaceBlock(kUniform_Modifier, "uniforms",
+                                           { Field(kInt_Type, "unused"),
+                                             Field(kFloat4_Type, "sk_RTAdjust") });
+        REPORTER_ASSERT(r, SkSL::ThreadContext::IRGenerator().haveRTAdjustInterfaceBlock());
+        REPORTER_ASSERT(r, SkSL::ThreadContext::IRGenerator().getRTAdjustFieldIndex() == 1);
+    }
+
+    {
+        AutoDSLContext context(ctxInfo.directContext()->priv().getGpu(), no_mark_vars_declared(),
+                               SkSL::ProgramKind::kVertex);
+        ExpectError error(r, "sk_RTAdjust must have type 'float4'");
+        InterfaceBlock(kUniform_Modifier, "uniforms",
+                       { Field(kInt_Type, "unused"), Field(kHalf4_Type, "sk_RTAdjust") });
+    }
+
+    {
+        AutoDSLContext context(ctxInfo.directContext()->priv().getGpu(), no_mark_vars_declared(),
+                               SkSL::ProgramKind::kVertex);
+        ExpectError error(r, "symbol 'sk_RTAdjust' was already defined");
+        InterfaceBlock(kUniform_Modifier, "uniforms1",
+                       { Field(kInt_Type, "unused1"), Field(kFloat4_Type, "sk_RTAdjust") });
+        InterfaceBlock(kUniform_Modifier, "uniforms2",
+                       { Field(kInt_Type, "unused2"), Field(kFloat4_Type, "sk_RTAdjust") });
+    }
 }
 
 DEF_GPUTEST_FOR_MOCK_CONTEXT(DSLInlining, r, ctxInfo) {
@@ -2057,30 +2101,32 @@ DEF_GPUTEST_FOR_MOCK_CONTEXT(DSLPrototypes, r, ctxInfo) {
     {
         DSLParameter x(kFloat_Type, "x");
         DSLFunction sqr(kFloat_Type, "sqr", x);
-        REPORTER_ASSERT(r, DSLWriter::ProgramElements().size() == 1);
-        EXPECT_EQUAL(*DSLWriter::ProgramElements()[0], "float sqr(float x);");
+        REPORTER_ASSERT(r, SkSL::ThreadContext::ProgramElements().size() == 1);
+        EXPECT_EQUAL(*SkSL::ThreadContext::ProgramElements()[0], "float sqr(float x);");
         sqr.define(
             Return(x * x)
         );
-        REPORTER_ASSERT(r, DSLWriter::ProgramElements().size() == 1);
-        EXPECT_EQUAL(*DSLWriter::ProgramElements()[0], "float sqr(float x) { return (x * x); }");
+        REPORTER_ASSERT(r, SkSL::ThreadContext::ProgramElements().size() == 1);
+        EXPECT_EQUAL(*SkSL::ThreadContext::ProgramElements()[0],
+                "float sqr(float x) { return (x * x); }");
     }
 
     {
         DSLWriter::Reset();
             DSLParameter x(kFloat_Type, "x");
         DSLFunction sqr(kFloat_Type, "sqr", x);
-        REPORTER_ASSERT(r, DSLWriter::ProgramElements().size() == 1);
-        EXPECT_EQUAL(*DSLWriter::ProgramElements()[0], "float sqr(float x);");
+        REPORTER_ASSERT(r, SkSL::ThreadContext::ProgramElements().size() == 1);
+        EXPECT_EQUAL(*SkSL::ThreadContext::ProgramElements()[0], "float sqr(float x);");
         DSLFunction(kVoid_Type, "main").define(sqr(5));
-        REPORTER_ASSERT(r, DSLWriter::ProgramElements().size() == 2);
-        EXPECT_EQUAL(*DSLWriter::ProgramElements()[0], "float sqr(float x);");
-        EXPECT_EQUAL(*DSLWriter::ProgramElements()[1], "void main() { sqr(5.0); }");
+        REPORTER_ASSERT(r, SkSL::ThreadContext::ProgramElements().size() == 2);
+        EXPECT_EQUAL(*SkSL::ThreadContext::ProgramElements()[0], "float sqr(float x);");
+        EXPECT_EQUAL(*SkSL::ThreadContext::ProgramElements()[1], "void main() { sqr(5.0); }");
         sqr.define(
             Return(x * x)
         );
-        REPORTER_ASSERT(r, DSLWriter::ProgramElements().size() == 3);
-        EXPECT_EQUAL(*DSLWriter::ProgramElements()[2], "float sqr(float x) { return (x * x); }");
+        REPORTER_ASSERT(r, SkSL::ThreadContext::ProgramElements().size() == 3);
+        EXPECT_EQUAL(*SkSL::ThreadContext::ProgramElements()[2],
+                "float sqr(float x) { return (x * x); }");
 
         const char* source = "source test";
         std::unique_ptr<SkSL::Program> p = ReleaseProgram(std::make_unique<SkSL::String>(source));
@@ -2092,4 +2138,44 @@ DEF_GPUTEST_FOR_MOCK_CONTEXT(DSLPrototypes, r, ctxInfo) {
             "25.0;"
             "}");
     }
+}
+
+DEF_GPUTEST_FOR_MOCK_CONTEXT(DSLExtension, r, ctxInfo) {
+    AutoDSLContext context(ctxInfo.directContext()->priv().getGpu());
+    AddExtension("test_extension");
+    REPORTER_ASSERT(r, SkSL::ThreadContext::ProgramElements().size() == 1);
+    EXPECT_EQUAL(*SkSL::ThreadContext::ProgramElements()[0], "#extension test_extension : enable");
+}
+
+DEF_GPUTEST_FOR_MOCK_CONTEXT(DSLModifiersDeclaration, r, ctxInfo) {
+    AutoDSLContext context(ctxInfo.directContext()->priv().getGpu());
+    Declare(Modifiers(Layout().blendSupportAllEquations(), kOut_Modifier));
+    REPORTER_ASSERT(r, SkSL::ThreadContext::ProgramElements().size() == 1);
+    EXPECT_EQUAL(*SkSL::ThreadContext::ProgramElements()[0],
+            "layout(blend_support_all_equations) out;");
+}
+
+DEF_GPUTEST_FOR_MOCK_CONTEXT(DSLES3Types, r, ctxInfo) {
+    StartRuntimeShader(ctxInfo.directContext()->priv().getGpu()->shaderCompiler());
+    {
+        ExpectError error(r, "type 'uint' is not supported");
+        Var u(kUInt_Type, "u");
+    }
+    {
+        ExpectError error(r, "type 'float3x2' is not supported");
+        Float3x2(1).release();
+    }
+    {
+        ExpectError error(r, "type 'uint' is not supported");
+        Var u(kUInt_Type, "u");
+    }
+    {
+        ExpectError error(r, "type '$genType' is private");
+        Var g(DSLType("$genType"), "g");
+    }
+    Parameter p(kFloat2_Type, "p");
+    Function(kHalf4_Type, "main", p).define(
+        Return(Half4(0))
+    );
+    EndRuntimeShader();
 }
