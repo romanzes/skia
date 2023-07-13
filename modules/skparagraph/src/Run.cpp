@@ -309,6 +309,11 @@ SkFont Cluster::font() const {
 }
 
 bool Cluster::isSoftBreak() const {
+    // NON-SKIA-UPSTREAMED CHANGE
+    if (isSoftBreakExemption()) {
+        return false;
+    }
+    // END OF NON-SKIA-UPSTREAMED CHANGE
     return fOwner->codeUnitHasProperty(fTextRange.end, CodeUnitFlags::kSoftLineBreakBefore);
 }
 
