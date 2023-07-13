@@ -65,6 +65,7 @@ GrBackendFormat GetBackendFormat(GrDirectContext* dContext, AHardwareBuffer* har
     GrBackendApi backend = dContext->backend();
 
     if (backend == GrBackendApi::kOpenGL) {
+#ifdef SK_GL
         switch (bufferFormat) {
             //TODO: find out if we can detect, which graphic buffers support GR_GL_TEXTURE_2D
             case AHARDWAREBUFFER_FORMAT_R8G8B8A8_UNORM:
@@ -85,6 +86,9 @@ GrBackendFormat GetBackendFormat(GrDirectContext* dContext, AHardwareBuffer* har
                     return GrBackendFormat::MakeGL(GR_GL_RGBA8, GR_GL_TEXTURE_EXTERNAL);
                 }
         }
+#else
+        return GrBackendFormat();
+#endif
     } else if (backend == GrBackendApi::kVulkan) {
 #ifdef SK_VULKAN
         switch (bufferFormat) {
@@ -157,6 +161,7 @@ GrBackendFormat GetBackendFormat(GrDirectContext* dContext, AHardwareBuffer* har
     return GrBackendFormat();
 }
 
+#ifdef SK_GL
 class GLTextureHelper {
 public:
     GLTextureHelper(GrGLuint texID, EGLImageKHR image, EGLDisplay display, GrGLuint texTarget)
@@ -267,6 +272,7 @@ static GrBackendTexture make_gl_backend_texture(
 
     return GrBackendTexture(width, height, GrMipmapped::kNo, textureInfo);
 }
+#endif
 
 #ifdef SK_VULKAN
 class VulkanCleanupHelper {
@@ -549,9 +555,13 @@ GrBackendTexture MakeBackendTexture(GrDirectContext* dContext, AHardwareBuffer* 
     bool createProtectedImage = isProtectedContent && can_import_protected_content(dContext);
 
     if (GrBackendApi::kOpenGL == dContext->backend()) {
+#ifdef SK_GL
         return make_gl_backend_texture(dContext, hardwareBuffer, width, height, deleteProc,
                                        updateProc, imageCtx, createProtectedImage, backendFormat,
                                        isRenderable);
+#else
+        return GrBackendTexture();
+#endif
     } else {
         SkASSERT(GrBackendApi::kVulkan == dContext->backend());
 #ifdef SK_VULKAN

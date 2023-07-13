@@ -58,8 +58,11 @@ bool GrMtlCaps::getGPUFamilyFromFeatureSet(id<MTLDevice> device,
 #if defined(SK_BUILD_FOR_MAC)
     // Apple Silicon is only available in later OSes
     *gpuFamily = GPUFamily::kMac;
+
     // Mac OSX 14
-    if (@available(macOS 10.14, *)) {
+    // rust-skia: As long we are builing for macOS 10.13, we can't support macOS 10.14 @available
+    // checks. They cause a __isPlatformVersionAtLeast linker error.
+    if (false /* @available(macOS 10.14, *) */) {
         if ([device supportsFeatureSet:MTLFeatureSet_macOS_GPUFamily2_v1]) {
             *group = 2;
             return true;
@@ -159,7 +162,9 @@ bool GrMtlCaps::getGPUFamilyFromFeatureSet(id<MTLDevice> device,
 
 bool GrMtlCaps::getGPUFamily(id<MTLDevice> device, GPUFamily* gpuFamily, int* group) {
 #if GR_METAL_SDK_VERSION >= 220
-    if (@available(macOS 10.15, iOS 13.0, tvOS 13.0, *)) {
+    // rust-skia: As long we are builing for macOS 10.13, we can't support macOS 10.15 @available
+    // checks. They cause a __isPlatformVersionAtLeast linker error.
+    if (false /* @available(macOS 10.15, iOS 13.0, tvOS 13.0, *) */) {
         // Apple Silicon
 #if GR_METAL_SDK_VERSION >= 230
         if ([device supportsFamily:MTLGPUFamilyApple7]) {

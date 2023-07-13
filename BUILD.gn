@@ -90,7 +90,7 @@ config("skia_private") {
   if (is_skia_dev_build) {
     defines += [
       "SK_ALLOW_STATIC_GLOBAL_INITIALIZERS=1",
-      "GR_TEST_UTILS=1",
+      # "GR_TEST_UTILS=1",
     ]
   }
   libs = []
@@ -1480,13 +1480,13 @@ skia_static_library("pathkit") {
 }
 
 group("modules") {
-  deps = [
-    "modules/particles",
-    "modules/skottie",
-    "modules/skparagraph",
-    "modules/skshaper",
-    "modules/svg",
-  ]
+  # rust-skia: HACK: only add modules/skparagraph if we do use icu for now, 
+  # this prevents a linker error on macOS
+  if (skia_use_icu) {
+    deps = [ "modules/skparagraph" ]
+  } else {
+    deps = []
+  }
 }
 
 group("experimental") {
@@ -3313,7 +3313,7 @@ if (skia_enable_tools) {
   }
 }
 
-if (is_ios && skia_use_metal && !skia_enable_flutter_defines) {
+if (is_ios && skia_enable_skottie && skia_use_metal && !skia_enable_flutter_defines) {
   group("minimal_ios_mtl_skia_app") {
     deps = [ "experimental/minimal_ios_mtl_skia_app" ]
   }
