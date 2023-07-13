@@ -111,8 +111,13 @@ int32_t ParagraphImpl::unresolvedGlyphs() {
 
 void ParagraphImpl::layout(SkScalar rawWidth) {
 
+    // NON-SKIA-UPSTREAMED CHANGE
+    /*
     // TODO: This rounding is done to match Flutter tests. Must be removed...
     auto floorWidth = SkScalarFloorToScalar(rawWidth);
+    */
+    auto floorWidth = rawWidth;
+    // END OF NON-SKIA-UPSTREAMED CHANGE
 
     if ((!SkScalarIsFinite(rawWidth) || fLongestLine <= floorWidth) &&
         fState >= kLineBroken &&
@@ -192,6 +197,8 @@ void ParagraphImpl::layout(SkScalar rawWidth) {
     this->fOldWidth = floorWidth;
     this->fOldHeight = this->fHeight;
 
+    // NON-SKIA-UPSTREAMED CHANGE
+    /*
     // TODO: This rounding is done to match Flutter tests. Must be removed...
     fMinIntrinsicWidth = littleRound(fMinIntrinsicWidth);
     fMaxIntrinsicWidth = littleRound(fMaxIntrinsicWidth);
@@ -200,7 +207,8 @@ void ParagraphImpl::layout(SkScalar rawWidth) {
     if (fParagraphStyle.getMaxLines() == 1 ||
         (fParagraphStyle.unlimited_lines() && fParagraphStyle.ellipsized())) {
         fMinIntrinsicWidth = fMaxIntrinsicWidth;
-    }
+    } */
+    // END OF NON-SKIA-UPSTREAMED CHANGE
 
     // TODO: Since min and max are calculated differently it's possible to get a rounding error
     //  that would make min > max. Sort it out later, make it the same for now
@@ -363,6 +371,14 @@ Cluster::Cluster(ParagraphImpl* owner,
     fIsWhiteSpaceBreak = whiteSpacesBreakLen == fTextRange.width();
     fIsIntraWordBreak = intraWordBreakLen == fTextRange.width();
     fIsHardBreak = fOwner->codeUnitHasProperty(fTextRange.end, CodeUnitFlags::kHardLineBreakBefore);
+    // NON-SKIA-UPSTREAMED CHANGE
+    // Some of the symbols that Chrome doesn't recognize to be soft breaks,
+    // are soft breaks in Skia by default
+    fIsSoftBreakExemption = *ch == 0x21 // Exclamation mark (!)
+                           || *ch == 0x2F // Forward slash (/)
+                           || *ch == 0x7C // Vertical bar (|)
+                           || *ch == 0x7D; // Right brace (})
+    // END OF NON-SKIA-UPSTREAMED CHANGE
 }
 
 SkScalar Run::calculateWidth(size_t start, size_t end, bool clip) const {
