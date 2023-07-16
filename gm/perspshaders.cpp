@@ -158,11 +158,13 @@ protected:
         canvas->translate(0, SkIntToScalar(kCellSize));
         this->drawRow(canvas, SkSamplingOptions(SkCubicResampler::Mitchell()));
         canvas->translate(0, SkIntToScalar(kCellSize));
+        this->drawRow(canvas, SkSamplingOptions::Aniso(16));
+        canvas->translate(0, SkIntToScalar(kCellSize));
     }
 private:
-    static constexpr int kCellSize = 50;
-    static constexpr int kNumRows = 4;
-    static constexpr int kNumCols = 6;
+    inline static constexpr int kCellSize = 50;
+    inline static constexpr int kNumRows = 5;
+    inline static constexpr int kNumCols = 6;
 
     bool            fDoAA;
     SkPath          fPath;

@@ -5,6 +5,8 @@
  * found in the LICENSE file.
  */
 
+#include "tools/ToolUtils.h"
+
 #include "include/core/SkBitmap.h"
 #include "include/core/SkBlendMode.h"
 #include "include/core/SkCanvas.h"
@@ -13,6 +15,7 @@
 #include "include/core/SkMatrix.h"
 #include "include/core/SkPaint.h"
 #include "include/core/SkPathBuilder.h"
+#include "include/core/SkPicture.h"
 #include "include/core/SkPixelRef.h"
 #include "include/core/SkPixmap.h"
 #include "include/core/SkPoint3.h"
@@ -23,15 +26,23 @@
 #include "include/ports/SkTypeface_win.h"
 #include "include/private/SkColorData.h"
 #include "include/private/SkFloatingPoint.h"
-#include "src/core/SkFontMgrPriv.h"
 #include "src/core/SkFontPriv.h"
-#include "tools/ToolUtils.h"
-#include "tools/flags/CommandLineFlags.h"
-#include "tools/fonts/TestFontMgr.h"
 
 #include <cmath>
 #include <cstring>
-#include <memory>
+
+#if defined(SK_ENABLE_SVG)
+#include "modules/svg/include/SkSVGDOM.h"
+#include "modules/svg/include/SkSVGNode.h"
+#include "src/xml/SkDOM.h"
+#endif
+
+#if SK_SUPPORT_GPU
+#include "include/gpu/GrDirectContext.h"
+#include "include/gpu/GrRecordingContext.h"
+#include "src/gpu/ganesh/GrCaps.h"
+#include "src/gpu/ganesh/GrDirectContextPriv.h"
+#endif
 
 namespace ToolUtils {
 
@@ -55,6 +66,7 @@ const char* colortype_name(SkColorType ct) {
         case kRGB_565_SkColorType:            return "RGB_565";
         case kARGB_4444_SkColorType:          return "ARGB_4444";
         case kRGBA_8888_SkColorType:          return "RGBA_8888";
+        case kSRGBA_8888_SkColorType:         return "SRGBA_8888";
         case kRGB_888x_SkColorType:           return "RGB_888x";
         case kBGRA_8888_SkColorType:          return "BGRA_8888";
         case kRGBA_1010102_SkColorType:       return "RGBA_1010102";
@@ -69,6 +81,7 @@ const char* colortype_name(SkColorType ct) {
         case kR16G16_unorm_SkColorType:       return "R16G16_unorm";
         case kR16G16_float_SkColorType:       return "R16G16_float";
         case kR16G16B16A16_unorm_SkColorType: return "R16G16B16A16_unorm";
+        case kR8_unorm_SkColorType:           return "R8_unorm";
     }
     SkASSERT(false);
     return "unexpected colortype";
@@ -83,6 +96,7 @@ const char* colortype_depth(SkColorType ct) {
         case kRGB_565_SkColorType:            return "565";
         case kARGB_4444_SkColorType:          return "4444";
         case kRGBA_8888_SkColorType:          return "8888";
+        case kSRGBA_8888_SkColorType:         return "8888";
         case kRGB_888x_SkColorType:           return "888";
         case kBGRA_8888_SkColorType:          return "8888";
         case kRGBA_1010102_SkColorType:       return "1010102";
@@ -97,6 +111,7 @@ const char* colortype_depth(SkColorType ct) {
         case kR16G16_unorm_SkColorType:       return "1616";
         case kR16G16_float_SkColorType:       return "F16F16";
         case kR16G16B16A16_unorm_SkColorType: return "16161616";
+        case kR8_unorm_SkColorType:           return "8";
     }
     SkASSERT(false);
     return "unexpected colortype";
@@ -369,17 +384,6 @@ void create_tetra_normal_map(SkBitmap* bm, const SkIRect& dst) {
     }
 }
 
-#if !defined(__clang__) && defined(_MSC_VER)
-// MSVC takes ~2 minutes to compile this function with optimization.
-// We don't really care to wait that long for this function.
-#pragma optimize("", off)
-#endif
-SkPath make_big_path() {
-    SkPathBuilder path;
-#include "BigPathBench.inc"  // IWYU pragma: keep
-    return path.detach();
-}
-
 bool copy_to(SkBitmap* dst, SkColorType dstColorType, const SkBitmap& src) {
     SkPixmap srcPM;
     if (!src.peekPixels(&srcPM)) {
@@ -481,23 +485,73 @@ sk_sp<SkSurface> makeSurface(SkCanvas*             canvas,
     return surf;
 }
 
-static DEFINE_bool(nativeFonts, true,
-                   "If true, use native font manager and rendering. "
-                   "If false, fonts will draw as portably as possible.");
-#if defined(SK_BUILD_FOR_WIN)
-    static DEFINE_bool(gdi, false,
-                       "Use GDI instead of DirectWrite for font rendering.");
+void sniff_paths(const char filepath[], std::function<PathSniffCallback> callback) {
+    SkFILEStream stream(filepath);
+    if (!stream.isValid()) {
+        SkDebugf("sniff_paths: invalid input file at \"%s\"\n", filepath);
+        return;
+    }
+
+    class PathSniffer : public SkCanvas {
+    public:
+        PathSniffer(std::function<PathSniffCallback> callback)
+                : SkCanvas(4096, 4096, nullptr)
+                , fPathSniffCallback(callback) {}
+    private:
+        void onDrawPath(const SkPath& path, const SkPaint& paint) override {
+            fPathSniffCallback(this->getTotalMatrix(), path, paint);
+        }
+        std::function<PathSniffCallback> fPathSniffCallback;
+    };
+
+    PathSniffer pathSniffer(callback);
+    if (const char* ext = strrchr(filepath, '.'); ext && !strcmp(ext, ".svg")) {
+#if defined(SK_ENABLE_SVG)
+        sk_sp<SkSVGDOM> svg = SkSVGDOM::MakeFromStream(stream);
+        if (!svg) {
+            SkDebugf("sniff_paths: couldn't load svg at \"%s\"\n", filepath);
+            return;
+        }
+        svg->setContainerSize(SkSize::Make(pathSniffer.getBaseLayerSize()));
+        svg->render(&pathSniffer);
+#endif
+    } else {
+        sk_sp<SkPicture> skp = SkPicture::MakeFromStream(&stream);
+        if (!skp) {
+            SkDebugf("sniff_paths: couldn't load skp at \"%s\"\n", filepath);
+            return;
+        }
+        skp->playback(&pathSniffer);
+    }
+}
+
+#if SK_SUPPORT_GPU
+sk_sp<SkImage> MakeTextureImage(SkCanvas* canvas, sk_sp<SkImage> orig) {
+    if (!orig) {
+        return nullptr;
+    }
+
+    if (canvas->recordingContext() && canvas->recordingContext()->asDirectContext()) {
+        GrDirectContext* dContext = canvas->recordingContext()->asDirectContext();
+        const GrCaps* caps = dContext->priv().caps();
+
+        if (orig->width() >= caps->maxTextureSize() || orig->height() >= caps->maxTextureSize()) {
+            // Ganesh is able to tile large SkImage draws. Always forcing SkImages to be uploaded
+            // prevents this feature from being tested by our tools. For now, leave excessively
+            // large SkImages as bitmaps.
+            return orig;
+        }
+
+        return orig->makeTextureImage(dContext);
+    }
+#if SK_GRAPHITE_ENABLED
+    else if (canvas->recorder()) {
+        return orig->makeTextureImage(canvas->recorder());
+    }
 #endif
 
-void SetDefaultFontMgr() {
-    if (!FLAGS_nativeFonts) {
-        gSkFontMgr_DefaultFactory = &ToolUtils::MakePortableFontMgr;
-    }
-#if defined(SK_BUILD_FOR_WIN)
-    if (FLAGS_gdi) {
-        gSkFontMgr_DefaultFactory = &SkFontMgr_New_GDI;
-    }
-#endif
+    return orig;
 }
+#endif
 
 }  // namespace ToolUtils

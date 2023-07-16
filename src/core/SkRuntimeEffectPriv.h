@@ -30,8 +30,8 @@ public:
         return options;
     }
 
-    static void EnableFragCoord(SkRuntimeEffect::Options* options) {
-        options->allowFragCoord = true;
+    static void UsePrivateRTShaderModule(SkRuntimeEffect::Options* options) {
+        options->usePrivateRTShaderModule = true;
     }
 };
 
@@ -57,7 +57,7 @@ inline sk_sp<SkRuntimeEffect> SkMakeRuntimeEffect(
         SkRuntimeEffect::Result (*make)(SkString, const SkRuntimeEffect::Options&),
         const char* sksl,
         SkRuntimeEffect::Options options = SkRuntimeEffect::Options{}) {
-    SkRuntimeEffectPriv::EnableFragCoord(&options);
+    SkRuntimeEffectPriv::UsePrivateRTShaderModule(&options);
     auto result = make(SkString{sksl}, options);
     SkASSERTF(result.effect, "%s", result.errorText.c_str());
     return result.effect;
@@ -119,10 +119,10 @@ public:
 private:
     struct SampleCall {
         enum class Kind {
-            kInputColor,  // eg sample(child) or sample(child, inputColor)
-            kImmediate,   // eg sample(child, half4(1))
-            kPrevious,    // eg sample(child1, sample(child2))
-            kUniform,     // eg uniform half4 color; ... sample(child, color)
+            kInputColor,  // eg child.eval(inputColor)
+            kImmediate,   // eg child.eval(half4(1))
+            kPrevious,    // eg child1.eval(child2.eval(...))
+            kUniform,     // eg uniform half4 color; ... child.eval(color)
         };
 
         int  fChild;

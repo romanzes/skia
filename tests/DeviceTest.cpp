@@ -15,7 +15,7 @@
 #include "include/gpu/GrTypes.h"
 #include "src/core/SkDevice.h"
 #include "src/core/SkSpecialImage.h"
-#include "src/gpu/GrDirectContextPriv.h"
+#include "src/gpu/ganesh/GrDirectContextPriv.h"
 #include "tests/Test.h"
 #include "tools/gpu/GrContextFactory.h"
 
@@ -87,7 +87,7 @@ DEF_GPUTEST_FOR_RENDERING_CONTEXTS(SpecialImage_GPUDevice, reporter, ctxInfo) {
     auto device = dContext->priv().createDevice(SkBudgeted::kNo, ii, SkBackingFit::kExact,
                                                 1, GrMipmapped::kNo, GrProtected::kNo,
                                                 kBottomLeft_GrSurfaceOrigin, SkSurfaceProps(),
-                                                skgpu::BaseDevice::kClear_InitContents);
+                                                skgpu::BaseDevice::InitContents::kClear);
 
     SkBitmap bm;
     SkAssertResult(bm.tryAllocN32Pixels(kWidth, kHeight));

@@ -4,6 +4,7 @@
 package gen_tasks_logic
 
 import (
+	"fmt"
 	"log"
 	"reflect"
 	"strings"
@@ -90,8 +91,17 @@ func (b *taskBuilder) cas(casSpec string) {
 	b.Spec.CasSpec = casSpec
 }
 
-// env appends the given values to the given environment variable for the task.
-func (b *taskBuilder) env(key string, values ...string) {
+// env sets the value for the given environment variable for the task.
+func (b *taskBuilder) env(key, value string) {
+	if b.Spec.Environment == nil {
+		b.Spec.Environment = map[string]string{}
+	}
+	b.Spec.Environment[key] = value
+}
+
+// envPrefixes appends the given values to the given environment variable for
+// the task.
+func (b *taskBuilder) envPrefixes(key string, values ...string) {
 	if b.Spec.EnvPrefixes == nil {
 		b.Spec.EnvPrefixes = map[string][]string{}
 	}
@@ -104,7 +114,7 @@ func (b *taskBuilder) env(key string, values ...string) {
 
 // addToPATH adds the given locations to PATH for the task.
 func (b *taskBuilder) addToPATH(loc ...string) {
-	b.env("PATH", loc...)
+	b.envPrefixes("PATH", loc...)
 }
 
 // output adds the given paths as outputs to the task, which results in their
@@ -175,6 +185,17 @@ type uploadAssetCASCfg struct {
 	path           string
 }
 
+// assetWithVersion adds the given asset with the given version number to the
+// task as a CIPD package.
+func (b *taskBuilder) assetWithVersion(assetName string, version int) {
+	pkg := &specs.CipdPackage{
+		Name:    fmt.Sprintf("skia/bots/%s", assetName),
+		Path:    assetName,
+		Version: fmt.Sprintf("version:%d", version),
+	}
+	b.cipd(pkg)
+}
+
 // asset adds the given assets to the task as CIPD packages.
 func (b *taskBuilder) asset(assets ...string) {
 	shouldIsolate := b.useIsolatedAssets()
@@ -218,7 +239,7 @@ func (b *taskBuilder) usesGo() {
 	}
 	b.cipd(pkg)
 	b.addToPATH(pkg.Path + "/go/bin")
-	b.env("GOROOT", pkg.Path+"/go")
+	b.envPrefixes("GOROOT", pkg.Path+"/go")
 }
 
 // usesDocker adds attributes to tasks which use docker.
@@ -280,10 +301,10 @@ func (b *taskBuilder) cipdPlatform() string {
 		return cipd.PlatformMacAmd64
 	} else if b.matchArch("Arm64") {
 		return cipd.PlatformLinuxArm64
-	} else if b.matchOs("Android") {
+	} else if b.matchOs("Android", "ChromeOS") {
 		return cipd.PlatformLinuxArm64
-	} else if b.matchOs("ChromeOS", "iOS") {
-		return cipd.PlatformLinuxArmv6l
+	} else if b.matchOs("iOS") {
+		return cipd.PlatformLinuxArm64
 	} else {
 		return cipd.PlatformLinuxAmd64
 	}
@@ -303,7 +324,7 @@ func (b *taskBuilder) usesPython() {
 		Name: "vpython",
 		Path: "cache/vpython",
 	})
-	b.env("VPYTHON_VIRTUALENV_ROOT", "cache/vpython")
+	b.envPrefixes("VPYTHON_VIRTUALENV_ROOT", "cache/vpython")
 	b.env("VPYTHON_LOG_TRACE", "1")
 }
 

@@ -12,11 +12,11 @@
 #include "include/gpu/GrDirectContext.h"
 #include "src/core/SkAutoPixmapStorage.h"
 #include "src/core/SkConvertPixels.h"
-#include "src/gpu/GrDirectContextPriv.h"
-#include "src/gpu/GrImageInfo.h"
-#include "src/gpu/SurfaceContext.h"
-#include "src/gpu/SurfaceFillContext.h"
-#include "src/gpu/effects/GrTextureEffect.h"
+#include "src/gpu/ganesh/GrDirectContextPriv.h"
+#include "src/gpu/ganesh/GrImageInfo.h"
+#include "src/gpu/ganesh/SurfaceContext.h"
+#include "src/gpu/ganesh/SurfaceFillContext.h"
+#include "src/gpu/ganesh/effects/GrTextureEffect.h"
 #include "tests/Test.h"
 #include "tests/TestUtils.h"
 #include "tools/ToolUtils.h"
@@ -39,6 +39,7 @@ static constexpr int min_rgb_channel_bits(SkColorType ct) {
         case kR16G16_unorm_SkColorType:       return 16;
         case kR16G16_float_SkColorType:       return 16;
         case kRGBA_8888_SkColorType:          return 8;
+        case kSRGBA_8888_SkColorType:         return 8;
         case kRGB_888x_SkColorType:           return 8;
         case kBGRA_8888_SkColorType:          return 8;
         case kRGBA_1010102_SkColorType:       return 10;
@@ -50,6 +51,7 @@ static constexpr int min_rgb_channel_bits(SkColorType ct) {
         case kRGBA_F16_SkColorType:           return 10;  // just counting the mantissa
         case kRGBA_F32_SkColorType:           return 23;  // just counting the mantissa
         case kR16G16B16A16_unorm_SkColorType: return 16;
+        case kR8_unorm_SkColorType:           return 8;
     }
     SkUNREACHABLE;
 }
@@ -66,6 +68,7 @@ static constexpr int alpha_channel_bits(SkColorType ct) {
         case kR16G16_unorm_SkColorType:       return 0;
         case kR16G16_float_SkColorType:       return 0;
         case kRGBA_8888_SkColorType:          return 8;
+        case kSRGBA_8888_SkColorType:         return 8;
         case kRGB_888x_SkColorType:           return 0;
         case kBGRA_8888_SkColorType:          return 8;
         case kRGBA_1010102_SkColorType:       return 2;
@@ -77,6 +80,7 @@ static constexpr int alpha_channel_bits(SkColorType ct) {
         case kRGBA_F16_SkColorType:           return 10;  // just counting the mantissa
         case kRGBA_F32_SkColorType:           return 23;  // just counting the mantissa
         case kR16G16B16A16_unorm_SkColorType: return 16;
+        case kR8_unorm_SkColorType:           return 0;
     }
     SkUNREACHABLE;
 }
@@ -502,7 +506,7 @@ DEF_GPUTEST_FOR_RENDERING_CONTEXTS(SurfaceContextReadPixels, reporter, ctxInfo) 
         for (GrSurfaceOrigin origin : {kTopLeft_GrSurfaceOrigin, kBottomLeft_GrSurfaceOrigin}) {
             auto factory = std::function<GpuSrcFactory<Surface>>(
                     [direct, origin, renderable](const SkPixmap& src) {
-                        auto sc = skgpu::SurfaceContext::Make(
+                        auto sc = CreateSurfaceContext(
                                 direct, src.info(), SkBackingFit::kExact, origin, renderable);
                         if (sc) {
                             sc->writePixels(direct, src, {0, 0});
@@ -1085,11 +1089,11 @@ DEF_GPUTEST_FOR_RENDERING_CONTEXTS(SurfaceContextWritePixels, reporter, ctxInfo)
         for (GrSurfaceOrigin origin : {kTopLeft_GrSurfaceOrigin, kBottomLeft_GrSurfaceOrigin}) {
             auto factory = std::function<GpuDstFactory<Surface>>(
                     [direct, origin, renderable](const SkImageInfo& info) {
-                        return skgpu::SurfaceContext::Make(direct,
-                                                           info,
-                                                           SkBackingFit::kExact,
-                                                           origin,
-                                                           renderable);
+                        return CreateSurfaceContext(direct,
+                                                    info,
+                                                    SkBackingFit::kExact,
+                                                    origin,
+                                                    renderable);
                     });
 
             gpu_write_pixels_test_driver(reporter, factory, writer, reader);
@@ -1138,13 +1142,13 @@ DEF_GPUTEST_FOR_RENDERING_CONTEXTS(SurfaceContextWritePixelsMipped, reporter, ct
             for (auto renderable : {GrRenderable::kNo, GrRenderable::kYes}) {
                 for (GrSurfaceOrigin origin : {kTopLeft_GrSurfaceOrigin,
                                                kBottomLeft_GrSurfaceOrigin}) {
-                    auto sc = skgpu::SurfaceContext::Make(direct,
-                                                          info,
-                                                          SkBackingFit::kExact,
-                                                          origin,
-                                                          renderable,
-                                                          /*sample count*/ 1,
-                                                          GrMipmapped::kYes);
+                    auto sc = CreateSurfaceContext(direct,
+                                                   info,
+                                                   SkBackingFit::kExact,
+                                                   origin,
+                                                   renderable,
+                                                   /*sample count*/ 1,
+                                                   GrMipmapped::kYes);
                     if (!sc) {
                         continue;
                     }
@@ -1178,11 +1182,11 @@ DEF_GPUTEST_FOR_RENDERING_CONTEXTS(SurfaceContextWritePixelsMipped, reporter, ct
 
                     // TODO: Update this when read pixels supports reading back levels to read
                     // directly rather than using minimizing draws.
-                    auto dstSC = skgpu::SurfaceContext::Make(direct,
-                                                             info,
-                                                             SkBackingFit::kExact,
-                                                             kBottomLeft_GrSurfaceOrigin,
-                                                             GrRenderable::kYes);
+                    auto dstSC = CreateSurfaceContext(direct,
+                                                      info,
+                                                      SkBackingFit::kExact,
+                                                      kBottomLeft_GrSurfaceOrigin,
+                                                      GrRenderable::kYes);
                     SkASSERT(dstSC);
                     GrSamplerState sampler(SkFilterMode::kNearest, SkMipmapMode::kNearest);
                     for (int i = 1; i <= 1; ++i) {

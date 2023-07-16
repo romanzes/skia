@@ -6,13 +6,13 @@
  */
 
 #include "include/gpu/GrDirectContext.h"
-#include "src/gpu/GrDirectContextPriv.h"
-#include "src/gpu/GrMemoryPool.h"
-#include "src/gpu/GrOpFlushState.h"
-#include "src/gpu/GrOpsTask.h"
-#include "src/gpu/GrProxyProvider.h"
-#include "src/gpu/GrRecordingContextPriv.h"
-#include "src/gpu/ops/GrOp.h"
+#include "src/gpu/ganesh/GrDirectContextPriv.h"
+#include "src/gpu/ganesh/GrMemoryPool.h"
+#include "src/gpu/ganesh/GrOpFlushState.h"
+#include "src/gpu/ganesh/GrProxyProvider.h"
+#include "src/gpu/ganesh/GrRecordingContextPriv.h"
+#include "src/gpu/ganesh/ops/GrOp.h"
+#include "src/gpu/ganesh/ops/OpsTask.h"
 #include "tests/Test.h"
 #include <iterator>
 
@@ -140,7 +140,7 @@ private:
     }
 
     CombineResult onCombineIfPossible(GrOp* t, SkArenaAlloc* arenas, const GrCaps&) override {
-        // This op doesn't use the arenas, but make sure the GrOpsTask is sending it
+        // This op doesn't use the arenas, but make sure the OpsTask is sending it
         SkASSERT(arenas);
         (void) arenas;
         auto that = t->cast<TestOp>();
@@ -187,7 +187,7 @@ DEF_GPUTEST(OpChainTest, reporter, /*ctxInfo*/) {
     SkASSERT(proxy);
     proxy->instantiate(dContext->priv().resourceProvider());
 
-    GrSwizzle writeSwizzle = caps->getWriteSwizzle(format, GrColorType::kRGBA_8888);
+    skgpu::Swizzle writeSwizzle = caps->getWriteSwizzle(format, GrColorType::kRGBA_8888);
 
     int result[result_width()];
     int validResult[result_width()];
@@ -220,10 +220,10 @@ DEF_GPUTEST(OpChainTest, reporter, /*ctxInfo*/) {
                 GrOpFlushState flushState(dContext->priv().getGpu(),
                                           dContext->priv().resourceProvider(),
                                           &tracker);
-                GrOpsTask opsTask(drawingMgr,
-                                  GrSurfaceProxyView(proxy, kOrigin, writeSwizzle),
-                                  dContext->priv().auditTrail(),
-                                  arenas);
+                skgpu::v1::OpsTask opsTask(drawingMgr,
+                                           GrSurfaceProxyView(proxy, kOrigin, writeSwizzle),
+                                           dContext->priv().auditTrail(),
+                                           arenas);
                 // This assumes the particular values of kRanges.
                 std::fill_n(result, result_width(), -1);
                 std::fill_n(validResult, result_width(), -1);
