@@ -6,7 +6,7 @@ OpExecutionMode %_entrypoint_v OriginUpperLeft
 OpName %sk_FragColor "sk_FragColor"
 OpName %sk_Clockwise "sk_Clockwise"
 OpName %_UniformBuffer "_UniformBuffer"
-OpMemberName %_UniformBuffer 0 "input"
+OpMemberName %_UniformBuffer 0 "inputVal"
 OpMemberName %_UniformBuffer 1 "expected"
 OpMemberName %_UniformBuffer 2 "colorGreen"
 OpMemberName %_UniformBuffer 3 "colorRed"
@@ -47,13 +47,10 @@ OpDecorate %70 RelaxedPrecision
 OpDecorate %72 RelaxedPrecision
 OpDecorate %81 RelaxedPrecision
 OpDecorate %82 RelaxedPrecision
-OpDecorate %88 RelaxedPrecision
 OpDecorate %90 RelaxedPrecision
 OpDecorate %91 RelaxedPrecision
-OpDecorate %98 RelaxedPrecision
 OpDecorate %100 RelaxedPrecision
 OpDecorate %101 RelaxedPrecision
-OpDecorate %108 RelaxedPrecision
 OpDecorate %110 RelaxedPrecision
 OpDecorate %121 RelaxedPrecision
 OpDecorate %124 RelaxedPrecision
@@ -70,8 +67,8 @@ OpDecorate %125 RelaxedPrecision
 %10 = OpVariable %_ptr_Uniform__UniformBuffer Uniform
 %void = OpTypeVoid
 %15 = OpTypeFunction %void
-%v2float = OpTypeVector %float 2
 %float_0 = OpConstant %float 0
+%v2float = OpTypeVector %float 2
 %19 = OpConstantComposite %v2float %float_0 %float_0
 %_ptr_Function_v2float = OpTypePointer Function %v2float
 %23 = OpTypeFunction %v4float %_ptr_Function_v2float

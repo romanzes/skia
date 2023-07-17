@@ -81,7 +81,7 @@ protected:
     }
 
 private:
-    static constexpr SkScalar kSize = 800;
+    inline static constexpr SkScalar kSize = 800;
 
     sk_sp<skottie::Animation> fAnimation;
 
@@ -148,7 +148,7 @@ protected:
         };
 
         if (uni == 'c') {
-            fColorIndex = (fColorIndex + 1) % SK_ARRAY_COUNT(kColors);
+            fColorIndex = (fColorIndex + 1) % std::size(kColors);
             for (const auto& prop : fColorProps) {
                 fPropManager->setColor(prop, kColors[fColorIndex]);
             }
@@ -164,7 +164,7 @@ protected:
     }
 
 private:
-    static constexpr SkScalar kSize = 800;
+    inline static constexpr SkScalar kSize = 800;
 
     const char*                                                fName;
     const char*                                                fResource;
@@ -232,7 +232,7 @@ private:
         }
     };
 
-    static constexpr SkScalar kSize = 800;
+    inline static constexpr SkScalar kSize = 800;
 
     sk_sp<skottie::Animation> fAnimation;
 

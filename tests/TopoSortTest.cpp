@@ -6,7 +6,7 @@
  */
 
 #include "include/utils/SkRandom.h"
-#include "src/gpu/GrTTopoSort.h"
+#include "src/gpu/ganesh/GrTTopoSort.h"
 #include "tests/Test.h"
 
 #include "tools/ToolUtils.h"
@@ -175,7 +175,7 @@ DEF_TEST(TopoSort, reporter) {
         { create_graph6, false },
     };
 
-    for (size_t i = 0; i < SK_ARRAY_COUNT(tests); ++i) {
+    for (size_t i = 0; i < std::size(tests); ++i) {
         SkTArray<sk_sp<ToolUtils::TopoTestNode>> graph;
 
         (tests[i].fCreate)(&graph);

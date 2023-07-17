@@ -13,9 +13,9 @@
 #include "include/private/SkColorData.h"
 #include "include/private/SkImageInfoPriv.h"
 #include "src/core/SkMathPriv.h"
-#include "src/gpu/GrDirectContextPriv.h"
-#include "src/gpu/GrGpu.h"
-#include "src/gpu/GrProxyProvider.h"
+#include "src/gpu/ganesh/GrDirectContextPriv.h"
+#include "src/gpu/ganesh/GrGpu.h"
+#include "src/gpu/ganesh/GrProxyProvider.h"
 #include "tests/Test.h"
 #include "tools/gpu/BackendSurfaceFactory.h"
 
@@ -382,10 +382,10 @@ static void test_write_pixels(skiatest::Reporter* reporter, SkSurface* surface,
             {kBGRA_8888_SkColorType, kPremul_SkAlphaType},
             {kBGRA_8888_SkColorType, kUnpremul_SkAlphaType},
     };
-    for (size_t r = 0; r < SK_ARRAY_COUNT(testRects); ++r) {
+    for (size_t r = 0; r < std::size(testRects); ++r) {
         const SkIRect& rect = testRects[r];
         for (int tightBmp = 0; tightBmp < 2; ++tightBmp) {
-            for (size_t c = 0; c < SK_ARRAY_COUNT(gSrcConfigs); ++c) {
+            for (size_t c = 0; c < std::size(gSrcConfigs); ++c) {
                 const SkColorType ct = gSrcConfigs[c].fColorType;
                 const SkAlphaType at = gSrcConfigs[c].fAlphaType;
 
@@ -535,7 +535,7 @@ DEF_GPUTEST_FOR_RENDERING_CONTEXTS(WritePixelsPendingIO, reporter, ctxInfo) {
 
         sk_sp<GrTextureProxy> temp = proxyProvider->createProxy(
                 format, kDims, GrRenderable::kNo, 1, GrMipmapped::kNo, SkBackingFit::kApprox,
-                SkBudgeted::kYes, GrProtected::kNo);
+                SkBudgeted::kYes, GrProtected::kNo, /*label=*/"WritePixelsTest");
         temp->instantiate(context->priv().resourceProvider());
     }
 

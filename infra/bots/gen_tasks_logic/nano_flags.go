@@ -47,7 +47,7 @@ func (b *taskBuilder) nanobenchFlags(doUpload bool) {
 
 		glPrefix := "gl"
 		sampleCount := 8
-		if b.os("Android", "iOS") {
+		if b.matchOs("Android") || b.os("iOS") {
 			sampleCount = 4
 			// The NVIDIA_Shield has a regular OpenGL implementation. We bench that
 			// instead of ES.
@@ -77,15 +77,15 @@ func (b *taskBuilder) nanobenchFlags(doUpload bool) {
 		}
 		// narrow-gl/gles tests the case of color converting *all* content
 		// It hangs on the AndroidOne (Mali400)  skia:10669
-		if (!b.gpu("Mali400MP2")) {
+		if !b.gpu("Mali400MP2") {
 			configs = append(configs, "narrow-"+glPrefix)
 		}
 
 		// skia:10644 The fake ES2 config is used to compare highest available ES version to
 		// when we're limited to ES2. We could consider adding a MSAA fake config as well.
-		if b.os("Android") && glPrefix == "gles" {
+		if b.matchOs("Android") && glPrefix == "gles" {
 			// These only support ES2. No point in running twice.
-			if (!b.gpu("Mali400MP2", "Tegra3")) {
+			if !b.gpu("Mali400MP2", "Tegra3") {
 				configs = append(configs, "glesfakev2")
 			}
 		}
@@ -103,16 +103,9 @@ func (b *taskBuilder) nanobenchFlags(doUpload bool) {
 			configs = append(configs, "gles", "srgb-gles")
 		}
 
-		if b.extraConfig("CommandBuffer") {
-			configs = []string{"cmdbuffer_es2"}
-			if !b.matchGpu("Intel") {
-				configs = append(configs, "cmdbuffer_es2_dmsaa")
-			}
-		}
-
 		if b.extraConfig("Vulkan") {
 			configs = []string{"vk"}
-			if b.os("Android") {
+			if b.matchOs("Android") {
 				// skbug.com/9274
 				if !b.model("Pixel2XL") {
 					configs = append(configs, "vkmsaa4")
@@ -122,6 +115,9 @@ func (b *taskBuilder) nanobenchFlags(doUpload bool) {
 				if !b.matchGpu("Intel") {
 					configs = append(configs, "vkmsaa8")
 				}
+			}
+			if b.gpu("QuadroP400", "MaliG77") {
+				configs = append(configs, "vkdmsaa")
 			}
 		}
 		if b.extraConfig("Metal") {
@@ -153,14 +149,30 @@ func (b *taskBuilder) nanobenchFlags(doUpload bool) {
 				}
 			}
 		}
+
+		if b.extraConfig("Graphite") {
+			configs = []string{"grmtl"}
+		}
+
 		if b.os("ChromeOS") {
 			// Just run GLES for now - maybe add gles_msaa4 in the future
 			configs = []string{"gles"}
+		}
+		if b.extraConfig("SwiftShader") {
+			configs = []string{"vk", "vkdmsaa"}
 		}
 	}
 
 	args = append(args, "--config")
 	args = append(args, configs...)
+
+	// Use 4 internal msaa samples on mobile and AppleM1, otherwise 8.
+	args = append(args, "--internalSamples")
+	if b.matchOs("Android") || b.os("iOS") || b.matchGpu("AppleM1") {
+		args = append(args, "4")
+	} else {
+		args = append(args, "8")
+	}
 
 	// By default, we test with GPU threading enabled, unless specifically
 	// disabled.
@@ -179,7 +191,7 @@ func (b *taskBuilder) nanobenchFlags(doUpload bool) {
 	verbose := false
 
 	match := []string{}
-	if b.os("Android") {
+	if b.matchOs("Android") {
 		// Segfaults when run as GPU bench. Very large texture?
 		match = append(match, "~blurroundrect")
 		match = append(match, "~patch_grid") // skia:2847
@@ -230,9 +242,6 @@ func (b *taskBuilder) nanobenchFlags(doUpload bool) {
 		// skia:8523 skia:9271
 		match = append(match, "~compositing_images")
 	}
-	if b.model("MacBook10.1") && b.extraConfig("CommandBuffer") {
-		match = append(match, "~^desk_micrographygirlsvg.skp_1.1$")
-	}
 	if b.extraConfig("ASAN") && b.cpu() {
 		// floor2int_undef benches undefined behavior, so ASAN correctly complains.
 		match = append(match, "~^floor2int_undef$")
@@ -249,6 +258,13 @@ func (b *taskBuilder) nanobenchFlags(doUpload bool) {
 	if b.model("Pixel3") && b.extraConfig("Vulkan") {
 		// skia:9972
 		match = append(match, "~^path_text_clipped_uncached$")
+	}
+
+	if b.model("Wembley") {
+		// These tests spin forever on the Wembley.
+		match = append(match, "~^create_backend_texture")
+		match = append(match, "~^draw_coverage")
+		match = append(match, "~^compositing_images")
 	}
 
 	if b.model(DONT_REDUCE_OPS_TASK_SPLITTING_MODELS...) {
@@ -316,7 +332,7 @@ func (b *taskBuilder) nanobenchFlags(doUpload bool) {
 		b.asset("svg")
 		b.recipeProp("svgs", "true")
 	}
-	if b.cpu() && b.os("Android") {
+	if b.cpu() && b.matchOs("Android") {
 		// TODO(borenet): Where do these come from?
 		b.recipeProp("textTraces", "true")
 	}

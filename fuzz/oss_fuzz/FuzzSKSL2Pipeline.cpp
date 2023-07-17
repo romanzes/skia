@@ -5,7 +5,7 @@
  * found in the LICENSE file.
  */
 
-#include "src/gpu/GrShaderCaps.h"
+#include "src/gpu/ganesh/GrShaderCaps.h"
 #include "src/sksl/SkSLCompiler.h"
 #include "src/sksl/codegen/SkSLPipelineStageCodeGenerator.h"
 #include "src/sksl/ir/SkSLVarDeclarations.h"
@@ -14,45 +14,42 @@
 #include "fuzz/Fuzz.h"
 
 bool FuzzSKSL2Pipeline(sk_sp<SkData> bytes) {
-    sk_sp<GrShaderCaps> caps = SkSL::ShaderCapsFactory::Default();
+    std::unique_ptr<SkSL::ShaderCaps> caps = SkSL::ShaderCapsFactory::Default();
     SkSL::Compiler compiler(caps.get());
     SkSL::Program::Settings settings;
     std::unique_ptr<SkSL::Program> program = compiler.convertProgram(
                                                     SkSL::ProgramKind::kRuntimeShader,
-                                                    SkSL::String((const char*) bytes->data(),
-                                                                 bytes->size()),
+                                                    std::string((const char*) bytes->data(),
+                                                                bytes->size()),
                                                     settings);
     if (!program) {
         return false;
     }
 
     class Callbacks : public SkSL::PipelineStage::Callbacks {
-        using String = SkSL::String;
-
-        String declareUniform(const SkSL::VarDeclaration* decl) override {
-            return String(decl->var().name());
+        std::string declareUniform(const SkSL::VarDeclaration* decl) override {
+            return std::string(decl->var().name());
         }
 
         void defineFunction(const char* /*decl*/, const char* /*body*/, bool /*isMain*/) override {}
+        void declareFunction(const char* /*decl*/) override {}
         void defineStruct(const char* /*definition*/) override {}
         void declareGlobal(const char* /*declaration*/) override {}
 
-        String sampleShader(int index, String coords) override {
-            return "sample(" + SkSL::to_string(index) + ", " + coords + ")";
+        std::string sampleShader(int index, std::string coords) override {
+            return "child_" + std::to_string(index) + ".eval(" + coords + ")";
         }
 
-        String sampleColorFilter(int index, String color) override {
-            String result = "sample(" + SkSL::to_string(index);
-            if (!color.empty()) {
-                result += ", " + color;
-            }
-            result += ")";
-            return result;
+        std::string sampleColorFilter(int index, std::string color) override {
+            return "child_" + std::to_string(index) + ".eval(" + color + ")";
         }
 
-        String sampleBlender(int index, String src, String dst) override {
-            return "sample(" + SkSL::to_string(index) + ", " + src + ", " + dst + ")";
+        std::string sampleBlender(int index, std::string src, std::string dst) override {
+            return "child_" + std::to_string(index) + ".eval(" + src + ", " + dst + ")";
         }
+
+        std::string toLinearSrgb(std::string color) override { return color; }
+        std::string fromLinearSrgb(std::string color) override { return color; }
     };
 
     Callbacks callbacks;

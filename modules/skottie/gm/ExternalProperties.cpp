@@ -105,7 +105,7 @@ private:
             { "update #3", SK_ColorMAGENTA, SK_ColorCYAN  , 150.f },
         };
 
-        SkASSERT(i - 1 < SK_ARRAY_COUNT(gTests));
+        SkASSERT(i - 1 < std::size(gTests));
         const auto& tst = gTests[i - 1];
 
         for (const auto& prop : fPropManager->getColorProps()) {
@@ -126,7 +126,7 @@ private:
         }
     }
 
-    static constexpr SkScalar kSize = 800;
+    inline static constexpr SkScalar kSize = 800;
 
     sk_sp<skottie::Animation>                             fAnimation;
     std::unique_ptr<skottie_utils::CustomPropertyManager> fPropManager;

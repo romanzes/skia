@@ -173,7 +173,7 @@ DEF_TEST(SVGDevice_whitespace_pos, reporter) {
         { "\t\t  \t ab \t\t  \t cd \t\t   \t  ", "ab cd " },
     };
 
-    for (unsigned i = 0; i < SK_ARRAY_COUNT(tests); ++i) {
+    for (unsigned i = 0; i < std::size(tests); ++i) {
         test_whitespace_pos(reporter, tests[i].tst_in, tests[i].tst_out);
     }
 }
@@ -409,7 +409,7 @@ DEF_TEST(SVGDevice_textpath, reporter) {
 
     // We also use paths in the presence of path effects.
     SkScalar intervals[] = {10, 5};
-    paint.setPathEffect(SkDashPathEffect::Make(intervals, SK_ARRAY_COUNT(intervals), 0));
+    paint.setPathEffect(SkDashPathEffect::Make(intervals, std::size(intervals), 0));
     check_text(0, /*expect_path=*/true);
 }
 
@@ -586,6 +586,26 @@ DEF_TEST(SVGDevice_relative_path_encoding, reporter) {
     REPORTER_ASSERT(reporter, pathElement, "path element not found");
     const auto* d = dom.findAttr(pathElement, "d");
     REPORTER_ASSERT(reporter, !strcmp(d, "m100 50l100 0l0 100l-100 -100Z"));
+}
+
+DEF_TEST(SVGDevice_color_shader, reporter) {
+    SkDOM dom;
+    {
+        auto svgCanvas = MakeDOMCanvas(&dom);
+
+        SkPaint paint;
+        paint.setShader(SkShaders::Color(0xffffff00));
+
+        svgCanvas->drawCircle(100, 100, 100, paint);
+    }
+
+    const auto* rootElement = dom.finishParsing();
+    REPORTER_ASSERT(reporter, rootElement, "root element not found");
+    const auto* ellipseElement = dom.getFirstChild(rootElement, "ellipse");
+    REPORTER_ASSERT(reporter, ellipseElement, "ellipse element not found");
+    const auto* fill = dom.findAttr(ellipseElement, "fill");
+    REPORTER_ASSERT(reporter, fill, "fill attribute not found");
+    REPORTER_ASSERT(reporter, !strcmp(fill, "yellow"));
 }
 
 #endif

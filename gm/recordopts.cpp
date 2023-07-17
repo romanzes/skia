@@ -83,11 +83,11 @@ static void draw_save_layer_draw_bitmap_restore_sequence(SkCanvas* canvas, SkCol
     bitmap.eraseColor(shapeColor);
     {
         // Make the bitmap non-uniform color, so that it can not be optimized as uniform drawRect.
-        SkCanvas canvas(bitmap);
+        SkCanvas bitmapCanvas(bitmap);
         SkPaint p;
         p.setColor(SK_ColorWHITE);
         SkASSERT(shapeColor != SK_ColorWHITE);
-        canvas.drawRect(SkRect::MakeWH(SkIntToScalar(7), SkIntToScalar(7)), p);
+        bitmapCanvas.drawRect(SkRect::MakeWH(SkIntToScalar(7), SkIntToScalar(7)), p);
     }
 
     SkRect targetRect(SkRect::MakeWH(SkIntToScalar(kTestRectSize), SkIntToScalar(kTestRectSize)));
@@ -109,11 +109,11 @@ static void draw_svg_opacity_and_filter_layer_sequence(SkCanvas* canvas, SkColor
     sk_sp<SkPicture> shape;
     {
         SkPictureRecorder recorder;
-        SkCanvas* canvas = recorder.beginRecording(SkIntToScalar(kTestRectSize + 2),
-                                                   SkIntToScalar(kTestRectSize + 2));
+        SkCanvas* recordCanvas = recorder.beginRecording(SkIntToScalar(kTestRectSize + 2),
+                                                         SkIntToScalar(kTestRectSize + 2));
         SkPaint shapePaint;
         shapePaint.setColor(shapeColor);
-        canvas->drawRect(targetRect, shapePaint);
+        recordCanvas->drawRect(targetRect, shapePaint);
         shape = recorder.finishRecordingAsPicture();
     }
 
@@ -156,7 +156,7 @@ DEF_SIMPLE_GM(recordopts, canvas, (kTestRectSize+1)*2, (kTestRectSize+1)*15) {
     // the optimization applied.
 
     SkColor shapeColor = SkColorSetARGB(255, 0, 255, 0);
-    for (size_t k = 0; k < SK_ARRAY_COUNT(funcs); ++k) {
+    for (size_t k = 0; k < std::size(funcs); ++k) {
         canvas->save();
 
         TestVariantSequence drawTestSequence = funcs[k];
@@ -198,11 +198,11 @@ DEF_SIMPLE_GM(recordopts, canvas, (kTestRectSize+1)*2, (kTestRectSize+1)*15) {
         install_detector_color_filter
     };
 
-    for (size_t i = 0; i < SK_ARRAY_COUNT(shapeColors); ++i) {
+    for (size_t i = 0; i < std::size(shapeColors); ++i) {
         shapeColor = shapeColors[i];
-        for (size_t j = 0; j < SK_ARRAY_COUNT(detectorInstallFuncs); ++j) {
+        for (size_t j = 0; j < std::size(detectorInstallFuncs); ++j) {
             InstallDetectorFunc detectorInstallFunc = detectorInstallFuncs[j];
-            for (size_t k = 0; k < SK_ARRAY_COUNT(funcs); ++k) {
+            for (size_t k = 0; k < std::size(funcs); ++k) {
                 TestVariantSequence drawTestSequence = funcs[k];
                 canvas->save();
                 drawTestSequence(canvas, shapeColor, detectorInstallFunc);

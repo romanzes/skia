@@ -18,6 +18,10 @@
 #include "src/core/SkVM.h"
 #include "src/core/SkWriteBuffer.h"
 
+#ifdef SK_GRAPHITE_ENABLED
+#include "src/gpu/graphite/Image_Graphite.h"
+#endif
+
 class SkTable_ColorFilter : public SkColorFilterBase {
 public:
     SkTable_ColorFilter(const uint8_t tableA[], const uint8_t tableR[],
@@ -39,6 +43,12 @@ public:
 #if SK_SUPPORT_GPU
     GrFPResult asFragmentProcessor(std::unique_ptr<GrFragmentProcessor> inputFP,
                                    GrRecordingContext*, const GrColorInfo&) const override;
+#endif
+
+#ifdef SK_ENABLE_SKSL
+    void addToKey(const SkKeyContext& keyContext,
+                  SkPaintParamsKeyBuilder* builder,
+                  SkPipelineDataGatherer* gatherer) const override;
 #endif
 
     bool onAppendStages(const SkStageRec& rec, bool shaderIsOpaque) const override {
@@ -103,12 +113,12 @@ sk_sp<SkFlattenable> SkTable_ColorFilter::CreateProc(SkReadBuffer& buffer) {
 #if SK_SUPPORT_GPU
 
 #include "include/gpu/GrRecordingContext.h"
-#include "src/gpu/GrColorInfo.h"
-#include "src/gpu/GrFragmentProcessor.h"
-#include "src/gpu/GrRecordingContextPriv.h"
-#include "src/gpu/SkGr.h"
-#include "src/gpu/effects/GrTextureEffect.h"
-#include "src/gpu/glsl/GrGLSLFragmentShaderBuilder.h"
+#include "src/gpu/ganesh/GrColorInfo.h"
+#include "src/gpu/ganesh/GrFragmentProcessor.h"
+#include "src/gpu/ganesh/GrRecordingContextPriv.h"
+#include "src/gpu/ganesh/SkGr.h"
+#include "src/gpu/ganesh/effects/GrTextureEffect.h"
+#include "src/gpu/ganesh/glsl/GrGLSLFragmentShaderBuilder.h"
 
 class ColorTableEffect : public GrFragmentProcessor {
 public:
@@ -124,13 +134,13 @@ public:
         return std::unique_ptr<GrFragmentProcessor>(new ColorTableEffect(*this));
     }
 
-    static constexpr int kTexEffectFPIndex = 0;
-    static constexpr int kInputFPIndex = 1;
+    inline static constexpr int kTexEffectFPIndex = 0;
+    inline static constexpr int kInputFPIndex = 1;
 
 private:
     std::unique_ptr<ProgramImpl> onMakeProgramImpl() const override;
 
-    void onAddToKey(const GrShaderCaps&, GrProcessorKeyBuilder*) const override {}
+    void onAddToKey(const GrShaderCaps&, skgpu::KeyBuilder*) const override {}
 
     bool onIsEqual(const GrFragmentProcessor&) const override { return true; }
 
@@ -182,7 +192,10 @@ std::unique_ptr<GrFragmentProcessor> ColorTableEffect::Make(
     SkASSERT(kPremul_SkAlphaType == bitmap.alphaType());
     SkASSERT(bitmap.isImmutable());
 
-    auto view = std::get<0>(GrMakeCachedBitmapProxyView(context, bitmap, GrMipmapped::kNo));
+    auto view = std::get<0>(GrMakeCachedBitmapProxyView(context,
+                                                        bitmap,
+                                                        /*label=*/"MakeColorTableEffect",
+                                                        GrMipmapped::kNo));
     if (!view) {
         return nullptr;
     }
@@ -236,6 +249,38 @@ GrFPResult SkTable_ColorFilter::asFragmentProcessor(std::unique_ptr<GrFragmentPr
 }
 
 #endif // SK_SUPPORT_GPU
+
+#ifdef SK_ENABLE_SKSL
+
+#include "include/core/SkImage.h"
+#include "src/core/SkKeyContext.h"
+#include "src/core/SkKeyHelpers.h"
+#include "src/core/SkPaintParamsKey.h"
+
+void SkTable_ColorFilter::addToKey(const SkKeyContext& keyContext,
+                                   SkPaintParamsKeyBuilder* builder,
+                                   SkPipelineDataGatherer* gatherer) const {
+    TableColorFilterBlock::TableColorFilterData data;
+
+#ifdef SK_GRAPHITE_ENABLED
+    // TODO(b/239604347): remove this hack. This is just here until we determine what Graphite's
+    // Recorder-level caching story is going to be.
+    sk_sp<SkImage> image = SkImage::MakeFromBitmap(fBitmap);
+    image = image->makeTextureImage(keyContext.recorder(), skgpu::graphite::Mipmapped::kNo);
+
+    if (as_IB(image)->isGraphiteBacked()) {
+        skgpu::graphite::Image* grImage = static_cast<skgpu::graphite::Image*>(image.get());
+
+        auto [view, _] = grImage->asView(keyContext.recorder(), skgpu::graphite::Mipmapped::kNo);
+        data.fTextureProxy = view.refProxy();
+    }
+#endif
+
+    TableColorFilterBlock::BeginBlock(keyContext, builder, gatherer, data);
+    builder->endBlock();
+}
+
+#endif
 
 ///////////////////////////////////////////////////////////////////////////////
 
