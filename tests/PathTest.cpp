@@ -117,6 +117,25 @@ static void test_sect_with_horizontal_needs_pinning() {
     SkSurface::MakeRasterN32Premul(10, 10)->getCanvas()->drawPath(path, paint);
 }
 
+static void test_iterative_intersect_line() {
+    // crbug.com/1320467
+    // SkLineClipper::IntersectLine used to clip against the horizontal segment. Then, if it still
+    // needed clipping, would clip against the vertical segment, but start over from the un-clipped
+    // endpoints. With that version, this draw would trigger an assert.
+    // With the fix (iteratively clipping the intermediate results after the first operation),
+    // this shouldn't assert:
+    SkPath path;
+    path.moveTo(-478.805145f, 153.862549f);
+    path.lineTo(6.27216804e+19f, 6.27216804e+19f);
+    path.lineTo(-666.754272f, 155.086304f);
+    path.close();
+
+    SkPaint paint;
+    paint.setStyle(SkPaint::kStroke_Style);
+    SkSurface::MakeRasterN32Premul(256, 256)->getCanvas()->drawPath(path, paint);
+
+}
+
 static void test_path_crbug364224() {
     SkPath path;
     SkPaint paint;
@@ -2232,7 +2251,6 @@ static void test_is_closed_rect(skiatest::Reporter* reporter) {
 
     const SkRect testRect = SkRect::MakeXYWH(10, 10, 50, 70);
     const SkRect emptyRect = SkRect::MakeEmpty();
-    SkPath path;
     for (int start = 0; start < 4; ++start) {
         for (auto dir : {SkPathDirection::kCCW, SkPathDirection::kCW}) {
             SkPath path;
@@ -2313,7 +2331,7 @@ static void test_is_closed_rect(skiatest::Reporter* reporter) {
         }
     }
     // down, up, left, close
-    path.reset();
+    SkPath path;
     path.moveTo(1, 1);
     path.lineTo(1, 2);
     path.lineTo(1, 1);
@@ -3242,10 +3260,10 @@ static void test_range_iter(skiatest::Reporter* reporter) {
         SkPoint lastPt;
         lastMoveTo.set(0, 0);
         lastPt.set(0, 0);
-        for (auto [nextVerb, pts, w] : SkPathPriv::Iterate(path)) {
-            REPORTER_ASSERT(reporter, nextVerb == expectedVerbs[numIterVerbs]);
+        for (auto [verb, pts, w] : SkPathPriv::Iterate(path)) {
+            REPORTER_ASSERT(reporter, verb == expectedVerbs[numIterVerbs]);
             numIterVerbs++;
-            switch (nextVerb) {
+            switch (verb) {
                 case SkPathVerb::kMove:
                     REPORTER_ASSERT(reporter, numIterPts < numPoints);
                     REPORTER_ASSERT(reporter, pts[0] == expectedPts[numIterPts]);
@@ -4816,6 +4834,7 @@ DEF_TEST(Paths, reporter) {
     test_fuzz_crbug_647922();
     test_fuzz_crbug_643933();
     test_sect_with_horizontal_needs_pinning();
+    test_iterative_intersect_line();
     test_crbug_629455(reporter);
     test_fuzz_crbug_627414(reporter);
     test_path_crbug364224();
@@ -5487,7 +5506,7 @@ DEF_TEST(Path_shrinkToFit, reporter) {
         REPORTER_ASSERT(reporter, after == after2);
 #endif
     }
-    if (false) {
+    if ((false)) {
         SkDebugf("max_free %zu\n", max_free);
     }
 }

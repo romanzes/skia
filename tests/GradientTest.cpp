@@ -8,13 +8,14 @@
 #include "include/core/SkBitmap.h"
 #include "include/core/SkCanvas.h"
 #include "include/core/SkColorPriv.h"
+#include "include/core/SkColorSpace.h"
 #include "include/core/SkShader.h"
 #include "include/core/SkSurface.h"
 #include "include/effects/SkGradientShader.h"
 #include "include/private/SkTemplates.h"
 #include "src/core/SkMatrixProvider.h"
 #include "src/core/SkTLazy.h"
-#include "src/gpu/GrColorInfo.h"
+#include "src/gpu/ganesh/GrColorInfo.h"
 #include "src/shaders/SkColorShader.h"
 #include "tests/Test.h"
 
@@ -391,7 +392,7 @@ static void test_unsorted_degenerate(skiatest::Reporter* r) {
     REPORTER_ASSERT(r, SkToBool(gradient));
     // And it shouldn't crash when creating a fragment processor
 
-    SkSimpleMatrixProvider provider(SkMatrix::I());
+    SkMatrixProvider provider(SkMatrix::I());
     GrColorInfo dstColorInfo(GrColorType::kRGBA_8888, kPremul_SkAlphaType,
                              SkColorSpace::MakeSRGB());
     GrMockOptions options;
