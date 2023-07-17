@@ -6,14 +6,16 @@
  */
 
 #include "include/core/SkCanvas.h"
+#include "include/core/SkColorSpace.h"
 #include "include/core/SkSurface.h"
 #include "include/gpu/GrDirectContext.h"
-#include "src/gpu/GrCaps.h"
-#include "src/gpu/GrDirectContextPriv.h"
-#include "src/gpu/GrImageInfo.h"
-#include "src/gpu/SkGr.h"
-#include "src/gpu/SurfaceContext.h"
+#include "src/gpu/ganesh/GrCaps.h"
+#include "src/gpu/ganesh/GrDirectContextPriv.h"
+#include "src/gpu/ganesh/GrImageInfo.h"
+#include "src/gpu/ganesh/SkGr.h"
+#include "src/gpu/ganesh/SurfaceContext.h"
 #include "tests/Test.h"
+#include "tests/TestUtils.h"
 
 // using anonymous namespace because these functions are used as template params.
 namespace {
@@ -195,11 +197,11 @@ static std::unique_ptr<skgpu::SurfaceContext> make_surface_context(Encoding cont
                      encoding_as_color_space(contextEncoding),
                      kW, kH);
 
-    auto sc = skgpu::SurfaceContext::Make(rContext,
-                                          info,
-                                          SkBackingFit::kExact,
-                                          kBottomLeft_GrSurfaceOrigin,
-                                          GrRenderable::kYes);
+    auto sc = CreateSurfaceContext(rContext,
+                                   info,
+                                   SkBackingFit::kExact,
+                                   kBottomLeft_GrSurfaceOrigin,
+                                   GrRenderable::kYes);
     if (!sc) {
         ERRORF(reporter, "Could not create %s surface context.", encoding_as_str(contextEncoding));
     }
@@ -241,11 +243,11 @@ DEF_GPUTEST_FOR_RENDERING_CONTEXTS(SRGBReadWritePixels, reporter, ctxInfo) {
         return;
     }
     // We allow more error on GPUs with lower precision shader variables.
-    float error = context->priv().caps()->shaderCaps()->halfIs32Bits() ? 0.5f : 1.2f;
+    float error = context->priv().caps()->shaderCaps()->fHalfIs32Bits ? 0.5f : 1.2f;
     // For the all-sRGB case, we allow a small error only for devices that have
     // precision variation because the sRGB data gets converted to linear and back in
     // the shader.
-    float smallError = context->priv().caps()->shaderCaps()->halfIs32Bits() ? 0.0f : 1.f;
+    float smallError = context->priv().caps()->shaderCaps()->fHalfIs32Bits ? 0.0f : 1.f;
 
     ///////////////////////////////////////////////////////////////////////////////////////////////
     // Write sRGB data to a sRGB context - no conversion on the write.

@@ -17,7 +17,6 @@
 #include "src/core/SkMipmapAccessor.h"
 #include "src/core/SkOpts.h"
 #include "src/core/SkResourceCache.h"
-#include "src/core/SkUtils.h"
 
 // One-stop-shop shader for,
 //   - nearest-neighbor sampling (_nofilter_),
@@ -185,6 +184,7 @@ bool SkBitmapProcState::init(const SkMatrix& inv, SkAlpha paintAlpha,
                              const SkSamplingOptions& sampling) {
     SkASSERT(!inv.hasPerspective());
     SkASSERT(SkOpts::S32_alpha_D32_filter_DXDY || inv.isScaleTranslate());
+    SkASSERT(!sampling.isAniso());
     SkASSERT(!sampling.useCubic);
     SkASSERT(sampling.mipmap != SkMipmapMode::kLinear);
 

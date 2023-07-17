@@ -7,8 +7,7 @@
 
 #include "fuzz/Fuzz.h"
 #include "fuzz/FuzzCommon.h"
-
-// CORE
+#include "include/core/SkBitmap.h"
 #include "include/core/SkCanvas.h"
 #include "include/core/SkColorFilter.h"
 #include "include/core/SkFontMgr.h"
@@ -20,18 +19,10 @@
 #include "include/core/SkRSXform.h"
 #include "include/core/SkRegion.h"
 #include "include/core/SkSurface.h"
-#include "include/core/SkTypeface.h"
-#include "include/docs/SkPDFDocument.h"
-#include "include/private/SkTo.h"
-#include "include/svg/SkSVGCanvas.h"
-#include "include/utils/SkNullCanvas.h"
-#include "src/core/SkOSFile.h"
-#include "src/core/SkPaintPriv.h"
-#include "src/core/SkPicturePriv.h"
-#include "tools/debugger/DebugCanvas.h"
-
-// EFFECTS
 #include "include/core/SkTextBlob.h"
+#include "include/core/SkTypeface.h"
+#include "include/core/SkVertices.h"
+#include "include/docs/SkPDFDocument.h"
 #include "include/effects/Sk1DPathEffect.h"
 #include "include/effects/Sk2DPathEffect.h"
 #include "include/effects/SkColorMatrixFilter.h"
@@ -44,22 +35,30 @@
 #include "include/effects/SkLumaColorFilter.h"
 #include "include/effects/SkPerlinNoiseShader.h"
 #include "include/effects/SkTableColorFilter.h"
+#include "include/private/SkTo.h"
+#include "include/svg/SkSVGCanvas.h"
+#include "include/utils/SkNullCanvas.h"
+#include "src/core/SkOSFile.h"
+#include "src/core/SkPaintPriv.h"
+#include "src/core/SkPicturePriv.h"
 #include "src/core/SkReadBuffer.h"
-
-// SRC
+#include "src/utils/SkJSONWriter.h"
 #include "src/utils/SkUTF.h"
+#include "tools/UrlDataManager.h"
+#include "tools/debugger/DebugCanvas.h"
 #include "tools/flags/CommandLineFlags.h"
 
-#ifdef SK_GL
+#if SK_SUPPORT_GPU
 #include "include/gpu/GrDirectContext.h"
-#include "include/gpu/gl/GrGLFunctions.h"
-#include "src/gpu/GrDirectContextPriv.h"
-#include "src/gpu/gl/GrGLGpu.h"
-#include "src/gpu/gl/GrGLUtil.h"
+#include "src/gpu/ganesh/GrDirectContextPriv.h"
 #include "tools/gpu/GrContextFactory.h"
 #endif
 
-// MISC
+#ifdef SK_GL
+#include "include/gpu/gl/GrGLFunctions.h"
+#include "src/gpu/ganesh/gl/GrGLGpu.h"
+#include "src/gpu/ganesh/gl/GrGLUtil.h"
+#endif
 
 #include <iostream>
 #include <utility>
@@ -1013,7 +1012,7 @@ static void fuzz_canvas(Fuzz* fuzz, SkCanvas* canvas, int depth = 9) {
     SkAutoCanvasRestore autoCanvasRestore(canvas, false);
     unsigned N;
     fuzz->nextRange(&N, 0, 2000);
-    for (unsigned i = 0; i < N; ++i) {
+    for (unsigned loop = 0; loop < N; ++loop) {
         if (fuzz->exhausted()) {
             return;
         }
@@ -1403,8 +1402,8 @@ static void fuzz_canvas(Fuzz* fuzz, SkCanvas* canvas, int depth = 9) {
                 uint16_t indices[kMaxCount * 2];
                 if (make_fuzz_t<bool>(fuzz)) {
                     fuzz->nextRange(&indexCount, vertexCount, vertexCount + kMaxCount);
-                    for (int i = 0; i < indexCount; ++i) {
-                        fuzz->nextRange(&indices[i], 0, vertexCount - 1);
+                    for (int index = 0; index < indexCount; ++index) {
+                        fuzz->nextRange(&indices[index], 0, vertexCount - 1);
                     }
                 }
                 canvas->drawVertices(SkVertices::MakeCopy(vertexMode, vertexCount, vertices,
@@ -1620,8 +1619,24 @@ DEF_FUZZ(SerializedImageFilter, fuzz) {
     canvas.restore();
 }
 
-#ifdef SK_GL
+#if SK_SUPPORT_GPU
+static void fuzz_ganesh(Fuzz* fuzz, GrDirectContext* context) {
+    SkASSERT(context);
+    auto surface = SkSurface::MakeRenderTarget(
+            context,
+            SkBudgeted::kNo,
+            SkImageInfo::Make(kCanvasSize, kRGBA_8888_SkColorType, kPremul_SkAlphaType));
+    SkASSERT(surface && surface->getCanvas());
+    fuzz_canvas(fuzz, surface->getCanvas());
+}
 
+DEF_FUZZ(MockGPUCanvas, fuzz) {
+    sk_gpu_test::GrContextFactory f;
+    fuzz_ganesh(fuzz, f.get(sk_gpu_test::GrContextFactory::kMock_ContextType));
+}
+#endif
+
+#ifdef SK_GL
 static void dump_GPU_info(GrDirectContext* context) {
     const GrGLInterface* gl = static_cast<GrGLGpu*>(context->priv().getGpu())
                                     ->glInterface();
@@ -1636,16 +1651,6 @@ static void dump_GPU_info(GrDirectContext* context) {
     SkDebugf("GL_VERSION %s\n", (const char*) output);
 }
 
-static void fuzz_ganesh(Fuzz* fuzz, GrDirectContext* context) {
-    SkASSERT(context);
-    auto surface = SkSurface::MakeRenderTarget(
-            context,
-            SkBudgeted::kNo,
-            SkImageInfo::Make(kCanvasSize, kRGBA_8888_SkColorType, kPremul_SkAlphaType));
-    SkASSERT(surface && surface->getCanvas());
-    fuzz_canvas(fuzz, surface->getCanvas());
-}
-
 DEF_FUZZ(NativeGLCanvas, fuzz) {
     sk_gpu_test::GrContextFactory f;
     auto context = f.get(sk_gpu_test::GrContextFactory::kGL_ContextType);
@@ -1656,11 +1661,6 @@ DEF_FUZZ(NativeGLCanvas, fuzz) {
         dump_GPU_info(context);
     }
     fuzz_ganesh(fuzz, context);
-}
-
-DEF_FUZZ(MockGPUCanvas, fuzz) {
-    sk_gpu_test::GrContextFactory f;
-    fuzz_ganesh(fuzz, f.get(sk_gpu_test::GrContextFactory::kMock_ContextType));
 }
 #endif
 

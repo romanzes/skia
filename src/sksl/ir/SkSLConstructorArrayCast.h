@@ -8,13 +8,17 @@
 #ifndef SKSL_CONSTRUCTOR_ARRAY_CAST
 #define SKSL_CONSTRUCTOR_ARRAY_CAST
 
-#include "src/sksl/SkSLContext.h"
+#include "include/sksl/SkSLPosition.h"
 #include "src/sksl/ir/SkSLConstructor.h"
 #include "src/sksl/ir/SkSLExpression.h"
 
 #include <memory>
+#include <utility>
 
 namespace SkSL {
+
+class Context;
+class Type;
 
 /**
  * Represents the typecasting of an array. Arrays cannot be directly casted in SkSL (or GLSL), but
@@ -26,13 +30,13 @@ namespace SkSL {
  */
 class ConstructorArrayCast final : public SingleArgumentConstructor {
 public:
-    static constexpr Kind kExpressionKind = Kind::kConstructorArrayCast;
+    inline static constexpr Kind kExpressionKind = Kind::kConstructorArrayCast;
 
-    ConstructorArrayCast(int offset, const Type& type, std::unique_ptr<Expression> arg)
-        : INHERITED(offset, kExpressionKind, &type, std::move(arg)) {}
+    ConstructorArrayCast(Position pos, const Type& type, std::unique_ptr<Expression> arg)
+        : INHERITED(pos, kExpressionKind, &type, std::move(arg)) {}
 
     static std::unique_ptr<Expression> Make(const Context& context,
-                                            int offset,
+                                            Position pos,
                                             const Type& type,
                                             std::unique_ptr<Expression> arg);
 
@@ -41,8 +45,8 @@ public:
         return false;
     }
 
-    std::unique_ptr<Expression> clone() const override {
-        return std::make_unique<ConstructorArrayCast>(fOffset, this->type(), argument()->clone());
+    std::unique_ptr<Expression> clone(Position pos) const override {
+        return std::make_unique<ConstructorArrayCast>(pos, this->type(), argument()->clone());
     }
 
 private:

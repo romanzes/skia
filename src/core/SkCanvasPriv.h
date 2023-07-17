@@ -30,6 +30,12 @@ class GrRenderTargetProxy;
 using GrRenderTargetProxy = SkRefCnt;
 #endif // SK_SUPPORT_GPU
 
+#if GRAPHITE_TEST_UTILS
+namespace skgpu::graphite {
+    class TextureProxy;
+}
+#endif
+
 class SkAutoCanvasMatrixPaint : SkNoncopyable {
 public:
     SkAutoCanvasMatrixPaint(SkCanvas*, const SkMatrix*, const SkPaint*, const SkRect& bounds);
@@ -71,15 +77,36 @@ public:
 #endif // GR_TEST_UTILS
     static GrRenderTargetProxy* TopDeviceTargetProxy(SkCanvas*);
 
+#if GRAPHITE_TEST_UTILS
+    static skgpu::graphite::TextureProxy* TopDeviceGraphiteTargetProxy(SkCanvas*);
+#endif
+
     // The experimental_DrawEdgeAAImageSet API accepts separate dstClips and preViewMatrices arrays,
     // where entries refer into them, but no explicit size is provided. Given a set of entries,
     // computes the minimum length for these arrays that would provide index access errors.
     static void GetDstClipAndMatrixCounts(const SkCanvas::ImageSetEntry set[], int count,
                                           int* totalDstClipCount, int* totalMatrixCount);
 
-    // Checks that the marker name is an identifier ([a-zA-Z][a-zA-Z0-9_]*)
-    // Identifiers with leading underscores are reserved (not allowed).
-    static bool ValidateMarker(const char*);
+    static SkCanvas::SaveLayerRec ScaledBackdropLayer(const SkRect* bounds,
+                                                      const SkPaint* paint,
+                                                      const SkImageFilter* backdrop,
+                                                      SkScalar backdropScale,
+                                                      SkCanvas::SaveLayerFlags saveLayerFlags) {
+        return SkCanvas::SaveLayerRec(bounds, paint, backdrop, backdropScale, saveLayerFlags);
+    }
+
+    static SkScalar GetBackdropScaleFactor(const SkCanvas::SaveLayerRec& rec) {
+        return rec.fExperimentalBackdropScale;
+    }
+
+    static void SetBackdropScaleFactor(SkCanvas::SaveLayerRec* rec, SkScalar scale) {
+        rec->fExperimentalBackdropScale = scale;
+    }
+
+    static void DrawMesh(SkCanvas*,
+                         const SkMesh& mesh,
+                         sk_sp<SkBlender> blender,
+                         const SkPaint& paint);
 };
 
 /**
