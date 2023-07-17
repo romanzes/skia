@@ -5,23 +5,45 @@
  * found in the LICENSE file.
  */
 
-#include "include/core/SkBitmap.h"
+#include "include/core/SkAlphaType.h"
+#include "include/core/SkBlendMode.h"
 #include "include/core/SkCanvas.h"
-#include "include/core/SkColorFilter.h"
-#include "include/core/SkData.h"
+#include "include/core/SkColorType.h"
+#include "include/core/SkImageInfo.h"
 #include "include/core/SkPaint.h"
+#include "include/core/SkRefCnt.h"
+#include "include/core/SkShader.h"
+#include "include/core/SkString.h"
 #include "include/core/SkSurface.h"
+#include "include/core/SkTypes.h"
 #include "include/effects/SkRuntimeEffect.h"
 #include "include/gpu/GrDirectContext.h"
+#include "include/private/SkSLDefines.h"
+#include "include/sksl/DSL.h"
+#include "include/sksl/DSLCore.h"
+#include "include/sksl/DSLExpression.h"
+#include "include/sksl/DSLModifiers.h"
 #include "include/sksl/DSLRuntimeEffects.h"
+#include "include/sksl/DSLType.h"
+#include "include/sksl/DSLVar.h"
+#include "include/sksl/SkSLErrorReporter.h"
+#include "include/sksl/SkSLPosition.h"
 #include "src/core/SkRuntimeEffectPriv.h"
 #include "src/core/SkTLazy.h"
-#include "src/gpu/GrColor.h"
+#include "src/gpu/ganesh/GrColor.h"
 #include "src/sksl/SkSLCompiler.h"
+#include "src/sksl/SkSLUtil.h"
 #include "tests/Test.h"
+#include "tools/gpu/GrContextFactory.h"
 
-#include <algorithm>
-#include <thread>
+#include <array>
+#include <functional>
+#include <memory>
+#include <string>
+#include <string_view>
+#include <utility>
+
+class GrRecordingContext;
 
 using namespace SkSL::dsl;
 
@@ -39,7 +61,7 @@ public:
 
     void end(bool expectSuccess = true) {
         SkRuntimeEffect::Options options;
-        SkRuntimeEffectPriv::EnableFragCoord(&options);
+        SkRuntimeEffectPriv::UsePrivateRTShaderModule(&options);
         sk_sp<SkRuntimeEffect> effect = EndRuntimeShader(options);
         REPORTER_ASSERT(fReporter, effect ? expectSuccess : !expectSuccess);
         if (effect) {
@@ -47,11 +69,11 @@ public:
         }
     }
 
-    SkRuntimeShaderBuilder::BuilderUniform uniform(skstd::string_view name) {
+    SkRuntimeShaderBuilder::BuilderUniform uniform(std::string_view name) {
         return fBuilder->uniform(SkString(name).c_str());
     }
 
-    SkRuntimeShaderBuilder::BuilderChild child(skstd::string_view name) {
+    SkRuntimeShaderBuilder::BuilderChild child(std::string_view name) {
         return fBuilder->child(SkString(name).c_str());
     }
 
@@ -59,7 +81,7 @@ public:
 
     void test(GrColor TL, GrColor TR, GrColor BL, GrColor BR,
               PreTestFn preTestCallback = nullptr) {
-        auto shader = fBuilder->makeShader(nullptr, false);
+        auto shader = fBuilder->makeShader();
         if (!shader) {
             REPORT_FAILURE(fReporter, "shader", SkString("Effect didn't produce a shader"));
             return;
@@ -101,11 +123,11 @@ public:
     }
 
 private:
-    skiatest::Reporter*             fReporter;
-    SkSL::ShaderCapsPointer         fCaps;
-    std::unique_ptr<SkSL::Compiler> fCompiler;
-    sk_sp<SkSurface>                fSurface;
-    SkTLazy<SkRuntimeShaderBuilder> fBuilder;
+    skiatest::Reporter*               fReporter;
+    std::unique_ptr<SkSL::ShaderCaps> fCaps;
+    std::unique_ptr<SkSL::Compiler>   fCompiler;
+    sk_sp<SkSurface>                  fSurface;
+    SkTLazy<SkRuntimeShaderBuilder>   fBuilder;
 };
 
 static void test_RuntimeEffect_Shaders(skiatest::Reporter* r, GrRecordingContext* rContext) {
@@ -142,7 +164,7 @@ static void test_RuntimeEffect_Shaders(skiatest::Reporter* r, GrRecordingContext
         effect.uniform(SkString(gColor.name()).c_str()) = float4{ 0.0f, 0.25f, 0.75f, 1.0f };
         effect.test(0xFFBF4000);
         effect.uniform(SkString(gColor.name()).c_str()) = float4{ 1.0f, 0.0f, 0.0f, 0.498f };
-        effect.test(0x7F00007F);  // Tests that we clamp to valid premul
+        effect.test(0x7F0000FF);  // Tests that we don't clamp to valid premul
     }
 
     // Same, with integer uniforms
@@ -158,7 +180,7 @@ static void test_RuntimeEffect_Shaders(skiatest::Reporter* r, GrRecordingContext
         effect.uniform(SkString(gColor.name()).c_str()) = int4{ 0x00, 0x40, 0xBF, 0xFF };
         effect.test(0xFFBF4000);
         effect.uniform(SkString(gColor.name()).c_str()) = int4{ 0xFF, 0x00, 0x00, 0x7F };
-        effect.test(0x7F00007F);  // Tests that we clamp to valid premul
+        effect.test(0x7F0000FF);  // Tests that we don't clamp to valid premul
     }
 
     // Test sk_FragCoord (device coords). Rotate the canvas to be sure we're seeing device coords.
@@ -200,22 +222,32 @@ static void test_RuntimeEffect_Shaders(skiatest::Reporter* r, GrRecordingContext
     // Test error reporting. We put this before a couple of successful tests to ensure that a
     // failure doesn't leave us in a broken state.
     {
-        class SimpleErrorHandler : public ErrorHandler {
+        class SimpleErrorReporter : public SkSL::ErrorReporter {
         public:
-            void handleError(const char* msg, PositionInfo pos) override {
-                fMsg = msg;
+            void handleError(std::string_view msg, SkSL::Position pos) override {
+                fMsg += msg;
             }
 
-            SkSL::String fMsg;
-        } errorHandler;
+            std::string fMsg;
+        } errorReporter;
+
+        // Test errors that occur while constructing DSL nodes
         effect.start();
-        SetErrorHandler(&errorHandler);
+        SetErrorReporter(&errorReporter);
         Parameter p(kFloat2_Type, "p");
         Function(kHalf4_Type, "main", p).define(
             Return(1) // Error, type mismatch
         );
         effect.end(false);
-        REPORTER_ASSERT(r, errorHandler.fMsg == "error: expected 'half4', but found 'int'\n");
+        REPORTER_ASSERT(r, errorReporter.fMsg == "expected 'half4', but found 'int'");
+        errorReporter.fMsg = "";
+        errorReporter.resetErrorCount();
+
+        // Test errors that occur while finalizing the runtime effect
+        effect.start();
+        SetErrorReporter(&errorReporter);
+        effect.end(false);
+        REPORTER_ASSERT(r, errorReporter.fMsg == "missing 'main' function");
     }
 
     // Mutating coords should work. (skbug.com/10918)
@@ -256,7 +288,7 @@ static void test_RuntimeEffect_Shaders(skiatest::Reporter* r, GrRecordingContext
         Declare(child);
         Parameter p2(kFloat2_Type, "p");
         Function(kFloat4_Type, "main", p2).define(
-            Return(Sample(child, p2))
+            Return(child.eval(p2))
         );
         effect.end();
         effect.child(child.name()) = nullptr;

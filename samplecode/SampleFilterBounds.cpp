@@ -129,7 +129,7 @@ static void draw_scale_factors(SkCanvas* canvas, const skif::Mapping& mapping, c
     rect.toQuad(testPoints + 1);
     for (int i = 0; i < 5; ++i) {
         float scale = SkMatrixPriv::DifferentialAreaScale(
-                mapping.deviceMatrix(),
+                mapping.layerToDevice(),
                 SkPoint(mapping.paramToLayer(skif::ParameterSpace<SkPoint>(testPoints[i]))));
         SkColor4f color = {0.f, 0.f, 0.f, 1.f};
 
@@ -195,13 +195,14 @@ public:
         }
         skif::DeviceSpace<SkIRect> targetOutput(target);
         skif::ParameterSpace<SkRect> contentBounds(localContentRect);
-        skif::Mapping mapping = skif::Mapping::DecomposeCTM(
-                ctm, fBlur.get(), skif::ParameterSpace<SkPoint>({localContentRect.centerX(),
-                                                                 localContentRect.centerY()}));
+        skif::ParameterSpace<SkPoint> contentCenter({localContentRect.centerX(),
+                                                     localContentRect.centerY()});
+        skif::Mapping mapping;
+        SkAssertResult(mapping.decomposeCTM(ctm, fBlur.get(), contentCenter));
 
         // Add axis lines, to show perspective distortion
         canvas->save();
-        canvas->setMatrix(mapping.deviceMatrix());
+        canvas->setMatrix(mapping.layerToDevice());
         canvas->drawPath(create_axis_path(SkRect(mapping.paramToLayer(contentBounds)), 20.f),
                          line_paint(SK_ColorGRAY));
         canvas->restore();
@@ -223,7 +224,7 @@ public:
         skif::LayerSpace<SkIRect> unhintedLayerBounds = as_IFB(fBlur)->getInputBounds(
                 mapping, targetOutput, nullptr);
 
-        canvas->setMatrix(mapping.deviceMatrix());
+        canvas->setMatrix(mapping.layerToDevice());
         canvas->drawRect(SkRect::Make(SkIRect(targetOutputInLayer)),
                          line_paint(SK_ColorDKGRAY, true));
         canvas->drawRect(SkRect::Make(SkIRect(hintedLayerBounds)), line_paint(SK_ColorRED));
@@ -231,7 +232,7 @@ public:
 
         // For visualization purposes, we want to show the layer-space output, this is what we get
         // when contentBounds is provided as a hint in local/parameter space.
-        skif::Mapping layerOnly(SkMatrix::I(), mapping.layerMatrix());
+        skif::Mapping layerOnly{mapping.layerMatrix()};
         skif::DeviceSpace<SkIRect> hintedOutputBounds = as_IFB(fBlur)->getOutputBounds(
                 layerOnly, contentBounds);
         canvas->drawRect(SkRect::Make(SkIRect(hintedOutputBounds)), line_paint(SK_ColorBLUE));

@@ -9,7 +9,7 @@
 #define TestUtils_DEFINED
 
 #include "include/core/SkBitmap.h"
-#include "src/gpu/GrDataUtils.h"
+#include "src/gpu/ganesh/GrDataUtils.h"
 #include "tests/Test.h"
 
 namespace skgpu { class SurfaceContext; }
@@ -82,5 +82,19 @@ void CheckSingleThreadedProxyRefs(skiatest::Reporter* reporter,
                                   GrSurfaceProxy* proxy,
                                   int32_t expectedProxyRefs,
                                   int32_t expectedBackingRefs);
+
+// Makes either a SurfaceContext, SurfaceFillContext, or a SurfaceDrawContext, depending on
+// GrRenderable and the GrImageInfo.
+// The texture format is the default for the provided color type.
+std::unique_ptr<skgpu::SurfaceContext> CreateSurfaceContext(
+            GrRecordingContext*,
+            const GrImageInfo&,
+            SkBackingFit = SkBackingFit::kExact,
+            GrSurfaceOrigin = kTopLeft_GrSurfaceOrigin,
+            GrRenderable = GrRenderable::kNo,
+            int sampleCount = 1,
+            GrMipmapped = GrMipmapped::kNo,
+            GrProtected = GrProtected::kNo,
+            SkBudgeted = SkBudgeted::kYes);
 
 #endif

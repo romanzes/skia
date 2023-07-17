@@ -24,13 +24,13 @@ namespace SkSL {
  */
 class ConstructorCompoundCast final : public SingleArgumentConstructor {
 public:
-    static constexpr Kind kExpressionKind = Kind::kConstructorCompoundCast;
+    inline static constexpr Kind kExpressionKind = Kind::kConstructorCompoundCast;
 
-    ConstructorCompoundCast(int offset, const Type& type, std::unique_ptr<Expression> arg)
-        : INHERITED(offset, kExpressionKind, &type, std::move(arg)) {}
+    ConstructorCompoundCast(Position pos, const Type& type, std::unique_ptr<Expression> arg)
+        : INHERITED(pos, kExpressionKind, &type, std::move(arg)) {}
 
     static std::unique_ptr<Expression> Make(const Context& context,
-                                            int offset,
+                                            Position pos,
                                             const Type& type,
                                             std::unique_ptr<Expression> arg);
 
@@ -39,9 +39,8 @@ public:
         return false;
     }
 
-    std::unique_ptr<Expression> clone() const override {
-        return std::make_unique<ConstructorCompoundCast>(fOffset, this->type(),
-                                                          argument()->clone());
+    std::unique_ptr<Expression> clone(Position pos) const override {
+        return std::make_unique<ConstructorCompoundCast>(pos, this->type(), argument()->clone());
     }
 
 private:

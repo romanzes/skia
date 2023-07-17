@@ -5,17 +5,23 @@
  * found in the LICENSE file.
  */
 
-#include <limits>
-
-#include "src/gpu/GrCaps.h"
+#include "include/sksl/SkSLErrorReporter.h"
+#include "src/gpu/ganesh/GrShaderCaps.h"
+#include "src/sksl/SkSLBuiltinTypes.h"
 #include "src/sksl/SkSLContext.h"
-#include "src/sksl/SkSLErrorReporter.h"
+#include "src/sksl/SkSLMangler.h"
+#include "src/sksl/ir/SkSLType.h"
 #include "tests/Test.h"
 
+#include <cstdint>
+#include <limits>
+#include <memory>
+
 DEF_TEST(SkSLTypeLimits, r) {
-    GrShaderCaps caps(GrContextOptions{});
+    GrShaderCaps caps;
     SkSL::TestingOnly_AbortErrorReporter errors;
-    SkSL::Context context(errors, caps);
+    SkSL::Mangler mangler;
+    SkSL::Context context(errors, caps, mangler);
 
     using int_limits = std::numeric_limits<int32_t>;
     REPORTER_ASSERT(r, context.fTypes.fInt->minimumValue() == int_limits::min());

@@ -11,10 +11,10 @@
 #include "include/core/SkPromiseImageTexture.h"
 #include "include/gpu/GrBackendSurface.h"
 #include "include/gpu/GrDirectContext.h"
-#include "src/gpu/GrDirectContextPriv.h"
-#include "src/gpu/GrGpu.h"
-#include "src/gpu/GrResourceProvider.h"
-#include "src/gpu/GrTexture.h"
+#include "src/gpu/ganesh/GrDirectContextPriv.h"
+#include "src/gpu/ganesh/GrGpu.h"
+#include "src/gpu/ganesh/GrResourceProvider.h"
+#include "src/gpu/ganesh/GrTexture.h"
 #include "src/image/SkImage_Gpu.h"
 #include "tools/gpu/ManagedBackendTexture.h"
 
@@ -32,16 +32,6 @@ struct PromiseTextureChecker {
     bool fShared;
     int fFulfillCount = 0;
     int fReleaseCount = 0;
-
-    /**
-     * Releases the SkPromiseImageTexture. Used to test that cached GrTexture representations
-     * in the cache are freed.
-     */
-    void releaseTexture() { fTexture.reset(); }
-
-    SkTArray<GrUniqueKey> uniqueKeys() const {
-        return fTexture->testingOnly_uniqueKeysToInvalidate();
-    }
 
     static sk_sp<SkPromiseImageTexture> Fulfill(void* self) {
         auto checker = static_cast<PromiseTextureChecker*>(self);
@@ -313,9 +303,15 @@ DEF_GPUTEST_FOR_RENDERING_CONTEXTS(PromiseImageTextureFullCache, reporter, ctxIn
     for (int i = 0; i < 5; ++i) {
         auto format = dContext->priv().caps()->getDefaultBackendFormat(GrColorType::kRGBA_8888,
                                                                        GrRenderable::kNo);
-        textures.emplace_back(dContext->priv().resourceProvider()->createTexture(
-                {100, 100}, format, GrRenderable::kNo, 1, GrMipmapped::kNo, SkBudgeted::kYes,
-                GrProtected::kNo));
+        textures.emplace_back(dContext->priv().resourceProvider()->createTexture({100, 100},
+                                                                                 format,
+                                                                                 GrTextureType::k2D,
+                                                                                 GrRenderable::kNo,
+                                                                                 1,
+                                                                                 GrMipmapped::kNo,
+                                                                                 SkBudgeted::kYes,
+                                                                                 GrProtected::kNo,
+                                                                                 /*label=*/{}));
         REPORTER_ASSERT(reporter, textures[i]);
     }
 
