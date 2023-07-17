@@ -64,7 +64,7 @@ protected:
             p.setColor(gColors[curColor]);
             canvas->drawRect(r, p);
 
-            curColor = (curColor+1) % SK_ARRAY_COUNT(gColors);
+            curColor = (curColor+1) % std::size(gColors);
         }
 
         fImage = surface->makeImageSnapshot();
@@ -84,7 +84,7 @@ protected:
     }
 
 private:
-    static constexpr int kImageSize = 503;
+    inline static constexpr int kImageSize = 503;
 
     SkString          fSuffix;
     SkSamplingOptions fSampling;

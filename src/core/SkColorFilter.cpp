@@ -9,10 +9,11 @@
 #include "include/core/SkString.h"
 #include "include/core/SkUnPreMultiply.h"
 #include "include/effects/SkRuntimeEffect.h"
-#include "include/private/SkNx.h"
 #include "include/private/SkTDArray.h"
+#include "modules/skcms/skcms.h"
 #include "src/core/SkArenaAlloc.h"
 #include "src/core/SkColorFilterBase.h"
+#include "src/core/SkColorFilterPriv.h"
 #include "src/core/SkColorSpacePriv.h"
 #include "src/core/SkColorSpaceXformSteps.h"
 #include "src/core/SkMatrixProvider.h"
@@ -23,9 +24,14 @@
 #include "src/core/SkWriteBuffer.h"
 
 #if SK_SUPPORT_GPU
-#include "src/gpu/GrColorInfo.h"
-#include "src/gpu/GrColorSpaceXform.h"
-#include "src/gpu/GrFragmentProcessor.h"
+#include "src/gpu/ganesh/GrColorInfo.h"
+#include "src/gpu/ganesh/GrColorSpaceXform.h"
+#include "src/gpu/ganesh/GrFragmentProcessor.h"
+#endif
+
+#ifdef SK_ENABLE_SKSL
+#include "src/core/SkKeyHelpers.h"
+#include "src/core/SkPaintParamsKey.h"
 #endif
 
 bool SkColorFilter::asAColorMode(SkColor* color, SkBlendMode* mode) const {
@@ -106,7 +112,7 @@ SkPMColor4f SkColorFilterBase::onFilterColor4f(const SkPMColor4f& color,
     SkRasterPipeline    pipeline(&alloc);
     pipeline.append_constant_color(&alloc, color.vec());
     SkPaint blankPaint;
-    SkSimpleMatrixProvider matrixProvider(SkMatrix::I());
+    SkMatrixProvider matrixProvider(SkMatrix::I());
     SkStageRec rec = {
         &pipeline, &alloc, kRGBA_F32_SkColorType, dstCS, blankPaint, nullptr, matrixProvider
     };
@@ -139,13 +145,23 @@ SkPMColor4f SkColorFilterBase::onFilterColor4f(const SkPMColor4f& color,
     return SkPMColor4f{0,0,0,0};
 }
 
+#ifdef SK_ENABLE_SKSL
+void SkColorFilterBase::addToKey(const SkKeyContext& keyContext,
+                                 SkPaintParamsKeyBuilder* builder,
+                                 SkPipelineDataGatherer* gatherer) const {
+    // Return the input color as-is.
+    PassthroughShaderBlock::BeginBlock(keyContext, builder, gatherer);
+    builder->endBlock();
+}
+#endif
+
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
 class SkComposeColorFilter : public SkColorFilterBase {
 public:
     bool onIsAlphaUnchanged() const override {
         // Can only claim alphaunchanged support if both our proxys do.
-        return fOuter->isAlphaUnchanged() & fInner->isAlphaUnchanged();
+        return fOuter->isAlphaUnchanged() && fInner->isAlphaUnchanged();
     }
 
     bool onAppendStages(const SkStageRec& rec, bool shaderIsOpaque) const override {
@@ -168,26 +184,38 @@ public:
     GrFPResult asFragmentProcessor(std::unique_ptr<GrFragmentProcessor> inputFP,
                                    GrRecordingContext* context,
                                    const GrColorInfo& dstColorInfo) const override {
-        GrFragmentProcessor* originalInputFP = inputFP.get();
+        // Unfortunately, we need to clone the input before we know we need it. This lets us return
+        // the original FP if either internal color filter fails.
+        auto inputClone = inputFP ? inputFP->clone() : nullptr;
 
         auto [innerSuccess, innerFP] =
                 fInner->asFragmentProcessor(std::move(inputFP), context, dstColorInfo);
         if (!innerSuccess) {
-            return GrFPFailure(std::move(innerFP));
+            return GrFPFailure(std::move(inputClone));
         }
 
         auto [outerSuccess, outerFP] =
                 fOuter->asFragmentProcessor(std::move(innerFP), context, dstColorInfo);
         if (!outerSuccess) {
-            // In the rare event that the outer FP cannot be built, we have no good way of
-            // separating the inputFP from the innerFP, so we need to return a cloned inputFP.
-            // This could hypothetically be expensive, but failure here should be extremely rare.
-            return GrFPFailure(originalInputFP->clone());
+            return GrFPFailure(std::move(inputClone));
         }
 
         return GrFPSuccess(std::move(outerFP));
     }
 #endif
+
+#ifdef SK_ENABLE_SKSL
+    void addToKey(const SkKeyContext& keyContext,
+                  SkPaintParamsKeyBuilder* builder,
+                  SkPipelineDataGatherer* gatherer) const override {
+        ComposeColorFilterBlock::BeginBlock(keyContext, builder, gatherer);
+
+        as_CFB(fInner)->addToKey(keyContext, builder, gatherer);
+        as_CFB(fOuter)->addToKey(keyContext, builder, gatherer);
+
+        builder->endBlock();
+    }
+#endif // SK_ENABLE_SKSL
 
     SK_FLATTENABLE_HOOKS(SkComposeColorFilter)
 
@@ -435,16 +463,16 @@ sk_sp<SkFlattenable> SkWorkingFormatColorFilter::CreateProc(SkReadBuffer& buffer
     if (!useDstGamut) { buffer.readScalarArray(&gamut.vals[0][0], 9); }
     if (!useDstAT)    { at = buffer.read32LE(kLastEnum_SkAlphaType); }
 
-    return SkColorFilters::WithWorkingFormat(std::move(child),
-                                             useDstTF    ? nullptr : &tf,
-                                             useDstGamut ? nullptr : &gamut,
-                                             useDstAT    ? nullptr : &at);
+    return SkColorFilterPriv::WithWorkingFormat(std::move(child),
+                                                useDstTF    ? nullptr : &tf,
+                                                useDstGamut ? nullptr : &gamut,
+                                                useDstAT    ? nullptr : &at);
 }
 
-sk_sp<SkColorFilter> SkColorFilters::WithWorkingFormat(sk_sp<SkColorFilter>          child,
-                                                       const skcms_TransferFunction* tf,
-                                                       const skcms_Matrix3x3*        gamut,
-                                                       const SkAlphaType*            at) {
+sk_sp<SkColorFilter> SkColorFilterPriv::WithWorkingFormat(sk_sp<SkColorFilter> child,
+                                                          const skcms_TransferFunction* tf,
+                                                          const skcms_Matrix3x3* gamut,
+                                                          const SkAlphaType* at) {
     return sk_make_sp<SkWorkingFormatColorFilter>(std::move(child), tf, gamut, at);
 }
 
@@ -471,20 +499,20 @@ sk_sp<SkColorFilter> SkColorFilters::Lerp(float weight, sk_sp<SkColorFilter> cf0
         return cf1;
     }
 
-    sk_sp<SkRuntimeEffect> effect = SkMakeCachedRuntimeEffect(
+    static const SkRuntimeEffect* effect = SkMakeCachedRuntimeEffect(
         SkRuntimeEffect::MakeForColorFilter,
         "uniform colorFilter cf0;"
         "uniform colorFilter cf1;"
         "uniform half   weight;"
         "half4 main(half4 color) {"
-            "return mix(sample(cf0, color), sample(cf1, color), weight);"
+            "return mix(cf0.eval(color), cf1.eval(color), weight);"
         "}"
-    );
+    ).release();
     SkASSERT(effect);
 
     sk_sp<SkColorFilter> inputs[] = {cf0,cf1};
     return effect->makeColorFilter(SkData::MakeWithCopy(&weight, sizeof(weight)),
-                                   inputs, SK_ARRAY_COUNT(inputs));
+                                   inputs, std::size(inputs));
 #else
     // TODO(skia:12197)
     return nullptr;

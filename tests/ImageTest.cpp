@@ -25,14 +25,14 @@
 #include "src/core/SkAutoPixmapStorage.h"
 #include "src/core/SkColorSpacePriv.h"
 #include "src/core/SkImagePriv.h"
-#include "src/core/SkUtils.h"
-#include "src/gpu/GrDirectContextPriv.h"
-#include "src/gpu/GrGpu.h"
-#include "src/gpu/GrImageContextPriv.h"
-#include "src/gpu/GrRecordingContextPriv.h"
-#include "src/gpu/GrResourceCache.h"
-#include "src/gpu/GrTexture.h"
-#include "src/gpu/SkGr.h"
+#include "src/core/SkOpts.h"
+#include "src/gpu/ganesh/GrDirectContextPriv.h"
+#include "src/gpu/ganesh/GrGpu.h"
+#include "src/gpu/ganesh/GrImageContextPriv.h"
+#include "src/gpu/ganesh/GrRecordingContextPriv.h"
+#include "src/gpu/ganesh/GrResourceCache.h"
+#include "src/gpu/ganesh/GrTexture.h"
+#include "src/gpu/ganesh/SkGr.h"
 #include "src/image/SkImage_Base.h"
 #include "src/image/SkImage_GpuYUVA.h"
 #include "tests/Test.h"
@@ -271,7 +271,7 @@ DEF_TEST(Image_RetainSnapshot, reporter) {
 
     sk_sp<SkImage> image1(surface->makeImageSnapshot());
     REPORTER_ASSERT(reporter, image1->readPixels(nullptr, dstInfo, pixels, dstRowBytes, 0, 0));
-    for (size_t i = 0; i < SK_ARRAY_COUNT(pixels); ++i) {
+    for (size_t i = 0; i < std::size(pixels); ++i) {
         REPORTER_ASSERT(reporter, pixels[i] == green);
     }
 
@@ -311,7 +311,7 @@ DEF_TEST(image_newfrombitmap, reporter) {
         { make_bitmap_immutable,    true,   true,  false },
     };
 
-    for (size_t i = 0; i < SK_ARRAY_COUNT(rec); ++i) {
+    for (size_t i = 0; i < std::size(rec); ++i) {
         SkBitmap bm;
         rec[i].fMakeProc(&bm);
 
@@ -1305,6 +1305,21 @@ DEF_TEST(image_roundtrip_premul, reporter) {
     bm1.readPixels(bm2.info(), bm2.getPixels(), bm2.rowBytes(), 0, 0);
 
     REPORTER_ASSERT(reporter, equal(bm0, bm2));
+}
+
+DEF_TEST(image_from_encoded_alphatype_override, reporter) {
+    sk_sp<SkData> data = GetResourceAsData("images/mandrill_32.png");
+
+    // Ensure that we can decode the image when we specifically request premul or unpremul, but
+    // not when we request kOpaque
+    REPORTER_ASSERT(reporter, SkImage::MakeFromEncoded(data, kPremul_SkAlphaType));
+    REPORTER_ASSERT(reporter, SkImage::MakeFromEncoded(data, kUnpremul_SkAlphaType));
+    REPORTER_ASSERT(reporter, !SkImage::MakeFromEncoded(data, kOpaque_SkAlphaType));
+
+    // Same tests as above, but using SkImageGenerator::MakeFromEncoded
+    REPORTER_ASSERT(reporter, SkImageGenerator::MakeFromEncoded(data, kPremul_SkAlphaType));
+    REPORTER_ASSERT(reporter, SkImageGenerator::MakeFromEncoded(data, kUnpremul_SkAlphaType));
+    REPORTER_ASSERT(reporter, !SkImageGenerator::MakeFromEncoded(data, kOpaque_SkAlphaType));
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////

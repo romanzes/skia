@@ -7,6 +7,7 @@
 
 #include "modules/skottie/src/effects/Effects.h"
 
+#include "include/core/SkCanvas.h"
 #include "include/core/SkPictureRecorder.h"
 #include "include/effects/SkColorMatrix.h"
 #include "include/effects/SkImageFilters.h"
@@ -48,11 +49,11 @@ static constexpr char gDisplacementSkSL[] = R"(
     uniform half4   selector_offset;
 
     half4 main(float2 xy) {
-        half4 d = sample(displ, xy);
+        half4 d = displ.eval(xy);
 
         d = selector_matrix*unpremul(d) + selector_offset;
 
-        return sample(child, xy + d.xy*d.zw);
+        return child.eval(xy + d.xy*d.zw);
     }
 )";
 
@@ -152,7 +153,7 @@ private:
         };
 
         const auto i = static_cast<size_t>(sel);
-        SkASSERT(i < SK_ARRAY_COUNT(gCoeffs));
+        SkASSERT(i < std::size(gCoeffs));
 
         return gCoeffs[i];
     }
@@ -237,7 +238,7 @@ private:
         builder.uniform("selector_offset") = selector_o;
 
         // TODO: RGB->HSL stage
-        return builder.makeShader(nullptr, false);
+        return builder.makeShader();
     }
 
     SkRect onRevalidate(sksg::InvalidationController* ic, const SkMatrix& ctm) override {

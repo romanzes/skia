@@ -5,21 +5,22 @@
  * found in the LICENSE file.
  */
 
+#include "include/core/SkColorSpace.h"
 #include "include/gpu/GrDirectContext.h"
 #include "src/core/SkBlendModePriv.h"
-#include "src/gpu/GrDirectContextPriv.h"
-#include "src/gpu/GrOpsTypes.h"
-#include "src/gpu/GrProxyProvider.h"
-#include "src/gpu/GrResourceProvider.h"
-#include "src/gpu/ops/GrFillRectOp.h"
-#include "src/gpu/ops/GrTextureOp.h"
-#include "src/gpu/v1/SurfaceDrawContext_v1.h"
+#include "src/gpu/ganesh/GrDirectContextPriv.h"
+#include "src/gpu/ganesh/GrOpsTypes.h"
+#include "src/gpu/ganesh/GrProxyProvider.h"
+#include "src/gpu/ganesh/GrResourceProvider.h"
+#include "src/gpu/ganesh/ops/FillRectOp.h"
+#include "src/gpu/ganesh/ops/TextureOp.h"
+#include "src/gpu/ganesh/v1/SurfaceDrawContext_v1.h"
 #include "tests/Test.h"
 
 static std::unique_ptr<skgpu::v1::SurfaceDrawContext> new_SDC(GrRecordingContext* rContext) {
     return skgpu::v1::SurfaceDrawContext::Make(
             rContext, GrColorType::kRGBA_8888, nullptr, SkBackingFit::kExact, {128, 128},
-            SkSurfaceProps());
+            SkSurfaceProps(), /*label=*/{});
 }
 
 static sk_sp<GrSurfaceProxy> create_proxy(GrRecordingContext* rContext) {
@@ -30,7 +31,8 @@ static sk_sp<GrSurfaceProxy> create_proxy(GrRecordingContext* rContext) {
                                                                            GrRenderable::kYes);
     return rContext->priv().proxyProvider()->createProxy(
             format, kDimensions, GrRenderable::kYes, 1, GrMipmapped::kNo, SkBackingFit::kExact,
-            SkBudgeted::kNo, GrProtected::kNo, GrInternalSurfaceFlags::kNone);
+            SkBudgeted::kNo, GrProtected::kNo, /*label=*/"CreateSurfaceProxy",
+            GrInternalSurfaceFlags::kNone);
 }
 
 typedef GrQuadAAFlags (*PerQuadAAFunc)(int i);
@@ -70,17 +72,17 @@ static void fillrectop_creation_test(skiatest::Reporter* reporter, GrDirectConte
     GrPaint paint;
     paint.setXPFactory(SkBlendMode_AsXPFactory(blendMode));
 
-    GrFillRectOp::AddFillRectOps(sdc.get(), nullptr, dContext, std::move(paint), overallAA,
-                                 SkMatrix::I(), quads, requestedTotNumQuads);
+    skgpu::v1::FillRectOp::AddFillRectOps(sdc.get(), nullptr, dContext, std::move(paint), overallAA,
+                                          SkMatrix::I(), quads, requestedTotNumQuads);
 
-    GrOpsTask* opsTask = sdc->testingOnly_PeekLastOpsTask();
+    auto opsTask = sdc->testingOnly_PeekLastOpsTask();
     int actualNumOps = opsTask->numOpChains();
 
     int actualTotNumQuads = 0;
 
     for (int i = 0; i < actualNumOps; ++i) {
         const GrOp* tmp = opsTask->getChain(i);
-        REPORTER_ASSERT(reporter, tmp->classID() == GrFillRectOp::ClassID());
+        REPORTER_ASSERT(reporter, tmp->classID() == skgpu::v1::FillRectOp::ClassID());
         REPORTER_ASSERT(reporter, tmp->isChainTail());
         actualTotNumQuads += ((GrDrawOp*) tmp)->numQuads();
     }
@@ -109,10 +111,10 @@ static void textureop_creation_test(skiatest::Reporter* reporter, GrDirectContex
         sk_sp<GrSurfaceProxy> proxyB = create_proxy(dContext);
         proxyViewA = GrSurfaceProxyView(std::move(proxyA),
                                         kTopLeft_GrSurfaceOrigin,
-                                        GrSwizzle::RGBA());
+                                        skgpu::Swizzle::RGBA());
         proxyViewB = GrSurfaceProxyView(std::move(proxyB),
                                         kTopLeft_GrSurfaceOrigin,
-                                        GrSwizzle::RGBA());
+                                        skgpu::Swizzle::RGBA());
     }
 
     auto set = new GrTextureSetEntry[requestedTotNumQuads];
@@ -127,7 +129,7 @@ static void textureop_creation_test(skiatest::Reporter* reporter, GrDirectContex
             sk_sp<GrSurfaceProxy> proxyA = create_proxy(dContext);
             set[i].fProxyView = GrSurfaceProxyView(std::move(proxyA),
                                                    kTopLeft_GrSurfaceOrigin,
-                                                   GrSwizzle::RGBA());
+                                                   skgpu::Swizzle::RGBA());
         }
 
         set[i].fSrcAlphaType = kPremul_SkAlphaType;
@@ -147,51 +149,51 @@ static void textureop_creation_test(skiatest::Reporter* reporter, GrDirectContex
             quad.fLocal = GrQuad(set[i].fSrcRect);
             quad.fEdgeFlags = set[i].fAAFlags;
 
-            GrOp::Owner op = GrTextureOp::Make(dContext,
-                                               set[i].fProxyView,
-                                               set[i].fSrcAlphaType,
-                                               nullptr,
-                                               GrSamplerState::Filter::kNearest,
-                                               GrSamplerState::MipmapMode::kNone,
-                                               set[i].fColor,
-                                               GrTextureOp::Saturate::kYes,
-                                               blendMode,
-                                               overallAA,
-                                               &quad,
-                                               nullptr);
+            GrOp::Owner op = skgpu::v1::TextureOp::Make(dContext,
+                                                        set[i].fProxyView,
+                                                        set[i].fSrcAlphaType,
+                                                        nullptr,
+                                                        GrSamplerState::Filter::kNearest,
+                                                        GrSamplerState::MipmapMode::kNone,
+                                                        set[i].fColor,
+                                                        skgpu::v1::TextureOp::Saturate::kYes,
+                                                        blendMode,
+                                                        overallAA,
+                                                        &quad,
+                                                        nullptr);
             sdc->addDrawOp(nullptr, std::move(op));
         }
     } else {
-        GrTextureOp::AddTextureSetOps(sdc.get(),
-                                      nullptr,
-                                      dContext,
-                                      set,
-                                      requestedTotNumQuads,
-                                      requestedTotNumQuads,  // We alternate so proxyCnt == cnt
-                                      GrSamplerState::Filter::kNearest,
-                                      GrSamplerState::MipmapMode::kNone,
-                                      GrTextureOp::Saturate::kYes,
-                                      blendMode,
-                                      overallAA,
-                                      SkCanvas::kStrict_SrcRectConstraint,
-                                      SkMatrix::I(),
-                                      nullptr);
+        skgpu::v1::TextureOp::AddTextureSetOps(sdc.get(),
+                                               nullptr,
+                                               dContext,
+                                               set,
+                                               requestedTotNumQuads,
+                                               requestedTotNumQuads,  // We alternate so proxyCnt == cnt
+                                               GrSamplerState::Filter::kNearest,
+                                               GrSamplerState::MipmapMode::kNone,
+                                               skgpu::v1::TextureOp::Saturate::kYes,
+                                               blendMode,
+                                               overallAA,
+                                               SkCanvas::kStrict_SrcRectConstraint,
+                                               SkMatrix::I(),
+                                               nullptr);
     }
 
-    GrOpsTask* opsTask = sdc->testingOnly_PeekLastOpsTask();
+    auto opsTask = sdc->testingOnly_PeekLastOpsTask();
     int actualNumOps = opsTask->numOpChains();
 
     int actualTotNumQuads = 0;
 
     if (blendMode != SkBlendMode::kSrcOver ||
         !dContext->priv().caps()->dynamicStateArrayGeometryProcessorTextureSupport()) {
-        // In either of these two cases, GrTextureOp creates one op per quad instead. Since
+        // In either of these two cases, TextureOp creates one op per quad instead. Since
         // each entry alternates proxies but overlaps geometrically, this will prevent the ops
         // from being merged back into fewer ops.
         expectedNumOps = requestedTotNumQuads;
     }
-    uint32_t expectedOpID = blendMode == SkBlendMode::kSrcOver ? GrTextureOp::ClassID()
-                                                               : GrFillRectOp::ClassID();
+    uint32_t expectedOpID = blendMode == SkBlendMode::kSrcOver ? skgpu::v1::TextureOp::ClassID()
+                                                               : skgpu::v1::FillRectOp::ClassID();
     for (int i = 0; i < actualNumOps; ++i) {
         const GrOp* tmp = opsTask->getChain(i);
         REPORTER_ASSERT(reporter, allUniqueProxies || tmp->isChainTail());
@@ -267,8 +269,8 @@ static void run_test(GrDirectContext* dContext, skiatest::Reporter* reporter, Bu
              false, false, 2*GrResourceProvider::MaxNumAAQuads(), kNumExpectedOps);
     }
 
-    // In this case we use a blend mode other than src-over, which hits the GrFillRectOp fallback
-    // code path for GrTextureOp. We pass in the expected results if batching was successful, to
+    // In this case we use a blend mode other than src-over, which hits the FillRectOp fallback
+    // code path for TextureOp. We pass in the expected results if batching was successful, to
     // that bulk_fill_rect_create_test batches on all modes; bulk_texture_rect_create_test is
     // responsible for revising its expectations.
     {

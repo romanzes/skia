@@ -8,13 +8,19 @@
 #ifndef SKSL_CONSTRUCTOR_SPLAT
 #define SKSL_CONSTRUCTOR_SPLAT
 
-#include "src/sksl/SkSLContext.h"
+#include "include/core/SkTypes.h"
+#include "include/sksl/SkSLPosition.h"
 #include "src/sksl/ir/SkSLConstructor.h"
 #include "src/sksl/ir/SkSLExpression.h"
+#include "src/sksl/ir/SkSLType.h"
 
 #include <memory>
+#include <optional>
+#include <utility>
 
 namespace SkSL {
+
+class Context;
 
 /**
  * Represents the construction of a vector splat, such as `half3(n)`.
@@ -23,24 +29,28 @@ namespace SkSL {
  */
 class ConstructorSplat final : public SingleArgumentConstructor {
 public:
-    static constexpr Kind kExpressionKind = Kind::kConstructorSplat;
+    inline static constexpr Kind kExpressionKind = Kind::kConstructorSplat;
 
-    ConstructorSplat(int offset, const Type& type, std::unique_ptr<Expression> arg)
-        : INHERITED(offset, kExpressionKind, &type, std::move(arg)) {}
+    ConstructorSplat(Position pos, const Type& type, std::unique_ptr<Expression> arg)
+        : INHERITED(pos, kExpressionKind, &type, std::move(arg)) {}
 
     // The input argument must be scalar. A "splat" to a scalar type will be optimized into a no-op.
     static std::unique_ptr<Expression> Make(const Context& context,
-                                            int offset,
+                                            Position pos,
                                             const Type& type,
                                             std::unique_ptr<Expression> arg);
 
-    std::unique_ptr<Expression> clone() const override {
-        return std::make_unique<ConstructorSplat>(fOffset, this->type(), argument()->clone());
+    std::unique_ptr<Expression> clone(Position pos) const override {
+        return std::make_unique<ConstructorSplat>(pos, this->type(), argument()->clone());
     }
 
-    const Expression* getConstantSubexpression(int n) const override {
+    bool supportsConstantValues() const override {
+        return true;
+    }
+
+    std::optional<double> getConstantValue(int n) const override {
         SkASSERT(n >= 0 && n < this->type().columns());
-        return this->argument()->getConstantSubexpression(0);
+        return this->argument()->getConstantValue(0);
     }
 
 private:
