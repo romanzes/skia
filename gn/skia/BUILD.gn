@@ -140,9 +140,6 @@ config("default") {
 
   if (current_cpu == "arm") {
     cflags += [
-      "-march=armv7-a",
-      "-mfpu=neon",
-      "-mthumb",
     ]
   } else if (current_cpu == "x86" && !is_win) {
     asmflags += [ "-m32" ]
