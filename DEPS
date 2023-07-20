@@ -13,7 +13,7 @@ deps = {
   "third_party/externals/expat"                  : "https://chromium.googlesource.com/external/github.com/libexpat/libexpat.git@a28238bdeebc087071777001245df1876a11f5ee",
   "third_party/externals/freetype"               : "https://chromium.googlesource.com/chromium/src/third_party/freetype2.git@c26872ed59cba3af2f407b5eefc92fcec92aa52b",
   "third_party/externals/harfbuzz"               : "https://chromium.googlesource.com/external/github.com/harfbuzz/harfbuzz.git@858570b1d9912a1b746ab39fbe62a646c4f7a5b1",
-  "third_party/externals/icu"                    : "https://chromium.googlesource.com/chromium/deps/icu.git@a0718d4f121727e30b8d52c7a189ebf5ab52421f",
+  "third_party/externals/icu"                    : "https://chromium.googlesource.com/chromium/deps/icu.git@e8c3bc9ea97d4423ad0515e5f1c064f486dae8b1",
   "third_party/externals/libgifcodec"            : "https://skia.googlesource.com/libgifcodec@fd59fa92a0c86788dcdd84d091e1ce81eda06a77",
   "third_party/externals/libjpeg-turbo"          : "https://chromium.googlesource.com/chromium/deps/libjpeg_turbo.git@22f1a22c99e9dde8cd3c72ead333f425c5a7aa77",
   "third_party/externals/libpng"                 : "https://skia.googlesource.com/third_party/libpng.git@386707c6d19b974ca2e3db7f5c61873813c6fe44",
