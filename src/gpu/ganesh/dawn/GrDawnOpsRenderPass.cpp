@@ -7,6 +7,7 @@
 
 #include "src/gpu/ganesh/dawn/GrDawnOpsRenderPass.h"
 
+#include "src/gpu/ganesh/GrNativeRect.h"
 #include "src/gpu/ganesh/GrOpFlushState.h"
 #include "src/gpu/ganesh/GrPipeline.h"
 #include "src/gpu/ganesh/GrRenderTarget.h"
@@ -72,8 +73,9 @@ wgpu::RenderPassEncoder GrDawnOpsRenderPass::beginRenderPass(wgpu::LoadOp colorO
     wgpu::RenderPassDescriptor renderPassDescriptor;
     renderPassDescriptor.colorAttachmentCount = 1;
     renderPassDescriptor.colorAttachments = colorAttachments;
+
+    wgpu::RenderPassDepthStencilAttachment depthStencilAttachment;
     if (stencilAttachment) {
-        wgpu::RenderPassDepthStencilAttachment depthStencilAttachment;
         depthStencilAttachment.view = stencilAttachment->view();
         depthStencilAttachment.depthLoadOp = stencilOp;
         depthStencilAttachment.stencilLoadOp = stencilOp;
@@ -85,6 +87,7 @@ wgpu::RenderPassEncoder GrDawnOpsRenderPass::beginRenderPass(wgpu::LoadOp colorO
     } else {
         renderPassDescriptor.depthStencilAttachment = nullptr;
     }
+
     return fEncoder.BeginRenderPass(&renderPassDescriptor);
 }
 
@@ -165,7 +168,7 @@ bool GrDawnOpsRenderPass::onBindPipeline(const GrProgramInfo& programInfo,
 }
 
 void GrDawnOpsRenderPass::onSetScissorRect(const SkIRect& scissor) {
-    // Higher-level skgpu::v1::SurfaceDrawContext and clips should have already ensured draw
+    // Higher-level skgpu::ganesh::SurfaceDrawContext and clips should have already ensured draw
     // bounds are restricted to the render target.
     SkASSERT(SkIRect::MakeSize(fRenderTarget->dimensions()).contains(scissor));
     auto nativeScissorRect =

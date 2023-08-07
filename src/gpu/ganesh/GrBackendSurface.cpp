@@ -7,8 +7,9 @@
 
 #include "include/gpu/GrBackendSurface.h"
 
+#include "include/core/SkTextureCompressionType.h"
 #include "include/private/gpu/ganesh/GrTypesPriv.h"
-#include "src/gpu/ganesh/GrBackendSurfaceMutableStateImpl.h"
+#include "src/gpu/MutableTextureStateRef.h"
 
 #if defined(SK_GL)
 #include "src/gpu/ganesh/gl/GrGLUtil.h"
@@ -16,6 +17,7 @@
 
 #ifdef SK_DAWN
 #include "include/gpu/dawn/GrDawnTypes.h"
+#include "src/gpu/dawn/DawnUtilsPriv.h"
 #include "src/gpu/ganesh/dawn/GrDawnUtil.h"
 #endif
 
@@ -23,6 +25,7 @@
 #include "include/gpu/vk/GrVkTypes.h"
 #include "src/gpu/ganesh/vk/GrVkImageLayout.h"
 #include "src/gpu/ganesh/vk/GrVkUtil.h"
+#include "src/gpu/vk/VulkanUtilsPriv.h"
 #endif
 #ifdef SK_METAL
 #include "include/gpu/mtl/GrMtlTypes.h"
@@ -211,7 +214,7 @@ bool GrBackendFormat::asDxgiFormat(DXGI_FORMAT* dxgiFormat) const {
 }
 #endif
 
-GrBackendFormat::GrBackendFormat(GrColorType colorType, SkImage::CompressionType compression,
+GrBackendFormat::GrBackendFormat(GrColorType colorType, SkTextureCompressionType compression,
                                  bool isStencilFormat)
         : fBackend(GrBackendApi::kMock)
         , fValid(true)
@@ -233,7 +236,7 @@ uint32_t GrBackendFormat::channelMask() const {
 #endif
 #ifdef SK_VULKAN
         case GrBackendApi::kVulkan:
-            return GrVkFormatChannels(fVk.fFormat);
+            return skgpu::VkFormatChannels(fVk.fFormat);
 #endif
 #ifdef SK_METAL
         case GrBackendApi::kMetal:
@@ -241,7 +244,7 @@ uint32_t GrBackendFormat::channelMask() const {
 #endif
 #ifdef SK_DAWN
         case GrBackendApi::kDawn:
-            return GrDawnFormatChannels(fDawnFormat);
+            return skgpu::DawnFormatChannels(fDawnFormat);
 #endif
 #ifdef SK_DIRECT3D
         case GrBackendApi::kDirect3D:
@@ -291,7 +294,7 @@ GrColorFormatDesc GrBackendFormat::desc() const {
 #ifdef SK_DEBUG
 bool GrBackendFormat::validateMock() const {
     int trueStates = 0;
-    if (fMock.fCompressionType != SkImage::CompressionType::kNone) {
+    if (fMock.fCompressionType != SkTextureCompressionType::kNone) {
         trueStates++;
     }
     if (fMock.fColorType != GrColorType::kUnknown) {
@@ -313,13 +316,13 @@ GrColorType GrBackendFormat::asMockColorType() const {
     return GrColorType::kUnknown;
 }
 
-SkImage::CompressionType GrBackendFormat::asMockCompressionType() const {
+SkTextureCompressionType GrBackendFormat::asMockCompressionType() const {
     if (this->isValid() && GrBackendApi::kMock == fBackend) {
         SkASSERT(this->validateMock());
         return fMock.fCompressionType;
     }
 
-    return SkImage::CompressionType::kNone;
+    return SkTextureCompressionType::kNone;
 }
 
 bool GrBackendFormat::isMockStencilFormat() const {
@@ -349,7 +352,7 @@ GrBackendFormat GrBackendFormat::makeTexture2D() const {
 }
 
 GrBackendFormat GrBackendFormat::MakeMock(GrColorType colorType,
-                                          SkImage::CompressionType compression,
+                                          SkTextureCompressionType compression,
                                           bool isStencilFormat) {
     return GrBackendFormat(colorType, compression, isStencilFormat);
 }
@@ -368,23 +371,19 @@ bool GrBackendFormat::operator==(const GrBackendFormat& that) const {
 #ifdef SK_GL
         case GrBackendApi::kOpenGL:
             return fGLFormat == that.fGLFormat;
-            break;
 #endif
 #ifdef SK_VULKAN
         case GrBackendApi::kVulkan:
             return fVk.fFormat == that.fVk.fFormat &&
                    fVk.fYcbcrConversionInfo == that.fVk.fYcbcrConversionInfo;
-            break;
 #endif
 #ifdef SK_METAL
         case GrBackendApi::kMetal:
             return fMtlFormat == that.fMtlFormat;
-            break;
 #endif
 #ifdef SK_DAWN
         case GrBackendApi::kDawn:
             return fDawnFormat == that.fDawnFormat;
-            break;
 #endif
         case GrBackendApi::kMock:
             return fMock.fColorType == that.fMock.fColorType &&
@@ -407,6 +406,7 @@ bool GrBackendFormat::operator==(const GrBackendFormat& that) const {
 #endif
 #ifdef SK_VULKAN
 #include "src/gpu/ganesh/vk/GrVkUtil.h"
+#include "src/gpu/vk/VulkanUtilsPriv.h"
 #endif
 
 SkString GrBackendFormat::toStr() const {
@@ -427,7 +427,7 @@ SkString GrBackendFormat::toStr() const {
             break;
         case GrBackendApi::kVulkan:
 #ifdef SK_VULKAN
-            str.append(GrVkFormatToStr(fVk.fFormat));
+            str.append(skgpu::VkFormatToStr(fVk.fFormat));
 #endif
             break;
         case GrBackendApi::kMetal:
@@ -462,10 +462,12 @@ GrBackendTexture::GrBackendTexture() : fIsValid(false) {}
 #ifdef SK_DAWN
 GrBackendTexture::GrBackendTexture(int width,
                                    int height,
-                                   const GrDawnTextureInfo& dawnInfo)
+                                   const GrDawnTextureInfo& dawnInfo,
+                                   std::string_view label)
         : fIsValid(true)
         , fWidth(width)
         , fHeight(height)
+        , fLabel(label)
         , fMipmapped(GrMipmapped(dawnInfo.fLevelCount > 1))
         , fBackend(GrBackendApi::kDawn)
         , fTextureType(GrTextureType::k2D)
@@ -473,11 +475,17 @@ GrBackendTexture::GrBackendTexture(int width,
 #endif
 
 #ifdef SK_VULKAN
-GrBackendTexture::GrBackendTexture(int width, int height, const GrVkImageInfo& vkInfo)
-        : GrBackendTexture(width, height, vkInfo,
-                           sk_sp<GrBackendSurfaceMutableStateImpl>(
-                                   new GrBackendSurfaceMutableStateImpl(
-                                        vkInfo.fImageLayout, vkInfo.fCurrentQueueFamily))) {}
+GrBackendTexture::GrBackendTexture(int width,
+                                   int height,
+                                   const GrVkImageInfo& vkInfo,
+                                   std::string_view label)
+        : GrBackendTexture(
+                  width,
+                  height,
+                  vkInfo,
+                  sk_sp<skgpu::MutableTextureStateRef>(new skgpu::MutableTextureStateRef(
+                          vkInfo.fImageLayout, vkInfo.fCurrentQueueFamily)),
+                  label) {}
 
 static const VkImageUsageFlags kDefaultUsageFlags =
         VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
@@ -508,10 +516,12 @@ static GrTextureType vk_image_info_to_texture_type(const GrVkImageInfo& info) {
 GrBackendTexture::GrBackendTexture(int width,
                                    int height,
                                    const GrVkImageInfo& vkInfo,
-                                   sk_sp<GrBackendSurfaceMutableStateImpl> mutableState)
+                                   sk_sp<skgpu::MutableTextureStateRef> mutableState,
+                                   std::string_view label)
         : fIsValid(true)
         , fWidth(width)
         , fHeight(height)
+        , fLabel(label)
         , fMipmapped(GrMipmapped(vkInfo.fLevelCount > 1))
         , fBackend(GrBackendApi::kVulkan)
         , fTextureType(vk_image_info_to_texture_type(vkInfo))
@@ -524,10 +534,12 @@ GrBackendTexture::GrBackendTexture(int width,
                                    int height,
                                    GrMipmapped mipmapped,
                                    const GrGLTextureInfo glInfo,
-                                   sk_sp<GrGLTextureParameters> params)
+                                   sk_sp<GrGLTextureParameters> params,
+                                   std::string_view label)
         : fIsValid(true)
         , fWidth(width)
         , fHeight(height)
+        , fLabel(label)
         , fMipmapped(mipmapped)
         , fBackend(GrBackendApi::kOpenGL)
         , fTextureType(gl_target_to_gr_target(glInfo.fTarget))
@@ -545,10 +557,12 @@ sk_sp<GrGLTextureParameters> GrBackendTexture::getGLTextureParams() const {
 GrBackendTexture::GrBackendTexture(int width,
                                    int height,
                                    GrMipmapped mipmapped,
-                                   const GrMtlTextureInfo& mtlInfo)
+                                   const GrMtlTextureInfo& mtlInfo,
+                                   std::string_view label)
         : fIsValid(true)
         , fWidth(width)
         , fHeight(height)
+        , fLabel(label)
         , fMipmapped(mipmapped)
         , fBackend(GrBackendApi::kMetal)
         , fTextureType(GrTextureType::k2D)
@@ -556,19 +570,26 @@ GrBackendTexture::GrBackendTexture(int width,
 #endif
 
 #ifdef SK_DIRECT3D
-GrBackendTexture::GrBackendTexture(int width, int height, const GrD3DTextureResourceInfo& d3dInfo)
-        : GrBackendTexture(
-                width, height, d3dInfo,
-                sk_sp<GrD3DResourceState>(new GrD3DResourceState(
-                        static_cast<D3D12_RESOURCE_STATES>(d3dInfo.fResourceState)))) {}
+GrBackendTexture::GrBackendTexture(int width,
+                                   int height,
+                                   const GrD3DTextureResourceInfo& d3dInfo,
+                                   std::string_view label)
+        : GrBackendTexture(width,
+                           height,
+                           d3dInfo,
+                           sk_sp<GrD3DResourceState>(new GrD3DResourceState(
+                                   static_cast<D3D12_RESOURCE_STATES>(d3dInfo.fResourceState))),
+                           label) {}
 
 GrBackendTexture::GrBackendTexture(int width,
                                    int height,
                                    const GrD3DTextureResourceInfo& d3dInfo,
-                                   sk_sp<GrD3DResourceState> state)
+                                   sk_sp<GrD3DResourceState> state,
+                                   std::string_view label)
         : fIsValid(true)
         , fWidth(width)
         , fHeight(height)
+        , fLabel(label)
         , fMipmapped(GrMipmapped(d3dInfo.fLevelCount > 1))
         , fBackend(GrBackendApi::kDirect3D)
         , fTextureType(GrTextureType::k2D)
@@ -579,8 +600,10 @@ GrBackendTexture::GrBackendTexture(int width,
 GrBackendTexture::GrBackendTexture(int width,
                                    int height,
                                    GrMipmapped mipmapped,
-                                   const GrGLTextureInfo& glInfo)
-        : GrBackendTexture(width, height, mipmapped, glInfo, sk_make_sp<GrGLTextureParameters>()) {
+                                   const GrGLTextureInfo& glInfo,
+                                   std::string_view label)
+        : GrBackendTexture(
+                  width, height, mipmapped, glInfo, sk_make_sp<GrGLTextureParameters>(), label) {
     // Make no assumptions about client's texture's parameters.
     this->glTextureParametersModified();
 }
@@ -589,10 +612,12 @@ GrBackendTexture::GrBackendTexture(int width,
 GrBackendTexture::GrBackendTexture(int width,
                                    int height,
                                    GrMipmapped mipmapped,
-                                   const GrMockTextureInfo& mockInfo)
+                                   const GrMockTextureInfo& mockInfo,
+                                   std::string_view label)
         : fIsValid(true)
         , fWidth(width)
         , fHeight(height)
+        , fLabel(label)
         , fMipmapped(mipmapped)
         , fBackend(GrBackendApi::kMock)
         , fTextureType(GrTextureType::k2D)
@@ -676,7 +701,7 @@ GrBackendTexture& GrBackendTexture::operator=(const GrBackendTexture& that) {
     return *this;
 }
 
-sk_sp<GrBackendSurfaceMutableStateImpl> GrBackendTexture::getMutableState() const {
+sk_sp<skgpu::MutableTextureStateRef> GrBackendTexture::getMutableState() const {
     return fMutableState;
 }
 
@@ -751,7 +776,8 @@ bool GrBackendTexture::getGLTextureInfo(GrGLTextureInfo* outInfo) const {
         // If that code ever goes away (or ideally becomes backend-agnostic), this can go away.
         *outInfo = GrGLTextureInfo{ GR_GL_TEXTURE_2D,
                                     static_cast<GrGLuint>(fMockInfo.id()),
-                                    GR_GL_RGBA8 };
+                                    GR_GL_RGBA8,
+                                    GrProtected(fMockInfo.isProtected()) };
         return true;
     }
     return false;
@@ -772,7 +798,7 @@ bool GrBackendTexture::getMockTextureInfo(GrMockTextureInfo* outInfo) const {
     return false;
 }
 
-void GrBackendTexture::setMutableState(const GrBackendSurfaceMutableState& state) {
+void GrBackendTexture::setMutableState(const skgpu::MutableTextureState& state) {
     fMutableState->set(state);
 }
 
@@ -780,11 +806,20 @@ bool GrBackendTexture::isProtected() const {
     if (!this->isValid()) {
         return false;
     }
+#ifdef SK_GL
+    if (this->backend() == GrBackendApi::kOpenGL) {
+        return fGLInfo.isProtected();
+    }
+#endif
 #ifdef SK_VULKAN
     if (this->backend() == GrBackendApi::kVulkan) {
         return fVkInfo.isProtected();
     }
 #endif
+    if (this->backend() == GrBackendApi::kMock) {
+        return fMockInfo.isProtected();
+    }
+
     return false;
 }
 
@@ -959,8 +994,8 @@ GrBackendRenderTarget::GrBackendRenderTarget(int width,
                                              int height,
                                              const GrVkImageInfo& vkInfo)
         : GrBackendRenderTarget(width, height, vkInfo,
-                                sk_sp<GrBackendSurfaceMutableStateImpl>(
-                                        new GrBackendSurfaceMutableStateImpl(
+                                sk_sp<skgpu::MutableTextureStateRef>(
+                                        new skgpu::MutableTextureStateRef(
                                                 vkInfo.fImageLayout, vkInfo.fCurrentQueueFamily))) {}
 
 static const VkImageUsageFlags kDefaultRTUsageFlags =
@@ -969,7 +1004,7 @@ static const VkImageUsageFlags kDefaultRTUsageFlags =
 GrBackendRenderTarget::GrBackendRenderTarget(int width,
                                              int height,
                                              const GrVkImageInfo& vkInfo,
-                                             sk_sp<GrBackendSurfaceMutableStateImpl> mutableState)
+                                             sk_sp<skgpu::MutableTextureStateRef> mutableState)
         : fIsValid(true)
         , fWidth(width)
         , fHeight(height)
@@ -1045,6 +1080,7 @@ GrBackendRenderTarget::GrBackendRenderTarget(int width,
         , fHeight(height)
         , fSampleCnt(std::max(1, sampleCnt))
         , fStencilBits(stencilBits)
+        , fBackend(GrBackendApi::kMock)
         , fMockInfo(mockInfo) {}
 
 GrBackendRenderTarget::~GrBackendRenderTarget() {
@@ -1120,7 +1156,7 @@ GrBackendRenderTarget& GrBackendRenderTarget::operator=(const GrBackendRenderTar
     return *this;
 }
 
-sk_sp<GrBackendSurfaceMutableStateImpl> GrBackendRenderTarget::getMutableState() const {
+sk_sp<skgpu::MutableTextureStateRef> GrBackendRenderTarget::getMutableState() const {
     return fMutableState;
 }
 
@@ -1247,19 +1283,29 @@ bool GrBackendRenderTarget::getMockRenderTargetInfo(GrMockRenderTargetInfo* outI
     return false;
 }
 
-void GrBackendRenderTarget::setMutableState(const GrBackendSurfaceMutableState& state) {
+void GrBackendRenderTarget::setMutableState(const skgpu::MutableTextureState& state) {
     fMutableState->set(state);
 }
 
 bool GrBackendRenderTarget::isProtected() const {
-    if (!this->isValid() || this->backend() != GrBackendApi::kVulkan) {
+    if (!this->isValid()) {
         return false;
     }
-#ifdef SK_VULKAN
-    return fVkInfo.isProtected();
-#else
-    return false;
+#ifdef SK_GL
+    if (this->backend() == GrBackendApi::kOpenGL) {
+        return fGLInfo.isProtected();
+    }
 #endif
+#ifdef SK_VULKAN
+    if (this->backend() == GrBackendApi::kVulkan) {
+        return fVkInfo.isProtected();
+    }
+#endif
+    if (this->backend() == GrBackendApi::kMock) {
+        return fMockInfo.isProtected();
+    }
+
+    return false;
 }
 
 #if GR_TEST_UTILS

@@ -10,13 +10,15 @@
 #include "src/core/SkBlendModePriv.h"
 #include "src/core/SkIPoint16.h"
 #include "src/gpu/ganesh/GrGpu.h"
+#include "src/gpu/ganesh/GrNativeRect.h"
 #include "src/gpu/ganesh/GrOpFlushState.h"
 #include "src/gpu/ganesh/GrOpsTypes.h"
+#include "src/gpu/ganesh/GrSurfaceProxyPriv.h"
 #include "src/gpu/ganesh/geometry/GrQuad.h"
 #include "src/gpu/ganesh/ops/FillRectOp.h"
 #include "src/gpu/ganesh/ops/PathStencilCoverOp.h"
 
-namespace skgpu::v1 {
+namespace skgpu::ganesh {
 
 AtlasRenderTask::AtlasRenderTask(GrRecordingContext* rContext,
                                  sk_sp<GrArenas> arenas,
@@ -190,4 +192,4 @@ bool AtlasRenderTask::onExecute(GrOpFlushState* flushState) {
     return true;
 }
 
-} // namespace skgpu::v1
+}  // namespace skgpu::ganesh

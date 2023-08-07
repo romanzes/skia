@@ -22,6 +22,7 @@
 #include "src/gpu/ganesh/GrDistanceFieldGenFromVector.h"
 #include "src/gpu/ganesh/GrDrawOpTest.h"
 #include "src/gpu/ganesh/GrResourceProvider.h"
+#include "src/gpu/ganesh/SurfaceDrawContext.h"
 #include "src/gpu/ganesh/effects/GrBitmapTextGeoProc.h"
 #include "src/gpu/ganesh/effects/GrDistanceFieldGeoProc.h"
 #include "src/gpu/ganesh/geometry/GrQuad.h"
@@ -30,11 +31,14 @@
 #include "src/gpu/ganesh/ops/GrSimpleMeshDrawOpHelperWithStencil.h"
 #include "src/gpu/ganesh/ops/SmallPathAtlasMgr.h"
 #include "src/gpu/ganesh/ops/SmallPathShapeData.h"
-#include "src/gpu/ganesh/v1/SurfaceDrawContext_v1.h"
+
+using namespace skia_private;
+
+#if !defined(SK_ENABLE_OPTIMIZE_SIZE)
 
 using MaskFormat = skgpu::MaskFormat;
 
-namespace skgpu::v1 {
+namespace skgpu::ganesh {
 
 namespace {
 
@@ -144,7 +148,7 @@ private:
     }
 
     void onPrepareDraws(GrMeshDrawTarget* target) override {
-        int instanceCount = fShapes.count();
+        int instanceCount = fShapes.size();
 
         auto atlasMgr = target->smallPathAtlasManager();
         if (!atlasMgr) {
@@ -168,37 +172,27 @@ private:
 
         // Setup GrGeometryProcessor
         const SkMatrix& ctm = fShapes[0].fViewMatrix;
+        SkMatrix invert;
+        if (fHelper.usesLocalCoords()) {
+            if (!ctm.invert(&invert)) {
+                return;
+            }
+        }
         if (fUsesDistanceField) {
             uint32_t flags = 0;
             // Still need to key off of ctm to pick the right shader for the transformed quad
             flags |= ctm.isScaleTranslate() ? kScaleOnly_DistanceFieldEffectFlag : 0;
             flags |= ctm.isSimilarity() ? kSimilarity_DistanceFieldEffectFlag : 0;
             flags |= fGammaCorrect ? kGammaCorrect_DistanceFieldEffectFlag : 0;
+            flags |= fWideColor ? kWideColor_DistanceFieldEffectFlag : 0;
+            // We always use Point3 for position
+            flags |= kPerspective_DistanceFieldEffectFlag;
 
-            const SkMatrix* matrix;
-            SkMatrix invert;
-            if (ctm.hasPerspective()) {
-                matrix = &ctm;
-            } else if (fHelper.usesLocalCoords()) {
-                if (!ctm.invert(&invert)) {
-                    return;
-                }
-                matrix = &invert;
-            } else {
-                matrix = &SkMatrix::I();
-            }
             flushInfo.fGeometryProcessor = GrDistanceFieldPathGeoProc::Make(
-                    target->allocator(), *target->caps().shaderCaps(), *matrix, fWideColor,
+                    target->allocator(), *target->caps().shaderCaps(),
                     views, numActiveProxies, GrSamplerState::Filter::kLinear,
-                    flags);
+                    invert, flags);
         } else {
-            SkMatrix invert;
-            if (fHelper.usesLocalCoords()) {
-                if (!ctm.invert(&invert)) {
-                    return;
-                }
-            }
-
             flushInfo.fGeometryProcessor = GrBitmapTextGeoProc::Make(
                     target->allocator(), *target->caps().shaderCaps(), this->color(), fWideColor,
                     views, numActiveProxies, GrSamplerState::Filter::kNearest,
@@ -227,7 +221,7 @@ private:
         for (int i = 0; i < instanceCount; i++) {
             const Entry& args = fShapes[i];
 
-            skgpu::v1::SmallPathShapeData* shapeData;
+            skgpu::ganesh::SmallPathShapeData* shapeData;
             if (fUsesDistanceField) {
                 // get mip level
                 SkScalar maxScale;
@@ -322,10 +316,13 @@ private:
 
     bool addToAtlasWithRetry(GrMeshDrawTarget* target,
                              FlushInfo* flushInfo,
-                             skgpu::v1::SmallPathAtlasMgr* atlasMgr,
-                             int width, int height, const void* image,
-                             const SkRect& bounds, int srcInset,
-                             skgpu::v1::SmallPathShapeData* shapeData) const {
+                             skgpu::ganesh::SmallPathAtlasMgr* atlasMgr,
+                             int width,
+                             int height,
+                             const void* image,
+                             const SkRect& bounds,
+                             int srcInset,
+                             skgpu::ganesh::SmallPathShapeData* shapeData) const {
         auto resourceProvider = target->resourceProvider();
         auto uploadTarget = target->deferredUploadTarget();
 
@@ -350,12 +347,11 @@ private:
 
     bool addDFPathToAtlas(GrMeshDrawTarget* target,
                           FlushInfo* flushInfo,
-                          skgpu::v1::SmallPathAtlasMgr* atlasMgr,
-                          skgpu::v1::SmallPathShapeData* shapeData,
+                          skgpu::ganesh::SmallPathAtlasMgr* atlasMgr,
+                          skgpu::ganesh::SmallPathShapeData* shapeData,
                           const GrStyledShape& shape,
                           uint32_t dimension,
                           SkScalar scale) const {
-
         const SkRect& bounds = shape.bounds();
 
         // generate bounding rect for bitmap draw
@@ -446,8 +442,8 @@ private:
 
     bool addBMPathToAtlas(GrMeshDrawTarget* target,
                           FlushInfo* flushInfo,
-                          skgpu::v1::SmallPathAtlasMgr* atlasMgr,
-                          skgpu::v1::SmallPathShapeData* shapeData,
+                          skgpu::ganesh::SmallPathAtlasMgr* atlasMgr,
+                          skgpu::ganesh::SmallPathShapeData* shapeData,
                           const GrStyledShape& shape,
                           const SkMatrix& ctm) const {
         const SkRect& bounds = shape.bounds();
@@ -517,7 +513,7 @@ private:
     void writePathVertices(VertexWriter& vertices,
                            const VertexColor& color,
                            const SkMatrix& ctm,
-                           const skgpu::v1::SmallPathShapeData* shapeData) const {
+                           const skgpu::ganesh::SmallPathShapeData* shapeData) const {
         SkRect translatedBounds(shapeData->fBounds);
         if (!fUsesDistanceField) {
             translatedBounds.offset(SkScalarFloorToScalar(ctm.get(SkMatrix::kMTransX)),
@@ -527,10 +523,16 @@ private:
         // set up texture coordinates
         auto texCoords = VertexWriter::TriStripFromUVs(shapeData->fAtlasLocator.getUVs());
 
-        if (fUsesDistanceField && !ctm.hasPerspective()) {
-            vertices.writeQuad(GrQuad::MakeFromRect(translatedBounds, ctm),
-                               color,
-                               texCoords);
+        if (fUsesDistanceField) {
+            SkPoint pts[4];
+            SkPoint3 out[4];
+            translatedBounds.toQuad(pts);
+            ctm.mapHomogeneousPoints(out, pts, 4);
+
+            vertices << out[0] << color << texCoords.l << texCoords.t;
+            vertices << out[3] << color << texCoords.l << texCoords.b;
+            vertices << out[1] << color << texCoords.r << texCoords.t;
+            vertices << out[2] << color << texCoords.r << texCoords.b;
         } else {
             vertices.writeQuad(VertexWriter::TriStripFromRect(translatedBounds),
                                color,
@@ -606,26 +608,31 @@ private:
         const SkMatrix& thisCtm = this->fShapes[0].fViewMatrix;
         const SkMatrix& thatCtm = that->fShapes[0].fViewMatrix;
 
-        if (thisCtm.hasPerspective() != thatCtm.hasPerspective()) {
-            return CombineResult::kCannotCombine;
-        }
-
-        // We can position on the cpu unless we're in perspective,
-        // but also need to make sure local matrices are identical
-        if ((thisCtm.hasPerspective() || fHelper.usesLocalCoords()) &&
-            !SkMatrixPriv::CheapEqual(thisCtm, thatCtm)) {
-            return CombineResult::kCannotCombine;
-        }
-
-        // Depending on the ctm we may have a different shader for SDF paths
         if (this->usesDistanceField()) {
+            // Need to make sure local matrices are identical
+            if (fHelper.usesLocalCoords() && !SkMatrixPriv::CheapEqual(thisCtm, thatCtm)) {
+                return CombineResult::kCannotCombine;
+            }
+
+            // Depending on the ctm we may have a different shader for SDF paths
             if (thisCtm.isScaleTranslate() != thatCtm.isScaleTranslate() ||
                 thisCtm.isSimilarity() != thatCtm.isSimilarity()) {
                 return CombineResult::kCannotCombine;
             }
+        } else {
+            if (thisCtm.hasPerspective() != thatCtm.hasPerspective()) {
+                return CombineResult::kCannotCombine;
+            }
+
+            // We can position on the cpu unless we're in perspective,
+            // but also need to make sure local matrices are identical
+            if ((thisCtm.hasPerspective() || fHelper.usesLocalCoords()) &&
+                !SkMatrixPriv::CheapEqual(thisCtm, thatCtm)) {
+                return CombineResult::kCannotCombine;
+            }
         }
 
-        fShapes.push_back_n(that->fShapes.count(), that->fShapes.begin());
+        fShapes.push_back_n(that->fShapes.size(), that->fShapes.begin());
         fWideColor |= that->fWideColor;
         return CombineResult::kMerged;
     }
@@ -649,7 +656,7 @@ private:
         SkMatrix      fViewMatrix;
     };
 
-    SkSTArray<1, Entry> fShapes;
+    STArray<1, Entry> fShapes;
     Helper fHelper;
     bool fGammaCorrect;
     bool fWideColor;
@@ -723,7 +730,7 @@ bool SmallPathRenderer::onDrawPath(const DrawPathArgs& args) {
     return true;
 }
 
-} // namespace skgpu::v1
+}  // namespace skgpu::ganesh
 
 #if GR_TEST_UTILS
 
@@ -733,8 +740,14 @@ GR_DRAW_OP_TEST_DEFINE(SmallPathOp) {
 
     // This path renderer only allows fill styles.
     GrStyledShape shape(GrTest::TestPath(random), GrStyle::SimpleFill());
-    return skgpu::v1::SmallPathOp::Make(context, std::move(paint), shape, viewMatrix, gammaCorrect,
-                                        GrGetRandomStencil(random, context));
+    return skgpu::ganesh::SmallPathOp::Make(context,
+                                            std::move(paint),
+                                            shape,
+                                            viewMatrix,
+                                            gammaCorrect,
+                                            GrGetRandomStencil(random, context));
 }
 
 #endif // GR_TEST_UTILS
+
+#endif // SK_ENABLE_OPTIMIZE_SIZE

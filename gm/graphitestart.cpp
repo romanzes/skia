@@ -8,23 +8,25 @@
 #include "gm/gm.h"
 #include "include/core/SkBitmap.h"
 #include "include/core/SkCanvas.h"
+#include "include/core/SkColorFilter.h"
 #include "include/core/SkColorSpace.h"
 #include "include/core/SkImage.h"
 #include "include/core/SkPaint.h"
 #include "include/core/SkRRect.h"
 #include "include/effects/SkGradientShader.h"
 #include "include/gpu/GrRecordingContext.h"
+#include "src/core/SkColorFilterPriv.h"
 #include "tools/Resources.h"
 #include "tools/ToolUtils.h"
 
 namespace {
 
-sk_sp<SkShader> create_gradient_shader(SkRect r) {
+sk_sp<SkShader> create_gradient_shader(SkRect r,
+                                       const std::array<SkColor, 3>& colors,
+                                       const std::array<float, 3>& offsets) {
     SkPoint pts[2] = { {r.fLeft, r.fTop}, {r.fRight, r.fTop} };
-    SkColor colors[] = { SK_ColorRED, SK_ColorGREEN, SK_ColorBLUE };
-    float offsets[] = { 0.0f, 0.75f, 1.0f };
 
-    return SkGradientShader::MakeLinear(pts, colors, offsets, SK_ARRAY_COUNT(colors),
+    return SkGradientShader::MakeLinear(pts, colors.data(), offsets.data(), std::size(colors),
                                         SkTileMode::kClamp);
 }
 
@@ -56,10 +58,13 @@ sk_sp<SkShader> create_image_shader(SkCanvas* destCanvas, SkTileMode tmX, SkTile
         bitmap.setImmutable();
     }
 
-    sk_sp<SkImage> img = SkImage::MakeFromBitmap(bitmap);
+    sk_sp<SkImage> img = SkImages::RasterFromBitmap(bitmap);
     img = ToolUtils::MakeTextureImage(destCanvas, std::move(img));
-
-    return img->makeShader(tmX, tmY, SkSamplingOptions());
+    if (img) {
+        return img->makeShader(tmX, tmY, SkSamplingOptions());
+    } else {
+        return nullptr;
+    }
 }
 
 sk_sp<SkShader> create_blend_shader(SkCanvas* destCanvas, SkBlendMode bm) {
@@ -72,7 +77,16 @@ sk_sp<SkShader> create_blend_shader(SkCanvas* destCanvas, SkBlendMode bm) {
                                                 SkTileMode::kRepeat, SkTileMode::kRepeat));
 }
 
-void draw_image_shader_tile(SkCanvas* canvas) {
+sk_sp<SkColorFilter> create_grayscale_colorfilter() {
+    float matrix[20] = {};
+    matrix[0] = matrix[5] = matrix[10] = 0.2126f;
+    matrix[1] = matrix[6] = matrix[11] = 0.7152f;
+    matrix[2] = matrix[7] = matrix[12] = 0.0722f;
+    matrix[18] = 1.0f;
+    return SkColorFilters::Matrix(matrix);
+}
+
+void draw_image_shader_tile(SkCanvas* canvas, SkRect clipRect) {
     SkPaint p;
     p.setShader(create_image_shader(canvas, SkTileMode::kClamp, SkTileMode::kRepeat));
 
@@ -85,6 +99,7 @@ void draw_image_shader_tile(SkCanvas* canvas) {
     path.close();
 
     canvas->save();
+        canvas->clipRect(clipRect);
         canvas->scale(0.5f, 0.5f);
         canvas->drawPath(path, p);
 
@@ -96,12 +111,15 @@ void draw_image_shader_tile(SkCanvas* canvas) {
     canvas->restore();
 }
 
-void draw_gradient_tile(SkCanvas* canvas) {
+void draw_gradient_tile(SkCanvas* canvas, SkRect clipRect) {
     SkRect r{1, 1, 127, 127};
     SkPaint p;
-    p.setShader(create_gradient_shader(r));
+    p.setShader(create_gradient_shader(r,
+                                       { SK_ColorRED, SK_ColorGREEN, SK_ColorBLUE },
+                                       { 0.0f, 0.75f, 1.0f }));
 
     canvas->save();
+        canvas->clipRect(clipRect);
         canvas->translate(128, 0);
         canvas->scale(0.5f, 0.5f);
         canvas->drawRect(r, p);
@@ -111,6 +129,80 @@ void draw_gradient_tile(SkCanvas* canvas) {
             canvas->translate(128, 0);
             canvas->drawRect(r, p);
         canvas->restore();
+    canvas->restore();
+}
+
+void draw_colorfilter_swatches(SkCanvas* canvas, SkRect clipRect) {
+    static constexpr int kNumTilesPerSide = 3;
+
+    SkSize tileSize = { clipRect.width() / kNumTilesPerSide, clipRect.height() / kNumTilesPerSide };
+
+    // Quantize to four colors
+    uint8_t table1[256];
+    for (int i = 0; i < 256; ++i) {
+        table1[i] = (i/64) * 85;
+    }
+
+    // table2 is a band-pass filter for 85-170.
+    // table3 re-expands that range to 0..255
+    uint8_t table2[256], table3[256];
+    for (int i = 0; i < 256; ++i) {
+        if (i >= 85 && i <= 170) {
+            table2[i] = i;
+            table3[i] = ((i - 85) / 85.0f) * 255.0f;
+        } else {
+            table2[i] = 0;
+            table3[i] = 0;
+        }
+    }
+
+    constexpr SkColor SK_ColorGREY = SkColorSetARGB(0xFF, 0x80, 0x80, 0x80);
+
+    sk_sp<SkColorFilter> colorFilters[kNumTilesPerSide*kNumTilesPerSide];
+    static const std::array<SkColor, 3> kGradientColors[kNumTilesPerSide*kNumTilesPerSide] = {
+            { SK_ColorBLACK, SK_ColorGREY, SK_ColorWHITE },
+            { SK_ColorBLACK, SK_ColorGREY, SK_ColorWHITE },
+            { SK_ColorBLACK, SK_ColorGREY, SK_ColorWHITE },
+            { SK_ColorBLACK, SK_ColorGREY, SK_ColorWHITE },
+            { 0x00000000,    0x80000000,   0xFF000000    },  // the Gaussian CF uses alpha only
+            { SK_ColorBLACK, SK_ColorGREY, SK_ColorWHITE },
+            { SK_ColorBLACK, SK_ColorGREY, SK_ColorWHITE },
+            { SK_ColorBLACK, SK_ColorGREY, SK_ColorWHITE },
+            { SK_ColorBLACK, SK_ColorGREY, SK_ColorWHITE },
+    };
+
+    colorFilters[0] = SkColorFilters::Lighting(SK_ColorLTGRAY, 0xFF440000);
+    colorFilters[1] = SkColorFilters::Table(table1);
+    colorFilters[2] = SkColorFilters::Compose(SkColorFilters::TableARGB(nullptr, table3,
+                                                                        table3, table3),
+                                              SkColorFilters::TableARGB(nullptr, table2,
+                                                                        table2, table2));
+    colorFilters[3] = SkColorFilters::Blend(SK_ColorGREEN, SkBlendMode::kMultiply);
+    colorFilters[4] = SkColorFilterPriv::MakeGaussian();
+
+    colorFilters[5] = SkColorFilters::LinearToSRGBGamma();
+    colorFilters[6] = SkColorFilters::SRGBToLinearGamma();
+
+    SkPaint p;
+
+    canvas->save();
+        canvas->clipRect(clipRect);
+        canvas->translate(clipRect.fLeft, clipRect.fTop);
+
+        for (int y = 0; y < kNumTilesPerSide; ++y) {
+            for (int x = 0; x < kNumTilesPerSide; ++x) {
+                SkRect r = SkRect::MakeXYWH(x * tileSize.width(), y * tileSize.height(),
+                                            tileSize.width(), tileSize.height()).makeInset(1.0f,
+                                                                                           1.0f);
+                int colorFilterIndex = x*kNumTilesPerSide+y;
+                p.setShader(create_gradient_shader(r,
+                                                   kGradientColors[colorFilterIndex],
+                                                   { 0.0f, 0.5f, 1.0f }));
+                p.setColorFilter(colorFilters[colorFilterIndex]);
+                canvas->drawRect(r, p);
+            }
+        }
+
     canvas->restore();
 }
 
@@ -166,8 +258,11 @@ public:
     }
 
 protected:
-    static const int kWidth = 256;
-    static const int kHeight = 384;
+    static constexpr int kTileWidth = 128;
+    static constexpr int kTileHeight = 128;
+    static constexpr int kWidth = 3 * kTileWidth;
+    static constexpr int kHeight = 3 * kTileHeight;
+    static constexpr int kClipInset = 4;
 
     SkString onShortName() override {
         return SkString("graphitestart");
@@ -179,37 +274,90 @@ protected:
 
     void onDraw(SkCanvas* canvas) override {
 
+        const SkRect clipRect = SkRect::MakeWH(kWidth, kHeight).makeInset(kClipInset, kClipInset);
+
         canvas->save();
-        canvas->clipRRect(SkRRect::MakeRectXY({16.f, 16.f, 240.f, 366.f}, 32.f, 32.f), true);
+        canvas->clipRRect(SkRRect::MakeRectXY(clipRect, 32.f, 32.f), true);
 
-        // UL corner
-        draw_image_shader_tile(canvas);
+        // Upper-left corner
+        draw_image_shader_tile(canvas, SkRect::MakeXYWH(0, 0, kTileWidth, kTileHeight));
 
-        // UR corner
-        draw_gradient_tile(canvas);
+        // Upper-middle tile
+        draw_gradient_tile(canvas, SkRect::MakeXYWH(kTileWidth, 0, kTileWidth, kTileHeight));
 
-        // LL corner
+        // Upper-right corner
+        draw_colorfilter_swatches(canvas, SkRect::MakeXYWH(2*kTileWidth, 0,
+                                                           kTileWidth, kTileWidth));
+
+        // Middle-left tile
         {
             SkPaint p;
             p.setColor(SK_ColorRED);
-            canvas->drawRect({2, 129, 127, 255}, p);
+
+            SkRect r = SkRect::MakeXYWH(0, kTileHeight, kTileWidth, kTileHeight);
+            canvas->drawRect(r.makeInset(1.0f, 1.0f), p);
         }
 
-        // LR corner
+        // Middle-middle tile
         {
             SkPaint p;
             p.setShader(create_blend_shader(canvas, SkBlendMode::kModulate));
-            canvas->drawRect({129, 129, 255, 255}, p);
+
+            SkRect r = SkRect::MakeXYWH(kTileWidth, kTileHeight, kTileWidth, kTileHeight);
+            canvas->drawRect(r.makeInset(1.0f, 1.0f), p);
+        }
+
+        // Middle-right tile
+        {
+            sk_sp<SkImage> image(GetResourceAsImage("images/mandrill_128.png"));
+            sk_sp<SkShader> shader;
+
+            if (image) {
+                shader = image->makeShader(SkTileMode::kRepeat, SkTileMode::kRepeat, {});
+                shader = shader->makeWithColorFilter(create_grayscale_colorfilter());
+            }
+
+            SkPaint p;
+            p.setShader(std::move(shader));
+
+            SkRect r = SkRect::MakeXYWH(2*kTileWidth, kTileHeight, kTileWidth, kTileHeight);
+            canvas->drawRect(r.makeInset(1.0f, 1.0f), p);
         }
 
         canvas->restore();
 
-#ifdef SK_GRAPHITE_ENABLED
+        // Bottom-left corner
+#if defined(SK_GRAPHITE)
         // TODO: failing serialize test on Linux, not sure what's going on
-        canvas->writePixels(fBitmap, 0, 256);
+        canvas->writePixels(fBitmap, 0, 2*kTileHeight);
 #endif
 
-        draw_blend_mode_swatches(canvas, SkRect::MakeXYWH(128, 256, 128, 128));
+        // Bottom-middle tile
+        draw_blend_mode_swatches(canvas, SkRect::MakeXYWH(kTileWidth, 2*kTileHeight,
+                                                          kTileWidth, kTileHeight));
+
+        // Bottom-right corner
+        {
+            const SkRect kTile = SkRect::MakeXYWH(2*kTileWidth, 2*kTileHeight,
+                                                  kTileWidth, kTileHeight);
+
+            SkPaint circlePaint;
+            circlePaint.setColor(SK_ColorBLUE);
+            circlePaint.setBlendMode(SkBlendMode::kSrc);
+
+            canvas->clipRect(kTile);
+            canvas->drawRect(kTile.makeInset(10, 20), circlePaint);
+
+            SkPaint restorePaint;
+            restorePaint.setBlendMode(SkBlendMode::kPlus);
+
+            canvas->saveLayer(nullptr, &restorePaint);
+                circlePaint.setColor(SK_ColorRED);
+                circlePaint.setBlendMode(SkBlendMode::kSrc);
+
+                canvas->drawRect(kTile.makeInset(15, 25), circlePaint);
+            canvas->restore();
+        }
     }
 
 private:

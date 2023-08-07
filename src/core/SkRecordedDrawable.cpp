@@ -7,13 +7,14 @@
 
 #include "include/core/SkMatrix.h"
 #include "include/core/SkPictureRecorder.h"
+#include "src/core/SkBigPicture.h"
 #include "src/core/SkPictureData.h"
 #include "src/core/SkPicturePlayback.h"
 #include "src/core/SkPictureRecord.h"
 #include "src/core/SkRecordDraw.h"
 #include "src/core/SkRecordedDrawable.h"
 
-#if SK_SUPPORT_GPU
+#if defined(SK_GANESH)
 #include "include/private/chromium/Slug.h"
 #endif
 
@@ -40,7 +41,7 @@ void SkRecordedDrawable::onDraw(SkCanvas* canvas) {
     SkRecordDraw(*fRecord, canvas, nullptr, drawables, drawableCount, fBBH.get(), nullptr);
 }
 
-SkPicture* SkRecordedDrawable::onNewPictureSnapshot() {
+sk_sp<SkPicture> SkRecordedDrawable::onMakePictureSnapshot() {
     // TODO: should we plumb-down the BBHFactory and recordFlags from our host
     //       PictureRecorder?
     std::unique_ptr<SkBigPicture::SnapshotArray> pictList{
@@ -51,7 +52,7 @@ SkPicture* SkRecordedDrawable::onNewPictureSnapshot() {
     for (int i = 0; pictList && i < pictList->count(); i++) {
         subPictureBytes += pictList->begin()[i]->approximateBytesUsed();
     }
-    return new SkBigPicture(fBounds, fRecord, std::move(pictList), fBBH, subPictureBytes);
+    return sk_make_sp<SkBigPicture>(fBounds, fRecord, std::move(pictList), fBBH, subPictureBytes);
 }
 
 void SkRecordedDrawable::flatten(SkWriteBuffer& buffer) const {
@@ -71,9 +72,10 @@ void SkRecordedDrawable::flatten(SkWriteBuffer& buffer) const {
     }
 
     // Record the draw commands.
+    SkDrawable* const* drawables = fDrawableList ? fDrawableList->begin() : nullptr;
+    int drawableCount            = fDrawableList ? fDrawableList->count() : 0;
     pictureRecord.beginRecording();
-    SkRecordDraw(*fRecord, &pictureRecord, nullptr, fDrawableList->begin(), fDrawableList->count(),
-                bbh, nullptr);
+    SkRecordDraw(*fRecord, &pictureRecord, nullptr, drawables, drawableCount, bbh, nullptr);
     pictureRecord.endRecording();
 
     // Flatten the recorded commands and drawables.

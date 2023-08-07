@@ -38,7 +38,7 @@ static sk_sp<SkImage> make_gradient_circle(int width, int height) {
     SkScalar x = SkIntToScalar(width / 2);
     SkScalar y = SkIntToScalar(height / 2);
     SkScalar radius = std::min(x, y) * 0.8f;
-    auto surface(SkSurface::MakeRasterN32Premul(width, height));
+    auto surface(SkSurfaces::Raster(SkImageInfo::MakeN32Premul(width, height)));
     SkCanvas* canvas = surface->getCanvas();
     canvas->clear(0x00000000);
     SkColor colors[2];
@@ -125,7 +125,7 @@ protected:
         for (int xOffset = 0; xOffset < 80; xOffset += 16) {
             canvas->save();
             bounds.fLeft = SkIntToScalar(xOffset);
-            for (size_t i = 0; i < SK_ARRAY_COUNT(filters); ++i) {
+            for (size_t i = 0; i < std::size(filters); ++i) {
                 draw_clipped_filter(canvas, filters[i], i, r, bounds);
                 canvas->translate(r.width() + margin, 0);
             }
@@ -136,7 +136,7 @@ protected:
 
         sk_sp<SkImageFilter> rectFilter(SkImageFilters::Shader(
                 SkPerlinNoiseShader::MakeFractalNoise(0.1f, 0.05f, 1, 0)));
-        canvas->translate(SK_ARRAY_COUNT(filters)*(r.width() + margin), 0);
+        canvas->translate(std::size(filters)*(r.width() + margin), 0);
         for (int xOffset = 0; xOffset < 80; xOffset += 16) {
             bounds.fLeft = SkIntToScalar(xOffset);
             draw_clipped_filter(canvas, rectFilter, 0, r, bounds);

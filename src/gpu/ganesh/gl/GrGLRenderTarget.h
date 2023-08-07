@@ -40,7 +40,9 @@ public:
                                                GrGLFormat,
                                                int sampleCount,
                                                const IDs&,
-                                               int stencilBits);
+                                               int stencilBits,
+                                               skgpu::Protected,
+                                               std::string_view label);
 
     bool isFBO0(bool multisample) const {
         return (multisample ? fMultisampleFBOID : fSingleSampleFBOID) == 0;
@@ -99,6 +101,7 @@ protected:
                      GrGLFormat,
                      int sampleCount,
                      const IDs&,
+                     skgpu::Protected,
                      std::string_view label);
 
     void init(GrGLFormat, const IDs&);
@@ -119,6 +122,7 @@ private:
                      int sampleCount,
                      const IDs&,
                      sk_sp<GrGLAttachment> stencil,
+                     skgpu::Protected,
                      std::string_view label);
 
     void setFlags(const GrGLCaps&, const IDs&);

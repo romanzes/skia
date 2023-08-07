@@ -18,17 +18,19 @@
 #include "include/core/SkTypes.h"
 #include "include/core/SkVertices.h"
 #include "include/private/SkColorData.h"
-#include "include/private/SkFloatingPoint.h"
-#include "include/private/SkTPin.h"
-#include "include/private/SkTo.h"
-#include "include/private/SkVx.h"
-#include "src/core/SkArenaAlloc.h"
+#include "include/private/base/SkFloatingPoint.h"
+#include "include/private/base/SkMath.h"
+#include "include/private/base/SkTPin.h"
+#include "include/private/base/SkTo.h"
+#include "src/base/SkArenaAlloc.h"
+#include "src/base/SkVx.h"
 #include "src/core/SkColorSpacePriv.h"
 #include "src/core/SkConvertPixels.h"
 #include "src/core/SkGeometry.h"
 
-#include <string.h>
 #include <algorithm>
+#include <cstdint>
+#include <cstring>
 
 namespace {
     enum CubicCtrlPts {

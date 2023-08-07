@@ -16,6 +16,7 @@
 #include "include/core/SkSurfaceProps.h"
 #include "include/effects/SkPerlinNoiseShader.h"
 #include "include/gpu/GrDirectContext.h"
+#include "include/gpu/ganesh/SkSurfaceGanesh.h"
 #include "src/core/SkOSFile.h"
 #include "src/core/SkTaskGroup.h"
 #include "src/gpu/ganesh/GrCaps.h"
@@ -499,13 +500,13 @@ int main(int argc, char** argv) {
     const SkCommandLineConfigGpu* config = nullptr; // Initialize for spurious warning.
     SkCommandLineConfigArray configs;
     ParseConfigs(FLAGS_config, &configs);
-    if (configs.count() != 1 || !(config = configs[0]->asConfigGpu())) {
+    if (configs.size() != 1 || !(config = configs[0]->asConfigGpu())) {
         exitf(ExitErr::kUsage, "invalid config '%s': must specify one (and only one) GPU config",
                                join(FLAGS_config).c_str());
     }
 
     // Parse the skp.
-    if (FLAGS_src.count() != 1) {
+    if (FLAGS_src.size() != 1) {
         exitf(ExitErr::kUsage,
               "invalid input '%s': must specify a single .skp or .svg file, or 'warmup'",
               join(FLAGS_src).c_str());
@@ -600,7 +601,7 @@ int main(int argc, char** argv) {
             width, height, config->getColorType(), config->getAlphaType(), config->refColorSpace());
     SkSurfaceProps props(config->getSurfaceFlags(), kRGB_H_SkPixelGeometry);
     sk_sp<SkSurface> surface =
-        SkSurface::MakeRenderTarget(ctx, SkBudgeted::kNo, info, config->getSamples(), &props);
+            SkSurfaces::RenderTarget(ctx, skgpu::Budgeted::kNo, info, config->getSamples(), &props);
     if (!surface) {
         exitf(ExitErr::kUnavailable, "failed to create %ix%i render target for config %s",
                                      width, height, config->getTag().c_str());
@@ -649,7 +650,7 @@ int main(int argc, char** argv) {
         if (!mkdir_p(SkOSPath::Dirname(FLAGS_png[0]))) {
             exitf(ExitErr::kIO, "failed to create directory for png \"%s\"", FLAGS_png[0]);
         }
-        if (!ToolUtils::EncodeImageToFile(FLAGS_png[0], bmp, SkEncodedImageFormat::kPNG, 100)) {
+        if (!ToolUtils::EncodeImageToPngFile(FLAGS_png[0], bmp)) {
             exitf(ExitErr::kIO, "failed to save png to \"%s\"", FLAGS_png[0]);
         }
     }
@@ -728,7 +729,7 @@ bool mkdir_p(const SkString& dirname) {
 
 static SkString join(const CommandLineFlags::StringArray& stringArray) {
     SkString joined;
-    for (int i = 0; i < stringArray.count(); ++i) {
+    for (int i = 0; i < stringArray.size(); ++i) {
         joined.appendf(i ? " %s" : "%s", stringArray[i]);
     }
     return joined;
@@ -760,6 +761,6 @@ sk_gpu_test::FlushFinishTracker* GpuSync::newFlushTracker(GrDirectContext* conte
     // callback on the flush call. The finish callback will unref the tracker when called.
     tracker->ref();
 
-    fCurrentFlushIdx = (fCurrentFlushIdx + 1) % SK_ARRAY_COUNT(fFinishTrackers);
+    fCurrentFlushIdx = (fCurrentFlushIdx + 1) % std::size(fFinishTrackers);
     return tracker;
 }

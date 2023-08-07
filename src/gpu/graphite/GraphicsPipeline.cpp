@@ -9,10 +9,8 @@
 
 namespace skgpu::graphite {
 
-GraphicsPipeline::GraphicsPipeline(const Gpu* gpu) : Resource(gpu,
-                                                              Ownership::kOwned,
-                                                              SkBudgeted::kYes) {
-}
+GraphicsPipeline::GraphicsPipeline(const SharedContext* sharedContext)
+        : Resource(sharedContext, Ownership::kOwned, skgpu::Budgeted::kYes, /*gpuMemorySize=*/0) {}
 
 GraphicsPipeline::~GraphicsPipeline() {
 }

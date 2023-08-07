@@ -4,6 +4,7 @@
 
 #include "experimental/sktext/include/Types.h"
 #include "experimental/sktext/src/Line.h"
+#include "include/private/base/SkTArray.h"
 #include "modules/skshaper/include/SkShaper.h"
 
 namespace skia {
@@ -24,7 +25,8 @@ class LogicalRun {
     TextRange getTextRange() const { return fUtf16Range; }
 
     SkScalar calculateWidth(GlyphRange glyphRange) const {
-        SkASSERT(glyphRange.fStart <= glyphRange.fEnd && glyphRange.fEnd < fPositions.size());
+        SkASSERT(glyphRange.fStart <= glyphRange.fEnd &&
+                 glyphRange.fEnd < SkToSizeT(fPositions.size()));
         return fPositions[glyphRange.fEnd].fX - fPositions[glyphRange.fStart].fX;
     }
     SkScalar calculateWidth(GlyphIndex start, GlyphIndex end) const {
@@ -42,8 +44,7 @@ class LogicalRun {
 
     template <typename Callback>
     void forEachCluster(Callback&& callback) {
-        GlyphIndex glyph = 0;
-        for(; glyph < fClusters.size(); ++glyph) {
+        for(int glyph = 0; glyph < fClusters.size(); ++glyph) {
             callback(glyph, fRunStart + fClusters[glyph]);
         }
     }
@@ -57,7 +58,7 @@ class LogicalRun {
     // Convert indexes into utf16 and also shift them to be on the entire text scale
     template <typename Callback>
     void convertClusterIndexes(Callback&& callback) {
-        for (size_t glyph = 0; glyph < fClusters.size(); ++glyph) {
+        for (int glyph = 0; glyph < fClusters.size(); ++glyph) {
             fClusters[glyph] = callback(fClusters[glyph]);
         }
     }
@@ -74,11 +75,11 @@ class LogicalRun {
     TextRange fUtf16Range;
     TextIndex fRunStart;
     SkScalar  fRunOffset;
-    SkSTArray<128, SkGlyphID, true> fGlyphs;
-    SkSTArray<128, SkPoint, true> fPositions;
-    SkSTArray<128, SkPoint, true> fOffsets;
-    SkSTArray<128, uint32_t, true> fClusters;
-    SkSTArray<128, SkRect, true> fBounds;
+    skia_private::STArray<128, SkGlyphID, true> fGlyphs;
+    skia_private::STArray<128, SkPoint, true> fPositions;
+    skia_private::STArray<128, SkPoint, true> fOffsets;
+    skia_private::STArray<128, uint32_t, true> fClusters;
+    skia_private::STArray<128, SkRect, true> fBounds;
 
     uint8_t fBidiLevel;
 };

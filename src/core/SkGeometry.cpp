@@ -5,16 +5,25 @@
  * found in the LICENSE file.
  */
 
+#include "src/core/SkGeometry.h"
+
 #include "include/core/SkMatrix.h"
 #include "include/core/SkPoint3.h"
-#include "include/private/SkTPin.h"
-#include "include/private/SkVx.h"
-#include "src/core/SkGeometry.h"
+#include "include/core/SkRect.h"
+#include "include/private/base/SkDebug.h"
+#include "include/private/base/SkFloatingPoint.h"
+#include "include/private/base/SkTPin.h"
+#include "include/private/base/SkTo.h"
+#include "src/base/SkBezierCurves.h"
+#include "src/base/SkCubics.h"
+#include "src/base/SkVx.h"
 #include "src/core/SkPointPriv.h"
 
 #include <algorithm>
-#include <tuple>
-#include <utility>
+#include <array>
+#include <cmath>
+#include <cstddef>
+#include <cstdint>
 
 namespace {
 
@@ -727,7 +736,7 @@ int SkChopCubicAtXExtrema(const SkPoint src[4], SkPoint dst[10]) {
     C = d - 3c + 3b - a
     (BxCy - ByCx)t^2 + (AxCy - AyCx)t + AxBy - AyBx == 0
 */
-int SkFindCubicInflections(const SkPoint src[4], SkScalar tValues[]) {
+int SkFindCubicInflections(const SkPoint src[4], SkScalar tValues[2]) {
     SkScalar    Ax = src[1].fX - src[0].fX;
     SkScalar    Ay = src[1].fY - src[0].fY;
     SkScalar    Bx = src[2].fX - 2 * src[1].fX + src[0].fX;
@@ -741,7 +750,7 @@ int SkFindCubicInflections(const SkPoint src[4], SkScalar tValues[]) {
                                tValues);
 }
 
-int SkChopCubicAtInflections(const SkPoint src[], SkPoint dst[10]) {
+int SkChopCubicAtInflections(const SkPoint src[4], SkPoint dst[10]) {
     SkScalar    tValues[2];
     int         count = SkFindCubicInflections(src, tValues);
 
@@ -898,7 +907,7 @@ static int collaps_duplicates(SkScalar array[], int count) {
 
 #ifdef SK_DEBUG
 
-#define TEST_COLLAPS_ENTRY(array)   array, SK_ARRAY_COUNT(array)
+#define TEST_COLLAPS_ENTRY(array)   array, std::size(array)
 
 static void test_collaps_duplicates() {
     static bool gOnce;
@@ -924,7 +933,7 @@ static void test_collaps_duplicates() {
         { TEST_COLLAPS_ENTRY(src5), 2 },
         { TEST_COLLAPS_ENTRY(src6), 3 },
     };
-    for (size_t i = 0; i < SK_ARRAY_COUNT(data); ++i) {
+    for (size_t i = 0; i < std::size(data); ++i) {
         SkScalar dst[3];
         memcpy(dst, data[i].fData, data[i].fCount * sizeof(dst[0]));
         int count = collaps_duplicates(dst, data[i].fCount);
@@ -1138,31 +1147,72 @@ SkScalar SkFindCubicCusp(const SkPoint src[4]) {
     return -1;
 }
 
-#include "src/pathops/SkPathOpsCubic.h"
+static bool close_enough_to_zero(double x) {
+    return std::fabs(x) < 0.00001;
+}
 
-typedef int (SkDCubic::*InterceptProc)(double intercept, double roots[3]) const;
+static bool first_axis_intersection(const double coefficients[8], bool yDirection,
+                                    double axisIntercept, double* solution) {
+    auto [A, B, C, D] = SkBezierCubic::ConvertToPolynomial(coefficients, yDirection);
+    D -= axisIntercept;
+    double roots[3] = {0, 0, 0};
+    int count = SkCubics::RootsValidT(A, B, C, D, roots);
+    if (count == 0) {
+        return false;
+    }
+    // Verify that at least one of the roots is accurate.
+    for (int i = 0; i < count; i++) {
+        if (close_enough_to_zero(SkCubics::EvalAt(A, B, C, D, roots[i]))) {
+            *solution = roots[i];
+            return true;
+        }
+    }
+    // None of the roots returned by our normal cubic solver were correct enough
+    // (e.g. https://bugs.chromium.org/p/oss-fuzz/issues/detail?id=55732)
+    // So we need to fallback to a more accurate solution.
+    count = SkCubics::BinarySearchRootsValidT(A, B, C, D, roots);
+    if (count == 0) {
+        return false;
+    }
+    for (int i = 0; i < count; i++) {
+        if (close_enough_to_zero(SkCubics::EvalAt(A, B, C, D, roots[i]))) {
+            *solution = roots[i];
+            return true;
+        }
+    }
+    return false;
+}
 
-static bool cubic_dchop_at_intercept(const SkPoint src[4], SkScalar intercept, SkPoint dst[7],
-                                     InterceptProc method) {
-    SkDCubic cubic;
-    double roots[3];
-    int count = (cubic.set(src).*method)(intercept, roots);
-    if (count > 0) {
-        SkDCubicPair pair = cubic.chopAt(roots[0]);
-        for (int i = 0; i < 7; ++i) {
-            dst[i] = pair.pts[i].asSkPoint();
+bool SkChopMonoCubicAtY(const SkPoint src[4], SkScalar y, SkPoint dst[7]) {
+    double coefficients[8] = {src[0].fX, src[0].fY, src[1].fX, src[1].fY,
+                              src[2].fX, src[2].fY, src[3].fX, src[3].fY};
+    double solution = 0;
+    if (first_axis_intersection(coefficients, true, y, &solution)) {
+        double cubicPair[14];
+        SkBezierCubic::Subdivide(coefficients, solution, cubicPair);
+        for (int i = 0; i < 7; i ++) {
+            dst[i].fX = sk_double_to_float(cubicPair[i*2]);
+            dst[i].fY = sk_double_to_float(cubicPair[i*2 + 1]);
         }
         return true;
     }
     return false;
 }
 
-bool SkChopMonoCubicAtY(SkPoint src[4], SkScalar y, SkPoint dst[7]) {
-    return cubic_dchop_at_intercept(src, y, dst, &SkDCubic::horizontalIntersect);
-}
-
-bool SkChopMonoCubicAtX(SkPoint src[4], SkScalar x, SkPoint dst[7]) {
-    return cubic_dchop_at_intercept(src, x, dst, &SkDCubic::verticalIntersect);
+bool SkChopMonoCubicAtX(const SkPoint src[4], SkScalar x, SkPoint dst[7]) {
+    double coefficients[8] = {src[0].fX, src[0].fY, src[1].fX, src[1].fY,
+                                  src[2].fX, src[2].fY, src[3].fX, src[3].fY};
+    double solution = 0;
+    if (first_axis_intersection(coefficients, false, x, &solution)) {
+        double cubicPair[14];
+        SkBezierCubic::Subdivide(coefficients, solution, cubicPair);
+        for (int i = 0; i < 7; i ++) {
+            dst[i].fX = sk_double_to_float(cubicPair[i*2]);
+            dst[i].fY = sk_double_to_float(cubicPair[i*2 + 1]);
+        }
+        return true;
+    }
+    return false;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -1346,6 +1396,7 @@ static SkScalar subdivide_w_value(SkScalar w) {
     return SkScalarSqrt(SK_ScalarHalf + w * SK_ScalarHalf);
 }
 
+#if defined(SK_SUPPORT_LEGACY_CONIC_CHOP)
 void SkConic::chop(SkConic * SK_RESTRICT dst) const {
     float2 scale = SkScalarInvert(SK_Scalar1 + fW);
     SkScalar newW = subdivide_w_value(fW);
@@ -1373,6 +1424,41 @@ void SkConic::chop(SkConic * SK_RESTRICT dst) const {
 
     dst[0].fW = dst[1].fW = newW;
 }
+#else
+void SkConic::chop(SkConic * SK_RESTRICT dst) const {
+
+    // Observe that scale will always be smaller than 1 because fW > 0.
+    const float scale = SkScalarInvert(SK_Scalar1 + fW);
+
+    // The subdivided control points below are the sums of the following three terms. Because the
+    // terms are multiplied by something <1, and the resulting control points lie within the
+    // control points of the original then the terms and the sums below will not overflow. Note
+    // that fW * scale approaches 1 as fW becomes very large.
+    float2 t0 = from_point(fPts[0]) * scale;
+    float2 t1 = from_point(fPts[1]) * (fW * scale);
+    float2 t2 = from_point(fPts[2]) * scale;
+
+    // Calculate the subdivided control points
+    const SkPoint p1 = to_point(t0 + t1);
+    const SkPoint p3 = to_point(t1 + t2);
+
+    // p2 = (t0 + 2*t1 + t2) / 2. Divide the terms by 2 before the sum to keep the sum for p2
+    // from overflowing.
+    const SkPoint p2 = to_point(0.5f * t0 + t1 + 0.5f * t2);
+
+    SkASSERT(p1.isFinite() && p2.isFinite() && p3.isFinite());
+
+    dst[0].fPts[0] = fPts[0];
+    dst[0].fPts[1] = p1;
+    dst[0].fPts[2] = p2;
+    dst[1].fPts[0] = p2;
+    dst[1].fPts[1] = p3;
+    dst[1].fPts[2] = fPts[2];
+
+    // Update w.
+    dst[0].fW = dst[1].fW = subdivide_w_value(fW);
+}
+#endif  // SK_SUPPORT_LEGACY_CONIC_CHOP
 
 /*
  *  "High order approximation of conic sections by quadratic splines"
@@ -1619,7 +1705,7 @@ bool SkConic::findMaxCurvature(SkScalar* t) const {
 }
 #endif
 
-SkScalar SkConic::TransformW(const SkPoint pts[], SkScalar w, const SkMatrix& matrix) {
+SkScalar SkConic::TransformW(const SkPoint pts[3], SkScalar w, const SkMatrix& matrix) {
     if (!matrix.hasPerspective()) {
         return w;
     }

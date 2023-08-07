@@ -9,11 +9,11 @@
 #define TessellationPathRenderer_DEFINED
 
 #include "include/gpu/GrTypes.h"
-#include "src/gpu/ganesh/v1/PathRenderer.h"
+#include "src/gpu/ganesh/PathRenderer.h"
 
 class GrCaps;
 
-namespace skgpu::v1 {
+namespace skgpu::ganesh {
 
 // This is the tie-in point for path rendering via PathTessellateOp. This path renderer draws
 // paths using a hybrid Red Book "stencil, then cover" method. Curves get linearized by GPU
@@ -32,6 +32,6 @@ private:
     void onStencilPath(const StencilPathArgs&) override;
 };
 
-} // namespace skgpu::v1
+}  // namespace skgpu::ganesh
 
 #endif // TessellationPathRenderer_DEFINED

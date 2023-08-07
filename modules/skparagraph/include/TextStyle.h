@@ -12,6 +12,7 @@
 #include "include/core/SkScalar.h"
 #include "modules/skparagraph/include/DartTypes.h"
 #include "modules/skparagraph/include/FontArguments.h"
+#include "modules/skparagraph/include/ParagraphPainter.h"
 #include "modules/skparagraph/include/TextShadow.h"
 
 // TODO: Make it external so the other platforms (Android) could use it
@@ -165,18 +166,44 @@ public:
     void setColor(SkColor color) { fColor = color; }
 
     bool hasForeground() const { return fHasForeground; }
-    SkPaint getForeground() const { return fForeground; }
-    void setForegroundColor(SkPaint paint) {
+    SkPaint getForeground() const {
+        const SkPaint* paint = std::get_if<SkPaint>(&fForeground);
+        return paint ? *paint : SkPaint();
+    }
+    ParagraphPainter::SkPaintOrID getForegroundPaintOrID() const {
+        return fForeground;
+    }
+    void setForegroundPaint(SkPaint paint) {
         fHasForeground = true;
         fForeground = std::move(paint);
+    }
+    // DEPRECATED: prefer `setForegroundPaint`.
+    void setForegroundColor(SkPaint paint) { setForegroundPaint(paint); }
+    // Set the foreground to a paint ID.  This is intended for use by clients
+    // that implement a custom ParagraphPainter that can not accept an SkPaint.
+    void setForegroundPaintID(ParagraphPainter::PaintID paintID) {
+        fHasForeground = true;
+        fForeground = paintID;
     }
     void clearForegroundColor() { fHasForeground = false; }
 
     bool hasBackground() const { return fHasBackground; }
-    SkPaint getBackground() const { return fBackground; }
-    void setBackgroundColor(SkPaint paint) {
+    SkPaint getBackground() const {
+        const SkPaint* paint = std::get_if<SkPaint>(&fBackground);
+        return paint ? *paint : SkPaint();
+    }
+    ParagraphPainter::SkPaintOrID getBackgroundPaintOrID() const {
+        return fBackground;
+    }
+    void setBackgroundPaint(SkPaint paint) {
         fHasBackground = true;
         fBackground = std::move(paint);
+    }
+    // DEPRECATED: prefer `setBackgroundPaint`.
+    void setBackgroundColor(SkPaint paint) { setBackgroundPaint(paint); }
+    void setBackgroundPaintID(ParagraphPainter::PaintID paintID) {
+        fHasBackground = true;
+        fBackground = paintID;
     }
     void clearBackgroundColor() { fHasBackground = false; }
 
@@ -260,7 +287,7 @@ public:
     void setPlaceholder() { fIsPlaceholder = true; }
 
 private:
-    static const std::vector<SkString> kDefaultFontFamilies;
+    static const std::vector<SkString>* kDefaultFontFamilies;
 
     Decoration fDecoration = {
             TextDecoration::kNoDecoration,
@@ -274,7 +301,7 @@ private:
 
     SkFontStyle fFontStyle;
 
-    std::vector<SkString> fFontFamilies = kDefaultFontFamilies;
+    std::vector<SkString> fFontFamilies = *kDefaultFontFamilies;
 
     SkScalar fFontSize = 14.0;
     SkScalar fHeight = 1.0;
@@ -291,9 +318,9 @@ private:
 
     SkColor fColor = SK_ColorWHITE;
     bool fHasBackground = false;
-    SkPaint fBackground;
+    ParagraphPainter::SkPaintOrID fBackground;
     bool fHasForeground = false;
-    SkPaint fForeground;
+    ParagraphPainter::SkPaintOrID fForeground;
 
     std::vector<TextShadow> fTextShadows;
 

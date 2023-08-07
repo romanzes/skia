@@ -9,30 +9,43 @@
 #define GrCaps_DEFINED
 
 #include "include/core/SkCapabilities.h"
-#include "include/core/SkImageInfo.h"
 #include "include/core/SkRefCnt.h"
-#include "include/core/SkString.h"
+#include "include/core/SkTypes.h"
 #include "include/gpu/GrDriverBugWorkarounds.h"
+#include "include/gpu/GrTypes.h"
+#include "include/private/base/SkTo.h"
 #include "include/private/gpu/ganesh/GrTypesPriv.h"
-#include "src/core/SkCompressedDataUtils.h"
 #include "src/gpu/Blend.h"
 #include "src/gpu/Swizzle.h"
 #include "src/gpu/ganesh/GrSamplerState.h"
 #include "src/gpu/ganesh/GrShaderCaps.h"
 #include "src/gpu/ganesh/GrSurfaceProxy.h"
 
+#include <algorithm>
+#include <cstddef>
+#include <cstdint>
+#include <memory>
+#include <tuple>
+#include <vector>
+
 class GrBackendFormat;
 class GrBackendRenderTarget;
-class GrBackendTexture;
-struct GrContextOptions;
 class GrProgramDesc;
 class GrProgramInfo;
+class GrRenderTarget;
 class GrRenderTargetProxy;
 class GrSurface;
 class SkJSONWriter;
+enum class SkTextureCompressionType;
+struct GrContextOptions;
+struct SkIRect;
+struct SkISize;
 
 namespace skgpu {
-class KeyBuilder;
+    class KeyBuilder;
+}
+namespace GrTest {
+    struct TestFormatColorTypeCombination;
 }
 
 /**
@@ -217,7 +230,19 @@ public:
 
     uint32_t maxPushConstantsSize() const { return fMaxPushConstantsSize; }
 
-    size_t transferBufferAlignment() const { return fTransferBufferAlignment; }
+    // Alignment requirement for row bytes in buffer<->texture transfers.
+    size_t transferBufferRowBytesAlignment() const { return fTransferBufferRowBytesAlignment; }
+
+    // Alignment requirement for offsets and size in buffer->buffer transfers.
+    size_t transferFromBufferToBufferAlignment() const {
+        return fTransferFromBufferToBufferAlignment;
+    }
+
+    // Alignment requirement for offset and size passed to in GrGpuBuffer::updateData when the
+    // preserve param is true.
+    size_t bufferUpdateDataPreserveAlignment() const {
+        return fBufferUpdateDataPreserveAlignment;
+    }
 
     virtual bool isFormatSRGB(const GrBackendFormat&) const = 0;
 
@@ -334,12 +359,13 @@ public:
 
     bool transferFromSurfaceToBufferSupport() const { return fTransferFromSurfaceToBufferSupport; }
     bool transferFromBufferToTextureSupport() const { return fTransferFromBufferToTextureSupport; }
+    bool transferFromBufferToBufferSupport()  const { return fTransferFromBufferToBufferSupport;  }
 
     bool suppressPrints() const { return fSuppressPrints; }
 
     size_t bufferMapThreshold() const {
         SkASSERT(fBufferMapThreshold >= 0);
-        return fBufferMapThreshold;
+        return static_cast<size_t>(fBufferMapThreshold);
     }
 
     /** True in environments that will issue errors if memory uploaded to buffers
@@ -351,6 +377,11 @@ public:
         performance hit to not doing it.
      */
     bool shouldInitializeTextures() const { return fShouldInitializeTextures; }
+
+    /**
+     * When a new GrGpuBuffer is created is it known to contain all zero bytes?
+     */
+    bool buffersAreInitiallyZero() const { return fBuffersAreInitiallyZero; }
 
     /** Returns true if the given backend supports importing AHardwareBuffers via the
      * GrAHardwarebufferImageGenerator. This will only ever be supported on Android devices with API
@@ -370,8 +401,8 @@ public:
     /**
      * Returns whether or not we will be able to do a copy given the passed in params
      */
-    bool canCopySurface(const GrSurfaceProxy* dst, const GrSurfaceProxy* src,
-                        const SkIRect& srcRect, const SkIPoint& dstPoint) const;
+    bool canCopySurface(const GrSurfaceProxy* dst, const SkIRect& dstRect,
+                        const GrSurfaceProxy* src, const SkIRect& srcRect) const;
 
     bool dynamicStateArrayGeometryProcessorTextureSupport() const {
         return fDynamicStateArrayGeometryProcessorTextureSupport;
@@ -427,7 +458,7 @@ public:
     /** These are used when creating a new texture internally. */
     GrBackendFormat getDefaultBackendFormat(GrColorType, GrRenderable) const;
 
-    virtual GrBackendFormat getBackendFormatFromCompressionType(SkImage::CompressionType) const = 0;
+    virtual GrBackendFormat getBackendFormatFromCompressionType(SkTextureCompressionType) const = 0;
 
     /**
      * The CLAMP_TO_BORDER wrap mode for texture coordinates was added to desktop GL in 1.3, and
@@ -499,6 +530,13 @@ public:
         return fAvoidDithering;
     }
 
+    bool disablePerspectiveSDFText() const {
+        return fDisablePerspectiveSDFText;
+    }
+
+    // anglebug.com/7796
+    bool avoidLineDraws() const { return fAvoidLineDraws; }
+
     /**
      * Checks whether the passed color type is renderable. If so, the same color type is passed
      * back along with the default format used for the color type. If not, provides an alternative
@@ -509,12 +547,7 @@ public:
                                                                            int sampleCount) const;
 
 #if GR_TEST_UTILS
-    struct TestFormatColorTypeCombination {
-        GrColorType fColorType;
-        GrBackendFormat fFormat;
-    };
-
-    virtual std::vector<TestFormatColorTypeCombination> getTestingCombinations() const = 0;
+    virtual std::vector<GrTest::TestFormatColorTypeCombination> getTestingCombinations() const = 0;
 #endif
 
 protected:
@@ -548,6 +581,7 @@ protected:
     bool fPreferFullscreenClears                     : 1;
     bool fTwoSidedStencilRefsAndMasksMustMatch       : 1;
     bool fMustClearUploadedBufferData                : 1;
+    bool fBuffersAreInitiallyZero                    : 1;
     bool fShouldInitializeTextures                   : 1;
     bool fSupportsAHardwareBufferImages              : 1;
     bool fHalfFloatVertexAttributeSupport            : 1;
@@ -558,6 +592,7 @@ protected:
     bool fPerformStencilClearsAsDraws                : 1;
     bool fTransferFromBufferToTextureSupport         : 1;
     bool fTransferFromSurfaceToBufferSupport         : 1;
+    bool fTransferFromBufferToBufferSupport          : 1;
     bool fWritePixelsRowBytesSupport                 : 1;
     bool fTransferPixelsToRowBytesSupport            : 1;
     bool fReadPixelsRowBytesSupport                  : 1;
@@ -571,6 +606,8 @@ protected:
     bool fNativeDrawIndexedIndirectIsBroken          : 1;
     bool fAvoidReorderingRenderTasks                 : 1;
     bool fAvoidDithering                             : 1;
+    bool fDisablePerspectiveSDFText                  : 1;
+    bool fAvoidLineDraws                             : 1;
 
     // ANGLE performance workaround
     bool fPreferVRAMUseOverFlushes                   : 1;
@@ -598,7 +635,9 @@ protected:
     int fMaxWindowRectangles;
     int fInternalMultisampleCount;
     uint32_t fMaxPushConstantsSize = 0;
-    size_t fTransferBufferAlignment = 1;
+    size_t fTransferBufferRowBytesAlignment = 1;
+    size_t fTransferFromBufferToBufferAlignment = 1;
+    size_t fBufferUpdateDataPreserveAlignment = 1;
 
     GrDriverBugWorkarounds fDriverBugWorkarounds;
 
@@ -608,8 +647,8 @@ private:
     virtual void onApplyOptionsOverrides(const GrContextOptions&) {}
     virtual void onDumpJSON(SkJSONWriter*) const {}
     virtual bool onSurfaceSupportsWritePixels(const GrSurface*) const = 0;
-    virtual bool onCanCopySurface(const GrSurfaceProxy* dst, const GrSurfaceProxy* src,
-                                  const SkIRect& srcRect, const SkIPoint& dstPoint) const = 0;
+    virtual bool onCanCopySurface(const GrSurfaceProxy* dst, const SkIRect& dstRect,
+                                  const GrSurfaceProxy* src, const SkIRect& srcRect) const = 0;
     virtual GrBackendFormat onGetDefaultBackendFormat(GrColorType) const = 0;
 
     // Backends should implement this if they have any extra requirements for use of window

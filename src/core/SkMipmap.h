@@ -11,8 +11,8 @@
 #include "include/core/SkPixmap.h"
 #include "include/core/SkScalar.h"
 #include "include/core/SkSize.h"
-#include "include/private/SkImageInfoPriv.h"
 #include "src/core/SkCachedData.h"
+#include "src/core/SkImageInfoPriv.h"
 #include "src/shaders/SkShaderBase.h"
 
 class SkBitmap;
@@ -73,9 +73,6 @@ public:
     bool getLevel(int index, Level*) const;
 
     bool validForRootLevel(const SkImageInfo&) const;
-
-    sk_sp<SkData> serialize() const;
-    static bool Deserialize(SkMipmapBuilder*, const void* data, size_t size);
 
 protected:
     void onDataChange(void* oldData, void* newData) override {

@@ -14,8 +14,9 @@
 #include "include/core/SkSurface.h"
 #include "include/core/SkTypes.h"
 #include "include/gpu/GrDirectContext.h"
+#include "include/gpu/ganesh/SkSurfaceGanesh.h"
 #include "include/gpu/vk/GrVkBackendContext.h"
-#include "include/gpu/vk/GrVkExtensions.h"
+#include "include/gpu/vk/VulkanExtensions.h"
 #include "tools/gpu/vk/VkTestUtils.h"
 
 #include <string.h>
@@ -36,7 +37,7 @@
 int main(int argc, char** argv) {
     GrVkBackendContext backendContext;
     VkDebugReportCallbackEXT debugCallback;
-    std::unique_ptr<GrVkExtensions> extensions(new GrVkExtensions());
+    std::unique_ptr<skgpu::VulkanExtensions> extensions(new skgpu::VulkanExtensions());
     std::unique_ptr<VkPhysicalDeviceFeatures2> features(new VkPhysicalDeviceFeatures2);
 
     // First we need to create a GrVkBackendContext so that we can make a Vulkan GrDirectContext.
@@ -91,12 +92,11 @@ int main(int argc, char** argv) {
     SkImageInfo imageInfo = SkImageInfo::Make(16, 16, kRGBA_8888_SkColorType, kPremul_SkAlphaType);
 
     // Create an SkSurface backed by a Vulkan VkImage. Often clients will be getting VkImages from
-    // swapchains. In those cases they should use SkSurface::MakeFromBackendTexture or
-    // SkSurface::MakeFromBackendRenderTarget to wrap those premade VkImages in Skia. See the
+    // swapchains. In those cases they should use SkSurfaces::WrapBackendTexture or
+    // SkSurfaces::WrapBackendRenderTarget to wrap those premade VkImages in Skia. See the
     // HelloWorld example app to see how this is done.
-    sk_sp<SkSurface> surface = SkSurface::MakeRenderTarget(context.get(),
-                                                           SkBudgeted::kYes,
-                                                           imageInfo);
+    sk_sp<SkSurface> surface =
+            SkSurfaces::RenderTarget(context.get(), skgpu::Budgeted::kYes, imageInfo);
     if (!surface) {
         context.reset();
         fVkDestroyDevice(backendContext.fDevice, nullptr);

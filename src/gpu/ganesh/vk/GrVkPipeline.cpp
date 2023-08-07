@@ -15,6 +15,9 @@
 #include "src/gpu/ganesh/vk/GrVkGpu.h"
 #include "src/gpu/ganesh/vk/GrVkRenderTarget.h"
 #include "src/gpu/ganesh/vk/GrVkUtil.h"
+#include "src/gpu/vk/VulkanUtilsPriv.h"
+
+using namespace skia_private;
 
 #if defined(SK_ENABLE_SCOPED_LSAN_SUPPRESSIONS)
 #include <sanitizer/lsan_interface.h>
@@ -82,14 +85,14 @@ static void setup_vertex_input_state(
         const GrGeometryProcessor::AttributeSet& vertexAttribs,
         const GrGeometryProcessor::AttributeSet& instanceAttribs,
         VkPipelineVertexInputStateCreateInfo* vertexInputInfo,
-        SkSTArray<2, VkVertexInputBindingDescription, true>* bindingDescs,
+        STArray<2, VkVertexInputBindingDescription, true>* bindingDescs,
         VkVertexInputAttributeDescription* attributeDesc) {
     int vaCount = vertexAttribs.count();
     int iaCount = instanceAttribs.count();
 
     uint32_t vertexBinding = 0, instanceBinding = 0;
 
-    int nextBinding = bindingDescs->count();
+    int nextBinding = bindingDescs->size();
     if (vaCount) {
         vertexBinding = nextBinding++;
     }
@@ -135,7 +138,7 @@ static void setup_vertex_input_state(
     vertexInputInfo->sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
     vertexInputInfo->pNext = nullptr;
     vertexInputInfo->flags = 0;
-    vertexInputInfo->vertexBindingDescriptionCount = bindingDescs->count();
+    vertexInputInfo->vertexBindingDescriptionCount = bindingDescs->size();
     vertexInputInfo->pVertexBindingDescriptions = bindingDescs->begin();
     vertexInputInfo->vertexAttributeDescriptionCount = vaCount + iaCount;
     vertexInputInfo->pVertexAttributeDescriptions = attributeDesc;
@@ -178,7 +181,7 @@ static VkStencilOp stencil_op_to_vk_stencil_op(GrStencilOp op) {
         VK_STENCIL_OP_INCREMENT_AND_CLAMP,  // kIncClamp
         VK_STENCIL_OP_DECREMENT_AND_CLAMP,  // kDecClamp
     };
-    static_assert(SK_ARRAY_COUNT(gTable) == kGrStencilOpCount);
+    static_assert(std::size(gTable) == kGrStencilOpCount);
     static_assert(0 == (int)GrStencilOp::kKeep);
     static_assert(1 == (int)GrStencilOp::kZero);
     static_assert(2 == (int)GrStencilOp::kReplace);
@@ -202,7 +205,7 @@ static VkCompareOp stencil_func_to_vk_compare_op(GrStencilTest test) {
         VK_COMPARE_OP_EQUAL,               // kEqual
         VK_COMPARE_OP_NOT_EQUAL,           // kNotEqual
     };
-    static_assert(SK_ARRAY_COUNT(gTable) == kGrStencilTestCount);
+    static_assert(std::size(gTable) == kGrStencilTestCount);
     static_assert(0 == (int)GrStencilTest::kAlways);
     static_assert(1 == (int)GrStencilTest::kNever);
     static_assert(2 == (int)GrStencilTest::kGreater);
@@ -277,8 +280,8 @@ static void setup_multisample_state(int numSamples,
     multisampleInfo->sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
     multisampleInfo->pNext = nullptr;
     multisampleInfo->flags = 0;
-    SkAssertResult(GrSampleCountToVkSampleCount(numSamples,
-                                                &multisampleInfo->rasterizationSamples));
+    SkAssertResult(skgpu::SampleCountToVkSampleCount(numSamples,
+                                                     &multisampleInfo->rasterizationSamples));
     multisampleInfo->sampleShadingEnable = VK_FALSE;
     multisampleInfo->minSampleShading = 0.0f;
     multisampleInfo->pSampleMask = nullptr;
@@ -371,7 +374,7 @@ static VkBlendOp blend_equation_to_vk_blend_op(skgpu::BlendEquation equation) {
     static_assert(15 == (int)skgpu::BlendEquation::kHSLSaturation);
     static_assert(16 == (int)skgpu::BlendEquation::kHSLColor);
     static_assert(17 == (int)skgpu::BlendEquation::kHSLLuminosity);
-    static_assert(SK_ARRAY_COUNT(gTable) == skgpu::kBlendEquationCnt);
+    static_assert(std::size(gTable) == skgpu::kBlendEquationCnt);
 
     SkASSERT((unsigned)equation < skgpu::kBlendEquationCnt);
     return gTable[(int)equation];
@@ -478,8 +481,8 @@ sk_sp<GrVkPipeline> GrVkPipeline::Make(GrVkGpu* gpu,
                                    bool ownsLayout,
                                    VkPipelineCache cache) {
     VkPipelineVertexInputStateCreateInfo vertexInputInfo;
-    SkSTArray<2, VkVertexInputBindingDescription, true> bindingDescs;
-    SkSTArray<16, VkVertexInputAttributeDescription> attributeDesc;
+    STArray<2, VkVertexInputBindingDescription, true> bindingDescs;
+    STArray<16, VkVertexInputAttributeDescription> attributeDesc;
     int totalAttributeCnt = vertexAttribs.count() + instanceAttribs.count();
     SkASSERT(totalAttributeCnt <= gpu->vkCaps().maxVertexAttributes());
     VkVertexInputAttributeDescription* pAttribs = attributeDesc.push_back_n(totalAttributeCnt);

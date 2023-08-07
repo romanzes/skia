@@ -9,11 +9,11 @@
 #define SoftwarePathRenderer_DEFINED
 
 #include "src/gpu/ganesh/GrSurfaceProxyView.h"
-#include "src/gpu/ganesh/v1/PathRenderer.h"
+#include "src/gpu/ganesh/PathRenderer.h"
 
 class GrProxyProvider;
 
-namespace skgpu::v1 {
+namespace skgpu::ganesh {
 
 /**
  * This class uses the software side to render a path to an SkBitmap and
@@ -77,6 +77,6 @@ private:
     bool             fAllowCaching;
 };
 
-} // namespace skgpu::v1
+}  // namespace skgpu::ganesh
 
 #endif // SoftwarePathRenderer_DEFINED

@@ -6,24 +6,35 @@
  */
 
 #include "src/core/SkBlendModeBlender.h"
+
+#include "include/core/SkBlendMode.h"
+#include "include/core/SkBlender.h"
+#include "include/core/SkRefCnt.h"
+#include "include/private/base/SkAssert.h"
+#include "src/base/SkNoDestructor.h"
+#include "src/core/SkBlendModePriv.h"
+#include "src/core/SkEffectPriv.h"
 #include "src/core/SkReadBuffer.h"
 #include "src/core/SkWriteBuffer.h"
 
-#if SK_SUPPORT_GPU
+#if defined(SK_GANESH)
 #include "src/gpu/ganesh/GrFragmentProcessor.h"
 #include "src/gpu/ganesh/effects/GrBlendFragmentProcessor.h"
+struct GrFPArgs;
 #endif
 
-#ifdef SK_ENABLE_SKSL
-#include "src/core/SkKeyHelpers.h"
-#include "src/core/SkPaintParamsKey.h"
+#if defined(SK_GRAPHITE)
+#include "src/gpu/graphite/KeyHelpers.h"
+#include "src/gpu/graphite/PaintParamsKey.h"
 #endif
+
+#include <utility>
 
 sk_sp<SkBlender> SkBlender::Mode(SkBlendMode mode) {
-#define RETURN_SINGLETON_BLENDER(m)                        \
-    case m: {                                              \
-        static auto* sBlender = new SkBlendModeBlender{m}; \
-        return sk_ref_sp(sBlender);                        \
+#define RETURN_SINGLETON_BLENDER(m)                            \
+    case m: {                                                  \
+        static SkNoDestructor<SkBlendModeBlender> sBlender(m); \
+        return sk_ref_sp(sBlender.get());                      \
     }
 
     switch (mode) {
@@ -64,17 +75,22 @@ sk_sp<SkBlender> SkBlender::Mode(SkBlendMode mode) {
 #undef RETURN_SINGLETON_BLENDER
 }
 
-#ifdef SK_ENABLE_SKSL
-void SkBlenderBase::addToKey(const SkKeyContext& keyContext,
-                             SkPaintParamsKeyBuilder* builder,
-                             SkPipelineDataGatherer* gatherer) const {
+#if defined(SK_GRAPHITE)
+#include "src/gpu/Blend.h"
 
-    if (std::optional<SkBlendMode> bm = as_BB(this)->asBlendMode(); bm.has_value()) {
-        BlendModeBlock::BeginBlock(keyContext, builder, gatherer, bm.value());
+void SkBlendModeBlender::addToKey(const skgpu::graphite::KeyContext& keyContext,
+                                  skgpu::graphite::PaintParamsKeyBuilder* builder,
+                                  skgpu::graphite::PipelineDataGatherer* gatherer) const {
+    using namespace skgpu::graphite;
+
+    SkSpan<const float> coeffs = skgpu::GetPorterDuffBlendConstants(fMode);
+    if (!coeffs.empty()) {
+        CoeffBlenderBlock::BeginBlock(keyContext, builder, gatherer, coeffs);
+        builder->endBlock();
     } else {
-        BlendModeBlock::BeginBlock(keyContext, builder, gatherer, SkBlendMode::kSrcOver);
+        BlendModeBlenderBlock::BeginBlock(keyContext, builder, gatherer, fMode);
+        builder->endBlock();
     }
-    builder->endBlock();
 }
 #endif
 
@@ -87,7 +103,7 @@ void SkBlendModeBlender::flatten(SkWriteBuffer& buffer) const {
     buffer.writeInt((int)fMode);
 }
 
-#if SK_SUPPORT_GPU
+#if defined(SK_GANESH)
 std::unique_ptr<GrFragmentProcessor> SkBlendModeBlender::asFragmentProcessor(
         std::unique_ptr<GrFragmentProcessor> srcFP,
         std::unique_ptr<GrFragmentProcessor> dstFP,
@@ -96,8 +112,15 @@ std::unique_ptr<GrFragmentProcessor> SkBlendModeBlender::asFragmentProcessor(
 }
 #endif
 
+bool SkBlendModeBlender::onAppendStages(const SkStageRec& rec) const {
+    SkBlendMode_AppendStages(fMode, rec.fPipeline);
+    return true;
+}
+
+#if defined(SK_ENABLE_SKVM)
 skvm::Color SkBlendModeBlender::onProgram(skvm::Builder* p, skvm::Color src, skvm::Color dst,
                                           const SkColorInfo& colorInfo, skvm::Uniforms* uniforms,
                                           SkArenaAlloc* alloc) const {
     return p->blend(fMode, src, dst);
 }
+#endif

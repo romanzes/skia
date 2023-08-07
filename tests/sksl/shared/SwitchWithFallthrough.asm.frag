@@ -1,10 +1,10 @@
 OpCapability Shader
 %1 = OpExtInstImport "GLSL.std.450"
 OpMemoryModel Logical GLSL450
-OpEntryPoint Fragment %_entrypoint_v "_entrypoint" %sk_FragColor %sk_Clockwise
+OpEntryPoint Fragment %_entrypoint_v "_entrypoint" %sk_Clockwise %sk_FragColor
 OpExecutionMode %_entrypoint_v OriginUpperLeft
-OpName %sk_FragColor "sk_FragColor"
 OpName %sk_Clockwise "sk_Clockwise"
+OpName %sk_FragColor "sk_FragColor"
 OpName %_UniformBuffer "_UniformBuffer"
 OpMemberName %_UniformBuffer 0 "colorGreen"
 OpMemberName %_UniformBuffer 1 "colorRed"
@@ -14,10 +14,10 @@ OpName %ok "ok"
 OpName %main "main"
 OpName %x "x"
 OpName %_0_ok "_0_ok"
+OpDecorate %sk_Clockwise BuiltIn FrontFacing
 OpDecorate %sk_FragColor RelaxedPrecision
 OpDecorate %sk_FragColor Location 0
 OpDecorate %sk_FragColor Index 0
-OpDecorate %sk_Clockwise BuiltIn FrontFacing
 OpMemberDecorate %_UniformBuffer 0 Offset 0
 OpMemberDecorate %_UniformBuffer 0 RelaxedPrecision
 OpMemberDecorate %_UniformBuffer 1 Offset 16
@@ -32,13 +32,13 @@ OpDecorate %57 RelaxedPrecision
 OpDecorate %69 RelaxedPrecision
 OpDecorate %72 RelaxedPrecision
 OpDecorate %73 RelaxedPrecision
+%bool = OpTypeBool
+%_ptr_Input_bool = OpTypePointer Input %bool
+%sk_Clockwise = OpVariable %_ptr_Input_bool Input
 %float = OpTypeFloat 32
 %v4float = OpTypeVector %float 4
 %_ptr_Output_v4float = OpTypePointer Output %v4float
 %sk_FragColor = OpVariable %_ptr_Output_v4float Output
-%bool = OpTypeBool
-%_ptr_Input_bool = OpTypePointer Input %bool
-%sk_Clockwise = OpVariable %_ptr_Input_bool Input
 %_UniformBuffer = OpTypeStruct %v4float %v4float
 %_ptr_Uniform__UniformBuffer = OpTypePointer Uniform %_UniformBuffer
 %11 = OpVariable %_ptr_Uniform__UniformBuffer Uniform
@@ -74,13 +74,9 @@ OpFunctionEnd
 OpStore %ok %false
 %32 = OpLoad %int %27
 OpSelectionMerge %33 None
-OpSwitch %32 %38 0 %34 1 %35 2 %36 3 %37
+OpSwitch %32 %38 0 %34 1 %37 2 %37 3 %37
 %34 = OpLabel
 OpBranch %33
-%35 = OpLabel
-OpBranch %36
-%36 = OpLabel
-OpBranch %37
 %37 = OpLabel
 OpStore %ok %true
 OpBranch %33
@@ -104,11 +100,9 @@ OpFunctionEnd
 OpStore %x %50
 OpStore %_0_ok %false
 OpSelectionMerge %52 None
-OpSwitch %50 %56 2 %53 1 %54 0 %55
+OpSwitch %50 %56 2 %53 1 %55 0 %55
 %53 = OpLabel
 OpBranch %52
-%54 = OpLabel
-OpBranch %55
 %55 = OpLabel
 OpStore %_0_ok %true
 OpBranch %52

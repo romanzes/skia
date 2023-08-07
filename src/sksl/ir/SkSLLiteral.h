@@ -8,12 +8,24 @@
 #ifndef SKSL_FLOATLITERAL
 #define SKSL_FLOATLITERAL
 
+#include "include/core/SkTypes.h"
+#include "include/private/SkSLDefines.h"
+#include "src/sksl/SkSLBuiltinTypes.h"
 #include "src/sksl/SkSLContext.h"
+#include "src/sksl/SkSLPosition.h"
 #include "src/sksl/ir/SkSLExpression.h"
+#include "src/sksl/ir/SkSLIRNode.h"
+#include "src/sksl/ir/SkSLType.h"
 
+#include <cstdint>
 #include <cinttypes>
+#include <memory>
+#include <optional>
+#include <string>
 
 namespace SkSL {
+
+enum class OperatorPrecedence : uint8_t;
 
 /**
  * A literal value. These can contain ints, floats, or booleans.
@@ -21,10 +33,10 @@ namespace SkSL {
 
 class Literal : public Expression {
 public:
-    inline static constexpr Kind kExpressionKind = Kind::kLiteral;
+    inline static constexpr Kind kIRNodeKind = Kind::kLiteral;
 
     Literal(Position pos, double value, const Type* type)
-        : INHERITED(pos, kExpressionKind, type)
+        : INHERITED(pos, kIRNodeKind, type)
         , fValue(value) {}
 
     // Makes a literal of $floatLiteral type.
@@ -40,8 +52,7 @@ public:
     }
 
     // Makes a literal of $intLiteral type.
-    static std::unique_ptr<Literal> MakeInt(const Context& context, Position pos,
-            SKSL_INT value) {
+    static std::unique_ptr<Literal> MakeInt(const Context& context, Position pos, SKSL_INT value) {
         return std::make_unique<Literal>(pos, value, context.fTypes.fIntLiteral.get());
     }
 
@@ -98,24 +109,7 @@ public:
         return fValue;
     }
 
-    std::string description() const override {
-        if (this->type().isFloat()) {
-            return skstd::to_string(this->floatValue());
-        }
-        if (this->type().isInteger()) {
-            return std::to_string(this->intValue());
-        }
-        SkASSERT(this->type().isBoolean());
-        return fValue ? "true" : "false";
-    }
-
-    bool hasProperty(Property property) const override {
-        return false;
-    }
-
-    bool isCompileTimeConstant() const override {
-        return true;
-    }
+    std::string description(OperatorPrecedence) const override;
 
     ComparisonResult compareConstant(const Expression& other) const override {
         if (!other.is<Literal>() || this->type().numberKind() != other.type().numberKind()) {

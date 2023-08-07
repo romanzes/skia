@@ -10,6 +10,17 @@
         "cross"
       ]
     },
+    "BazelTest": {
+      "keys": [
+        "task_driver",
+        "label",
+        "config",
+        "host"
+      ],
+      "optional_keys": [
+        "cross"
+      ]
+    },
     "Build": {
       "keys": [
         "os",

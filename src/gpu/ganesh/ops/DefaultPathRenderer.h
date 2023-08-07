@@ -8,9 +8,9 @@
 #ifndef DefaultPathRenderer_DEFINED
 #define DefaultPathRenderer_DEFINED
 
-#include "src/gpu/ganesh/v1/PathRenderer.h"
+#include "src/gpu/ganesh/PathRenderer.h"
 
-namespace skgpu::v1 {
+namespace skgpu::ganesh {
 
 /**
  *  Subclass that renders the path using the stencil buffer to resolve fill rules
@@ -41,6 +41,6 @@ private:
                           bool stencilOnly);
 };
 
-} // namespace skgpu::v1
+}  // namespace skgpu::ganesh
 
 #endif // DefaultPathRenderer_DEFINED

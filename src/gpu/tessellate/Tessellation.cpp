@@ -8,13 +8,15 @@
 #include "src/gpu/tessellate/Tessellation.h"
 
 #include "include/core/SkPath.h"
+#include "src/base/SkUtils.h"
 #include "src/core/SkGeometry.h"
 #include "src/core/SkPathPriv.h"
-#include "src/core/SkUtils.h"
 #include "src/gpu/BufferWriter.h"
 #include "src/gpu/tessellate/CullTest.h"
 #include "src/gpu/tessellate/MiddleOutPolygonTriangulator.h"
 #include "src/gpu/tessellate/WangsFormula.h"
+
+using namespace skia_private;
 
 namespace skgpu::tess {
 
@@ -151,8 +153,8 @@ private:
     SkPath fPath;
 
     // Used for stack-based recursion (instead of using the runtime stack).
-    SkSTArray<8, SkPoint> fPointStack;
-    SkSTArray<2, float> fWeightStack;
+    STArray<8, SkPoint> fPointStack;
+    STArray<2, float> fWeightStack;
 };
 
 }  // namespace

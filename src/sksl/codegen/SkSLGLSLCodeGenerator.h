@@ -8,12 +8,11 @@
 #ifndef SKSL_GLSLCODEGENERATOR
 #define SKSL_GLSLCODEGENERATOR
 
-#include "include/sksl/SkSLOperator.h"
 #include "src/sksl/SkSLContext.h"
 #include "src/sksl/SkSLStringStream.h"
 #include "src/sksl/codegen/SkSLCodeGenerator.h"
 
-#include <set>
+#include <cstdint>
 #include <string>
 #include <string_view>
 
@@ -22,6 +21,7 @@ namespace SkSL {
 class AnyConstructor;
 class BinaryExpression;
 class Block;
+class ConstructorCompound;
 class ConstructorDiagonalMatrix;
 class DoStatement;
 class Expression;
@@ -33,6 +33,7 @@ class FunctionDeclaration;
 class FunctionDefinition;
 class FunctionPrototype;
 class IfStatement;
+class IndexExpression;
 class InterfaceBlock;
 class Literal;
 class OutputStream;
@@ -40,21 +41,20 @@ class PostfixExpression;
 class PrefixExpression;
 class ProgramElement;
 class ReturnStatement;
-class Setting;
 class Statement;
 class StructDefinition;
 class SwitchStatement;
+class Swizzle;
 class TernaryExpression;
 class Type;
 class VarDeclaration;
 class Variable;
 class VariableReference;
-struct IndexExpression;
+enum class OperatorPrecedence : uint8_t;
 struct Layout;
 struct Modifiers;
 struct Program;
 struct ShaderCaps;
-struct Swizzle;
 
 /**
  * Converts a Program into GLSL code.
@@ -67,7 +67,7 @@ public:
     bool generateCode() override;
 
 protected:
-    using Precedence = Operator::Precedence;
+    using Precedence = OperatorPrecedence;
 
     void write(std::string_view s);
 
@@ -78,6 +78,8 @@ protected:
     virtual void writeHeader();
 
     bool usesPrecisionModifiers() const;
+
+    void writeIdentifier(std::string_view identifier);
 
     virtual std::string getTypeName(const Type& type);
 
@@ -131,6 +133,8 @@ protected:
 
     virtual void writeFunctionCall(const FunctionCall& c);
 
+    void writeConstructorCompound(const ConstructorCompound& c, Precedence parentPrecedence);
+
     void writeConstructorDiagonalMatrix(const ConstructorDiagonalMatrix& c,
                                         Precedence parentPrecedence);
 
@@ -157,8 +161,6 @@ protected:
 
     virtual void writeLiteral(const Literal& l);
 
-    virtual void writeSetting(const Setting& s);
-
     void writeStatement(const Statement& s);
 
     void writeBlock(const Block& b);
@@ -177,7 +179,7 @@ protected:
 
     virtual void writeProgramElement(const ProgramElement& e);
 
-    const ShaderCaps& caps() const { return fContext.fCaps; }
+    const ShaderCaps& caps() const { return *fContext.fCaps; }
 
     StringStream fExtensions;
     StringStream fGlobals;
@@ -186,7 +188,6 @@ protected:
     int fVarCount = 0;
     int fIndentation = 0;
     bool fAtLineStart = false;
-    std::set<std::string> fWrittenIntrinsics;
     // true if we have run into usages of dFdx / dFdy
     bool fFoundDerivatives = false;
     bool fFoundExternalSamplerDecl = false;
@@ -194,6 +195,12 @@ protected:
     bool fSetupClockwise = false;
     bool fSetupFragPosition = false;
     bool fSetupFragCoordWorkaround = false;
+
+    // Workaround/polyfill flags
+    bool fWrittenAbsEmulation = false;
+    bool fWrittenDeterminant2 = false, fWrittenDeterminant3 = false, fWrittenDeterminant4 = false;
+    bool fWrittenInverse2 = false, fWrittenInverse3 = false, fWrittenInverse4 = false;
+    bool fWrittenTranspose[3][3] = {};
 
     using INHERITED = CodeGenerator;
 };

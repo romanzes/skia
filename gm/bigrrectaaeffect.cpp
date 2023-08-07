@@ -22,11 +22,11 @@
 #include "src/gpu/ganesh/GrCaps.h"
 #include "src/gpu/ganesh/GrFragmentProcessor.h"
 #include "src/gpu/ganesh/GrPaint.h"
+#include "src/gpu/ganesh/SurfaceDrawContext.h"
 #include "src/gpu/ganesh/effects/GrPorterDuffXferProcessor.h"
 #include "src/gpu/ganesh/effects/GrRRectEffect.h"
 #include "src/gpu/ganesh/ops/FillRectOp.h"
 #include "src/gpu/ganesh/ops/GrDrawOp.h"
-#include "src/gpu/ganesh/v1/SurfaceDrawContext_v1.h"
 #include "tools/ToolUtils.h"
 
 #include <memory>
@@ -79,7 +79,7 @@ protected:
             GrClipEdgeType::kInverseFillAA,
         };
         SkRect testBounds = SkRect::MakeIWH(fTestWidth, fTestHeight);
-        for (size_t et = 0; et < SK_ARRAY_COUNT(kEdgeTypes); ++et) {
+        for (size_t et = 0; et < std::size(kEdgeTypes); ++et) {
             GrClipEdgeType edgeType = kEdgeTypes[et];
             canvas->save();
                 canvas->translate(SkIntToScalar(x), SkIntToScalar(y));
@@ -105,7 +105,7 @@ protected:
                     SkRect bounds = testBounds;
                     bounds.offset(SkIntToScalar(x), SkIntToScalar(y));
 
-                    sdc->addDrawOp(skgpu::v1::FillRectOp::MakeNonAARect(
+                    sdc->addDrawOp(skgpu::ganesh::FillRectOp::MakeNonAARect(
                             rContext, std::move(grPaint), SkMatrix::I(), bounds));
                 }
             canvas->restore();

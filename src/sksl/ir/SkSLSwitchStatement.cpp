@@ -8,15 +8,15 @@
 #include "src/sksl/ir/SkSLSwitchStatement.h"
 
 #include "include/core/SkTypes.h"
-#include "include/private/SkSLString.h"
-#include "include/private/SkTArray.h"
-#include "include/private/SkTHash.h"
-#include "include/sksl/SkSLErrorReporter.h"
+#include "include/private/base/SkTArray.h"
+#include "src/core/SkTHash.h"
 #include "src/sksl/SkSLAnalysis.h"
 #include "src/sksl/SkSLBuiltinTypes.h"
 #include "src/sksl/SkSLConstantFolder.h"
 #include "src/sksl/SkSLContext.h"
+#include "src/sksl/SkSLErrorReporter.h"
 #include "src/sksl/SkSLProgramSettings.h"
+#include "src/sksl/SkSLString.h"
 #include "src/sksl/ir/SkSLBlock.h"
 #include "src/sksl/ir/SkSLNop.h"
 #include "src/sksl/ir/SkSLSwitchCase.h"
@@ -27,6 +27,8 @@
 #include <forward_list>
 #include <iterator>
 
+using namespace skia_private;
+
 namespace SkSL {
 
 std::unique_ptr<Statement> SwitchStatement::clone() const {
@@ -36,7 +38,6 @@ std::unique_ptr<Statement> SwitchStatement::clone() const {
         cases.push_back(stmt->clone());
     }
     return std::make_unique<SwitchStatement>(fPosition,
-                                             this->isStatic(),
                                              this->value()->clone(),
                                              std::move(cases),
                                              SymbolTable::WrapIfBuiltin(this->symbols()));
@@ -44,9 +45,6 @@ std::unique_ptr<Statement> SwitchStatement::clone() const {
 
 std::string SwitchStatement::description() const {
     std::string result;
-    if (this->isStatic()) {
-        result += "@";
-    }
     result += String::printf("switch (%s) {\n", this->value()->description().c_str());
     for (const auto& c : this->cases()) {
         result += c->description();
@@ -58,7 +56,7 @@ std::string SwitchStatement::description() const {
 static std::forward_list<const SwitchCase*> find_duplicate_case_values(
         const StatementArray& cases) {
     std::forward_list<const SwitchCase*> duplicateCases;
-    SkTHashSet<SKSL_INT> intValues;
+    THashSet<SKSL_INT> intValues;
     bool foundDefault = false;
 
     for (const std::unique_ptr<Statement>& stmt : cases) {
@@ -168,11 +166,9 @@ std::unique_ptr<Statement> SwitchStatement::BlockForCase(StatementArray* cases,
 
 std::unique_ptr<Statement> SwitchStatement::Convert(const Context& context,
                                                     Position pos,
-                                                    bool isStatic,
                                                     std::unique_ptr<Expression> value,
                                                     ExpressionArray caseValues,
-                                                    StatementArray caseStatements,
-                                                    std::shared_ptr<SymbolTable> symbolTable) {
+                                                    StatementArray caseStatements) {
     SkASSERT(caseValues.size() == caseStatements.size());
 
     value = context.fTypes.fInt->coerceExpression(std::move(value), context);
@@ -181,7 +177,7 @@ std::unique_ptr<Statement> SwitchStatement::Convert(const Context& context,
     }
 
     StatementArray cases;
-    for (int i = 0; i < caseValues.count(); ++i) {
+    for (int i = 0; i < caseValues.size(); ++i) {
         if (caseValues[i]) {
             Position casePos = caseValues[i]->fPosition;
             // Case values must be constant integers of the same type as the switch value
@@ -217,13 +213,12 @@ std::unique_ptr<Statement> SwitchStatement::Convert(const Context& context,
         return nullptr;
     }
 
-    return SwitchStatement::Make(context, pos, isStatic, std::move(value), std::move(cases),
-                                 std::move(symbolTable));
+    return SwitchStatement::Make(context, pos, std::move(value), std::move(cases),
+                                 context.fSymbolTable);
 }
 
 std::unique_ptr<Statement> SwitchStatement::Make(const Context& context,
                                                  Position pos,
-                                                 bool isStatic,
                                                  std::unique_ptr<Expression> value,
                                                  StatementArray cases,
                                                  std::shared_ptr<SymbolTable> symbolTable) {
@@ -235,8 +230,8 @@ std::unique_ptr<Statement> SwitchStatement::Make(const Context& context,
     // Confirm that every switch-case value is unique.
     SkASSERT(find_duplicate_case_values(cases).empty());
 
-    // Flatten @switch statements.
-    if (isStatic || context.fConfig->fSettings.fOptimize) {
+    // Flatten switch statements if we're optimizing, and the value is known
+    if (context.fConfig->fSettings.fOptimize) {
         SKSL_INT switchValue;
         if (ConstantFolder::GetConstantInt(*value, &switchValue)) {
             SwitchCase* defaultCase = nullptr;
@@ -270,17 +265,11 @@ std::unique_ptr<Statement> SwitchStatement::Make(const Context& context,
             if (newBlock) {
                 return newBlock;
             }
-
-            // Report an error if this was a static switch and BlockForCase failed us.
-            if (isStatic) {
-                context.fErrors->error(pos, "static switch contains non-static conditional exit");
-                return nullptr;
-            }
         }
     }
 
     // The switch couldn't be optimized away; emit it normally.
-    return std::make_unique<SwitchStatement>(pos, isStatic, std::move(value), std::move(cases),
+    return std::make_unique<SwitchStatement>(pos, std::move(value), std::move(cases),
                                              std::move(symbolTable));
 }
 

@@ -4,6 +4,7 @@
 
 #include "experimental/sktext/include/Types.h"
 #include "experimental/sktext/src/Line.h"
+#include "include/private/base/SkTArray.h"
 #include "modules/skshaper/include/SkShaper.h"
 
 namespace skia {
@@ -41,7 +42,8 @@ class VisualRun {
     }
 
     SkScalar calculateWidth(GlyphRange glyphRange) const {
-        SkASSERT(glyphRange.fStart <= glyphRange.fEnd && glyphRange.fEnd < fPositions.size());
+        SkASSERT(glyphRange.fStart <= glyphRange.fEnd &&
+                 glyphRange.fEnd < SkToSizeT(fPositions.size()));
         return fPositions[glyphRange.fEnd].fX - fPositions[glyphRange.fStart].fX;
     }
     SkScalar calculateWidth(GlyphIndex start, GlyphIndex end) const {
@@ -89,9 +91,9 @@ class VisualRun {
 
     SkVector fAdvance;
     DirTextRange fDirTextRange;
-    SkSTArray<128, SkGlyphID, true> fGlyphs;
-    SkSTArray<128, SkPoint, true> fPositions;
-    SkSTArray<128, TextIndex, true> fClusters;
+    skia_private::STArray<128, SkGlyphID, true> fGlyphs;
+    skia_private::STArray<128, SkPoint, true> fPositions;
+    skia_private::STArray<128, TextIndex, true> fClusters;
     GlyphIndex fTrailingSpacesStart;
 };
 
@@ -140,6 +142,6 @@ private:
     bool fIsHardBreak;
     size_t fGlyphCount;
 };
-}; // namespace text
+} // namespace text
 } // namespace skia
 #endif

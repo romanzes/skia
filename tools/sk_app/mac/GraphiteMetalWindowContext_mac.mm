@@ -30,13 +30,11 @@ public:
 
 private:
     NSView*              fMainView;
-
-    using INHERITED = GraphiteMetalWindowContext;
 };
 
 GraphiteMetalWindowContext_mac::GraphiteMetalWindowContext_mac(const MacWindowInfo& info,
                                                                const DisplayParams& params)
-    : INHERITED(params)
+    : GraphiteMetalWindowContext(params)
     , fMainView(info.fMainView) {
 
     // any config code here (particularly for msaa)?
@@ -64,6 +62,7 @@ bool GraphiteMetalWindowContext_mac::onInitializeContext() {
     fMetalLayer.autoresizingMask = kCALayerHeightSizable | kCALayerWidthSizable;
     fMetalLayer.contentsGravity = kCAGravityTopLeft;
     fMetalLayer.magnificationFilter = kCAFilterNearest;
+    fMetalLayer.framebufferOnly = false;
     NSColorSpace* cs = fMainView.window.colorSpace;
     fMetalLayer.colorspace = cs.CGColorSpace;
 
@@ -73,10 +72,7 @@ bool GraphiteMetalWindowContext_mac::onInitializeContext() {
     return true;
 }
 
-void GraphiteMetalWindowContext_mac::onDestroyContext() {
-    fMainView.layer = nil;
-    fMainView.wantsLayer = NO;
-}
+void GraphiteMetalWindowContext_mac::onDestroyContext() {}
 
 void GraphiteMetalWindowContext_mac::resize(int w, int h) {
     CGFloat backingScaleFactor = sk_app::GetBackingScaleFactor(fMainView);

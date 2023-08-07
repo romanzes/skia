@@ -9,7 +9,11 @@
 #define skgpu_graphite_DrawTypes_DEFINED
 
 #include "include/gpu/graphite/GraphiteTypes.h"
-#include "include/gpu/graphite/TextureInfo.h"
+
+#include "include/core/SkSamplingOptions.h"
+#include "include/core/SkTileMode.h"
+
+#include "src/gpu/graphite/ResourceTypes.h"
 
 #include <array>
 
@@ -26,49 +30,6 @@ enum class CType : unsigned {
     kSkMatrix,
 
     kLast = kSkMatrix
-};
-
-/**
- * This enum is used to specify the load operation to be used when a RenderPass begins execution
- */
-enum class LoadOp : uint8_t {
-    kLoad,
-    kClear,
-    kDiscard,
-
-    kLast = kDiscard
-};
-inline static constexpr int kLoadOpCount = (int)(LoadOp::kLast) + 1;
-
-/**
- * This enum is used to specify the store operation to be used when a RenderPass ends execution.
- */
-enum class StoreOp : uint8_t {
-    kStore,
-    kDiscard,
-
-    kLast = kDiscard
-};
-inline static constexpr int kStoreOpCount = (int)(StoreOp::kLast) + 1;
-
-struct AttachmentDesc {
-    TextureInfo fTextureInfo;
-    LoadOp fLoadOp;
-    StoreOp fStoreOp;
-};
-
-struct RenderPassDesc {
-    AttachmentDesc fColorAttachment;
-    std::array<float, 4> fClearColor;
-    AttachmentDesc fColorResolveAttachment;
-
-    AttachmentDesc fDepthStencilAttachment;
-    float fClearDepth;
-    uint32_t fClearStencil;
-
-    // TODO:
-    // * bounds (TBD whether exact bounds vs. granular)
-    // * input attachments
 };
 
 /**
@@ -115,7 +76,7 @@ enum class VertexAttribType : uint8_t {
     kInt,
     kUInt,
 
-    kUShort_norm,
+    kUShort_norm,  // unsigned short, e.g. depth, 0 -> 0.0f, 65535 -> 1.0f.
 
     kUShort4_norm, // vector of 4 unsigned shorts. 0 -> 0.0f, 65535 -> 1.0f.
 
@@ -181,24 +142,45 @@ static constexpr inline size_t VertexAttribTypeSize(VertexAttribType type) {
         case VertexAttribType::kUShort4_norm:
             return 4 * sizeof(uint16_t);
     }
+    SkUNREACHABLE;
 }
 
-/*
- * Struct returned by the DrawBufferManager that can be passed into bind buffer calls on the
- * CommandBuffer.
+/**
+ * Struct used to describe how a Texture/TextureProxy/TextureProxyView is sampled.
  */
-struct BindBufferInfo {
-    const Buffer* fBuffer = nullptr;
-    size_t fOffset = 0;
-
-    operator bool() const { return SkToBool(fBuffer); }
-
-    bool operator==(const BindBufferInfo& o) const {
-        return fBuffer == o.fBuffer && (!fBuffer || fOffset == o.fOffset);
+struct SamplerDesc {
+    static_assert(kSkTileModeCount <= 4 && kSkFilterModeCount <= 2 && kSkMipmapModeCount <= 4);
+    SamplerDesc(const SkSamplingOptions& samplingOptions, const SkTileMode tileModes[2])
+            : fDesc((static_cast<int>(tileModes[0])           << 0) |
+                    (static_cast<int>(tileModes[1])           << 2) |
+                    (static_cast<int>(samplingOptions.filter) << 4) |
+                    (static_cast<int>(samplingOptions.mipmap) << 5)) {
+        // Cubic sampling is handled in a shader, with the actual texture sampled by with NN,
+        // but that is what a cubic SkSamplingOptions is set to if you ignore 'cubic', which let's
+        // us simplify how we construct SamplerDec's from the options passed to high-level draws.
+        SkASSERT(!samplingOptions.useCubic || (samplingOptions.filter == SkFilterMode::kNearest &&
+                                               samplingOptions.mipmap == SkMipmapMode::kNone));
     }
-    bool operator!=(const BindBufferInfo& o) const {
-        return !(*this == o);
+
+    SamplerDesc(const SamplerDesc&) = default;
+
+    bool operator==(const SamplerDesc& o) const { return o.fDesc == fDesc; }
+    bool operator!=(const SamplerDesc& o) const { return o.fDesc != fDesc; }
+
+    SkTileMode tileModeX() const { return static_cast<SkTileMode>((fDesc >> 0) & 0b11); }
+    SkTileMode tileModeY() const { return static_cast<SkTileMode>((fDesc >> 2) & 0b11); }
+
+    // NOTE: returns the HW sampling options to use, so a bicubic SkSamplingOptions will become
+    // nearest-neighbor sampling in HW.
+    SkSamplingOptions samplingOptions() const {
+        // TODO: Add support for anisotropic filtering
+        SkFilterMode filter = static_cast<SkFilterMode>((fDesc >> 4) & 0b01);
+        SkMipmapMode mipmap = static_cast<SkMipmapMode>((fDesc >> 5) & 0b11);
+        return SkSamplingOptions(filter, mipmap);
     }
+
+private:
+    uint32_t fDesc;
 };
 
 enum class UniformSlot {

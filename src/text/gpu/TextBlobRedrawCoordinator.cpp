@@ -7,11 +7,20 @@
 
 #include "src/text/gpu/TextBlobRedrawCoordinator.h"
 
-#include "src/core/SkGlyphRun.h"
+#include "include/core/SkMatrix.h"
+#include "include/core/SkPoint.h"
+#include "include/core/SkTypes.h"
+#include "src/core/SkDevice.h"
 #include "src/core/SkStrikeCache.h"
-#if SK_SUPPORT_GPU
-#include "src/gpu/ganesh/v1/SurfaceDrawContext_v1.h"
-#endif
+#include "src/text/GlyphRun.h"
+
+#include <utility>
+
+class GrClip;
+class SkCanvas;
+class SkPaint;
+
+using namespace skia_private;
 
 // This needs to be outside the namespace so we can declare SkMessageBus properly
 DECLARE_SKMESSAGEBUS_MESSAGE(sktext::gpu::TextBlobRedrawCoordinator::PurgeBlobMessage,
@@ -28,14 +37,14 @@ TextBlobRedrawCoordinator::TextBlobRedrawCoordinator(uint32_t messageBusID)
         , fMessageBusID(messageBusID)
         , fPurgeBlobInbox(messageBusID) { }
 
-#if SK_SUPPORT_GPU
+#if defined(SK_GANESH)
 void TextBlobRedrawCoordinator::drawGlyphRunList(SkCanvas* canvas,
                                                  const GrClip* clip,
                                                  const SkMatrixProvider& viewMatrix,
-                                                 const SkGlyphRunList& glyphRunList,
+                                                 const GlyphRunList& glyphRunList,
                                                  const SkPaint& paint,
                                                  SkStrikeDeviceInfo strikeDeviceInfo,
-                                                 skgpu::v1::SurfaceDrawContext* sdc) {
+                                                 skgpu::ganesh::SurfaceDrawContext* sdc) {
     sk_sp<TextBlob> blob = this->findOrCreateBlob(viewMatrix, glyphRunList, paint,
                                                   strikeDeviceInfo);
 
@@ -43,8 +52,22 @@ void TextBlobRedrawCoordinator::drawGlyphRunList(SkCanvas* canvas,
 }
 #endif
 
+#if defined(SK_GRAPHITE)
+void TextBlobRedrawCoordinator::drawGlyphRunList(SkCanvas* canvas,
+                                                 const SkMatrix& viewMatrix,
+                                                 const sktext::GlyphRunList& glyphRunList,
+                                                 const SkPaint& paint,
+                                                 SkStrikeDeviceInfo strikeDeviceInfo,
+                                                 skgpu::graphite::Device* device) {
+    sk_sp<TextBlob> blob = this->findOrCreateBlob(viewMatrix, glyphRunList, paint,
+                                                  strikeDeviceInfo);
+
+    blob->draw(canvas, glyphRunList.origin(), paint, device);
+}
+#endif
+
 sk_sp<TextBlob> TextBlobRedrawCoordinator::findOrCreateBlob(const SkMatrixProvider& viewMatrix,
-                                                            const SkGlyphRunList& glyphRunList,
+                                                            const GlyphRunList& glyphRunList,
                                                             const SkPaint& paint,
                                                             SkStrikeDeviceInfo strikeDeviceInfo) {
     SkMatrix positionMatrix{viewMatrix.localToDevice()};
@@ -79,7 +102,7 @@ sk_sp<TextBlob> TextBlobRedrawCoordinator::findOrCreateBlob(const SkMatrixProvid
 }
 
 sk_sp<TextBlob> TextBlobRedrawCoordinator::addOrReturnExisting(
-        const SkGlyphRunList& glyphRunList, sk_sp<TextBlob> blob) {
+        const GlyphRunList& glyphRunList, sk_sp<TextBlob> blob) {
     SkAutoSpinlock lock{fSpinLock};
     blob = this->internalAdd(std::move(blob));
     glyphRunList.temporaryShuntBlobNotifyAddedToCache(fMessageBusID);
@@ -142,7 +165,7 @@ void TextBlobRedrawCoordinator::purgeStaleBlobs() {
 }
 
 void TextBlobRedrawCoordinator::internalPurgeStaleBlobs() {
-    SkTArray<PurgeBlobMessage> msgs;
+    TArray<PurgeBlobMessage> msgs;
     fPurgeBlobInbox.poll(&msgs);
 
     for (const auto& msg : msgs) {
@@ -250,7 +273,7 @@ TextBlobRedrawCoordinator::BlobIDCacheEntry::find(const TextBlob::Key& key) cons
 }
 
 int TextBlobRedrawCoordinator::BlobIDCacheEntry::findBlobIndex(const TextBlob::Key& key) const {
-    for (int i = 0; i < fBlobs.count(); ++i) {
+    for (int i = 0; i < fBlobs.size(); ++i) {
         if (fBlobs[i]->key() == key) {
             return i;
         }

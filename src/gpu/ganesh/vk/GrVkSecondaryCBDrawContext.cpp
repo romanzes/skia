@@ -5,7 +5,7 @@
  * found in the LICENSE file.
  */
 
-#include "src/gpu/ganesh/vk/GrVkSecondaryCBDrawContext_impl.h"
+#include "include/private/chromium/GrVkSecondaryCBDrawContext.h"
 
 #include "include/core/SkDeferredDisplayList.h"
 #include "include/core/SkImageInfo.h"
@@ -47,7 +47,7 @@ sk_sp<GrVkSecondaryCBDrawContext> GrVkSecondaryCBDrawContext::Make(GrRecordingCo
                                                 imageInfo.refColorSpace(),
                                                 kTopLeft_GrSurfaceOrigin,
                                                 SkSurfacePropsCopyOrDefault(props),
-                                                skgpu::BaseDevice::InitContents::kUninit);
+                                                skgpu::ganesh::Device::InitContents::kUninit);
     if (!device) {
         return nullptr;
     }
@@ -56,10 +56,9 @@ sk_sp<GrVkSecondaryCBDrawContext> GrVkSecondaryCBDrawContext::Make(GrRecordingCo
                                                                             props));
 }
 
-GrVkSecondaryCBDrawContext::GrVkSecondaryCBDrawContext(sk_sp<skgpu::BaseDevice> device,
+GrVkSecondaryCBDrawContext::GrVkSecondaryCBDrawContext(sk_sp<skgpu::ganesh::Device> device,
                                                        const SkSurfaceProps* props)
-    : fDevice(device)
-    , fProps(SkSurfacePropsCopyOrDefault(props)) {}
+        : fDevice(device), fProps(SkSurfacePropsCopyOrDefault(props)) {}
 
 GrVkSecondaryCBDrawContext::~GrVkSecondaryCBDrawContext() {
     SkASSERT(!fDevice);

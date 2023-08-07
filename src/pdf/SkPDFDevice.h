@@ -15,9 +15,9 @@
 #include "include/core/SkRect.h"
 #include "include/core/SkRefCnt.h"
 #include "include/core/SkStream.h"
-#include "include/private/SkTHash.h"
 #include "src/core/SkClipStack.h"
 #include "src/core/SkClipStackDevice.h"
+#include "src/core/SkTHash.h"
 #include "src/core/SkTextBlobPriv.h"
 #include "src/pdf/SkKeyedImage.h"
 #include "src/pdf/SkPDFGraphicStackState.h"
@@ -25,7 +25,11 @@
 
 #include <vector>
 
-class SkGlyphRunList;
+namespace sktext {
+class GlyphRun;
+class GlyphRunList;
+}
+
 class SkKeyedImage;
 class SkPDFArray;
 class SkPDFDevice;
@@ -85,7 +89,7 @@ public:
                        const SkPaint&,
                        SkCanvas::SrcRectConstraint) override;
     void onDrawGlyphRunList(SkCanvas*,
-                            const SkGlyphRunList&,
+                            const sktext::GlyphRunList&,
                             const SkPaint& initialPaint,
                             const SkPaint& drawingPaint) override;
     void drawVertices(const SkVertices*, sk_sp<SkBlender>, const SkPaint&, bool) override;
@@ -129,10 +133,10 @@ private:
 
     SkMatrix fInitialTransform;
 
-    SkTHashSet<SkPDFIndirectReference> fGraphicStateResources;
-    SkTHashSet<SkPDFIndirectReference> fXObjectResources;
-    SkTHashSet<SkPDFIndirectReference> fShaderResources;
-    SkTHashSet<SkPDFIndirectReference> fFontResources;
+    skia_private::THashSet<SkPDFIndirectReference> fGraphicStateResources;
+    skia_private::THashSet<SkPDFIndirectReference> fXObjectResources;
+    skia_private::THashSet<SkPDFIndirectReference> fShaderResources;
+    skia_private::THashSet<SkPDFIndirectReference> fFontResources;
     int fNodeId;
 
     SkDynamicMemoryWStream fContent;
@@ -166,8 +170,10 @@ private:
     void finishContentEntry(const SkClipStack*, SkBlendMode, SkPDFIndirectReference, SkPath*);
     bool isContentEmpty();
 
-    void internalDrawGlyphRun(const SkGlyphRun& glyphRun, SkPoint offset, const SkPaint& runPaint);
-    void drawGlyphRunAsPath(const SkGlyphRun& glyphRun, SkPoint offset, const SkPaint& runPaint);
+    void internalDrawGlyphRun(
+            const sktext::GlyphRun& glyphRun, SkPoint offset, const SkPaint& runPaint);
+    void drawGlyphRunAsPath(
+            const sktext::GlyphRun& glyphRun, SkPoint offset, const SkPaint& runPaint);
 
     void internalDrawImageRect(SkKeyedImage,
                                const SkRect* src,

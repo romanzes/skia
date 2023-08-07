@@ -7,16 +7,25 @@
 
 #include "src/core/SkAAClip.h"
 
+#include "include/core/SkClipOp.h"
 #include "include/core/SkPath.h"
+#include "include/core/SkRegion.h"
+#include "include/core/SkTypes.h"
 #include "include/private/SkColorData.h"
-#include "include/private/SkMacros.h"
-#include "include/private/SkTDArray.h"
-#include "include/private/SkTo.h"
+#include "include/private/base/SkCPUTypes.h"
+#include "include/private/base/SkDebug.h"
+#include "include/private/base/SkMacros.h"
+#include "include/private/base/SkMalloc.h"
+#include "include/private/base/SkMath.h"
+#include "include/private/base/SkTDArray.h"
+#include "include/private/base/SkTo.h"
 #include "src/core/SkBlitter.h"
-#include "src/core/SkRectPriv.h"
+#include "src/core/SkMask.h"
 #include "src/core/SkScan.h"
+
+#include <algorithm>
 #include <atomic>
-#include <utility>
+#include <cstring>
 
 namespace {
 
@@ -290,7 +299,7 @@ private:
             row->fY = y;
             row->fWidth = 0;
             SkASSERT(row->fData);
-            SkASSERT(0 == row->fData->count());
+            SkASSERT(row->fData->empty());
             fCurrRow = row;
         }
 
@@ -383,7 +392,7 @@ private:
 
         size_t dataSize = 0;
         while (row < stop) {
-            dataSize += row->fData->count();
+            dataSize += row->fData->size();
             row += 1;
         }
 
@@ -396,7 +405,7 @@ private:
         int adjustY = fMinY - fBounds.fTop;
         fBounds.fTop = fMinY;
 
-        RunHead* head = RunHead::Alloc(fRows.count(), dataSize);
+        RunHead* head = RunHead::Alloc(fRows.size(), dataSize);
         YOffset* yoffset = head->yoffsets();
         uint8_t* data = head->data();
         uint8_t* baseData = data;
@@ -411,7 +420,7 @@ private:
             yoffset->fOffset = SkToU32(data - baseData);
             yoffset += 1;
 
-            size_t n = row->fData->count();
+            size_t n = row->fData->size();
             memcpy(data, row->fData->begin(), n);
             SkASSERT(compute_row_length(data, fBounds.width()) == n);
             data += n;
@@ -428,11 +437,11 @@ private:
     void dump() {
         this->validate();
         int y;
-        for (y = 0; y < fRows.count(); ++y) {
+        for (y = 0; y < fRows.size(); ++y) {
             const Row& row = fRows[y];
             SkDebugf("Y:%3d W:%3d", row.fY, row.fWidth);
             const SkTDArray<uint8_t>& data = *row.fData;
-            int count = data.count();
+            int count = data.size();
             SkASSERT(!(count & 1));
             const uint8_t* ptr = data.begin();
             for (int x = 0; x < count; x += 2) {
@@ -446,11 +455,11 @@ private:
     void validate() {
 #ifdef SK_DEBUG
         int prevY = -1;
-        for (int i = 0; i < fRows.count(); ++i) {
+        for (int i = 0; i < fRows.size(); ++i) {
             const Row& row = fRows[i];
             SkASSERT(prevY < row.fY);
             SkASSERT(fWidth == row.fWidth);
-            int count = row.fData->count();
+            int count = row.fData->size();
             const uint8_t* ptr = row.fData->begin();
             SkASSERT(!(count & 1));
             int w = 0;
@@ -477,7 +486,7 @@ private:
 
     Row* flushRow(bool readyForAnother) {
         Row* next = nullptr;
-        int count = fRows.count();
+        int count = fRows.size();
         if (count > 0) {
             this->flushRowH(&fRows[count - 1]);
         }
@@ -490,7 +499,7 @@ private:
             if (*prev->fData == *curr->fData) {
                 prev->fY = curr->fY;
                 if (readyForAnother) {
-                    curr->fData->rewind();
+                    curr->fData->clear();
                     next = curr;
                 } else {
                     delete curr->fData;
@@ -746,10 +755,6 @@ public:
 
     void blitMask(const SkMask&, const SkIRect& clip) override
         { unexpected(); }
-
-    const SkPixmap* justAnOpaqueColor(uint32_t*) override {
-        return nullptr;
-    }
 
     void blitH(int x, int y, int width) override {
         this->recordMinY(y);
@@ -1321,8 +1326,8 @@ bool SkAAClip::setRegion(const SkRegion& rgn) {
     SkTDArray<YOffset> yArray;
     SkTDArray<uint8_t> xArray;
 
-    yArray.setReserve(std::min(bounds.height(), 1024));
-    xArray.setReserve(std::min(bounds.width(), 512) * 128);
+    yArray.reserve(std::min(bounds.height(), 1024));
+    xArray.reserve(std::min(bounds.width(), 512) * 128);
 
     auto appendXRun = [&xArray](uint8_t value, int count) {
         SkASSERT(count >= 0);
@@ -1359,13 +1364,13 @@ bool SkAAClip::setRegion(const SkRegion& rgn) {
             if (top > prevBot) {
                 currY = yArray.append();
                 currY->fY = top - 1;
-                currY->fOffset = xArray.count();
+                currY->fOffset = xArray.size();
                 appendXRun(0, bounds.width());
             }
             // create a new record for this Y value
             currY = yArray.append();
             currY->fY = bot - 1;
-            currY->fOffset = xArray.count();
+            currY->fOffset = xArray.size();
             prevRight = 0;
             prevBot = bot;
         }
@@ -1382,9 +1387,9 @@ bool SkAAClip::setRegion(const SkRegion& rgn) {
     appendXRun(0, bounds.width() - prevRight);
 
     // now pack everything into a RunHead
-    RunHead* head = RunHead::Alloc(yArray.count(), xArray.bytes());
-    memcpy(head->yoffsets(), yArray.begin(), yArray.bytes());
-    memcpy(head->data(), xArray.begin(), xArray.bytes());
+    RunHead* head = RunHead::Alloc(yArray.size(), xArray.size_bytes());
+    memcpy(head->yoffsets(), yArray.begin(), yArray.size_bytes());
+    memcpy(head->data(), xArray.begin(), xArray.size_bytes());
 
     this->setEmpty();
     fBounds = bounds;
@@ -1961,8 +1966,4 @@ void SkAAClipBlitter::blitMask(const SkMask& origMask, const SkIRect& clip) {
             src = (const void*)((const char*)src + srcRB);
         } while (++y < localStopY);
     } while (y < stopY);
-}
-
-const SkPixmap* SkAAClipBlitter::justAnOpaqueColor(uint32_t* value) {
-    return nullptr;
 }

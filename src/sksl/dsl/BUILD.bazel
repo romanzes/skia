@@ -1,31 +1,19 @@
-load("//bazel:macros.bzl", "exports_files_legacy")
+load("//bazel:skia_rules.bzl", "exports_files_legacy", "skia_filegroup")
 
 licenses(["notice"])
 
 exports_files_legacy()
 
-filegroup(
+skia_filegroup(
     name = "srcs",
     srcs = [
-        "DSLBlock.cpp",
-        "DSLCase.cpp",
-        "DSLCore.cpp",
         "DSLExpression.cpp",
-        "DSLFunction.cpp",
-        "DSLLayout.cpp",
+        "DSLExpression.h",
+        "DSLModifiers.h",
         "DSLStatement.cpp",
-        "DSLSymbols.cpp",
+        "DSLStatement.h",
         "DSLType.cpp",
-        "DSLVar.cpp",
-        "//src/sksl/dsl/priv:srcs",
-    ],
-    visibility = ["//src/sksl:__pkg__"],
-)
-
-filegroup(
-    name = "private_hdrs",
-    srcs = [
-        "//src/sksl/dsl/priv:private_hdrs",
+        "DSLType.h",
     ],
     visibility = ["//src/sksl:__pkg__"],
 )

@@ -17,10 +17,11 @@
 #include "src/utils/SkOSPath.h"
 
 SvgSlide::SvgSlide(const SkString& name, const SkString& path)
-    : fPath(path)
-{
+    : fPath(path) {
     fName = name;
 }
+
+SvgSlide::~SvgSlide() = default;
 
 void SvgSlide::load(SkScalar w, SkScalar h) {
     auto stream = SkStream::MakeFromFile(fPath.c_str());
@@ -30,15 +31,13 @@ void SvgSlide::load(SkScalar w, SkScalar h) {
         return;
     }
 
-    fWinSize = SkSize::Make(w, h);
-
     auto rp = skresources::DataURIResourceProviderProxy::Make(
                   skresources::FileResourceProvider::Make(SkOSPath::Dirname(fPath.c_str()),
                                                           /*predecode=*/true),
                   /*predecode=*/true);
     fDom = SkSVGDOM::Builder().setResourceProvider(std::move(rp)).make(*stream);
     if (fDom) {
-        fDom->setContainerSize(fWinSize);
+        fDom->setContainerSize(SkSize::Make(w, h));
     }
 }
 
@@ -47,15 +46,9 @@ void SvgSlide::unload() {
 }
 
 void SvgSlide::resize(SkScalar w, SkScalar h) {
-    fWinSize = { w, h };
     if (fDom) {
-        fDom->setContainerSize(fWinSize);
+        fDom->setContainerSize(SkSize::Make(w, h));
     }
-}
-
-SkISize SvgSlide::getDimensions() const {
-    // We always scale to fill the window.
-    return fWinSize.toCeil();
 }
 
 void SvgSlide::draw(SkCanvas* canvas) {

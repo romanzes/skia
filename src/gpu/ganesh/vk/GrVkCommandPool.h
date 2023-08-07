@@ -8,9 +8,9 @@
 #ifndef GrVkCommandPool_DEFINED
 #define GrVkCommandPool_DEFINED
 
-#include "src/gpu/ganesh/vk/GrVkInterface.h"
 #include "src/gpu/ganesh/vk/GrVkManagedResource.h"
 #include "src/gpu/ganesh/vk/GrVkResourceProvider.h"
+#include "src/gpu/vk/VulkanInterface.h"
 
 #include <cinttypes>
 
@@ -65,7 +65,8 @@ private:
     std::unique_ptr<GrVkPrimaryCommandBuffer> fPrimaryCommandBuffer;
 
     // Array of available secondary command buffers that are not in flight
-    SkSTArray<4, std::unique_ptr<GrVkSecondaryCommandBuffer>, true> fAvailableSecondaryBuffers;
+    skia_private::STArray<4,
+        std::unique_ptr<GrVkSecondaryCommandBuffer>, true> fAvailableSecondaryBuffers;
     int fMaxCachedSecondaryCommandBuffers;
 };
 

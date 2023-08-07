@@ -29,8 +29,8 @@
 #include "include/core/SkTypes.h"
 #include "include/effects/SkGradientShader.h"
 #include "include/gpu/GrDirectContext.h"
+#include "src/base/SkMathPriv.h"
 #include "src/core/SkBlurMask.h"
-#include "src/core/SkMathPriv.h"
 #include "tools/ToolUtils.h"
 
 static SkBitmap make_chessbm(int w, int h) {
@@ -83,7 +83,7 @@ static sk_sp<SkImage> makebm(SkCanvas* origCanvas, SkBitmap* resultBM, int w, in
         paint.setShader(SkGradientShader::MakeRadial(
                         pt, radius,
                         colors, pos,
-                        SK_ARRAY_COUNT(colors),
+                        std::size(colors),
                         SkTileMode::kRepeat,
                         0, &mat));
         canvas->drawRect(rect, paint);
@@ -138,15 +138,21 @@ static void imageproc(SkCanvas* canvas, sk_sp<SkImage> image, const SkBitmap&, c
 static void imagesubsetproc(SkCanvas* canvas, sk_sp<SkImage> image, const SkBitmap& bm,
                             const SkIRect& srcR, const SkRect& dstR,
                             const SkSamplingOptions& sampling, const SkPaint* paint) {
+    SkASSERT_RELEASE(image);
     if (!image->bounds().contains(srcR)) {
         imageproc(canvas, std::move(image), bm, srcR, dstR, sampling, paint);
         return;
     }
 
     auto direct = GrAsDirectContext(canvas->recordingContext());
-    if (sk_sp<SkImage> subset = image->makeSubset(srcR, direct)) {
+    if (sk_sp<SkImage> subset = image->makeSubset(direct, srcR)) {
         canvas->drawImageRect(subset, dstR, sampling, paint);
     }
+#if defined(SK_GRAPHITE)
+    if (sk_sp<SkImage> subset = image->makeSubset(canvas->recorder(), srcR, {})) {
+        canvas->drawImageRect(subset, dstR, sampling, paint);
+    }
+#endif
 }
 
 typedef void DrawRectRectProc(SkCanvas*, sk_sp<SkImage>, const SkBitmap&,

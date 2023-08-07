@@ -5,11 +5,11 @@
  * found in the LICENSE file.
  */
 
-#include "include/private/SkSLString.h"
 #include "src/gpu/Blend.h"
 #include "src/gpu/ganesh/glsl/GrGLSLBlend.h"
 #include "src/gpu/ganesh/glsl/GrGLSLFragmentShaderBuilder.h"
 #include "src/gpu/ganesh/glsl/GrGLSLProgramBuilder.h"
+#include "src/sksl/SkSLString.h"
 
 namespace GrGLSLBlend {
 
@@ -27,10 +27,10 @@ std::string BlendExpression(const GrProcessor* processor,
     SkSLType skslType = (SkSLType)((int)SkSLType::kHalf + info.fUniformData.size() - 1);
     SkASSERT(skslType >= SkSLType::kHalf && skslType <= SkSLType::kHalf4);
 
-    const char* blendName;
+    const char* blendUniName;
     *blendUniform = uniformHandler->addUniform(processor, kFragment_GrShaderFlag,
-                                               skslType, "blend", &blendName);
-    return SkSL::String::printf("%s(%s, %s, %s)", info.fFunction, srcColor, dstColor, blendName);
+                                               skslType, "blend", &blendUniName);
+    return SkSL::String::printf("%s(%s, %s, %s)", info.fFunction, blendUniName, srcColor, dstColor);
 }
 
 int BlendKey(SkBlendMode mode) {
