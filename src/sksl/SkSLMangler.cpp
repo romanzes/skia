@@ -9,10 +9,11 @@
 
 #include "include/core/SkString.h"
 #include "include/core/SkTypes.h"
-#include "include/private/SkStringView.h"
+#include "src/base/SkStringView.h"
 #include "src/sksl/ir/SkSLSymbolTable.h"
 
 #include <algorithm>
+#include <cstring>
 #include <ctype.h>
 
 namespace SkSL {
@@ -52,7 +53,7 @@ std::string Mangler::uniqueName(std::string_view baseName, SymbolTable* symbolTa
     // This code is a performance hotspot. Assemble the string manually to save a few cycles.
     char uniqueName[256];
     uniqueName[0] = '_';
-    char* uniqueNameEnd = uniqueName + SK_ARRAY_COUNT(uniqueName);
+    char* uniqueNameEnd = uniqueName + std::size(uniqueName);
     for (;;) {
         // _123
         char* endPtr = SkStrAppendS32(uniqueName + 1, fCounter++);
@@ -66,7 +67,7 @@ std::string Mangler::uniqueName(std::string_view baseName, SymbolTable* symbolTa
         endPtr += baseNameCopyLength;
 
         std::string_view uniqueNameView(uniqueName, endPtr - uniqueName);
-        if ((*symbolTable)[uniqueNameView] == nullptr) {
+        if (symbolTable->find(uniqueNameView) == nullptr) {
             return std::string(uniqueNameView);
         }
     }

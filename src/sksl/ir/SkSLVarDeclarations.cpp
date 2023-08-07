@@ -7,29 +7,26 @@
 
 #include "src/sksl/ir/SkSLVarDeclarations.h"
 
-#include "include/private/SkSLLayout.h"
-#include "include/private/SkSLModifiers.h"
-#include "include/private/SkSLProgramKind.h"
-#include "include/private/SkSLString.h"
-#include "include/sksl/SkSLErrorReporter.h"
-#include "include/sksl/SkSLPosition.h"
+#include "include/core/SkSpan.h"
+#include "include/private/base/SkTo.h"
 #include "src/sksl/SkSLAnalysis.h"
 #include "src/sksl/SkSLBuiltinTypes.h"
 #include "src/sksl/SkSLCompiler.h"
 #include "src/sksl/SkSLContext.h"
+#include "src/sksl/SkSLErrorReporter.h"
+#include "src/sksl/SkSLPosition.h"
+#include "src/sksl/SkSLProgramKind.h"
 #include "src/sksl/SkSLProgramSettings.h"
+#include "src/sksl/SkSLString.h"
 #include "src/sksl/SkSLThreadContext.h"
-#include "src/sksl/ir/SkSLSymbolTable.h"
+#include "src/sksl/ir/SkSLLayout.h"
+#include "src/sksl/ir/SkSLModifiers.h"
+#include "src/sksl/ir/SkSLSymbolTable.h"  // IWYU pragma: keep
 #include "src/sksl/ir/SkSLType.h"
 
 #include <string_view>
-#include <type_traits>
-#include <vector>
 
 namespace SkSL {
-
-class Symbol;
-
 namespace {
 
 static bool check_valid_uniform_type(Position pos,
@@ -43,9 +40,20 @@ static bool check_valid_uniform_type(Position pos,
     {
         bool error = false;
         if (ProgramConfig::IsRuntimeEffect(context.fConfig->fKind)) {
-            if (t->isEffectChild() ||
-                ((t->isScalar() || t->isVector()) && ct.isSigned() && ct.bitWidth() == 32) ||
-                ((t->isScalar() || t->isVector() || t->isMatrix()) && ct.isFloat())) {
+            // `shader`, `blender`, `colorFilter`
+            if (t->isEffectChild()) {
+                return true;
+            }
+
+            // `int`, `int2`, `int3`, `int4`
+            if (ct.isSigned() && ct.bitWidth() == 32 && (t->isScalar() || t->isVector())) {
+                return true;
+            }
+
+            // `float`, `float2`, `float3`, `float4`, `float2x2`, `float3x3`, `float4x4`
+            // `half`, `half2`, `half3`, `half4`, `half2x2`, `half3x3`, `half4x4`
+            if (ct.isFloat() &&
+                (t->isScalar() || t->isVector() || (t->isMatrix() && t->rows() == t->columns()))) {
                 return true;
             }
 
@@ -54,8 +62,9 @@ static bool check_valid_uniform_type(Position pos,
         }
 
         // We disallow boolean uniforms in SkSL since they are not well supported by backend
-        // platforms and drivers.
-        if (error || (ct.isBoolean() && (t->isScalar() || t->isVector()))) {
+        // platforms and drivers. We disallow atomic variables in uniforms as that doesn't map
+        // cleanly to all backends.
+        if (error || (ct.isBoolean() && (t->isScalar() || t->isVector())) || ct.isAtomic()) {
             context.fErrors->error(
                     pos, "variables of type '" + t->displayName() + "' may not be uniform");
             return false;
@@ -65,7 +74,7 @@ static bool check_valid_uniform_type(Position pos,
     // In non-RTE SkSL we allow structs and interface blocks to be uniforms but we must make sure
     // their fields are allowed.
     if (t->isStruct()) {
-        for (const Type::Field& field : t->fields()) {
+        for (const Field& field : t->fields()) {
             if (!check_valid_uniform_type(
                         field.fPosition, field.fType, context, /*topLevel=*/false)) {
                 // Emit a "caused by" line only for the top-level uniform type and not for any
@@ -95,11 +104,11 @@ std::unique_ptr<Statement> VarDeclaration::clone() const {
     // the moment. We instead just keep track of whether a VarDeclaration is a clone so we can
     // handle its cleanup properly. This allows clone() to work in the simple case that a
     // VarDeclaration's clone does not outlive the original, which is adequate for testing. Since
-    // this leaves a sharp  edge in place - destroying the original could cause a use-after-free in
+    // this leaves a sharp edge in place - destroying the original could cause a use-after-free in
     // some circumstances - we also disable cloning altogether unless the
     // fAllowVarDeclarationCloneForTesting ProgramSetting is enabled.
-    if (ThreadContext::Settings().fAllowVarDeclarationCloneForTesting) {
-        return std::make_unique<VarDeclaration>(&this->var(),
+    if (ThreadContext::Context().fConfig->fSettings.fAllowVarDeclarationCloneForTesting) {
+        return std::make_unique<VarDeclaration>(this->var(),
                                                 &this->baseType(),
                                                 fArraySize,
                                                 this->value() ? this->value()->clone() : nullptr,
@@ -111,8 +120,8 @@ std::unique_ptr<Statement> VarDeclaration::clone() const {
 }
 
 std::string VarDeclaration::description() const {
-    std::string result = this->var().modifiers().description() + this->baseType().description() +
-                         " " + std::string(this->var().name());
+    std::string result = this->var()->modifiers().description() + this->baseType().description() +
+                         " " + std::string(this->var()->name());
     if (this->arraySize() > 0) {
         String::appendf(&result, "[%d]", this->arraySize());
     }
@@ -127,8 +136,12 @@ void VarDeclaration::ErrorCheck(const Context& context,
                                 Position pos,
                                 Position modifiersPosition,
                                 const Modifiers& modifiers,
-                                const Type* baseType,
+                                const Type* type,
                                 Variable::Storage storage) {
+    const Type* baseType = type;
+    if (baseType->isArray()) {
+        baseType = &baseType->componentType();
+    }
     SkASSERT(!baseType->isArray());
 
     if (baseType->matches(*context.fTypes.fInvalid)) {
@@ -140,23 +153,37 @@ void VarDeclaration::ErrorCheck(const Context& context,
         return;
     }
 
-    if (baseType->componentType().isOpaque() && storage != Variable::Storage::kGlobal) {
+    if (baseType->componentType().isOpaque() && !baseType->componentType().isAtomic() &&
+        storage != Variable::Storage::kGlobal) {
         context.fErrors->error(pos,
                 "variables of type '" + baseType->displayName() + "' must be global");
     }
     if ((modifiers.fFlags & Modifiers::kIn_Flag) && baseType->isMatrix()) {
         context.fErrors->error(pos, "'in' variables may not have matrix type");
     }
+    if ((modifiers.fFlags & Modifiers::kIn_Flag) && type->isUnsizedArray()) {
+        context.fErrors->error(pos, "'in' variables may not have unsized array type");
+    }
+    if ((modifiers.fFlags & Modifiers::kOut_Flag) && type->isUnsizedArray()) {
+        context.fErrors->error(pos, "'out' variables may not have unsized array type");
+    }
     if ((modifiers.fFlags & Modifiers::kIn_Flag) && (modifiers.fFlags & Modifiers::kUniform_Flag)) {
         context.fErrors->error(pos, "'in uniform' variables not permitted");
     }
+    if ((modifiers.fFlags & Modifiers::kReadOnly_Flag) &&
+        (modifiers.fFlags & Modifiers::kWriteOnly_Flag)) {
+        context.fErrors->error(pos, "'readonly' and 'writeonly' qualifiers cannot be combined");
+    }
+    if ((modifiers.fFlags & Modifiers::kUniform_Flag) &&
+        (modifiers.fFlags & Modifiers::kBuffer_Flag)) {
+        context.fErrors->error(pos, "'uniform buffer' variables not permitted");
+    }
+    if ((modifiers.fFlags & Modifiers::kWorkgroup_Flag) &&
+        (modifiers.fFlags & (Modifiers::kIn_Flag | Modifiers::kOut_Flag))) {
+        context.fErrors->error(pos, "in / out variables may not be declared workgroup");
+    }
     if ((modifiers.fFlags & Modifiers::kUniform_Flag)) {
         check_valid_uniform_type(pos, baseType, context);
-    }
-    if (ProgramConfig::IsRuntimeEffect(context.fConfig->fKind)) {
-        if (modifiers.fFlags & Modifiers::kIn_Flag) {
-            context.fErrors->error(pos, "'in' variables not permitted in runtime effects");
-        }
     }
     if (baseType->isEffectChild() && !(modifiers.fFlags & Modifiers::kUniform_Flag)) {
         context.fErrors->error(pos,
@@ -165,6 +192,29 @@ void VarDeclaration::ErrorCheck(const Context& context,
     if (baseType->isEffectChild() && (context.fConfig->fKind == ProgramKind::kMeshVertex ||
                                       context.fConfig->fKind == ProgramKind::kMeshFragment)) {
         context.fErrors->error(pos, "effects are not permitted in custom mesh shaders");
+    }
+    if (baseType->isOrContainsAtomic()) {
+        // An atomic variable (or a struct or an array that contains an atomic member) must be
+        // either:
+        //   a. Declared as a workgroup-shared variable, OR
+        //   b. Declared as the member of writable storage buffer block (i.e. has no readonly
+        //   restriction).
+        //
+        // The checks below will enforce these two rules on all declarations. If the variable is not
+        // declared with the workgroup modifier, then it must be declared in the interface block
+        // storage. If this is the declaration for an interface block that contains an atomic
+        // member, then it must have the `buffer` modifier and no `readonly` modifier.
+        bool isWorkgroup = modifiers.fFlags & Modifiers::kWorkgroup_Flag;
+        bool isBlockMember = (storage == Variable::Storage::kInterfaceBlock);
+        bool isWritableStorageBuffer = modifiers.fFlags & Modifiers::kBuffer_Flag &&
+                                       !(modifiers.fFlags & Modifiers::kReadOnly_Flag);
+
+        if (!isWorkgroup &&
+            !(baseType->isInterfaceBlock() ? isWritableStorageBuffer : isBlockMember)) {
+            context.fErrors->error(pos,
+                                   "atomics are only permitted in workgroup variables and writable "
+                                   "storage blocks");
+        }
     }
     if (modifiers.fLayout.fFlags & Layout::kColor_Flag) {
         if (!ProgramConfig::IsRuntimeEffect(context.fConfig->fKind)) {
@@ -184,15 +234,75 @@ void VarDeclaration::ErrorCheck(const Context& context,
                                            baseType->displayName() + "'");
         }
     }
+
     int permitted = Modifiers::kConst_Flag | Modifiers::kHighp_Flag | Modifiers::kMediump_Flag |
                     Modifiers::kLowp_Flag;
     if (storage == Variable::Storage::kGlobal) {
-        permitted |= Modifiers::kIn_Flag | Modifiers::kOut_Flag | Modifiers::kUniform_Flag |
-                     Modifiers::kFlat_Flag | Modifiers::kNoPerspective_Flag;
+        // Uniforms are allowed in all programs
+        permitted |= Modifiers::kUniform_Flag;
+
+        // No other modifiers are allowed in runtime effects.
+        if (!ProgramConfig::IsRuntimeEffect(context.fConfig->fKind)) {
+            if (baseType->isInterfaceBlock()) {
+                // Interface blocks allow `buffer`.
+                permitted |= Modifiers::kBuffer_Flag;
+
+                if (modifiers.fFlags & Modifiers::kBuffer_Flag) {
+                    // Only storage blocks allow `readonly` and `writeonly`.
+                    // (`readonly` and `writeonly` textures are converted to separate types via
+                    // applyAccessQualifiers.)
+                    permitted |= Modifiers::kReadOnly_Flag | Modifiers::kWriteOnly_Flag;
+                }
+
+                // It is an error for an unsized array to appear anywhere but the last member of a
+                // "buffer" block.
+                const auto& fields = baseType->fields();
+                const int illegalRangeEnd = SkToInt(fields.size()) -
+                                            ((modifiers.fFlags & Modifiers::kBuffer_Flag) ? 1 : 0);
+                for (int i = 0; i < illegalRangeEnd; ++i) {
+                    if (fields[i].fType->isUnsizedArray()) {
+                        context.fErrors->error(
+                                fields[i].fPosition,
+                                "unsized array must be the last member of a storage block");
+                    }
+                }
+            }
+
+            if (!baseType->isOpaque()) {
+                // Only non-opaque types allow `in` and `out`.
+                permitted |= Modifiers::kIn_Flag | Modifiers::kOut_Flag;
+            }
+            if (ProgramConfig::IsCompute(context.fConfig->fKind)) {
+                // Only compute shaders allow `workgroup`.
+                if (!baseType->isOpaque() || baseType->isAtomic()) {
+                    permitted |= Modifiers::kWorkgroup_Flag;
+                }
+            } else {
+                // Only vertex/fragment shaders allow `flat` and `noperspective`.
+                permitted |= Modifiers::kFlat_Flag | Modifiers::kNoPerspective_Flag;
+            }
+        }
     }
-    // TODO(skbug.com/11301): Migrate above checks into building a mask of permitted layout flags
 
     int permittedLayoutFlags = ~0;
+
+    // The `texture` and `sampler` modifiers can be present respectively on a texture and sampler or
+    // simultaneously on a combined image-sampler but they are not permitted on any other type.
+    switch (baseType->typeKind()) {
+        case Type::TypeKind::kSampler:
+            // Both texture and sampler flags are permitted
+            break;
+        case Type::TypeKind::kTexture:
+            permittedLayoutFlags &= ~Layout::kSampler_Flag;
+            break;
+        case Type::TypeKind::kSeparateSampler:
+            permittedLayoutFlags &= ~Layout::kTexture_Flag;
+            break;
+        default:
+            permittedLayoutFlags &= ~(Layout::kTexture_Flag | Layout::kSampler_Flag);
+            break;
+    }
+
     // We don't allow 'binding' or 'set' on normal uniform variables, only on textures, samplers,
     // and interface blocks (holding uniform variables). They're also only allowed at global scope,
     // not on interface block fields (or locals/parameters).
@@ -204,22 +314,34 @@ void VarDeclaration::ErrorCheck(const Context& context,
         ((modifiers.fFlags & Modifiers::kUniform_Flag) && !permitBindingAndSet)) {
         permittedLayoutFlags &= ~Layout::kBinding_Flag;
         permittedLayoutFlags &= ~Layout::kSet_Flag;
+        permittedLayoutFlags &= ~Layout::kSPIRV_Flag;
+        permittedLayoutFlags &= ~Layout::kMetal_Flag;
+        permittedLayoutFlags &= ~Layout::kWGSL_Flag;
+        permittedLayoutFlags &= ~Layout::kGL_Flag;
     }
+    if (ProgramConfig::IsRuntimeEffect(context.fConfig->fKind)) {
+        // Disallow all layout flags except 'color' in runtime effects
+        permittedLayoutFlags &= Layout::kColor_Flag;
+    }
+
+    // The `push_constant` flag isn't allowed on in-variables, out-variables, bindings or sets.
+    if ((modifiers.fLayout.fFlags & (Layout::kSet_Flag | Layout::kBinding_Flag)) ||
+        (modifiers.fFlags & (Modifiers::kIn_Flag | Modifiers::kOut_Flag))) {
+        permittedLayoutFlags &= ~Layout::kPushConstant_Flag;
+    }
+
     modifiers.checkPermitted(context, modifiersPosition, permitted, permittedLayoutFlags);
 }
 
-bool VarDeclaration::ErrorCheckAndCoerce(const Context& context, const Variable& var,
-        std::unique_ptr<Expression>& value) {
-    const Type* baseType = &var.type();
-    if (baseType->isArray()) {
-        baseType = &baseType->componentType();
-    }
-    ErrorCheck(context, var.fPosition, var.modifiersPosition(), var.modifiers(), baseType,
-            var.storage());
+bool VarDeclaration::ErrorCheckAndCoerce(const Context& context,
+                                         const Variable& var,
+                                         std::unique_ptr<Expression>& value) {
+    ErrorCheck(context, var.fPosition, var.modifiersPosition(), var.modifiers(), &var.type(),
+               var.storage());
     if (value) {
         if (var.type().isOpaque()) {
             context.fErrors->error(value->fPosition, "opaque type '" + var.type().displayName() +
-                    "' cannot use initializer expressions");
+                                                     "' cannot use initializer expressions");
             return false;
         }
         if (var.modifiers().fFlags & Modifiers::kIn_Flag) {
@@ -270,8 +392,35 @@ bool VarDeclaration::ErrorCheckAndCoerce(const Context& context, const Variable&
     return true;
 }
 
-std::unique_ptr<Statement> VarDeclaration::Convert(const Context& context,
-        std::unique_ptr<Variable> var, std::unique_ptr<Expression> value, bool addToSymbolTable) {
+std::unique_ptr<VarDeclaration> VarDeclaration::Convert(const Context& context,
+                                                        Position overallPos,
+                                                        Position modifiersPos,
+                                                        const Modifiers& modifiers,
+                                                        const Type& type,
+                                                        Position namePos,
+                                                        std::string_view name,
+                                                        VariableStorage storage,
+                                                        std::unique_ptr<Expression> value) {
+    // Parameter declaration-statements do not exist in the grammar (unlike, say, K&R C).
+    SkASSERT(storage != VariableStorage::kParameter);
+
+    std::unique_ptr<Variable> var = Variable::Convert(context,
+                                                      overallPos,
+                                                      modifiersPos,
+                                                      modifiers,
+                                                      &type,
+                                                      namePos,
+                                                      name,
+                                                      storage);
+    if (!var) {
+        return nullptr;
+    }
+    return VarDeclaration::Convert(context, std::move(var), std::move(value));
+}
+
+std::unique_ptr<VarDeclaration> VarDeclaration::Convert(const Context& context,
+                                                        std::unique_ptr<Variable> var,
+                                                        std::unique_ptr<Expression> value) {
     if (!ErrorCheckAndCoerce(context, *var, value)) {
         return nullptr;
     }
@@ -281,44 +430,45 @@ std::unique_ptr<Statement> VarDeclaration::Convert(const Context& context,
         arraySize = baseType->columns();
         baseType = &baseType->componentType();
     }
-    std::unique_ptr<Statement> varDecl = VarDeclaration::Make(context, var.get(), baseType,
-            arraySize, std::move(value));
+    std::unique_ptr<VarDeclaration> varDecl = VarDeclaration::Make(context, var.get(), baseType,
+                                                                   arraySize, std::move(value));
     if (!varDecl) {
         return nullptr;
     }
 
-    // Detect the declaration of magical variables.
-    if ((var->storage() == Variable::Storage::kGlobal) && var->name() == Compiler::FRAGCOLOR_NAME) {
-        // Silently ignore duplicate definitions of `sk_FragColor`.
-        const Symbol* symbol = (*ThreadContext::SymbolTable())[var->name()];
-        if (symbol) {
+    if (var->storage() == Variable::Storage::kGlobal ||
+        var->storage() == Variable::Storage::kInterfaceBlock) {
+        // Check if this globally-scoped variable name overlaps an existing symbol name.
+        if (context.fSymbolTable->find(var->name())) {
+            context.fErrors->error(var->fPosition,
+                                   "symbol '" + std::string(var->name()) + "' was already defined");
             return nullptr;
         }
-    } else if ((var->storage() == Variable::Storage::kGlobal ||
-                var->storage() == Variable::Storage::kInterfaceBlock) &&
-               var->name() == Compiler::RTADJUST_NAME) {
+
         // `sk_RTAdjust` is special, and makes the IR generator emit position-fixup expressions.
-        if (ThreadContext::RTAdjustState().fVar || ThreadContext::RTAdjustState().fInterfaceBlock) {
-            context.fErrors->error(var->fPosition, "duplicate definition of 'sk_RTAdjust'");
-            return nullptr;
+        if (var->name() == Compiler::RTADJUST_NAME) {
+            if (ThreadContext::RTAdjustState().fVar ||
+                ThreadContext::RTAdjustState().fInterfaceBlock) {
+                context.fErrors->error(var->fPosition, "duplicate definition of 'sk_RTAdjust'");
+                return nullptr;
+            }
+            if (!var->type().matches(*context.fTypes.fFloat4)) {
+                context.fErrors->error(var->fPosition, "sk_RTAdjust must have type 'float4'");
+                return nullptr;
+            }
+            ThreadContext::RTAdjustState().fVar = var.get();
         }
-        if (!var->type().matches(*context.fTypes.fFloat4)) {
-            context.fErrors->error(var->fPosition, "sk_RTAdjust must have type 'float4'");
-            return nullptr;
-        }
-        ThreadContext::RTAdjustState().fVar = var.get();
     }
 
-    if (addToSymbolTable) {
-        ThreadContext::SymbolTable()->add(std::move(var));
-    } else {
-        ThreadContext::SymbolTable()->takeOwnershipOfSymbol(std::move(var));
-    }
+    context.fSymbolTable->add(std::move(var));
     return varDecl;
 }
 
-std::unique_ptr<Statement> VarDeclaration::Make(const Context& context, Variable* var,
-        const Type* baseType, int arraySize, std::unique_ptr<Expression> value) {
+std::unique_ptr<VarDeclaration> VarDeclaration::Make(const Context& context,
+                                                     Variable* var,
+                                                     const Type* baseType,
+                                                     int arraySize,
+                                                     std::unique_ptr<Expression> value) {
     SkASSERT(!baseType->isArray());
     // function parameters cannot have variable declarations
     SkASSERT(var->storage() != Variable::Storage::kParameter);
@@ -342,8 +492,8 @@ std::unique_ptr<Statement> VarDeclaration::Make(const Context& context, Variable
     SkASSERT(!(value && (var->modifiers().fFlags & Modifiers::kUniform_Flag)));
 
     auto result = std::make_unique<VarDeclaration>(var, baseType, arraySize, std::move(value));
-    var->setDeclaration(result.get());
-    return std::move(result);
+    var->setVarDeclaration(result.get());
+    return result;
 }
 
 }  // namespace SkSL

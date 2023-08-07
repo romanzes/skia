@@ -8,20 +8,32 @@
 #ifndef sktext_gpu_GlyphVector_DEFINED
 #define sktext_gpu_GlyphVector_DEFINED
 
+#include "include/core/SkRefCnt.h"
 #include "include/core/SkSpan.h"
 #include "src/core/SkGlyph.h"
-#include "src/core/SkGlyphBuffer.h"
 #include "src/gpu/AtlasTypes.h"
-#include "src/text/gpu/Glyph.h"
+#include "src/text/StrikeForGPU.h"
 #include "src/text/gpu/StrikeCache.h"
-#include "src/text/gpu/SubRunAllocator.h"
 
+#include <cstddef>
+#include <cstdint>
+#include <optional>
+#include <tuple>
+
+class SkReadBuffer;
 class SkStrikeClient;
-#if SK_SUPPORT_GPU
+class SkWriteBuffer;
+
+#if defined(SK_GANESH)
 class GrMeshDrawTarget;
+#endif
+#if defined(SK_GRAPHITE)
+namespace skgpu::graphite { class Recorder; }
 #endif
 
 namespace sktext::gpu {
+class Glyph;
+class SubRunAllocator;
 
 // -- GlyphVector ----------------------------------------------------------------------------------
 // GlyphVector provides a way to delay the lookup of Glyphs until the code is running on the GPU
@@ -38,16 +50,18 @@ public:
         Variant(SkPackedGlyphID id) : packedGlyphID{id} {}
     };
 
-    GlyphVector(sk_sp<SkStrike>&& strike, SkSpan<Variant> glyphs);
+    GlyphVector(SkStrikePromise&& strikePromise, SkSpan<Variant> glyphs);
 
-    static GlyphVector Make(
-            sk_sp<SkStrike>&& strike, SkSpan<SkGlyphVariant> glyphs, SubRunAllocator* alloc);
+    static GlyphVector Make(SkStrikePromise&& promise,
+                            SkSpan<const SkPackedGlyphID> glyphs,
+                            SubRunAllocator* alloc);
+
     SkSpan<const Glyph*> glyphs() const;
 
     static std::optional<GlyphVector> MakeFromBuffer(SkReadBuffer& buffer,
                                                      const SkStrikeClient* strikeClient,
                                                      SubRunAllocator* alloc);
-    void flatten(SkWriteBuffer& buffer);
+    void flatten(SkWriteBuffer& buffer) const;
 
     // This doesn't need to include sizeof(GlyphVector) because this is embedded in each of
     // the sub runs.
@@ -55,7 +69,7 @@ public:
 
     void packedGlyphIDToGlyph(StrikeCache* cache);
 
-#if SK_SUPPORT_GPU
+#if defined(SK_GANESH)
     std::tuple<bool, int> regenerateAtlas(
             int begin, int end,
             skgpu::MaskFormat maskFormat,
@@ -63,19 +77,26 @@ public:
             GrMeshDrawTarget*);
 #endif
 
+#if defined(SK_GRAPHITE)
+    std::tuple<bool, int> regenerateAtlas(
+            int begin, int end,
+            skgpu::MaskFormat maskFormat,
+            int srcPadding,
+            skgpu::graphite::Recorder*);
+#endif
+
     static size_t GlyphVectorSize(size_t count) {
         return sizeof(Variant) * count;
     }
 
 private:
-    friend class TestingPeer;
-    sk_sp<SkStrike> fSkStrike;
+    friend class GlyphVectorTestingPeer;
+
+    SkStrikePromise fStrikePromise;
     SkSpan<Variant> fGlyphs;
     sk_sp<TextStrike> fTextStrike{nullptr};
     uint64_t fAtlasGeneration{skgpu::AtlasGenerationCounter::kInvalidGeneration};
     skgpu::BulkUsePlotUpdater fBulkUseUpdater;
 };
-
 }  // namespace sktext::gpu
-
 #endif  // sktext_gpu_GlyphVector_DEFINED

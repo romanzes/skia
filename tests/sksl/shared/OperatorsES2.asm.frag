@@ -1,10 +1,10 @@
 OpCapability Shader
 %1 = OpExtInstImport "GLSL.std.450"
 OpMemoryModel Logical GLSL450
-OpEntryPoint Fragment %_entrypoint_v "_entrypoint" %sk_FragColor %sk_Clockwise
+OpEntryPoint Fragment %_entrypoint_v "_entrypoint" %sk_Clockwise %sk_FragColor
 OpExecutionMode %_entrypoint_v OriginUpperLeft
-OpName %sk_FragColor "sk_FragColor"
 OpName %sk_Clockwise "sk_Clockwise"
+OpName %sk_FragColor "sk_FragColor"
 OpName %_UniformBuffer "_UniformBuffer"
 OpMemberName %_UniformBuffer 0 "colorGreen"
 OpMemberName %_UniformBuffer 1 "colorRed"
@@ -19,10 +19,10 @@ OpName %c "c"
 OpName %d "d"
 OpName %e "e"
 OpName %f "f"
+OpDecorate %sk_Clockwise BuiltIn FrontFacing
 OpDecorate %sk_FragColor RelaxedPrecision
 OpDecorate %sk_FragColor Location 0
 OpDecorate %sk_FragColor Index 0
-OpDecorate %sk_Clockwise BuiltIn FrontFacing
 OpMemberDecorate %_UniformBuffer 0 Offset 0
 OpMemberDecorate %_UniformBuffer 0 RelaxedPrecision
 OpMemberDecorate %_UniformBuffer 1 Offset 16
@@ -37,13 +37,13 @@ OpDecorate %70 RelaxedPrecision
 OpDecorate %115 RelaxedPrecision
 OpDecorate %117 RelaxedPrecision
 OpDecorate %118 RelaxedPrecision
+%bool = OpTypeBool
+%_ptr_Input_bool = OpTypePointer Input %bool
+%sk_Clockwise = OpVariable %_ptr_Input_bool Input
 %float = OpTypeFloat 32
 %v4float = OpTypeVector %float 4
 %_ptr_Output_v4float = OpTypePointer Output %v4float
 %sk_FragColor = OpVariable %_ptr_Output_v4float Output
-%bool = OpTypeBool
-%_ptr_Input_bool = OpTypePointer Input %bool
-%sk_Clockwise = OpVariable %_ptr_Input_bool Input
 %_UniformBuffer = OpTypeStruct %v4float %v4float %float
 %_ptr_Uniform__UniformBuffer = OpTypePointer Uniform %_UniformBuffer
 %10 = OpVariable %_ptr_Uniform__UniformBuffer Uniform
@@ -68,7 +68,7 @@ OpDecorate %118 RelaxedPrecision
 %false = OpConstantFalse %bool
 %_ptr_Uniform_float = OpTypePointer Uniform %float
 %float_12 = OpConstant %float 12
-%float_10 = OpConstant %float 10
+%float_0_100000001 = OpConstant %float 0.100000001
 %float_6 = OpConstant %float 6
 %int_1 = OpConstant %int 1
 %int_6 = OpConstant %int 6
@@ -157,7 +157,7 @@ OpStore %f %81
 OpStore %x %83
 %84 = OpFSub %float %83 %float_12
 OpStore %x %84
-%86 = OpFDiv %float %42 %float_10
+%86 = OpFMul %float %42 %float_0_100000001
 OpStore %y %86
 %87 = OpFMul %float %84 %86
 OpStore %x %87

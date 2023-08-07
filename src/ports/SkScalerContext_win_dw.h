@@ -10,7 +10,7 @@
 
 #include "include/core/SkScalar.h"
 #include "include/core/SkTypes.h"
-#include "include/private/SkTDArray.h"
+#include "include/private/base/SkTDArray.h"
 #include "src/core/SkScalerContext.h"
 #include "src/ports/SkTypeface_win_dw.h"
 
@@ -38,7 +38,13 @@ protected:
 private:
     struct ScalerContextBits {
         using value_type = decltype(SkGlyph::fScalerContextBits);
-        static const constexpr value_type ForceBW = 1 << 0;
+        static const constexpr value_type NONE = 0;
+        static const constexpr value_type DW   = 1;
+        static const constexpr value_type DW_1 = 2;
+        static const constexpr value_type PNG  = 3;
+        static const constexpr value_type SVG  = 4;
+        static const constexpr value_type COLR = 5;
+        static const constexpr value_type PATH = 6;
     };
 
     static void BilevelToBW(const uint8_t* SK_RESTRICT src, const SkGlyph& glyph);
@@ -57,30 +63,28 @@ private:
     static void RGBToLcd16(const uint8_t* SK_RESTRICT src, const SkGlyph& glyph,
                            const uint8_t* tableR, const uint8_t* tableG, const uint8_t* tableB);
 
-    const void* drawDWMask(const SkGlyph& glyph,
-                           DWRITE_RENDERING_MODE renderingMode,
-                           DWRITE_TEXTURE_TYPE textureType);
-
-    HRESULT getBoundingBox(SkGlyph* glyph,
-                           DWRITE_RENDERING_MODE renderingMode,
-                           DWRITE_TEXTURE_TYPE textureType,
-                           RECT* bbox);
-
     DWriteFontTypeface* getDWriteTypeface() {
         return static_cast<DWriteFontTypeface*>(this->getTypeface());
     }
 
-    bool isColorGlyph(const SkGlyph&);
     bool getColorGlyphRun(const SkGlyph&, IDWriteColorGlyphRunEnumerator**);
     bool generateColorMetrics(SkGlyph*);
-    void generateColorGlyphImage(const SkGlyph&);
-    void drawColorGlyphImage(const SkGlyph&, SkCanvas&);
+    bool generateColorImage(const SkGlyph&);
+    bool drawColorImage(const SkGlyph&, SkCanvas&);
 
-    bool isPngGlyph(const SkGlyph&);
+    bool generateSVGMetrics(SkGlyph*);
+    bool generateSVGImage(const SkGlyph&);
+    bool drawSVGImage(const SkGlyph&, SkCanvas&);
+
     bool generatePngMetrics(SkGlyph*);
-    void generatePngGlyphImage(const SkGlyph&);
-    void drawPngGlyphImage(const SkGlyph&, SkCanvas&);
+    bool generatePngImage(const SkGlyph&);
+    bool drawPngImage(const SkGlyph&, SkCanvas&);
 
+    bool generateDWMetrics(SkGlyph*, DWRITE_RENDERING_MODE, DWRITE_TEXTURE_TYPE);
+    const void* getDWMaskBits(const SkGlyph&, DWRITE_RENDERING_MODE, DWRITE_TEXTURE_TYPE);
+    bool generateDWImage(const SkGlyph&);
+
+    static void SetGlyphBounds(SkGlyph* glyph, const SkRect& bounds);
 
     SkTDArray<uint8_t> fBits;
     /** The total matrix without the text height scale. */

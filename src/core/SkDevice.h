@@ -15,28 +15,35 @@
 #include "include/core/SkRegion.h"
 #include "include/core/SkShader.h"
 #include "include/core/SkSurfaceProps.h"
-#include "include/private/SkNoncopyable.h"
+#include "include/private/base/SkNoncopyable.h"
+#include "include/private/base/SkTArray.h"
 #include "src/core/SkMatrixPriv.h"
 #include "src/core/SkMatrixProvider.h"
 #include "src/core/SkRasterClip.h"
 #include "src/core/SkScalerContext.h"
 #include "src/shaders/SkShaderBase.h"
 
+namespace sktext {
+class GlyphRun;
+class GlyphRunList;
+}
 class SkBitmap;
 class SkColorSpace;
 class SkMesh;
 struct SkDrawShadowRec;
-class SkGlyphRun;
-class SkGlyphRunList;
 class SkImageFilter;
 class SkImageFilterCache;
 struct SkIRect;
 class SkRasterHandleAllocator;
 class SkSpecialImage;
 
-namespace skif { class Mapping; }
-namespace skgpu {
-class BaseDevice;
+namespace skif {
+class Context;
+struct ContextInfo;
+class Mapping;
+}
+namespace skgpu::ganesh {
+class Device;
 }
 namespace skgpu::graphite {
 class Device;
@@ -212,14 +219,25 @@ public:
 
     virtual bool android_utils_clipWithStencil() { return false; }
 
-    virtual skgpu::BaseDevice* asGaneshDevice() { return nullptr; }
+    virtual skgpu::ganesh::Device* asGaneshDevice() { return nullptr; }
     virtual skgpu::graphite::Device* asGraphiteDevice() { return nullptr; }
 
     // Ensure that non-RSXForm runs are passed to onDrawGlyphRunList.
     void drawGlyphRunList(SkCanvas*,
-                          const SkGlyphRunList& glyphRunList,
+                          const sktext::GlyphRunList& glyphRunList,
                           const SkPaint& initialPaint,
                           const SkPaint& drawingPaint);
+
+    // Snap the 'subset' contents from this device, possibly as a read-only view. If 'forceCopy'
+    // is true then the returned image's pixels must not be affected by subsequent draws into the
+    // device. When 'forceCopy' is false, the image can be a view into the device's pixels
+    // (avoiding a copy for performance, at the expense of safety). Default returns null.
+    virtual sk_sp<SkSpecialImage> snapSpecial(const SkIRect& subset, bool forceCopy = false);
+    // Can return null if unable to perform scaling as part of the copy, even if snapSpecial() w/o
+    // scaling would succeed.
+    virtual sk_sp<SkSpecialImage> snapSpecialScaled(const SkIRect& subset, const SkISize& dstDims);
+    // Get a view of the entire device's current contents as an image.
+    sk_sp<SkSpecialImage> snapSpecial();
 
 protected:
     enum TileUsage {
@@ -332,14 +350,14 @@ protected:
 
     // Only called with glyphRunLists that do not contain RSXForm.
     virtual void onDrawGlyphRunList(SkCanvas*,
-                                    const SkGlyphRunList&,
+                                    const sktext::GlyphRunList&,
                                     const SkPaint& initialPaint,
                                     const SkPaint& drawingPaint) = 0;
 
     // Slug handling routines.
-#if (SK_SUPPORT_GPU || defined(SK_GRAPHITE_ENABLED))
+#if (defined(SK_GANESH) || defined(SK_GRAPHITE))
     virtual sk_sp<sktext::gpu::Slug> convertGlyphRunListToSlug(
-            const SkGlyphRunList& glyphRunList,
+            const sktext::GlyphRunList& glyphRunList,
             const SkPaint& initialPaint,
             const SkPaint& drawingPaint);
     virtual void drawSlug(SkCanvas*, const sktext::gpu::Slug* slug, const SkPaint& drawingPaint);
@@ -370,20 +388,14 @@ protected:
      * local-to-device matrix (i.e. just like drawSpecial and drawDevice).
      *
      * The final paint must not have an image filter or mask filter set on it; a shader is ignored.
+     * The provided color type will be used for any intermediate surfaces that need to be created as
+     * part of filter evaluation. It does not have to be src's color type or this Device's type.
      */
-    virtual void drawFilteredImage(const skif::Mapping& mapping, SkSpecialImage* src,
-                                   const SkImageFilter*, const SkSamplingOptions&, const SkPaint&);
+    void drawFilteredImage(const skif::Mapping& mapping, SkSpecialImage* src, SkColorType ct,
+                           const SkImageFilter*, const SkSamplingOptions&, const SkPaint&);
 
     virtual sk_sp<SkSpecialImage> makeSpecial(const SkBitmap&);
     virtual sk_sp<SkSpecialImage> makeSpecial(const SkImage*);
-
-    // Get a view of the entire device's current contents as an image.
-    sk_sp<SkSpecialImage> snapSpecial();
-    // Snap the 'subset' contents from this device, possibly as a read-only view. If 'forceCopy'
-    // is true then the returned image's pixels must not be affected by subsequent draws into the
-    // device. When 'forceCopy' is false, the image can be a view into the device's pixels
-    // (avoiding a copy for performance, at the expense of safety). Default returns null.
-    virtual sk_sp<SkSpecialImage> snapSpecial(const SkIRect& subset, bool forceCopy = false);
 
     virtual void setImmutable() {}
 
@@ -421,9 +433,9 @@ protected:
             , fAllocator(allocator)
         {}
 
-        const SkImageInfo       fInfo;
-        const TileUsage         fTileUsage;
-        const SkPixelGeometry   fPixelGeometry;
+        const SkImageInfo        fInfo;
+        const TileUsage          fTileUsage;
+        const SkPixelGeometry    fPixelGeometry;
         SkRasterHandleAllocator* fAllocator = nullptr;
     };
 
@@ -446,6 +458,9 @@ protected:
     // inspect a layer's device to know if calling drawDevice() later is allowed.
     virtual bool isNoPixelsDevice() const { return false; }
 
+    // Defaults to a CPU image filtering context.
+    virtual skif::Context createContext(const skif::ContextInfo&) const;
+
     // Returns whether or not localToDevice() has changed since the last call to this function.
     bool checkLocalToDeviceDirty() {
         bool wasDirty = fLocalToDeviceDirty;
@@ -457,11 +472,12 @@ private:
     friend class SkAndroidFrameworkUtils;
     friend class SkCanvas;
     friend class SkDraw;
+    friend class SkDrawBase;
     friend class SkSurface_Raster;
     friend class DeviceTestingAccess;
 
     void simplifyGlyphRunRSXFormAndRedraw(SkCanvas*,
-                                          const SkGlyphRunList&,
+                                          const sktext::GlyphRunList&,
                                           const SkPaint& initialPaint,
                                           const SkPaint& drawingPaint);
 
@@ -569,14 +585,12 @@ protected:
     void drawMesh(const SkMesh&, sk_sp<SkBlender>, const SkPaint&) override {}
 #endif
 
-    void drawFilteredImage(const skif::Mapping&, SkSpecialImage* src, const SkImageFilter*,
-                           const SkSamplingOptions&, const SkPaint&) override {}
-#if SK_SUPPORT_GPU
+#if defined(SK_GANESH)
     void drawSlug(SkCanvas*, const sktext::gpu::Slug*, const SkPaint&) override {}
 #endif
 
     void onDrawGlyphRunList(
-            SkCanvas*, const SkGlyphRunList&, const SkPaint&, const SkPaint&) override {}
+            SkCanvas*, const sktext::GlyphRunList&, const SkPaint&, const SkPaint&) override {}
 
     bool isNoPixelsDevice() const override { return true; }
 
@@ -601,11 +615,11 @@ private:
     ClipState& writableClip();
 
     void resetClipStack() {
-        fClipStack.reset();
+        fClipStack.clear();
         fClipStack.emplace_back(this->bounds(), /*isAA=*/false, /*isRect=*/true);
     }
 
-    SkSTArray<4, ClipState> fClipStack;
+    skia_private::STArray<4, ClipState> fClipStack;
 
     using INHERITED = SkBaseDevice;
 };

@@ -5,9 +5,9 @@
  * found in the LICENSE file.
  */
 
-#include "include/core/SkMath.h"
 #include "include/core/SkTypes.h"
 #include "include/gpu/GrTypes.h"
+#include "include/private/base/SkMath.h"
 #include "src/core/SkMipmap.h"
 #include "src/gpu/ganesh/GrCaps.h"
 #include "src/gpu/ganesh/GrGpu.h"
@@ -43,7 +43,7 @@ GrTexture::GrTexture(GrGpu* gpu,
                      GrTextureType textureType,
                      GrMipmapStatus mipmapStatus,
                      std::string_view label)
-        : INHERITED(gpu, dimensions, isProtected, label)
+        : GrSurface(gpu, dimensions, isProtected, label)
         , fTextureType(textureType)
         , fMipmapStatus(mipmapStatus) {
     if (fMipmapStatus == GrMipmapStatus::kNotAllocated) {
@@ -58,7 +58,7 @@ GrTexture::GrTexture(GrGpu* gpu,
 
 bool GrTexture::StealBackendTexture(sk_sp<GrTexture> texture,
                                     GrBackendTexture* backendTexture,
-                                    SkImage::BackendTextureReleaseProc* releaseProc) {
+                                    SkImages::BackendTextureReleaseProc* releaseProc) {
     if (!texture->unique()) {
         return false;
     }

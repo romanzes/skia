@@ -8,22 +8,22 @@
 #ifndef skiagm_DEFINED
 #define skiagm_DEFINED
 
-#include "gm/verifiers/gmverifier.h"
 #include "include/core/SkColor.h"
 #include "include/core/SkScalar.h"
 #include "include/core/SkSize.h"
 #include "include/core/SkString.h"
 #include "include/core/SkTypes.h"
-#include "include/private/SkMacros.h"
+#include "include/private/base/SkMacros.h"
 #include "tools/Registry.h"
 
 #include <memory>
 
-class GrDirectContext;
 class GrRecordingContext;
 class SkCanvas;
 class SkMetaData;
 struct GrContextOptions;
+
+namespace skiagm { namespace verifiers { class VerifierList; } }
 
 #define DEF_GM(CODE)                                         \
     static skiagm::GMRegistry SK_MACRO_APPEND_COUNTER(REG_)( \
@@ -108,11 +108,11 @@ namespace skiagm {
         inline static constexpr char kErrorMsg_DrawSkippedGpuOnly[] =
                 "This test is for GPU configs only.";
 
-        DrawResult gpuSetup(GrDirectContext* context, SkCanvas* canvas) {
+        DrawResult gpuSetup(SkCanvas* canvas) {
             SkString errorMsg;
-            return this->gpuSetup(context, canvas, &errorMsg);
+            return this->gpuSetup(canvas, &errorMsg);
         }
-        DrawResult gpuSetup(GrDirectContext*, SkCanvas*, SkString* errorMsg);
+        DrawResult gpuSetup(SkCanvas*, SkString* errorMsg);
         void gpuTeardown();
 
         void onceBeforeDraw() {
@@ -165,7 +165,7 @@ namespace skiagm {
 
     protected:
         // onGpuSetup is called once before any other processing with a direct context.
-        virtual DrawResult onGpuSetup(GrDirectContext*, SkString*) { return DrawResult::kOk; }
+        virtual DrawResult onGpuSetup(SkCanvas*, SkString*) { return DrawResult::kOk; }
         virtual void onGpuTeardown() {}
         virtual void onOnceBeforeDraw();
         virtual DrawResult onDraw(SkCanvas*, SkString* errorMsg);
@@ -200,7 +200,7 @@ namespace skiagm {
         // TODO(tdenniston): Currently GpuGMs don't have verifiers (because they do not render on
         //   CPU), but we may want to be able to verify the output images standalone, without
         //   requiring a gold image for comparison.
-        std::unique_ptr<verifiers::VerifierList> getVerifiers() const override { return nullptr; }
+        std::unique_ptr<verifiers::VerifierList> getVerifiers() const override;
 
     private:
         using GM::onDraw;

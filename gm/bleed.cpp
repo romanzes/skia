@@ -26,7 +26,7 @@
 #include "include/core/SkTileMode.h"
 #include "include/core/SkTypes.h"
 #include "include/gpu/GrContextOptions.h"
-#include "include/private/SkTDArray.h"
+#include "include/private/base/SkTDArray.h"
 #include "src/core/SkBlurMask.h"
 #include "tools/ToolUtils.h"
 
@@ -138,7 +138,7 @@ protected:
             imageSetEntry[0].fDstRect = dstRect;
             imageSetEntry[0].fAAFlags = paint->isAntiAlias() ? SkCanvas::kAll_QuadAAFlags
                                                              : SkCanvas::kNone_QuadAAFlags;
-            canvas->experimental_DrawEdgeAAImageSet(imageSetEntry, SK_ARRAY_COUNT(imageSetEntry),
+            canvas->experimental_DrawEdgeAAImageSet(imageSetEntry, std::size(imageSetEntry),
                                                     /*dstClips=*/nullptr,
                                                     /*preViewMatrices=*/nullptr,
                                                     sampling, paint, fConstraint);

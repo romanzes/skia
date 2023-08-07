@@ -8,12 +8,12 @@
 #ifndef SKSL_VMGENERATOR
 #define SKSL_VMGENERATOR
 
-#include "src/core/SkVM.h"
-#include "src/sksl/ir/SkSLType.h"
+#include "include/core/SkTypes.h"
 
-#include <memory>
-#include <string>
-#include <vector>
+#if defined(SK_ENABLE_SKVM)
+
+#include "src/core/SkVM.h"
+#include <cstddef>
 
 template <typename T> class SkSpan;
 
@@ -21,7 +21,7 @@ namespace SkSL {
 
 class FunctionDefinition;
 struct Program;
-class SkVMDebugTrace;
+class DebugTracePriv;
 
 class SkVMCallbacks {
 public:
@@ -39,7 +39,7 @@ public:
 skvm::Color ProgramToSkVM(const Program& program,
                           const FunctionDefinition& function,
                           skvm::Builder* builder,
-                          SkVMDebugTrace* debugTrace,
+                          DebugTracePriv* debugTrace,
                           SkSpan<skvm::Val> uniforms,
                           skvm::Coord device,
                           skvm::Coord local,
@@ -69,30 +69,15 @@ struct SkVMSignature {
 bool ProgramToSkVM(const Program& program,
                    const FunctionDefinition& function,
                    skvm::Builder* b,
-                   SkVMDebugTrace* debugTrace,
+                   DebugTracePriv* debugTrace,
                    SkSpan<skvm::Val> uniforms,
                    SkVMSignature* outSignature = nullptr);
 
-const FunctionDefinition* Program_GetFunction(const Program& program, const char* function);
-
-struct UniformInfo {
-    struct Uniform {
-        std::string fName;
-        Type::NumberKind fKind;
-        int fColumns;
-        int fRows;
-        int fSlot;
-    };
-    std::vector<Uniform> fUniforms;
-    int fUniformSlotCount = 0;
-};
-
-std::unique_ptr<UniformInfo> Program_GetUniformInfo(const Program& program);
-
 bool testingOnly_ProgramToSkVMShader(const Program& program,
                                      skvm::Builder* builder,
-                                     SkVMDebugTrace* debugTrace);
+                                     DebugTracePriv* debugTrace);
 
 }  // namespace SkSL
 
-#endif
+#endif  // defined(SK_ENABLE_SKVM)
+#endif  // SKSL_VMGENERATOR

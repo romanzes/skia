@@ -1,11 +1,12 @@
 load(
-    "//bazel:macros.bzl",
-    "cc_library",
+    "//bazel:skia_rules.bzl",
     "exports_files_legacy",
     "select_multi",
-    "selects",
+    "skia_cc_deps",
+    "skia_filegroup",
     "split_srcs_and_hdrs",
 )
+load("//bazel:flags.bzl", "selects", "string_flag_with_values")
 
 licenses(["notice"])
 
@@ -23,6 +24,8 @@ CORE_FILES = [
     "SkMaskSwizzler.h",
     "SkMasks.cpp",
     "SkMasks.h",
+    "SkPixmapUtils.cpp",
+    "SkPixmapUtilsPriv.h",
     "SkSampler.cpp",
     "SkSampler.h",
     "SkSwizzler.cpp",
@@ -70,7 +73,6 @@ split_srcs_and_hdrs(
 DECODE_GIF_FILES = [
     "SkScalingCodec.h",
     "SkWuffsCodec.cpp",
-    "SkWuffsCodec.h",
 ]
 
 split_srcs_and_hdrs(
@@ -82,8 +84,11 @@ DECODE_JPEG_FILES = [
     "SkEncodedInfo.cpp",
     "SkJpegCodec.cpp",
     "SkJpegCodec.h",
+    "SkJpegConstants.h",
     "SkJpegDecoderMgr.cpp",
     "SkJpegDecoderMgr.h",
+    "SkJpegSourceMgr.cpp",
+    "SkJpegSourceMgr.h",
     "SkJpegUtility.cpp",
     "SkJpegUtility.h",
     "SkParseEncodedOrigin.cpp",
@@ -93,6 +98,14 @@ DECODE_JPEG_FILES = [
 split_srcs_and_hdrs(
     name = "decode_jpeg",
     files = DECODE_JPEG_FILES,
+)
+
+filegroup(
+    name = "jpeg_xmp",
+    srcs = [
+        "SkJpegXmp.cpp",
+        "SkJpegXmp.h",
+    ],
 )
 
 DECODE_PNG_FILES = [
@@ -132,11 +145,43 @@ split_srcs_and_hdrs(
     files = DECODE_WEBP_FILES,
 )
 
+split_srcs_and_hdrs(
+    name = "decode_avif",
+    files = [
+        "SkAvifCodec.cpp",
+        "SkAvifCodec.h",
+        "SkScalingCodec.h",
+    ],
+)
+
+split_srcs_and_hdrs(
+    name = "decode_jxl",
+    files = [
+        "SkJpegxlCodec.cpp",
+        "SkJpegxlCodec.h",
+        "SkScalingCodec.h",
+    ],
+)
+
+string_flag_with_values(
+    name = "include_decoder",
+    multiple = True,
+    values = [
+        "avif_decode_codec",
+        "gif_decode_codec",
+        "jpeg_decode_codec",
+        "jxl_decode_codec",
+        "png_decode_codec",
+        "raw_decode_codec",
+        "webp_decode_codec",
+    ],
+)
+
 selects.config_setting_group(
     name = "needs_jpeg",
     match_any = [
-        "//bazel/common_config_settings:jpeg_decode_codec",
-        "//bazel/common_config_settings:raw_decode_codec",
+        ":jpeg_decode_codec",
+        ":raw_decode_codec",
     ],
 )
 
@@ -144,19 +189,19 @@ selects.config_setting_group(
     name = "needs_jpeg_priv",
     match_any = [
         ":needs_jpeg",
-        "//bazel/common_config_settings:jpeg_encode_codec",
+        "//src/encode:jpeg_encode_codec",
     ],
 )
 
 selects.config_setting_group(
     name = "needs_png_priv",
     match_any = [
-        "//bazel/common_config_settings:png_decode_codec",
-        "//bazel/common_config_settings:png_encode_codec",
+        ":png_decode_codec",
+        "//src/encode:png_encode_codec",
     ],
 )
 
-filegroup(
+skia_filegroup(
     name = "srcs",
     srcs = [
         ":decode_android_srcs",
@@ -164,56 +209,59 @@ filegroup(
         ":core_srcs",
     ] + select_multi(
         {
-            "//bazel/common_config_settings:gif_decode_codec": [":decode_gif_srcs"],
+            ":avif_decode_codec": [":decode_avif_srcs"],
+            ":gif_decode_codec": [":decode_gif_srcs"],
             ":needs_jpeg": [":decode_jpeg_srcs"],
-            "//bazel/common_config_settings:png_decode_codec": [":decode_png_srcs"],
-            "//bazel/common_config_settings:raw_decode_codec": [":decode_raw_srcs"],
-            "//bazel/common_config_settings:webp_decode_codec": [":decode_webp_srcs"],
+            ":jxl_decode_codec": [":decode_jxl_srcs"],
+            ":png_decode_codec": [":decode_png_srcs"],
+            ":raw_decode_codec": [":decode_raw_srcs"],
+            ":webp_decode_codec": [":decode_webp_srcs"],
         },
-        default = [],
     ),
     visibility = ["//src:__pkg__"],
 )
 
-filegroup(
+skia_filegroup(
     name = "private_hdrs",
     srcs = [
         ":decode_android_hdrs",
         ":decode_bmp_hdrs",
         ":core_hdrs",
     ] + select({
-        ":needs_jpeg_priv": ["SkJpegPriv.h"],  # used by src/images/SkJPEGWriteUtility
+        ":needs_jpeg_priv": ["SkJpegPriv.h"],  # used by src/encode/SkJPEGWriteUtility
         "//conditions:default": [],
     }) + select({
-        ":needs_png_priv": ["SkPngPriv.h"],  # used by src/images/SkPngEncoder
+        ":needs_png_priv": ["SkPngPriv.h"],  # used by src/encode/SkPngEncoder
         "//conditions:default": [],
     }) + select_multi(
         {
-            "//bazel/common_config_settings:gif_decode_codec": [":decode_gif_hdrs"],
+            ":avif_decode_codec": [":decode_avif_hdrs"],
+            ":gif_decode_codec": [":decode_gif_hdrs"],
             ":needs_jpeg": [":decode_jpeg_hdrs"],
-            "//bazel/common_config_settings:png_decode_codec": [":decode_png_hdrs"],
-            "//bazel/common_config_settings:raw_decode_codec": [":decode_raw_hdrs"],
-            "//bazel/common_config_settings:webp_decode_codec": [":decode_webp_hdrs"],
+            ":jxl_decode_codec": [":decode_jxl_hdrs"],
+            ":png_decode_codec": [":decode_png_hdrs"],
+            ":raw_decode_codec": [":decode_raw_hdrs"],
+            ":webp_decode_codec": [":decode_webp_hdrs"],
         },
-        default = [],
     ),
     visibility = ["//src:__pkg__"],
 )
 
-cc_library(
+skia_cc_deps(
     name = "deps",
     visibility = ["//src:__pkg__"],
     deps = select_multi(
         {
-            "//bazel/common_config_settings:gif_decode_codec": ["@wuffs"],
+            ":avif_decode_codec": ["@libavif"],
+            ":gif_decode_codec": ["@wuffs"],
             ":needs_jpeg": ["@libjpeg_turbo"],
-            "//bazel/common_config_settings:png_decode_codec": ["@libpng"],
-            "//bazel/common_config_settings:raw_decode_codec": [
+            "jxl_decode_codec": ["@libjxl"],
+            ":png_decode_codec": ["@libpng"],
+            ":raw_decode_codec": [
                 "@dng_sdk",
                 "@piex",
             ],
-            "//bazel/common_config_settings:webp_decode_codec": ["@libwebp"],
+            ":webp_decode_codec": ["@libwebp"],
         },
-        default = [],
     ),
 )

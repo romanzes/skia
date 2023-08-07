@@ -12,7 +12,8 @@
 #include "include/gpu/GrBackendSurface.h"
 #include "include/gpu/GrContextOptions.h"
 #include "include/gpu/GrDirectContext.h"
-#include "src/core/SkConvertPixels.h"
+#include "src/base/SkRectMemcpy.h"
+#include "src/gpu/dawn/DawnUtilsPriv.h"
 #include "src/gpu/ganesh/GrDataUtils.h"
 #include "src/gpu/ganesh/GrDirectContextPriv.h"
 #include "src/gpu/ganesh/GrGeometryProcessor.h"
@@ -32,14 +33,18 @@
 #include "src/gpu/ganesh/dawn/GrDawnRenderTarget.h"
 #include "src/gpu/ganesh/dawn/GrDawnTexture.h"
 #include "src/gpu/ganesh/dawn/GrDawnUtil.h"
+#include "src/sksl/SkSLProgramKind.h"
+#include "src/sksl/SkSLProgramSettings.h"
 
-#include "src/core/SkAutoMalloc.h"
+#include "src/base/SkAutoMalloc.h"
 #include "src/core/SkMipmap.h"
 #include "src/sksl/SkSLCompiler.h"
 
 #if !defined(SK_BUILD_FOR_WIN)
 #include <unistd.h>
 #endif // !defined(SK_BUILD_FOR_WIN)
+
+using namespace skia_private;
 
 static const int kMaxRenderPipelineEntries = 1024;
 
@@ -50,22 +55,22 @@ static wgpu::FilterMode to_dawn_filter_mode(GrSamplerState::Filter filter) {
         case GrSamplerState::Filter::kLinear:
             return wgpu::FilterMode::Linear;
         default:
-            SkASSERT(!"unsupported filter mode");
+            SkDEBUGFAIL("unsupported filter mode");
             return wgpu::FilterMode::Nearest;
     }
 }
 
-static wgpu::FilterMode to_dawn_mipmap_mode(GrSamplerState::MipmapMode mode) {
+static wgpu::MipmapFilterMode to_dawn_mipmap_mode(GrSamplerState::MipmapMode mode) {
     switch (mode) {
         case GrSamplerState::MipmapMode::kNone:
             // Fall-through (Dawn does not have an equivalent for "None")
         case GrSamplerState::MipmapMode::kNearest:
-            return wgpu::FilterMode::Nearest;
+            return wgpu::MipmapFilterMode::Nearest;
         case GrSamplerState::MipmapMode::kLinear:
-            return wgpu::FilterMode::Linear;
+            return wgpu::MipmapFilterMode::Linear;
         default:
-            SkASSERT(!"unsupported filter mode");
-            return wgpu::FilterMode::Nearest;
+            SkDEBUGFAIL("unsupported filter mode");
+            return wgpu::MipmapFilterMode::Nearest;
     }
 }
 
@@ -78,9 +83,9 @@ static wgpu::AddressMode to_dawn_address_mode(GrSamplerState::WrapMode wrapMode)
         case GrSamplerState::WrapMode::kMirrorRepeat:
             return wgpu::AddressMode::MirrorRepeat;
         case GrSamplerState::WrapMode::kClampToBorder:
-            SkASSERT(!"unsupported address mode");
+            SkDEBUGFAIL("unsupported address mode");
     }
-    SkASSERT(!"unsupported address mode");
+    SkDEBUGFAIL("unsupported address mode");
     return wgpu::AddressMode::ClampToEdge;
 }
 
@@ -136,7 +141,7 @@ GrDawnGpu::GrDawnGpu(GrDirectContext* direct,
     this->initCapsAndCompiler(sk_make_sp<GrDawnCaps>(options));
     device.SetUncapturedErrorCallback(
             [](WGPUErrorType type, char const* message, void*) {
-                SkDebugf("GrDawnGpu: ERROR type %u, msg: %s\n", type, message);
+                SkDebugf("GrDawnGpu: ERROR type %u, msg: %s", type, message);
             },
             nullptr);
 }
@@ -171,7 +176,7 @@ GrOpsRenderPass* GrDawnGpu::onGetOpsRenderPass(
         const SkIRect& bounds,
         const GrOpsRenderPass::LoadAndStoreInfo& colorInfo,
         const GrOpsRenderPass::StencilLoadAndStoreInfo& stencilInfo,
-        const SkTArray<GrSurfaceProxy*, true>& sampledProxies,
+        const TArray<GrSurfaceProxy*, true>& sampledProxies,
         GrXferBarrierFlags renderPassXferBarriers) {
     fOpsRenderPass.reset(new GrDawnOpsRenderPass(this, rt, origin, colorInfo, stencilInfo));
     return fOpsRenderPass.get();
@@ -204,6 +209,16 @@ bool GrDawnGpu::onWritePixels(GrSurface* surface,
     return true;
 }
 
+bool GrDawnGpu::onTransferFromBufferToBuffer(sk_sp<GrGpuBuffer> src,
+                                             size_t srcOffset,
+                                             sk_sp<GrGpuBuffer> dst,
+                                             size_t dstOffset,
+                                             size_t size) {
+    // skbug.com/13453
+    SkDEBUGFAIL("unimplemented");
+    return false;
+}
+
 bool GrDawnGpu::onTransferPixelsTo(GrTexture* texture,
                                    SkIRect rect,
                                    GrColorType textureColorType,
@@ -211,7 +226,8 @@ bool GrDawnGpu::onTransferPixelsTo(GrTexture* texture,
                                    sk_sp<GrGpuBuffer> transferBuffer,
                                    size_t bufferOffset,
                                    size_t rowBytes) {
-    SkASSERT(!"unimplemented");
+    // skbug.com/13453
+    SkDEBUGFAIL("unimplemented");
     return false;
 }
 
@@ -221,7 +237,8 @@ bool GrDawnGpu::onTransferPixelsFrom(GrSurface* surface,
                                      GrColorType bufferColorType,
                                      sk_sp<GrGpuBuffer> transferBuffer,
                                      size_t offset) {
-    SkASSERT(!"unimplemented");
+    // skbug.com/13453
+    SkDEBUGFAIL("unimplemented");
     return false;
 }
 
@@ -230,7 +247,7 @@ sk_sp<GrTexture> GrDawnGpu::onCreateTexture(SkISize dimensions,
                                             const GrBackendFormat& backendFormat,
                                             GrRenderable renderable,
                                             int renderTargetSampleCnt,
-                                            SkBudgeted budgeted,
+                                            skgpu::Budgeted budgeted,
                                             GrProtected,
                                             int mipLevelCount,
                                             uint32_t levelClearMask,
@@ -251,10 +268,14 @@ sk_sp<GrTexture> GrDawnGpu::onCreateTexture(SkISize dimensions,
                                budgeted, mipLevelCount, mipmapStatus, label);
 }
 
-sk_sp<GrTexture> GrDawnGpu::onCreateCompressedTexture(SkISize dimensions, const GrBackendFormat&,
-                                                      SkBudgeted, GrMipmapped, GrProtected,
-                                                      const void* data, size_t dataSize) {
-    SkASSERT(!"unimplemented");
+sk_sp<GrTexture> GrDawnGpu::onCreateCompressedTexture(SkISize dimensions,
+                                                      const GrBackendFormat&,
+                                                      skgpu::Budgeted,
+                                                      GrMipmapped,
+                                                      GrProtected,
+                                                      const void* data,
+                                                      size_t dataSize) {
+    SkDEBUGFAIL("unimplemented");
     return nullptr;
 }
 
@@ -269,7 +290,7 @@ sk_sp<GrTexture> GrDawnGpu::onWrapBackendTexture(const GrBackendTexture& backend
 
     SkISize dimensions = { backendTex.width(), backendTex.height() };
     return GrDawnTexture::MakeWrapped(this, dimensions, GrRenderable::kNo, 1, cacheable, ioType,
-                                      info);
+                                      info, backendTex.getLabel());
 }
 
 sk_sp<GrTexture> GrDawnGpu::onWrapCompressedBackendTexture(const GrBackendTexture& backendTex,
@@ -294,7 +315,8 @@ sk_sp<GrTexture> GrDawnGpu::onWrapRenderableBackendTexture(const GrBackendTextur
     }
 
     sk_sp<GrTexture> result = GrDawnTexture::MakeWrapped(this, dimensions, GrRenderable::kYes,
-                                                         sampleCnt, cacheable, kRW_GrIOType, info);
+                                                         sampleCnt, cacheable, kRW_GrIOType, info,
+                                                         tex.getLabel());
     result->markMipmapsDirty();
     return result;
 }
@@ -307,7 +329,8 @@ sk_sp<GrRenderTarget> GrDawnGpu::onWrapBackendRenderTarget(const GrBackendRender
 
     SkISize dimensions = { rt.width(), rt.height() };
     int sampleCnt = 1;
-    return GrDawnRenderTarget::MakeWrapped(this, dimensions, sampleCnt, info);
+    return GrDawnRenderTarget::MakeWrapped(
+            this, dimensions, sampleCnt, info, /*label=*/"DawnGpu_WrapBackendRenderTarget");
 }
 
 sk_sp<GrAttachment> GrDawnGpu::makeStencilAttachment(const GrBackendFormat& /*colorFormat*/,
@@ -320,7 +343,8 @@ GrBackendTexture GrDawnGpu::onCreateBackendTexture(SkISize dimensions,
                                                    const GrBackendFormat& backendFormat,
                                                    GrRenderable renderable,
                                                    GrMipmapped mipmapped,
-                                                   GrProtected isProtected) {
+                                                   GrProtected isProtected,
+                                                   std::string_view label) {
     wgpu::TextureFormat format;
     if (!backendFormat.asDawnFormat(&format)) {
         return GrBackendTexture();
@@ -404,7 +428,7 @@ bool GrDawnGpu::onClearBackendTexture(const GrBackendTexture& backendTexture,
         return false;
     }
 
-    size_t bpp = GrDawnBytesPerBlock(info.fFormat);
+    size_t bpp = skgpu::DawnFormatBytesPerBlock(info.fFormat);
     size_t baseLayerSize = bpp * backendTexture.width() * backendTexture.height();
     SkAutoMalloc defaultStorage(baseLayerSize);
     GrImageInfo imageInfo(colorType, kUnpremul_SkAlphaType, nullptr, backendTexture.dimensions());
@@ -598,7 +622,7 @@ void GrDawnGpu::mapPendingStagingBuffers() {
                             if (!success) {
                                 SkDebugf(
                                         "Failed to map staging buffer before making it available "
-                                        "again\n");
+                                        "again");
                             }
                             // When this callback returns, the captured `buffer` will be dropped and
                             // returned back to its backing resource pool.
@@ -626,13 +650,15 @@ static wgpu::Texture get_dawn_texture_from_surface(GrSurface* src) {
     }
 }
 
-bool GrDawnGpu::onCopySurface(GrSurface* dst,
-                              GrSurface* src,
-                              const SkIRect& srcRect,
-                              const SkIPoint& dstPoint) {
+bool GrDawnGpu::onCopySurface(GrSurface* dst, const SkIRect& dstRect,
+                              GrSurface* src, const SkIRect& srcRect,
+                              GrSamplerState::Filter) {
     wgpu::Texture srcTexture = get_dawn_texture_from_surface(src);
     wgpu::Texture dstTexture = get_dawn_texture_from_surface(dst);
     if (!srcTexture || !dstTexture) {
+        return false;
+    }
+    if (srcRect.size() != dstRect.size()) {
         return false;
     }
 
@@ -642,7 +668,7 @@ bool GrDawnGpu::onCopySurface(GrSurface* dst,
     srcTextureView.texture = srcTexture;
     srcTextureView.origin = {(uint32_t) srcRect.x(), (uint32_t) srcRect.y(), 0};
     dstTextureView.texture = dstTexture;
-    dstTextureView.origin = {(uint32_t) dstPoint.x(), (uint32_t) dstPoint.y(), 0};
+    dstTextureView.origin = {(uint32_t) dstRect.x(), (uint32_t) dstRect.y(), 0};
 
     wgpu::Extent3D copySize = {width, height, 1};
     this->getCopyEncoder().CopyTextureToTexture(&srcTextureView, &dstTextureView, &copySize);
@@ -671,7 +697,7 @@ bool GrDawnGpu::onReadPixels(GrSurface* surface,
                                                         kStatic_GrAccessPattern,
                                                         "onReadPixels");
     if (!dawnBuffer) {
-        SkDebugf("onReadPixels: failed to create GPU buffer\n");
+        SkDebugf("onReadPixels: failed to create GPU buffer");
         return false;
     }
 
@@ -691,7 +717,7 @@ bool GrDawnGpu::onReadPixels(GrSurface* surface,
 
     const void* readPixelsPtr = dawnBuffer->map();
     if (!readPixelsPtr) {
-        SkDebugf("onReadPixels: failed to map GPU buffer\n");
+        SkDebugf("onReadPixels: failed to map GPU buffer");
         return false;
     }
 
@@ -734,31 +760,31 @@ bool GrDawnGpu::onRegenerateMipMapLevels(GrTexture* tex) {
     wgpu::Texture dstTexture = fDevice.CreateTexture(&texDesc);
 
     const char* vs =
-        "layout(location = 0) out float2 texCoord;\n"
-        "float2 positions[4] = float2[4](float2(-1.0, 1.0),\n"
-                                        "float2(1.0, 1.0),\n"
-                                        "float2(-1.0, -1.0),\n"
-                                        "float2(1.0, -1.0));\n"
-        "float2 texCoords[4] = float2[4](float2(0.0, 0.0),\n"
-                                        "float2(1.0, 0.0),\n"
-                                        "float2(0.0, 1.0),\n"
-                                        "float2(1.0, 1.0));\n"
-        "void main() {\n"
-        "    sk_Position = float4(positions[sk_VertexID], 0.0, 1.0);\n"
-        "    texCoord = texCoords[sk_VertexID];\n"
-        "}\n";
+        "layout(spirv, location = 0) out float2 texCoord;"
+        "float2 positions[4] = float2[4](float2(-1.0, 1.0),"
+                                        "float2(1.0, 1.0),"
+                                        "float2(-1.0, -1.0),"
+                                        "float2(1.0, -1.0));"
+        "float2 texCoords[4] = float2[4](float2(0.0, 0.0),"
+                                        "float2(1.0, 0.0),"
+                                        "float2(0.0, 1.0),"
+                                        "float2(1.0, 1.0));"
+        "void main() {"
+            "sk_Position = float4(positions[sk_VertexID], 0.0, 1.0);"
+            "texCoord = texCoords[sk_VertexID];"
+        "}";
     std::string vsSPIRV = this->SkSLToSPIRV(vs,
                                             SkSL::ProgramKind::kVertex,
                                             /*rtFlipOffset*/ 0,
                                             nullptr);
 
     const char* fs =
-        "layout(set = 0, binding = 0) uniform sampler samp;\n"
-        "layout(set = 0, binding = 1) uniform texture2D tex;\n"
-        "layout(location = 0) in float2 texCoord;\n"
-        "void main() {\n"
-        "    sk_FragColor = sample(makeSampler2D(tex, samp), texCoord);\n"
-        "}\n";
+        "layout(spirv, set = 0, binding = 0) uniform sampler samp;"
+        "layout(spirv, set = 0, binding = 1) uniform texture2D tex;"
+        "layout(location = 0) in float2 texCoord;"
+        "void main() {"
+            "sk_FragColor = sample(makeSampler2D(tex, samp), texCoord);"
+        "}";
     std::string fsSPIRV = this->SkSLToSPIRV(fs,
                                             SkSL::ProgramKind::kFragment,
                                             /*rtFlipOffset=*/ 0,
@@ -862,23 +888,23 @@ void GrDawnGpu::deleteFence(GrFence fence) {
 }
 
 std::unique_ptr<GrSemaphore> SK_WARN_UNUSED_RESULT GrDawnGpu::makeSemaphore(bool isOwned) {
-    SkASSERT(!"unimplemented");
+    SkDEBUGFAIL("unimplemented");
     return nullptr;
 }
 
 std::unique_ptr<GrSemaphore> GrDawnGpu::wrapBackendSemaphore(const GrBackendSemaphore& /* sema */,
                                                              GrSemaphoreWrapType /* wrapType */,
                                                              GrWrapOwnership /* ownership */) {
-    SkASSERT(!"unimplemented");
+    SkDEBUGFAIL("unimplemented");
     return nullptr;
 }
 
 void GrDawnGpu::insertSemaphore(GrSemaphore* semaphore) {
-    SkASSERT(!"unimplemented");
+    SkDEBUGFAIL("unimplemented");
 }
 
 void GrDawnGpu::waitSemaphore(GrSemaphore* semaphore) {
-    SkASSERT(!"unimplemented");
+    SkDEBUGFAIL("unimplemented");
 }
 
 void GrDawnGpu::checkFinishProcs() {
@@ -899,7 +925,7 @@ void GrDawnGpu::finishOutstandingGpuWork() {
 }
 
 std::unique_ptr<GrSemaphore> GrDawnGpu::prepareTextureForCrossContextUsage(GrTexture* texture) {
-    SkASSERT(!"unimplemented");
+    SkDEBUGFAIL("unimplemented");
     return nullptr;
 }
 
@@ -940,7 +966,8 @@ wgpu::Sampler GrDawnGpu::getOrCreateSampler(GrSamplerState samplerState) {
     desc.maxAnisotropy = samplerState.maxAniso();
     if (samplerState.isAniso()) {
         // WebGPU requires these to be linear when maxAnisotropy is > 1.
-        desc.magFilter = desc.minFilter = desc.mipmapFilter = wgpu::FilterMode::Linear;
+        desc.magFilter = desc.minFilter = wgpu::FilterMode::Linear;
+        desc.mipmapFilter = wgpu::MipmapFilterMode::Linear;
     } else {
         desc.magFilter = desc.minFilter = to_dawn_filter_mode(samplerState.filter());
         desc.mipmapFilter = to_dawn_mipmap_mode(samplerState.mipmapMode());
@@ -977,9 +1004,9 @@ void GrDawnGpu::flushCopyEncoder() {
 std::string GrDawnGpu::SkSLToSPIRV(const char* shaderString,
                                    SkSL::ProgramKind kind,
                                    uint32_t rtFlipOffset,
-                                   SkSL::Program::Inputs* inputs) {
+                                   SkSL::Program::Interface* interface) {
     auto errorHandler = this->getContext()->priv().getShaderErrorHandler();
-    SkSL::Program::Settings settings;
+    SkSL::ProgramSettings settings;
     settings.fRTFlipOffset = rtFlipOffset;
     settings.fRTFlipBinding = 0;
     settings.fRTFlipSet = 0;
@@ -991,8 +1018,8 @@ std::string GrDawnGpu::SkSLToSPIRV(const char* shaderString,
         errorHandler->compileError(shaderString, this->shaderCompiler()->errorText().c_str());
         return "";
     }
-    if (inputs) {
-        *inputs = program->fInputs;
+    if (interface) {
+        *interface = program->fInterface;
     }
     std::string code;
     if (!this->shaderCompiler()->toSPIRV(*program, &code)) {
@@ -1003,12 +1030,19 @@ std::string GrDawnGpu::SkSLToSPIRV(const char* shaderString,
 }
 
 wgpu::ShaderModule GrDawnGpu::createShaderModule(const std::string& spirvSource) {
-    wgpu::ShaderModuleSPIRVDescriptor desc;
-    desc.codeSize = spirvSource.size() / 4;
-    desc.code = reinterpret_cast<const uint32_t*>(spirvSource.c_str());
+    wgpu::ShaderModuleSPIRVDescriptor spirvDesc;
+    spirvDesc.codeSize = spirvSource.size() / 4;
+    spirvDesc.code = reinterpret_cast<const uint32_t*>(spirvSource.c_str());
 
-    wgpu::ShaderModuleDescriptor smDesc;
-    smDesc.nextInChain = &desc;
+    // Skia often generates shaders that select a texture/sampler conditionally based on an
+    // attribute (specifically in the case of texture atlas indexing). We disable derivative
+    // uniformity warnings as we expect Skia's behavior to result in well-defined values.
+    wgpu::DawnShaderModuleSPIRVOptionsDescriptor dawnSpirvOptions;
+    dawnSpirvOptions.allowNonUniformDerivatives = true;
 
-    return fDevice.CreateShaderModule(&smDesc);
+    wgpu::ShaderModuleDescriptor desc;
+    desc.nextInChain = &spirvDesc;
+    spirvDesc.nextInChain = &dawnSpirvOptions;
+
+    return fDevice.CreateShaderModule(&desc);
 }

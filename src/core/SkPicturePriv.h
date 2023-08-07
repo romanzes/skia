@@ -12,6 +12,8 @@
 
 class SkReadBuffer;
 class SkWriteBuffer;
+class SkStream;
+struct SkPictInfo;
 
 class SkPicturePriv {
 public:
@@ -102,6 +104,9 @@ public:
     // V90: Private API for backdrop scale factor in SaveLayerRec
     // V91: Added raw image shaders
     // V92: Added anisotropic filtering to SkSamplingOptions
+    // V94: Removed local matrices from SkShaderBase. Local matrices always use SkLocalMatrixShader.
+    // V95: SkImageFilters::Shader only saves SkShader, not a full SkPaint
+    // V96: SkImageFilters::Magnifier updated with more complete parameters
 
     enum Version {
         kPictureShaderFilterParam_Version   = 82,
@@ -115,6 +120,10 @@ public:
         kBackdropScaleFactor                = 90,
         kRawImageShaders                    = 91,
         kAnisotropicFilter                  = 92,
+        kBlend4fColorFilter                 = 93,
+        kNoShaderLocalMatrix                = 94,
+        kShaderImageFilterSerializeShader   = 95,
+        kRevampMagnifierFilter              = 96,
 
         // Only SKPs within the min/current picture version range (inclusive) can be read.
         //
@@ -137,11 +146,12 @@ public:
         //
         // 5) Run `make -C infra/bots train`
         //
-        // Contact the Infra Gardener (or directly ping rmistry@) if the above steps do not work
-        // for you.
+        // Contact the Infra Gardener if the above steps do not work for you.
         kMin_Version     = kPictureShaderFilterParam_Version,
-        kCurrent_Version = kAnisotropicFilter
+        kCurrent_Version = kRevampMagnifierFilter
     };
 };
+
+bool SkPicture_StreamIsSKP(SkStream*, SkPictInfo*);
 
 #endif

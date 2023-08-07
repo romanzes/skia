@@ -7,14 +7,15 @@
 
 #include "src/gpu/ganesh/ops/StrokeTessellateOp.h"
 
-#include "src/core/SkMathPriv.h"
+#include "src/base/SkMathPriv.h"
 #include "src/core/SkPathPriv.h"
 #include "src/gpu/ganesh/GrAppliedClip.h"
+#include "src/gpu/ganesh/GrCaps.h"
 #include "src/gpu/ganesh/GrOpFlushState.h"
 #include "src/gpu/ganesh/GrRecordingContextPriv.h"
 #include "src/gpu/ganesh/tessellate/GrStrokeTessellationShader.h"
 
-namespace skgpu::v1 {
+namespace skgpu::ganesh {
 
 StrokeTessellateOp::StrokeTessellateOp(GrAAType aaType, const SkMatrix& viewMatrix,
                                        const SkPath& path, const SkStrokeRec& stroke,
@@ -179,7 +180,12 @@ void StrokeTessellateOp::prePrepareTessellator(GrTessellationShader::ProgramArgs
         fStencilProgram = GrTessellationShader::MakeProgram(args, fTessellationShader, pipeline,
                                                             &kMarkStencil);
         fillStencil = &kTestAndResetStencil;
-        args.fXferBarrierFlags = GrXferBarrierFlags::kNone;
+        // TODO: Currently if we have a texture barrier for a dst read it will get put in before
+        // both the stencil draw and the fill draw. In reality we only really need the barrier
+        // once to guard the reads of the color buffer in the fill from the previous writes. Maybe
+        // we can investigate how to remove one of these barriers but it is probably not something
+        // that is required a lot and thus the extra barrier shouldn't be too much of a perf hit to
+        // general Skia use.
     }
 
     fFillProgram = GrTessellationShader::MakeProgram(args, fTessellationShader, pipeline,
@@ -232,4 +238,4 @@ void StrokeTessellateOp::onExecute(GrOpFlushState* flushState, const SkRect& cha
     }
 }
 
-} // namespace skgpu::v1
+}  // namespace skgpu::ganesh

@@ -18,7 +18,9 @@ import sys
 import traceback
 
 
-RELEASE_NOTES_FILE_NAME = 'RELEASE_NOTES.txt'
+RELEASE_NOTES_DIR = 'relnotes'
+RELEASE_NOTES_FILE_NAME = 'RELEASE_NOTES.md'
+RELEASE_NOTES_README = '//relnotes/README.md'
 
 GOLD_TRYBOT_URL = 'https://gold.skia.org/search?issue='
 
@@ -121,7 +123,9 @@ def _CopyrightChecks(input_api, output_api, source_file_filter=None):
   for affected_file in input_api.AffectedSourceFiles(source_file_filter):
     if ('third_party/' in affected_file.LocalPath() or
         'tests/sksl/' in affected_file.LocalPath() or
-        'bazel/rbe/' in affected_file.LocalPath()):
+        'bazel/rbe/' in affected_file.LocalPath() or
+        'bazel/external/' in affected_file.LocalPath() or
+        'bazel/exporter/interfaces/mocks/' in affected_file.LocalPath()):
       continue
     contents = input_api.ReadFile(affected_file, 'rb')
     if not re.search(copyright_pattern, contents):
@@ -217,24 +221,6 @@ class _WarningsAsErrors():
     self.output_api.PresubmitPromptWarning = self.old_warning
 
 
-def _CheckDEPSValid(input_api, output_api):
-  """Ensure that DEPS contains valid entries."""
-  results = []
-  script = os.path.join('infra', 'bots', 'check_deps.py')
-  relevant_files = ('DEPS', script)
-  for f in input_api.AffectedFiles():
-    if f.LocalPath() in relevant_files:
-      break
-  else:
-    return results
-  cmd = ['python3', script]
-  try:
-    subprocess.check_output(cmd, stderr=subprocess.STDOUT)
-  except subprocess.CalledProcessError as e:
-    results.append(output_api.PresubmitError(e.output))
-  return results
-
-
 def _RegenerateAllExamplesCPP(input_api, output_api):
   """Regenerates all_examples.cpp if an example was added or deleted."""
   if not any(f.LocalPath().startswith('docs/examples/')
@@ -258,6 +244,46 @@ def _RegenerateAllExamplesCPP(input_api, output_api):
     )]
   return results
 
+
+def _CheckExamplesForPrivateAPIs(input_api, output_api):
+  """We only want our checked-in examples (aka fiddles) to show public API."""
+  banned_includes = [
+    input_api.re.compile(r'#\s*include\s+("src/.*)'),
+    input_api.re.compile(r'#\s*include\s+("include/private/.*)'),
+  ]
+  file_filter = lambda x: (x.LocalPath().startswith('docs/examples/'))
+  errors = []
+  for affected_file in input_api.AffectedSourceFiles(file_filter):
+    affected_filepath = affected_file.LocalPath()
+    for (line_num, line) in affected_file.ChangedContents():
+      for re in banned_includes:
+        match = re.search(line)
+        if match:
+          errors.append('%s:%s: Fiddles should not use private/internal API like %s.' % (
+                affected_filepath, line_num, match.group(1)))
+
+  if errors:
+    return [output_api.PresubmitError('\n'.join(errors))]
+  return []
+
+
+def _CheckGeneratedBazelBUILDFiles(input_api, output_api):
+    if 'win32' in sys.platform:
+      # TODO(crbug.com/skia/12541): Remove when Bazel builds work on Windows.
+      # Note: `make` is not installed on Windows by default.
+      return []
+    if 'darwin' in sys.platform:
+      # This takes too long on Mac with default settings. Probably due to sandboxing.
+      return []
+    for affected_file in input_api.AffectedFiles(include_deletes=True):
+      affected_file_path = affected_file.LocalPath()
+      if (affected_file_path.endswith('.go') or
+          affected_file_path.endswith('BUILD.bazel')):
+        return _RunCommandAndCheckGitDiff(output_api,
+                                          ['make', '-C', 'bazel', 'generate_go'])
+    return []  # No modified Go source files.
+
+
 def _CheckBazelBUILDFiles(input_api, output_api):
   """Makes sure our BUILD.bazel files are compatible with G3."""
   results = []
@@ -266,7 +292,9 @@ def _CheckBazelBUILDFiles(input_api, output_api):
     is_bazel = affected_file_path.endswith('BUILD.bazel')
     # This list lines up with the one in autoroller_lib.py (see G3).
     excluded_paths = ["infra/", "bazel/rbe/", "bazel/external/", "bazel/common_config_settings/",
-                      "modules/canvaskit/go/", "experimental/"]
+                      "modules/canvaskit/go/", "experimental/", "bazel/platform", "third_party/",
+                      "tests/", "resources/", "bazel/deps_parser/", "bazel/exporter_tool/",
+                      "tools/gpu/gl/interface/", "bazel/utils/", "include/config/"]
     is_excluded = any(affected_file_path.startswith(n) for n in excluded_paths)
     if is_bazel and not is_excluded:
       with open(affected_file_path, 'r') as file:
@@ -282,11 +310,11 @@ def _CheckBazelBUILDFiles(input_api, output_api):
             ('%s needs to have\nlicenses(["notice"])\nimmediately after ' +
              'the load() calls to comply with G3 policies.') % affected_file_path
           ))
-        if 'cc_library(' in contents and '"cc_library"' not in contents:
+        if 'cc_library(' in contents and '"skia_cc_library"' not in contents:
           results.append(output_api.PresubmitError(
-            ('%s needs load cc_library from macros.bzl instead of using the ' +
+            ('%s needs to load skia_cc_library from macros.bzl instead of using the ' +
              'native one. This allows us to build differently for G3.\n' +
-             'Add "cc_library" to load("//bazel:macros.bzl", ...)')
+             'Add "skia_cc_library" to load("//bazel:macros.bzl", ...)')
             % affected_file_path
           ))
   return results
@@ -346,6 +374,38 @@ def _RunCommandAndCheckGitDiff(output_api, command):
   return results
 
 
+def _CheckGNIGenerated(input_api, output_api):
+  """Ensures that the generated *.gni files are current.
+
+  The Bazel project files are authoritative and some *.gni files are
+  generated from them using the exporter_tool. This check ensures they
+  are still current.
+  """
+  if 'win32' in sys.platform:
+    # TODO(crbug.com/skia/12541): Remove when Bazel builds work on Windows.
+    # Note: `make` is not installed on Windows by default.
+    return [
+        output_api.PresubmitPromptWarning(
+            'Skipping Bazel=>GNI export check on Windows (unsupported platform).'
+        )
+    ]
+  if 'darwin' in sys.platform:
+      # This takes too long on Mac with default settings. Probably due to sandboxing.
+      return []
+  should_run = False
+  for affected_file in input_api.AffectedFiles(include_deletes=True):
+    affected_file_path = affected_file.LocalPath()
+    if affected_file_path.endswith('BUILD.bazel') or affected_file_path.endswith('.gni'):
+      should_run = True
+  # Generate GNI files and verify no changes.
+  if should_run:
+    return _RunCommandAndCheckGitDiff(output_api,
+            ['make', '-C', 'bazel', 'generate_gni'])
+
+  # No Bazel build files changed.
+  return []
+
+
 def _CheckBuildifier(input_api, output_api):
   """Runs Buildifier and fails on linting errors, or if it produces any diffs.
 
@@ -356,7 +416,7 @@ def _CheckBuildifier(input_api, output_api):
   for affected_file in input_api.AffectedFiles(include_deletes=False):
     affected_file_path = affected_file.LocalPath()
     if affected_file_path.endswith('BUILD.bazel') or affected_file_path.endswith('.bzl'):
-      if not affected_file_path.endswith('public.bzl'):
+      if not affected_file_path.endswith('public.bzl') and not affected_file_path.endswith('go_repositories.bzl'):
         files.append(affected_file_path)
   if not files:
     return []
@@ -374,6 +434,86 @@ def _CheckBuildifier(input_api, output_api):
     # However, --lint=fix will not cause a presubmit error if there are things that require
     # manual intervention, so we leave --lint=warn on by default.
     output_api, ['buildifier', '--mode=fix', '--lint=warn'] + files)
+
+
+def _CheckBannedAPIs(input_api, output_api):
+  """Check source code for functions and packages that should not be used."""
+
+  # A list of tuples of a regex to match an API and a suggested replacement for
+  # that API. There is an optional third parameter for files which *can* use this
+  # API without warning.
+  banned_replacements = [
+    (r'std::stof\(', 'std::strtof(), which does not throw'),
+    (r'std::stod\(', 'std::strtod(), which does not throw'),
+    (r'std::stold\(', 'std::strtold(), which does not throw'),
+  ]
+
+  # These defines are either there or not, and using them with just an #if is a
+  # subtle, frustrating bug.
+  existence_defines = ['SK_GANESH', 'SK_GRAPHITE', 'SK_GL', 'SK_VULKAN', 'SK_DAWN',
+                       'SK_METAL', 'SK_DIRECT3D', 'SK_DEBUG']
+  for d in existence_defines:
+    banned_replacements.append(('#if {}'.format(d),
+                                '#if defined({})'.format(d)))
+  compiled_replacements = []
+  for rep in banned_replacements:
+    exceptions = []
+    if len(rep) == 3:
+      (re, replacement, exceptions) = rep
+    else:
+      (re, replacement) = rep
+
+    compiled_re = input_api.re.compile(re)
+    compiled_exceptions = [input_api.re.compile(exc) for exc in exceptions]
+    compiled_replacements.append(
+        (compiled_re, replacement, compiled_exceptions))
+
+  errors = []
+  file_filter = lambda x: (x.LocalPath().endswith('.h') or
+                           x.LocalPath().endswith('.cpp') or
+                           x.LocalPath().endswith('.cc') or
+                           x.LocalPath().endswith('.m') or
+                           x.LocalPath().endswith('.mm'))
+  for affected_file in input_api.AffectedSourceFiles(file_filter):
+    affected_filepath = affected_file.LocalPath()
+    for (line_num, line) in affected_file.ChangedContents():
+      for (re, replacement, exceptions) in compiled_replacements:
+        match = re.search(line)
+        if match:
+          for exc in exceptions:
+            if exc.search(affected_filepath):
+              break
+          else:
+            errors.append('%s:%s: Instead of %s, please use %s.' % (
+                affected_filepath, line_num, match.group(), replacement))
+
+  if errors:
+    return [output_api.PresubmitError('\n'.join(errors))]
+
+  return []
+
+
+def _CheckDEPS(input_api, output_api):
+  """If DEPS was modified, run the deps_parser to update bazel/deps.bzl"""
+  needs_running = False
+  for affected_file in input_api.AffectedFiles(include_deletes=False):
+    affected_file_path = affected_file.LocalPath()
+    if affected_file_path.endswith('DEPS') or affected_file_path.endswith('deps.bzl'):
+      needs_running = True
+      break
+  if not needs_running:
+    return []
+  try:
+    subprocess.check_output(
+        ['bazelisk', '--version'],
+        stderr=subprocess.STDOUT)
+  except:
+    return [output_api.PresubmitNotifyResult(
+      'Skipping DEPS check because bazelisk is not on PATH. \n' +
+      'You can download it from https://github.com/bazelbuild/bazelisk/releases/tag/v1.14.0')]
+
+  return _RunCommandAndCheckGitDiff(
+    output_api, ['bazelisk', 'run', '//bazel/deps_parser'])
 
 
 def _CommonChecks(input_api, output_api):
@@ -399,12 +539,13 @@ def _CommonChecks(input_api, output_api):
   results.extend(_IfDefChecks(input_api, output_api))
   results.extend(_CopyrightChecks(input_api, output_api,
                                   source_file_filter=sources))
-  results.extend(_CheckDEPSValid(input_api, output_api))
   results.extend(_CheckIncludesFormatted(input_api, output_api))
   results.extend(_CheckGNFormatted(input_api, output_api))
   results.extend(_CheckGitConflictMarkers(input_api, output_api))
   results.extend(_RegenerateAllExamplesCPP(input_api, output_api))
+  results.extend(_CheckExamplesForPrivateAPIs(input_api, output_api))
   results.extend(_CheckBazelBUILDFiles(input_api, output_api))
+  results.extend(_CheckBannedAPIs(input_api, output_api))
   return results
 
 
@@ -415,12 +556,18 @@ def CheckChangeOnUpload(input_api, output_api):
   # Run on upload, not commit, since the presubmit bot apparently doesn't have
   # coverage or Go installed.
   results.extend(_InfraTests(input_api, output_api))
+  results.extend(_CheckTopReleaseNotesChanged(input_api, output_api))
   results.extend(_CheckReleaseNotesForPublicAPI(input_api, output_api))
   # Only check public.bzl on upload because new files are likely to be a source
   # of false positives and we don't want to unnecessarily block commits.
   results.extend(_CheckPublicBzl(input_api, output_api))
   # Buildifier might not be on the CI machines.
   results.extend(_CheckBuildifier(input_api, output_api))
+  # We don't want this to block the CQ (for now).
+  results.extend(_CheckDEPS(input_api, output_api))
+  # Bazelisk is not yet included in the Presubmit job.
+  results.extend(_CheckGeneratedBazelBUILDFiles(input_api, output_api))
+  results.extend(_CheckGNIGenerated(input_api, output_api))
   return results
 
 
@@ -456,7 +603,7 @@ class CodeReview(object):
 
 
 def _CheckReleaseNotesForPublicAPI(input_api, output_api):
-  """Checks to see if release notes file is updated with public API changes."""
+  """Checks to see if a release notes file is added or edited with public API changes."""
   results = []
   public_api_changed = False
   release_file_changed = False
@@ -469,13 +616,43 @@ def _CheckReleaseNotesForPublicAPI(input_api, output_api):
         file_path.split(os.path.sep)[0] == 'include' and
         'private' not in file_path):
       public_api_changed = True
-    elif affected_file_path == RELEASE_NOTES_FILE_NAME:
+    elif os.path.dirname(file_path) == RELEASE_NOTES_DIR:
       release_file_changed = True
 
   if public_api_changed and not release_file_changed:
     results.append(output_api.PresubmitPromptWarning(
-        'If this change affects a client API, please add a summary line '
-        'to the %s file.' % RELEASE_NOTES_FILE_NAME))
+        'If this change affects a client API, please add a new summary '
+        'file in the %s directory. More information can be found in '
+        '%s.' % (RELEASE_NOTES_DIR, RELEASE_NOTES_README)))
+  return results
+
+
+def _CheckTopReleaseNotesChanged(input_api, output_api):
+  """Warns if the top level release notes file was changed.
+
+  The top level file is now auto-edited, and new release notes should
+  be added to the RELEASE_NOTES_DIR directory"""
+  results = []
+  top_relnotes_changed = False
+  release_file_changed = False
+  for affected_file in input_api.AffectedFiles():
+    affected_file_path = affected_file.LocalPath()
+    file_path, file_ext = os.path.splitext(affected_file_path)
+    if affected_file_path == RELEASE_NOTES_FILE_NAME:
+      top_relnotes_changed = True
+    elif os.path.dirname(file_path) == RELEASE_NOTES_DIR:
+      release_file_changed = True
+  # When relnotes_util is run it will modify RELEASE_NOTES_FILE_NAME
+  # and delete the individual note files in RELEASE_NOTES_DIR.
+  # So, if both paths are modified do not emit a warning.
+  if top_relnotes_changed and not release_file_changed:
+    results.append(output_api.PresubmitPromptWarning(
+        'Do not edit %s directly. %s is automatically edited during the '
+        'release process. Release notes should be added as new files in '
+        'the %s directory. More information can be found in %s.' % (RELEASE_NOTES_FILE_NAME,
+                                                                    RELEASE_NOTES_FILE_NAME,
+                                                                    RELEASE_NOTES_DIR,
+                                                                    RELEASE_NOTES_README)))
   return results
 
 

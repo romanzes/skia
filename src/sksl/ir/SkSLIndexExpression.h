@@ -8,9 +8,11 @@
 #ifndef SKSL_INDEX
 #define SKSL_INDEX
 
-#include "include/sksl/SkSLPosition.h"
+#include "src/sksl/SkSLPosition.h"
 #include "src/sksl/ir/SkSLExpression.h"
+#include "src/sksl/ir/SkSLIRNode.h"
 
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <utility>
@@ -18,24 +20,24 @@
 namespace SkSL {
 
 class Context;
-class SymbolTable;
 class Type;
+enum class OperatorPrecedence : uint8_t;
 
 /**
- * An expression which extracts a value from an array or matrix, as in 'm[2]'.
+ * An expression which extracts a value from an array, vector or matrix, as in 'm[2]'.
  */
-struct IndexExpression final : public Expression {
-    inline static constexpr Kind kExpressionKind = Kind::kIndex;
+class IndexExpression final : public Expression {
+public:
+    inline static constexpr Kind kIRNodeKind = Kind::kIndex;
 
     IndexExpression(const Context& context, Position pos, std::unique_ptr<Expression> base,
                     std::unique_ptr<Expression> index)
-        : INHERITED(pos, kExpressionKind, &IndexType(context, base->type()))
+        : INHERITED(pos, kIRNodeKind, &IndexType(context, base->type()))
         , fBase(std::move(base))
         , fIndex(std::move(index)) {}
 
     // Returns a simplified index-expression; reports errors via the ErrorReporter.
     static std::unique_ptr<Expression> Convert(const Context& context,
-                                               SymbolTable& symbolTable,
                                                Position pos,
                                                std::unique_ptr<Expression> base,
                                                std::unique_ptr<Expression> index);
@@ -67,19 +69,13 @@ struct IndexExpression final : public Expression {
         return fIndex;
     }
 
-    bool hasProperty(Property property) const override {
-        return this->base()->hasProperty(property) || this->index()->hasProperty(property);
-    }
-
     std::unique_ptr<Expression> clone(Position pos) const override {
         return std::unique_ptr<Expression>(new IndexExpression(pos, this->base()->clone(),
                                                                this->index()->clone(),
                                                                &this->type()));
     }
 
-    std::string description() const override {
-        return this->base()->description() + "[" + this->index()->description() + "]";
-    }
+    std::string description(OperatorPrecedence) const override;
 
     using INHERITED = Expression;
 

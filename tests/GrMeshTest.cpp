@@ -5,32 +5,74 @@
  * found in the LICENSE file.
  */
 
-#include "tests/Test.h"
-
-
 #include "include/core/SkBitmap.h"
+#include "include/core/SkBlendMode.h"
+#include "include/core/SkCanvas.h"
 #include "include/core/SkColorSpace.h"
+#include "include/core/SkPaint.h"
+#include "include/core/SkRect.h"
+#include "include/core/SkRefCnt.h"
+#include "include/core/SkSurfaceProps.h"
+#include "include/core/SkTypes.h"
 #include "include/gpu/GrDirectContext.h"
+#include "include/private/SkColorData.h"
+#include "include/private/base/SkAlignedStorage.h"
+#include "include/private/base/SkOnce.h"
+#include "include/private/base/SkTArray.h"
+#include "include/private/base/SkTo.h"
+#include "include/private/gpu/ganesh/GrTypesPriv.h"
+#include "src/base/SkArenaAlloc.h"
+#include "src/core/SkSLTypeShared.h"
 #include "src/gpu/KeyBuilder.h"
 #include "src/gpu/ResourceKey.h"
+#include "src/gpu/SkBackingFit.h"
+#include "src/gpu/ganesh/GrBuffer.h"
 #include "src/gpu/ganesh/GrCaps.h"
+#include "src/gpu/ganesh/GrColor.h"
 #include "src/gpu/ganesh/GrDirectContextPriv.h"
+#include "src/gpu/ganesh/GrDrawIndirectCommand.h"
 #include "src/gpu/ganesh/GrGeometryProcessor.h"
-#include "src/gpu/ganesh/GrImageInfo.h"
-#include "src/gpu/ganesh/GrMemoryPool.h"
+#include "src/gpu/ganesh/GrMeshDrawTarget.h"
 #include "src/gpu/ganesh/GrOpFlushState.h"
 #include "src/gpu/ganesh/GrOpsRenderPass.h"
+#include "src/gpu/ganesh/GrPipeline.h"
+#include "src/gpu/ganesh/GrPixmap.h"
+#include "src/gpu/ganesh/GrProcessorAnalysis.h"
+#include "src/gpu/ganesh/GrProcessorSet.h"
 #include "src/gpu/ganesh/GrProgramInfo.h"
 #include "src/gpu/ganesh/GrResourceProvider.h"
+#include "src/gpu/ganesh/GrShaderCaps.h"
+#include "src/gpu/ganesh/GrShaderVar.h"
+#include "src/gpu/ganesh/GrUserStencilSettings.h"
+#include "src/gpu/ganesh/SurfaceDrawContext.h"
 #include "src/gpu/ganesh/glsl/GrGLSLFragmentShaderBuilder.h"
 #include "src/gpu/ganesh/glsl/GrGLSLVarying.h"
 #include "src/gpu/ganesh/glsl/GrGLSLVertexGeoBuilder.h"
+#include "src/gpu/ganesh/ops/GrDrawOp.h"
+#include "src/gpu/ganesh/ops/GrOp.h"
 #include "src/gpu/ganesh/ops/GrSimpleMeshDrawOpHelper.h"
-#include "src/gpu/ganesh/v1/SurfaceDrawContext_v1.h"
+#include "tests/CtsEnforcement.h"
+#include "tests/Test.h"
 
+#include <algorithm>
 #include <array>
+#include <cstddef>
+#include <cstdint>
+#include <functional>
+#include <initializer_list>
 #include <memory>
+#include <utility>
 #include <vector>
+
+class GrAppliedClip;
+class GrDstProxyView;
+class GrGLSLProgramDataManager;
+class GrRecordingContext;
+class GrSurfaceProxyView;
+enum class GrXferBarrierFlags;
+struct GrContextOptions;
+
+using namespace skia_private;
 
 #if 0
 #include "tools/ToolUtils.h"
@@ -59,8 +101,8 @@ public:
 
     sk_sp<const GrBuffer> makeIndexBuffer(const uint16_t[], int count);
 
-    template<typename T> sk_sp<const GrBuffer> makeVertexBuffer(const SkTArray<T>& data) {
-        return this->makeVertexBuffer(data.begin(), data.count());
+    template<typename T> sk_sp<const GrBuffer> makeVertexBuffer(const TArray<T>& data) {
+        return this->makeVertexBuffer(data.begin(), data.size());
     }
     template<typename T> sk_sp<const GrBuffer> makeVertexBuffer(const std::vector<T>& data) {
         return this->makeVertexBuffer(data.data(), data.size());
@@ -98,8 +140,11 @@ struct Box {
  * produce exact matches.
  */
 
-static void run_test(GrDirectContext*, const char* testName, skiatest::Reporter*,
-                     const std::unique_ptr<skgpu::v1::SurfaceDrawContext>&, const SkBitmap& gold,
+static void run_test(GrDirectContext*,
+                     const char* testName,
+                     skiatest::Reporter*,
+                     const std::unique_ptr<skgpu::ganesh::SurfaceDrawContext>&,
+                     const SkBitmap& gold,
                      std::function<void(DrawMeshHelper*)> prepareFn,
                      std::function<void(DrawMeshHelper*)> executeFn);
 
@@ -107,22 +152,26 @@ static void run_test(GrDirectContext*, const char* testName, skiatest::Reporter*
 static bool IsContextTypeForOutputPNGs(skiatest::GrContextFactoryContextType type) {
     return type == skiatest::GrContextFactoryContextType::WRITE_PNG_CONTEXT_TYPE;
 }
-DEF_GPUTEST_FOR_CONTEXTS(GrMeshTest, IsContextTypeForOutputPNGs, reporter, ctxInfo, nullptr) {
+DEF_GANESH_TEST_FOR_CONTEXTS(GrMeshTest, IsContextTypeForOutputPNGs, reporter, ctxInfo, nullptr) {
 #else
-DEF_GPUTEST_FOR_RENDERING_CONTEXTS(GrMeshTest, reporter, ctxInfo) {
+DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(GrMeshTest, reporter, ctxInfo, CtsEnforcement::kApiLevel_T) {
 #endif
     auto dContext = ctxInfo.directContext();
 
-    auto sdc = skgpu::v1::SurfaceDrawContext::Make(
-            dContext, GrColorType::kRGBA_8888, nullptr, SkBackingFit::kExact,
-            {kImageWidth, kImageHeight}, SkSurfaceProps());
+    auto sdc = skgpu::ganesh::SurfaceDrawContext::Make(dContext,
+                                                       GrColorType::kRGBA_8888,
+                                                       nullptr,
+                                                       SkBackingFit::kExact,
+                                                       {kImageWidth, kImageHeight},
+                                                       SkSurfaceProps(),
+                                                       /*label=*/{});
     if (!sdc) {
         ERRORF(reporter, "could not create render target context.");
         return;
     }
 
-    SkTArray<Box> boxes;
-    SkTArray<std::array<Box, 4>> vertexData;
+    TArray<Box> boxes;
+    TArray<std::array<Box, 4>> vertexData;
     SkBitmap gold;
 
     // ---- setup ----------
@@ -170,7 +219,7 @@ DEF_GPUTEST_FOR_RENDERING_CONTEXTS(GrMeshTest, reporter, ctxInfo) {
 
     run_test(dContext, "draw", reporter, sdc, gold,
              [&](DrawMeshHelper* helper) {
-                 SkTArray<Box> expandedVertexData;
+                 TArray<Box> expandedVertexData;
                  for (int i = 0; i < kBoxCount; ++i) {
                      for (int j = 0; j < 6; ++j) {
                          expandedVertexData.push_back(vertexData[i][kIndexPattern[j]]);
@@ -244,13 +293,13 @@ DEF_GPUTEST_FOR_RENDERING_CONTEXTS(GrMeshTest, reporter, ctxInfo) {
                  reporter, sdc, gold,
                  [&](DrawMeshHelper* helper) {
                      helper->fIndexBuffer = indexed ? helper->getIndexBuffer() : nullptr;
-                     SkTArray<uint16_t> baseIndexData;
+                     TArray<uint16_t> baseIndexData;
                      baseIndexData.push_back(kBoxCountX/2 * 6); // for testing base index.
                      for (int i = 0; i < 6; ++i) {
                          baseIndexData.push_back(kIndexPattern[i]);
                      }
                      helper->fIndexBuffer2 = helper->makeIndexBuffer(baseIndexData.begin(),
-                                                                     baseIndexData.count());
+                                                                     baseIndexData.size());
                      helper->fInstBuffer = helper->makeVertexBuffer(boxes);
                      VALIDATE(helper->fInstBuffer);
                      helper->fVertBuffer =
@@ -311,7 +360,7 @@ DEF_GPUTEST_FOR_RENDERING_CONTEXTS(GrMeshTest, reporter, ctxInfo) {
         run_test(dContext, (indexed) ? "drawIndexedIndirect" : "drawIndirect",
                  reporter, sdc, gold,
                  [&](DrawMeshHelper* helper) {
-                     SkTArray<uint16_t> baseIndexData;
+                     TArray<uint16_t> baseIndexData;
                      baseIndexData.push_back(kBoxCountX/2 * 6); // for testing base index.
                      for (int j = 0; j < kBoxCountY; ++j) {
                          for (int i = 0; i < 6; ++i) {
@@ -319,7 +368,7 @@ DEF_GPUTEST_FOR_RENDERING_CONTEXTS(GrMeshTest, reporter, ctxInfo) {
                          }
                      }
                      helper->fIndexBuffer2 = helper->makeIndexBuffer(baseIndexData.begin(),
-                                                                     baseIndexData.count());
+                                                                     baseIndexData.size());
                      VALIDATE(helper->fIndexBuffer2);
                      helper->fInstBuffer = helper->makeVertexBuffer(boxes);
                      VALIDATE(helper->fInstBuffer);
@@ -589,7 +638,7 @@ GrOpsRenderPass* DrawMeshHelper::bindPipeline(GrPrimitiveType primitiveType, boo
 static void run_test(GrDirectContext* dContext,
                      const char* testName,
                      skiatest::Reporter* reporter,
-                     const std::unique_ptr<skgpu::v1::SurfaceDrawContext>& sdc,
+                     const std::unique_ptr<skgpu::ganesh::SurfaceDrawContext>& sdc,
                      const SkBitmap& gold,
                      std::function<void(DrawMeshHelper*)> prepareFn,
                      std::function<void(DrawMeshHelper*)> executeFn) {
@@ -616,7 +665,7 @@ static void run_test(GrDirectContext* dContext,
     SkString filename;
     filename.printf("GrMeshTest_%s_%s.png", TOSTRING(WRITE_PNG_CONTEXT_TYPE), testName);
     SkDebugf("writing %s...\n", filename.c_str());
-    ToolUtils::EncodeImageToFile(filename.c_str(), resultPM, SkEncodedImageFormat::kPNG, 100);
+    ToolUtils::EncodeImageToPngFile(filename.c_str(), resultPM);
 #endif
 
     for (int y = 0; y < h; ++y) {

@@ -28,9 +28,10 @@ GrGLRenderTarget::GrGLRenderTarget(GrGLGpu* gpu,
                                    int sampleCount,
                                    const IDs& ids,
                                    sk_sp<GrGLAttachment> stencil,
+                                   skgpu::Protected isProtected,
                                    std::string_view label)
-        : GrSurface(gpu, dimensions, GrProtected::kNo, label)
-        , INHERITED(gpu, dimensions, sampleCount, GrProtected::kNo, label, std::move(stencil)) {
+        : GrSurface(gpu, dimensions, isProtected, label)
+        , GrRenderTarget(gpu, dimensions, sampleCount, isProtected, label, std::move(stencil)) {
     this->init(format, ids);
     this->setFlags(gpu->glCaps(), ids);
     this->registerWithCacheWrapped(GrWrapCacheable::kNo);
@@ -41,9 +42,10 @@ GrGLRenderTarget::GrGLRenderTarget(GrGLGpu* gpu,
                                    GrGLFormat format,
                                    int sampleCount,
                                    const IDs& ids,
+                                   skgpu::Protected isProtected,
                                    std::string_view label)
-        : GrSurface(gpu, dimensions, GrProtected::kNo, label)
-        , INHERITED(gpu, dimensions, sampleCount, GrProtected::kNo, label) {
+        : GrSurface(gpu, dimensions, isProtected, label)
+        , GrRenderTarget(gpu, dimensions, sampleCount, isProtected, label) {
     this->init(format, ids);
     this->setFlags(gpu->glCaps(), ids);
 }
@@ -84,7 +86,9 @@ sk_sp<GrGLRenderTarget> GrGLRenderTarget::MakeWrapped(GrGLGpu* gpu,
                                                       GrGLFormat format,
                                                       int sampleCount,
                                                       const IDs& idDesc,
-                                                      int stencilBits) {
+                                                      int stencilBits,
+                                                      skgpu::Protected isProtected,
+                                                      std::string_view label) {
     sk_sp<GrGLAttachment> sb;
     if (stencilBits) {
         // We pick a "fake" actual format that matches the number of stencil bits. When wrapping
@@ -105,8 +109,7 @@ sk_sp<GrGLRenderTarget> GrGLRenderTarget::MakeWrapped(GrGLGpu* gpu,
                                                      sFmt);
     }
     return sk_sp<GrGLRenderTarget>(new GrGLRenderTarget(
-            gpu, dimensions, format, sampleCount, idDesc, std::move(sb),
-            /*label=*/"GLRenderTargetMakeWrapped"));
+            gpu, dimensions, format, sampleCount, idDesc, std::move(sb), isProtected, label));
 }
 
 GrBackendRenderTarget GrGLRenderTarget::getBackendRenderTarget() const {
@@ -114,6 +117,7 @@ GrBackendRenderTarget GrGLRenderTarget::getBackendRenderTarget() const {
     GrGLFramebufferInfo fbi;
     fbi.fFBOID = (useMultisampleFBO) ? fMultisampleFBOID : fSingleSampleFBOID;
     fbi.fFormat = GrGLFormatToEnum(this->format());
+    fbi.fProtected = skgpu::Protected(this->isProtected());
     int numStencilBits = 0;
     if (GrAttachment* stencil = this->getStencilAttachment(useMultisampleFBO)) {
         numStencilBits = GrBackendFormatStencilBits(stencil->backendFormat());

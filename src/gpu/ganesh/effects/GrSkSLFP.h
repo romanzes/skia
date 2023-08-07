@@ -8,20 +8,35 @@
 #ifndef GrSkSLFP_DEFINED
 #define GrSkSLFP_DEFINED
 
-#include "include/core/SkM44.h"
 #include "include/core/SkRefCnt.h"
 #include "include/effects/SkRuntimeEffect.h"
-#include "include/gpu/GrContextOptions.h"
-#include "include/private/SkVx.h"
+#include "include/gpu/GrTypes.h"
+#include "include/private/SkColorData.h"
+#include "include/private/base/SkAssert.h"
+#include "include/private/base/SkSpan_impl.h"
+#include "src/base/SkVx.h" // IWYU pragma: keep
 #include "src/gpu/ganesh/GrFragmentProcessor.h"
+#include "src/gpu/ganesh/GrProcessorUnitTest.h"
+#include "src/gpu/ganesh/glsl/GrGLSLProgramDataManager.h"
 
-#include <atomic>
+#include <cstdint>
+#include <cstring>
+#include <memory>
+#include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
-struct GrShaderCaps;
+class SkColorSpace;
 class SkData;
-class SkRuntimeEffect;
+class SkM44;
+namespace skgpu { class KeyBuilder; }
+struct GrShaderCaps;
+struct SkRect;
+struct SkV2;
+struct SkV4;
+
+template <typename T> struct GrFPUniformType;
 
 #ifdef SK_DEBUG
 // UNIFORM_TYPE allows C++ types to be mapped onto SkRuntimeEffect::Uniform::Type
@@ -138,7 +153,7 @@ public:
      * uniform data is directly copied into the footer allocated after the FP.
      */
     template <typename... Args>
-    static std::unique_ptr<GrSkSLFP> Make(sk_sp<SkRuntimeEffect> effect,
+    static std::unique_ptr<GrSkSLFP> Make(const SkRuntimeEffect* effect,
                                           const char* name,
                                           std::unique_ptr<GrFragmentProcessor> inputFP,
                                           OptFlags optFlags,
@@ -155,9 +170,9 @@ public:
         // factory should instead construct an GrColorSpaceXformEffect as part of the FP tree.
         SkASSERT(!effect->usesColorTransform());
 
-        size_t uniformPayloadSize = UniformPayloadSize(effect.get());
-        std::unique_ptr<GrSkSLFP> fp(new (uniformPayloadSize)
-                                             GrSkSLFP(std::move(effect), name, optFlags));
+        size_t uniformPayloadSize = UniformPayloadSize(effect);
+        std::unique_ptr<GrSkSLFP> fp(new (uniformPayloadSize) GrSkSLFP(sk_ref_sp(effect),
+                                                                       name, optFlags));
         fp->appendArgs(fp->uniformData(), fp->specialized(), std::forward<Args>(args)...);
         if (inputFP) {
             fp->setInput(std::move(inputFP));
@@ -173,6 +188,8 @@ private:
 
     GrSkSLFP(sk_sp<SkRuntimeEffect> effect, const char* name, OptFlags optFlags);
     GrSkSLFP(const GrSkSLFP& other);
+
+    static OptimizationFlags DetermineOptimizationFlags(OptFlags of, SkRuntimeEffect* effect);
 
     void addChild(std::unique_ptr<GrFragmentProcessor> child, bool mergeOptFlags);
     void setInput(std::unique_ptr<GrFragmentProcessor> input);
@@ -304,14 +321,17 @@ private:
                           uniform_iterator uEnd,
                           child_iterator cIter,
                           child_iterator cEnd) {
-        SkASSERTF(uIter == uEnd, "Expected more uniforms, starting with '%s'", uIter->name.c_str());
-        SkASSERTF(cIter == cEnd, "Expected more children, starting with '%s'", cIter->name.c_str());
+        SkASSERTF(uIter == uEnd,
+                  "Expected more uniforms, starting with '%.*s'",
+                  (int)uIter->name.size(), uIter->name.data());
+        SkASSERTF(cIter == cEnd, "Expected more children, starting with '%.*s'",
+                  (int)cIter->name.size(), cIter->name.data());
     }
     static void checkOneChild(child_iterator cIter, child_iterator cEnd, const char* name) {
         SkASSERTF(cIter != cEnd, "Too many children, wasn't expecting '%s'", name);
-        SkASSERTF(cIter->name.equals(name),
-                  "Expected child '%s', got '%s' instead",
-                  cIter->name.c_str(), name);
+        SkASSERTF(cIter->name == name,
+                  "Expected child '%.*s', got '%s' instead",
+                  (int)cIter->name.size(), cIter->name.data(), name);
     }
     template <typename... Args>
     static void checkArgs(uniform_iterator uIter,
@@ -373,9 +393,9 @@ private:
                                 const T* /*val*/,
                                 size_t valSize) {
         SkASSERTF(uIter != uEnd, "Too many uniforms, wasn't expecting '%s'", name);
-        SkASSERTF(uIter->name.equals(name),
-                  "Expected uniform '%s', got '%s' instead",
-                  uIter->name.c_str(), name);
+        SkASSERTF(uIter->name == name,
+                  "Expected uniform '%.*s', got '%s' instead",
+                  (int)uIter->name.size(), uIter->name.data(), name);
         SkASSERTF(uIter->sizeInBytes() == valSize,
                   "Expected uniform '%s' to be %zu bytes, got %zu instead",
                   name, uIter->sizeInBytes(), valSize);

@@ -28,6 +28,7 @@
 #include "include/effects/SkImageFilters.h"
 #include "include/effects/SkShaderMaskFilter.h"
 #include "include/gpu/GrDirectContext.h"
+#include "include/gpu/ganesh/SkImageGanesh.h"
 #include "tools/Resources.h"
 #include "tools/ToolUtils.h"
 
@@ -77,7 +78,7 @@ DEF_SIMPLE_GM(imagefilters_xfermodes, canvas, 480, 480) {
             SkBlendMode::kSrcATop, SkBlendMode::kDstIn
         };
 
-        for (size_t i = 0; i < SK_ARRAY_COUNT(modes); ++i) {
+        for (size_t i = 0; i < std::size(modes); ++i) {
             canvas->save();
             do_draw(canvas, modes[i], nullptr);
             canvas->translate(240, 0);
@@ -186,7 +187,7 @@ protected:
             canvas->translate(xform.fTx, xform.fTy);
             canvas->scale(xform.fSx, xform.fSy);
             canvas->drawImage(image, 0, 0, sampling, nullptr);
-            draw_set(canvas, filters, SK_ARRAY_COUNT(filters));
+            draw_set(canvas, filters, std::size(filters));
             canvas->restore();
         }
     }
@@ -202,7 +203,7 @@ DEF_SIMPLE_GM(imagefilters_effect_order, canvas, 512, 512) {
     sk_sp<SkImage> image(GetResourceAsImage("images/mandrill_256.png"));
     auto direct = GrAsDirectContext(canvas->recordingContext());
     if (direct) {
-        if (sk_sp<SkImage> gpuImage = image->makeTextureImage(direct)) {
+        if (sk_sp<SkImage> gpuImage = SkImages::TextureFromImage(direct, image)) {
             image = std::move(gpuImage);
         }
     }

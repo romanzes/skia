@@ -14,16 +14,21 @@
 #include "src/gpu/ganesh/GrAHardwareBufferUtils_impl.h"
 
 #include <android/hardware_buffer.h>
+#ifdef SK_GL
 #include <EGL/egl.h>
 #include <EGL/eglext.h>
 #include <GLES/gl.h>
 #include <GLES/glext.h>
+#endif
 
 #include "include/gpu/GrDirectContext.h"
-#include "include/gpu/gl/GrGLTypes.h"
 #include "src/gpu/ganesh/GrDirectContextPriv.h"
+
+#ifdef SK_GL
+#include "include/gpu/gl/GrGLTypes.h"
 #include "src/gpu/ganesh/gl/GrGLDefines_impl.h"
 #include "src/gpu/ganesh/gl/GrGLUtil.h"
+#endif
 
 #ifdef SK_VULKAN
 #include "src/gpu/ganesh/vk/GrVkCaps.h"
@@ -94,9 +99,9 @@ GrBackendFormat GetBackendFormat(GrDirectContext* dContext, AHardwareBuffer* har
                     return GrBackendFormat::MakeGL(GR_GL_RGBA8, GR_GL_TEXTURE_EXTERNAL);
                 }
         }
-#else
+#else // SK_GL
         return GrBackendFormat();
-#endif
+#endif // SK_GL
     } else if (backend == GrBackendApi::kVulkan) {
 #ifdef SK_VULKAN
         switch (bufferFormat) {
@@ -166,9 +171,9 @@ GrBackendFormat GetBackendFormat(GrDirectContext* dContext, AHardwareBuffer* har
                 }
             }
         }
-#else
+#else // SK_VULKAN
         return GrBackendFormat();
-#endif
+#endif // SK_VULKAN
     }
     return GrBackendFormat();
 }
@@ -222,7 +227,8 @@ void update_gl_texture(void* context, GrDirectContext* dContext) {
 }
 
 static GrBackendTexture make_gl_backend_texture(
-        GrDirectContext* dContext, AHardwareBuffer* hardwareBuffer,
+        GrDirectContext* dContext,
+        AHardwareBuffer* hardwareBuffer,
         int width, int height,
         DeleteImageProc* deleteProc,
         UpdateImageProc* updateProc,
@@ -284,7 +290,7 @@ static GrBackendTexture make_gl_backend_texture(
 
     return GrBackendTexture(width, height, GrMipmapped::kNo, textureInfo);
 }
-#endif
+#endif // SK_GL
 
 #ifdef SK_VULKAN
 class VulkanCleanupHelper {
@@ -341,7 +347,12 @@ static GrBackendTexture make_vk_backend_texture(
     }
 
     VkFormat format;
-    SkAssertResult(backendFormat.asVkFormat(&format));
+    if (!backendFormat.asVkFormat(&format)) {
+        SkDebugf("asVkFormat failed (valid: %d, backend: %d)",
+                 backendFormat.isValid(),
+                 backendFormat.backend());
+        return GrBackendTexture();
+    }
 
     VkResult err;
 
@@ -355,6 +366,13 @@ static GrBackendTexture make_vk_backend_texture(
 
     err = VK_CALL(GetAndroidHardwareBufferProperties(device, hardwareBuffer, &hwbProps));
     if (VK_SUCCESS != err) {
+        return GrBackendTexture();
+    }
+
+    if (hwbFormatProps.format != format) {
+        SkDebugf("Queried format not consistent with expected format; got: %d, expected: %d",
+                 hwbFormatProps.format,
+                 format);
         return GrBackendTexture();
     }
 
@@ -383,7 +401,6 @@ static GrBackendTexture make_vk_backend_texture(
         SkASSERT(hwbFormatProps.externalFormat == ycbcrConversion->fExternalFormat);
         externalFormat.externalFormat = hwbFormatProps.externalFormat;
     }
-    SkASSERT(format == hwbFormatProps.format);
 
     const VkExternalMemoryImageCreateInfo externalMemoryImageInfo{
             VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_IMAGE_CREATE_INFO,                 // sType
@@ -494,7 +511,7 @@ static GrBackendTexture make_vk_backend_texture(
         return GrBackendTexture();
     }
 
-    GrVkAlloc alloc;
+    skgpu::VulkanAlloc alloc;
     alloc.fMemory = memory;
     alloc.fOffset = 0;
     alloc.fSize = hwbProps.allocationSize;
@@ -524,8 +541,9 @@ static GrBackendTexture make_vk_backend_texture(
 
     return GrBackendTexture(width, height, imageInfo);
 }
-#endif
+#endif // SK_VULKAN
 
+#ifdef SK_GL
 static bool can_import_protected_content_eglimpl() {
     EGLDisplay dpy = eglGetDisplay(EGL_DEFAULT_DISPLAY);
     const char* exts = eglQueryString(dpy, EGL_EXTENSIONS);
@@ -539,22 +557,26 @@ static bool can_import_protected_content_eglimpl() {
     bool inMiddle = strstr(exts, " " PROT_CONTENT_EXT_STR " ");
     return equal || atStart || atEnd || inMiddle;
 }
+#endif // SK_GL
 
 static bool can_import_protected_content(GrDirectContext* dContext) {
     if (GrBackendApi::kOpenGL == dContext->backend()) {
+#ifdef SK_GL
         // Only compute whether the extension is present once the first time this
         // function is called.
         static bool hasIt = can_import_protected_content_eglimpl();
         return hasIt;
+#endif // SK_GL
     } else if (GrBackendApi::kVulkan == dContext->backend()) {
 #ifdef SK_VULKAN
         return static_cast<GrVkGpu*>(dContext->priv().getGpu())->protectedContext();
-#endif
+#endif // SK_VULKAN
     }
     return false;
 }
 
-GrBackendTexture MakeBackendTexture(GrDirectContext* dContext, AHardwareBuffer* hardwareBuffer,
+GrBackendTexture MakeBackendTexture(GrDirectContext* dContext,
+                                    AHardwareBuffer* hardwareBuffer,
                                     int width, int height,
                                     DeleteImageProc* deleteProc,
                                     UpdateImageProc* updateProc,
@@ -576,7 +598,7 @@ GrBackendTexture MakeBackendTexture(GrDirectContext* dContext, AHardwareBuffer* 
                                        isRenderable);
 #else
         return GrBackendTexture();
-#endif
+#endif // SK_GL
     } else {
         SkASSERT(GrBackendApi::kVulkan == dContext->backend());
 #ifdef SK_VULKAN
@@ -585,11 +607,10 @@ GrBackendTexture MakeBackendTexture(GrDirectContext* dContext, AHardwareBuffer* 
                                        isRenderable, fromAndroidWindow);
 #else
         return GrBackendTexture();
-#endif
+#endif // SK_VULKAN
     }
 }
 
 } // GrAHardwareBufferUtils
 
 #endif
-

@@ -12,12 +12,13 @@
 #include "include/gpu/GrBackendSemaphore.h"
 #include "include/gpu/GrBackendSurface.h"
 #include "include/gpu/GrDirectContext.h"
-#include "src/core/SkAutoMalloc.h"
-
-#include "include/gpu/vk/GrVkExtensions.h"
+#include "include/gpu/ganesh/SkSurfaceGanesh.h"
 #include "include/gpu/vk/GrVkTypes.h"
+#include "include/gpu/vk/VulkanExtensions.h"
+#include "src/base/SkAutoMalloc.h"
 #include "src/gpu/ganesh/vk/GrVkImage.h"
 #include "src/gpu/ganesh/vk/GrVkUtil.h"
+#include "src/gpu/vk/VulkanInterface.h"
 
 #ifdef VK_USE_PLATFORM_WIN32_KHR
 // windows wants to define this as CreateSemaphoreA or CreateSemaphoreW
@@ -54,7 +55,7 @@ void VulkanWindowContext::initializeContext() {
 
     PFN_vkGetInstanceProcAddr getInstanceProc = fGetInstanceProcAddr;
     GrVkBackendContext backendContext;
-    GrVkExtensions extensions;
+    skgpu::VulkanExtensions extensions;
     VkPhysicalDeviceFeatures2 features;
     if (!sk_gpu_test::CreateVkBackendContext(getInstanceProc, &backendContext, &extensions,
                                              &features, &fDebugCallback, &fPresentQueueIndex,
@@ -88,9 +89,9 @@ void VulkanWindowContext::initializeContext() {
     localGetPhysicalDeviceProperties(backendContext.fPhysicalDevice, &physDeviceProperties);
     uint32_t physDevVersion = physDeviceProperties.apiVersion;
 
-    fInterface.reset(new GrVkInterface(backendContext.fGetProc, fInstance, fDevice,
-                                       backendContext.fInstanceVersion, physDevVersion,
-                                       &extensions));
+    fInterface.reset(new skgpu::VulkanInterface(backendContext.fGetProc, fInstance, fDevice,
+                                                backendContext.fInstanceVersion, physDevVersion,
+                                                &extensions));
 
     GET_PROC(DestroyInstance);
     if (fDebugCallback != VK_NULL_HANDLE) {
@@ -345,7 +346,7 @@ bool VulkanWindowContext::createBuffers(VkFormat format, VkImageUsageFlags usage
 
         GrVkImageInfo info;
         info.fImage = fImages[i];
-        info.fAlloc = GrVkAlloc();
+        info.fAlloc = skgpu::VulkanAlloc();
         info.fImageLayout = VK_IMAGE_LAYOUT_UNDEFINED;
         info.fImageTiling = VK_IMAGE_TILING_OPTIMAL;
         info.fFormat = format;
@@ -356,19 +357,24 @@ bool VulkanWindowContext::createBuffers(VkFormat format, VkImageUsageFlags usage
 
         if (usageFlags & VK_IMAGE_USAGE_SAMPLED_BIT) {
             GrBackendTexture backendTexture(fWidth, fHeight, info);
-            fSurfaces[i] = SkSurface::MakeFromBackendTexture(
-                    fContext.get(), backendTexture, kTopLeft_GrSurfaceOrigin,
-                    fDisplayParams.fMSAASampleCount,
-                    colorType, fDisplayParams.fColorSpace, &fDisplayParams.fSurfaceProps);
+            fSurfaces[i] = SkSurfaces::WrapBackendTexture(fContext.get(),
+                                                          backendTexture,
+                                                          kTopLeft_GrSurfaceOrigin,
+                                                          fDisplayParams.fMSAASampleCount,
+                                                          colorType,
+                                                          fDisplayParams.fColorSpace,
+                                                          &fDisplayParams.fSurfaceProps);
         } else {
             if (fDisplayParams.fMSAASampleCount > 1) {
                 return false;
             }
             GrBackendRenderTarget backendRT(fWidth, fHeight, fSampleCount, info);
-            fSurfaces[i] = SkSurface::MakeFromBackendRenderTarget(
-                    fContext.get(), backendRT, kTopLeft_GrSurfaceOrigin, colorType,
-                    fDisplayParams.fColorSpace, &fDisplayParams.fSurfaceProps);
-
+            fSurfaces[i] = SkSurfaces::WrapBackendRenderTarget(fContext.get(),
+                                                               backendRT,
+                                                               kTopLeft_GrSurfaceOrigin,
+                                                               colorType,
+                                                               fDisplayParams.fColorSpace,
+                                                               &fDisplayParams.fSurfaceProps);
         }
         if (!fSurfaces[i]) {
             return false;
@@ -531,7 +537,7 @@ sk_sp<SkSurface> VulkanWindowContext::getBackbufferSurface() {
     return sk_ref_sp(surface);
 }
 
-void VulkanWindowContext::swapBuffers() {
+void VulkanWindowContext::onSwapBuffers() {
 
     BackbufferInfo* backbuffer = fBackbuffers + fCurrentBackbufferIndex;
     SkSurface* surface = fSurfaces[backbuffer->fImageIndex].get();
@@ -542,7 +548,7 @@ void VulkanWindowContext::swapBuffers() {
     GrFlushInfo info;
     info.fNumSemaphores = 1;
     info.fSignalSemaphores = &beSemaphore;
-    GrBackendSurfaceMutableState presentState(VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, fPresentQueueIndex);
+    skgpu::MutableTextureState presentState(VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, fPresentQueueIndex);
     surface->flush(info, &presentState);
     surface->recordingContext()->asDirectContext()->submit();
 

@@ -16,13 +16,23 @@ TextureInfo& TextureInfo::operator=(const TextureInfo& that) {
     }
     fBackend = that.fBackend;
     fSampleCount = that.fSampleCount;
-    fLevelCount = that.fLevelCount;
+    fMipmapped = that.fMipmapped;
     fProtected = that.fProtected;
 
     switch (that.backend()) {
+#ifdef SK_DAWN
+        case BackendApi::kDawn:
+            fDawnSpec = that.fDawnSpec;
+            break;
+#endif
 #ifdef SK_METAL
         case BackendApi::kMetal:
             fMtlSpec = that.fMtlSpec;
+            break;
+#endif
+#ifdef SK_VULKAN
+        case BackendApi::kVulkan:
+            fVkSpec = that.fVkSpec;
             break;
 #endif
         default:
@@ -46,20 +56,38 @@ bool TextureInfo::operator==(const TextureInfo& that) const {
     }
 
     if (fSampleCount != that.fSampleCount ||
-        fLevelCount != that.fLevelCount ||
+        fMipmapped != that.fMipmapped ||
         fProtected != that.fProtected) {
         return false;
     }
 
     switch (fBackend) {
+#ifdef SK_DAWN
+        case BackendApi::kDawn:
+            return fDawnSpec == that.fDawnSpec;
+#endif
 #ifdef SK_METAL
         case BackendApi::kMetal:
             return fMtlSpec == that.fMtlSpec;
+#endif
+#ifdef SK_VULKAN
+        case BackendApi::kVulkan:
+            return fVkSpec == that.fVkSpec;
 #endif
         default:
             return false;
     }
 }
+
+#ifdef SK_DAWN
+bool TextureInfo::getDawnTextureInfo(DawnTextureInfo* info) const {
+    if (!this->isValid() || fBackend != BackendApi::kDawn) {
+        return false;
+    }
+    *info = DawnTextureSpecToTextureInfo(fDawnSpec, fSampleCount, fMipmapped);
+    return true;
+}
+#endif
 
 } // namespace skgpu::graphite
 

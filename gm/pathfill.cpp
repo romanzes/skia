@@ -10,6 +10,7 @@
 #include "include/core/SkColor.h"
 #include "include/core/SkPaint.h"
 #include "include/core/SkPathBuilder.h"
+#include "include/core/SkPathUtils.h"
 #include "include/core/SkRRect.h"
 #include "include/core/SkRect.h"
 #include "include/core/SkScalar.h"
@@ -33,7 +34,7 @@ static PathDY make_frame() {
     SkPaint paint;
     paint.setStyle(SkPaint::kStroke_Style);
     paint.setStrokeWidth(SkIntToScalar(5));
-    paint.getFillPath(path, &path);
+    skpathutils::FillPathWithPaint(path, paint, &path);
     return {path, 15};
 }
 
@@ -295,7 +296,7 @@ constexpr MakePathProc gProcs[] = {
     make_sawtooth_3,
 };
 
-#define N   SK_ARRAY_COUNT(gProcs)
+#define N   std::size(gProcs)
 
 class PathFillGM : public skiagm::GM {
     SkPath  fPath[N];
@@ -629,7 +630,7 @@ DEF_SIMPLE_GM(bug7792, canvas, 800, 800) {
 
 DEF_SIMPLE_GM(path_stroke_clip_crbug1070835, canvas, 25, 50) {
     SkCanvas* orig = canvas;
-    auto surf = SkSurface::MakeRasterN32Premul(25, 25);
+    auto surf = SkSurfaces::Raster(SkImageInfo::MakeN32Premul(25, 25));
     canvas = surf->getCanvas();
 
     SkPaint p;

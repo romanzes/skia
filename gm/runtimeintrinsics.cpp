@@ -17,7 +17,7 @@
 #include "include/effects/SkGradientShader.h"
 #include "include/effects/SkImageFilters.h"
 #include "include/effects/SkRuntimeEffect.h"
-#include "include/utils/SkRandom.h"
+#include "src/base/SkRandom.h"
 #include "src/core/SkRuntimeEffectPriv.h"
 #include "src/gpu/ganesh/GrCaps.h"
 #include "src/gpu/ganesh/GrRecordingContextPriv.h"
@@ -67,7 +67,7 @@ static SkBitmap draw_shader(SkCanvas* canvas, sk_sp<SkShader> shader,
     SkImageInfo info = SkImageInfo::MakeN32Premul({kBoxSize, kBoxSize});
     auto surface = canvas->makeSurface(info);
     if (allowRasterFallback && !surface) {
-        surface = SkSurface::MakeRaster(info);
+        surface = SkSurfaces::Raster(info);
     }
 
     if (surface) {

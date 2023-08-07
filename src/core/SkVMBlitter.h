@@ -8,17 +8,20 @@
 #ifndef SkVMBlitter_DEFINED
 #define SkVMBlitter_DEFINED
 
-#include "src/core/SkArenaAlloc.h"
+#include "include/core/SkPixmap.h"
+#include "src/base/SkArenaAlloc.h"
+#include "src/base/SkTLazy.h"
 #include "src/core/SkBlitter.h"
 #include "src/core/SkLRUCache.h"
-#include "src/core/SkTLazy.h"
 #include "src/core/SkVM.h"
+
+#ifdef SK_ENABLE_SKVM
 
 class SkVMBlitter final : public SkBlitter {
 public:
     static SkVMBlitter* Make(const SkPixmap& dst,
                              const SkPaint&,
-                             const SkMatrixProvider&,
+                             const SkMatrix& ctm,
                              SkArenaAlloc*,
                              sk_sp<SkShader> clipShader);
 
@@ -33,7 +36,7 @@ public:
                 const SkPaint& paint,
                 const SkPixmap* sprite,
                 SkIPoint spriteOffset,
-                const SkMatrixProvider& matrices,
+                const SkMatrix& ctm,
                 sk_sp<SkShader> clip,
                 bool* ok);
 
@@ -66,7 +69,7 @@ private:
         SkColorInfo             dst;
         Coverage                coverage;
         SkColor4f               paint;
-        const SkMatrixProvider& matrices;
+        SkMatrix                ctm;
 
         Params withCoverage(Coverage c) const;
     };
@@ -74,7 +77,7 @@ private:
     static Params EffectiveParams(const SkPixmap& device,
                                   const SkPixmap* sprite,
                                   SkPaint paint,
-                                  const SkMatrixProvider& matrices,
+                                  const SkMatrix& ctm,
                                   sk_sp<SkShader> clip);
     static skvm::Color DstColor(skvm::Builder* p, const Params& params);
     static void BuildProgram(skvm::Builder* p, const Params& params,
@@ -103,9 +106,40 @@ private:
     const Params    fParams;
     const Key       fKey;
     bool            fStoreToCache = false;
+
     skvm::Program*         fProgramPtrs[Coverage::kCount] = {nullptr};
     SkTLazy<skvm::Program> fPrograms[Coverage::kCount];
 
     friend class Viewer;
 };
+
+#else
+
+class SkVMBlitter final : public SkBlitter {
+public:
+    static SkVMBlitter* Make(const SkPixmap&,
+                             const SkPaint&,
+                             const SkMatrix&,
+                             SkArenaAlloc*,
+                             sk_sp<SkShader>) {
+        return nullptr;
+    }
+
+    static SkVMBlitter* Make(const SkPixmap&,
+                             const SkPaint&,
+                             const SkPixmap&,
+                             int,
+                             int,
+                             SkArenaAlloc*,
+                             sk_sp<SkShader>) {
+        return nullptr;
+    }
+
+    void blitH(int, int, int) override {}
+    void blitAntiH(int, int, const SkAlpha[], const int16_t[]) override {}
+
+    ~SkVMBlitter() override = default;
+};
+
+#endif  // SK_ENABLE_SKVM
 #endif  // SkVMBlitter_DEFINED

@@ -52,7 +52,7 @@ protected:
             SK_ColorWHITE,   SK_ColorGRAY,
         };
 
-        auto surface(SkSurface::MakeRasterN32Premul(kImageSize, kImageSize));
+        auto surface(SkSurfaces::Raster(SkImageInfo::MakeN32Premul(kImageSize, kImageSize)));
         SkCanvas* canvas = surface->getCanvas();
 
         int curColor = 0;
@@ -64,7 +64,7 @@ protected:
             p.setColor(gColors[curColor]);
             canvas->drawRect(r, p);
 
-            curColor = (curColor+1) % SK_ARRAY_COUNT(gColors);
+            curColor = (curColor+1) % std::size(gColors);
         }
 
         fImage = surface->makeImageSnapshot();

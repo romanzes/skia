@@ -72,6 +72,7 @@ public:
         // See OpenGL Spec 7.6.2.2 Standard Uniform Block Layout
         switch (type.typeKind()) {
             case Type::TypeKind::kScalar:
+            case Type::TypeKind::kAtomic:
                 return this->size(type);
             case Type::TypeKind::kVector:
                 return GetVectorAlignment(this->size(type.componentType()), type.columns());
@@ -137,6 +138,9 @@ public:
                     return 2;
                 }
                 return 4;
+            case Type::TypeKind::kAtomic:
+                // Our atomic types (currently atomicUint) always occupy 4 bytes.
+                return 4;
             case Type::TypeKind::kVector:
                 if (this->isMetal() && type.columns() == 3) {
                     return 4 * this->size(type.componentType());
@@ -144,7 +148,7 @@ public:
                 return type.columns() * this->size(type.componentType());
             case Type::TypeKind::kMatrix: // fall through
             case Type::TypeKind::kArray:
-                return type.columns() * this->stride(type);
+                return type.isUnsizedArray() ? 0 : (type.columns() * this->stride(type));
             case Type::TypeKind::kStruct: {
                 size_t total = 0;
                 for (const auto& f : type.fields()) {
@@ -170,6 +174,9 @@ public:
      */
     size_t isSupported(const Type& type) const {
         switch (type.typeKind()) {
+            case Type::TypeKind::kAtomic:
+                return true;
+
             case Type::TypeKind::kScalar:
                 // bool and short are not host-shareable in WGSL.
                 return !this->isWGSL() ||
@@ -182,7 +189,7 @@ public:
 
             case Type::TypeKind::kStruct:
                 return std::all_of(
-                        type.fields().begin(), type.fields().end(), [this](const Type::Field& f) {
+                        type.fields().begin(), type.fields().end(), [this](const Field& f) {
                             return this->isSupported(*f.fType);
                         });
 

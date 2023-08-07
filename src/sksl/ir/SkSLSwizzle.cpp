@@ -8,11 +8,13 @@
 #include "src/sksl/ir/SkSLSwizzle.h"
 
 #include "include/core/SkSpan.h"
-#include "include/private/SkSLString.h"
-#include "include/sksl/SkSLErrorReporter.h"
+#include "include/private/base/SkTArray.h"
 #include "src/sksl/SkSLAnalysis.h"
 #include "src/sksl/SkSLConstantFolder.h"
 #include "src/sksl/SkSLContext.h"
+#include "src/sksl/SkSLErrorReporter.h"
+#include "src/sksl/SkSLOperator.h"
+#include "src/sksl/SkSLString.h"
 #include "src/sksl/ir/SkSLConstructorCompound.h"
 #include "src/sksl/ir/SkSLConstructorCompoundCast.h"
 #include "src/sksl/ir/SkSLConstructorScalarCast.h"
@@ -20,7 +22,11 @@
 #include "src/sksl/ir/SkSLLiteral.h"
 
 #include <algorithm>
+#include <cstddef>
+#include <cstdint>
 #include <optional>
+
+using namespace skia_private;
 
 namespace SkSL {
 
@@ -176,7 +182,7 @@ static std::unique_ptr<Expression> optimize_constructor_swizzle(const Context& c
             return nullptr;
         }
         // Check that side-effect-bearing expressions are swizzled in exactly once.
-        if (exprUsed[constructorArgIndex] != 1 && baseArg.hasSideEffects()) {
+        if (exprUsed[constructorArgIndex] != 1 && Analysis::HasSideEffects(baseArg)) {
             return nullptr;
         }
     }
@@ -185,7 +191,7 @@ static std::unique_ptr<Expression> optimize_constructor_swizzle(const Context& c
         int8_t fArgIndex;
         ComponentArray fComponents;
     };
-    SkSTArray<4, ReorderedArgument> reorderedArgs;
+    STArray<4, ReorderedArgument> reorderedArgs;
     for (int8_t c : components) {
         const ConstructorArgMap& argument = argMap[c];
         const Expression& baseArg = *baseArguments[argument.fArgIndex];
@@ -298,7 +304,7 @@ std::unique_ptr<Expression> Swizzle::Convert(const Context& context,
         return nullptr;
     }
 
-    if (inComponents.count() > 4) {
+    if (inComponents.size() > 4) {
         Position errorPos = rawMaskPos.valid() ? Position::Range(maskPos.startOffset() + 4,
                                                                  maskPos.endOffset())
                                                : pos;
@@ -309,7 +315,7 @@ std::unique_ptr<Expression> Swizzle::Convert(const Context& context,
 
     ComponentArray maskComponents;
     bool foundXYZW = false;
-    for (int i = 0; i < inComponents.count(); ++i) {
+    for (int i = 0; i < inComponents.size(); ++i) {
         switch (inComponents[i]) {
             case SwizzleComponent::ZERO:
             case SwizzleComponent::ONE:
@@ -382,7 +388,7 @@ std::unique_ptr<Expression> Swizzle::Convert(const Context& context,
     std::unique_ptr<Expression> expr = Swizzle::Make(context, pos, std::move(base), maskComponents);
 
     // If we have processed the entire swizzle, we're done.
-    if (maskComponents.count() == inComponents.count()) {
+    if (maskComponents.size() == inComponents.size()) {
         return expr;
     }
 
@@ -408,7 +414,7 @@ std::unique_ptr<Expression> Swizzle::Convert(const Context& context,
     int constantFieldIdx = maskComponents.size();
     int constantZeroIdx = -1, constantOneIdx = -1;
 
-    for (int i = 0; i < inComponents.count(); i++) {
+    for (int i = 0; i < inComponents.size(); i++) {
         switch (inComponents[i]) {
             case SwizzleComponent::ZERO:
                 if (constantZeroIdx == -1) {
@@ -448,7 +454,7 @@ std::unique_ptr<Expression> Swizzle::Make(const Context& context,
     const Type& exprType = expr->type();
     SkASSERTF(exprType.isVector() || exprType.isScalar(),
               "cannot swizzle type '%s'", exprType.description().c_str());
-    SkASSERT(components.count() >= 1 && components.count() <= 4);
+    SkASSERT(components.size() >= 1 && components.size() <= 4);
 
     // Confirm that the component array only contains X/Y/Z/W. (Call MakeWith01 if you want support
     // for ZERO and ONE. Once initial IR generation is complete, no swizzles should have zeros or
@@ -467,9 +473,9 @@ std::unique_ptr<Expression> Swizzle::Make(const Context& context,
     }
 
     // Detect identity swizzles like `color.rgba` and optimize it away.
-    if (components.count() == exprType.columns()) {
+    if (components.size() == exprType.columns()) {
         bool identity = true;
-        for (int i = 0; i < components.count(); ++i) {
+        for (int i = 0; i < components.size(); ++i) {
             if (components[i] != i) {
                 identity = false;
                 break;
@@ -531,6 +537,14 @@ std::unique_ptr<Expression> Swizzle::Make(const Context& context,
 
     // The swizzle could not be simplified, so apply the requested swizzle to the base expression.
     return std::make_unique<Swizzle>(context, pos, std::move(expr), components);
+}
+
+std::string Swizzle::description(OperatorPrecedence) const {
+    std::string result = this->base()->description(OperatorPrecedence::kPostfix) + ".";
+    for (int x : this->components()) {
+        result += "xyzw"[x];
+    }
+    return result;
 }
 
 }  // namespace SkSL

@@ -20,6 +20,14 @@ release_cpu:
 	cp ../../out/canvaskit_wasm/canvaskit.js   ./build/
 	cp ../../out/canvaskit_wasm/canvaskit.wasm ./build/
 
+release_webgpu:
+	# Does an incremental build where possible.
+	./compile.sh use_webgpu
+	- rm -rf build/
+	mkdir build
+	cp ../../out/canvaskit_wasm/canvaskit.js   ./build/
+	cp ../../out/canvaskit_wasm/canvaskit.wasm ./build/
+
 release_viewer:
 	# Does an incremental build where possible.
 	./compile.sh viewer
@@ -39,6 +47,14 @@ debug:
 debug_cpu:
 	# Does an incremental build where possible.
 	./compile.sh debug_build cpu_only
+	- rm -rf build/
+	mkdir build
+	cp ../../out/canvaskit_wasm_debug/canvaskit.js   ./build/
+	cp ../../out/canvaskit_wasm_debug/canvaskit.wasm ./build/
+
+debug_webgpu:
+	# Does an incremental build where possible.
+	./compile.sh debug_build use_webgpu
 	- rm -rf build/
 	mkdir build
 	cp ../../out/canvaskit_wasm_debug/canvaskit.js   ./build/
@@ -71,8 +87,9 @@ npm:
 
 	# These features are turned off to keep code size smaller for the
 	# general use case.
-	./compile.sh release no_skottie no_particles no_rt_shader no_sksl_trace no_alias_font \
-		no_effects_deserialization no_encode_jpeg no_encode_webp legacy_draw_vertices
+	./compile.sh release no_skottie no_sksl_trace no_alias_font \
+		no_effects_deserialization no_encode_jpeg no_encode_webp legacy_draw_vertices \
+		no_embedded_font
 	cp ../../out/canvaskit_wasm/canvaskit.js       ./npm_build/bin
 	cp ../../out/canvaskit_wasm/canvaskit.wasm     ./npm_build/bin
 
@@ -83,15 +100,21 @@ npm:
 
 gm_tests_debug:
 	./compile_gm.sh debug
-	mkdir -p ./out
-	cp ../../out/wasm_gm_tests_debug/wasm_gm_tests.js       ./out
-	cp ../../out/wasm_gm_tests_debug/wasm_gm_tests.wasm     ./out
+	- rm -rf build/
+	mkdir build
+	cp ../../out/wasm_gm_tests_debug/wasm_gm_tests.js       ./build
+	cp ../../out/wasm_gm_tests_debug/wasm_gm_tests.wasm     ./build
 
 gm_tests:
 	./compile_gm.sh
-	mkdir -p ./out
-	cp ../../out/wasm_gm_tests/wasm_gm_tests.js       ./out
-	cp ../../out/wasm_gm_tests/wasm_gm_tests.wasm     ./out
+	- rm -rf build/
+	mkdir build
+	cp ../../out/wasm_gm_tests/wasm_gm_tests.js       ./build
+	cp ../../out/wasm_gm_tests/wasm_gm_tests.wasm     ./build
+
+single-gm:
+	echo "Go check out http://localhost:8000/wasm_tools/gms.html"
+	python3 ../../tools/serve_wasm.py
 
 local-example:
 	echo "Go check out http://localhost:8000/npm_build/example.html"
@@ -120,24 +143,24 @@ typecheck:
 	cd npm_build && npm run dtslint
 
 bazel_canvaskit_debug:
-	bazelisk build :canvaskit_wasm --config=ck_debug
+	bazelisk build :canvaskit --config=ck_full_webgl2_debug
 	- rm -rf build/
 	mkdir build
-	cp ../../bazel-bin/modules/canvaskit/canvaskit_wasm/canvaskit.js build/canvaskit.js
-	cp ../../bazel-bin/modules/canvaskit/canvaskit_wasm/canvaskit.wasm build/canvaskit.wasm
+	cp ../../bazel-bin/modules/canvaskit/canvaskit/canvaskit.js build/canvaskit.js
+	cp ../../bazel-bin/modules/canvaskit/canvaskit/canvaskit.wasm build/canvaskit.wasm
 
 bazel_canvaskit_release:
-	bazelisk build :canvaskit_wasm --config=ck_release
+	bazelisk build :canvaskit --config=ck_full_webgl2_release
 	- rm -rf build/
 	mkdir build
-	cp ../../bazel-bin/modules/canvaskit/canvaskit_wasm/canvaskit.js build/canvaskit.js
-	cp ../../bazel-bin/modules/canvaskit/canvaskit_wasm/canvaskit.wasm build/canvaskit.wasm
+	cp ../../bazel-bin/modules/canvaskit/canvaskit/canvaskit.js build/canvaskit.js
+	cp ../../bazel-bin/modules/canvaskit/canvaskit/canvaskit.wasm build/canvaskit.wasm
 	ls -l build
 
 bazel_test_canvaskit:
-	bazelisk test :canvaskit_js_tests --config=ck_release --test_output=streamed
-	echo "test output in //bazel-testlogs/modules/canvaskit/canvaskit_js_wasms/test.outputs/"
-	ls ../../bazel-testlogs/modules/canvaskit/canvaskit_js_wasms/test.outputs/
+	bazelisk test :canvaskit_js_tests --config=ck_full_webgl2_release_chrome --test_output=streamed
+	echo "test output in //bazel-testlogs/modules/canvaskit/canvaskit_js_tests/test.outputs/"
+	cd ../../bazel-testlogs/modules/canvaskit/canvaskit_js_tests/test.outputs/ && unzip -qo outputs.zip && ls
 
 with_debugger:
 	# Does an incremental build where possible.

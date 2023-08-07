@@ -43,7 +43,7 @@ public:
             {"pathBounds", kFloat4_GrVertexAttribType, SkSLType::kFloat4}
         };
         this->setInstanceAttributesWithImplicitOffsets(kInstanceAttribs,
-                                                       SK_ARRAY_COUNT(kInstanceAttribs));
+                                                       std::size(kInstanceAttribs));
     }
 
 private:
@@ -73,17 +73,18 @@ std::unique_ptr<GrGeometryProcessor::ProgramImpl> BoundingBoxShader::makeProgram
             if (args.fShaderCaps->fVertexIDSupport) {
                 // If we don't have sk_VertexID support then "unitCoord" already came in as a vertex
                 // attrib.
-                args.fVertBuilder->codeAppend(R"(
-                float2 unitCoord = float2(sk_VertexID & 1, sk_VertexID >> 1);)");
+                args.fVertBuilder->codeAppend(
+                "float2 unitCoord = float2(sk_VertexID & 1, sk_VertexID >> 1);");
             }
-            args.fVertBuilder->codeAppend(R"(
+            args.fVertBuilder->codeAppend(
             // Bloat the bounding box by 1/4px to be certain we will reset every stencil value.
-            float2x2 M_ = inverse(float2x2(matrix2d));
-            float2 bloat = float2(abs(M_[0]) + abs(M_[1])) * .25;
+            "float2x2 M_ = inverse(float2x2(matrix2d.xy, matrix2d.zw));"
+            "float2 bloat = float2(abs(M_[0]) + abs(M_[1])) * .25;"
 
             // Find the vertex position.
-            float2 localcoord = mix(pathBounds.xy - bloat, pathBounds.zw + bloat, unitCoord);
-            float2 vertexpos = float2x2(matrix2d) * localcoord + translate;)");
+            "float2 localcoord = mix(pathBounds.xy - bloat, pathBounds.zw + bloat, unitCoord);"
+            "float2 vertexpos = float2x2(matrix2d.xy, matrix2d.zw) * localcoord + translate;"
+            );
             gpArgs->fLocalCoordVar.set(SkSLType::kFloat2, "localcoord");
             gpArgs->fPositionVar.set(SkSLType::kFloat2, "vertexpos");
 
@@ -103,7 +104,7 @@ std::unique_ptr<GrGeometryProcessor::ProgramImpl> BoundingBoxShader::makeProgram
 
 }  // anonymous namespace
 
-namespace skgpu::v1 {
+namespace skgpu::ganesh {
 
 void PathStencilCoverOp::visitProxies(const GrVisitProxyFunc& func) const {
     if (fCoverBBoxProgram) {
@@ -349,4 +350,4 @@ void PathStencilCoverOp::onExecute(GrOpFlushState* flushState, const SkRect& cha
     }
 }
 
-} // namespace skgpu::v1
+}  // namespace skgpu::ganesh

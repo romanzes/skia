@@ -11,10 +11,12 @@
 #include "include/core/SkColorSpace.h"
 #include "include/core/SkImageFilter.h"
 #include "include/core/SkImageInfo.h"
-#include "include/private/SkTArray.h"
-#include "include/private/SkTemplates.h"
+#include "include/private/base/SkTArray.h"
+#include "include/private/base/SkTemplates.h"
 
 #include "src/core/SkImageFilterTypes.h"
+
+#include <optional>
 
 class GrFragmentProcessor;
 class GrRecordingContext;
@@ -103,6 +105,9 @@ public:
     // color other than transparent black.
     bool affectsTransparentBlack() const;
 
+    // Returns true if this image filter graph references the Context's source image.
+    bool usesSource() const { return fUsesSrcInput; }
+
     /**
      *  Most ImageFilters can natively handle scaling and translate components in the CTM. Only
      *  some of them can handle affine (or more complex) matrices. Some may only handle translation.
@@ -178,7 +183,7 @@ protected:
         const SkRect* cropRect() const {
             return fCropRect.flags() != 0x0 ? &fCropRect.rect() : nullptr;
         }
-        int inputCount() const { return fInputs.count(); }
+        int inputCount() const { return fInputs.size(); }
         sk_sp<SkImageFilter>* inputs() { return fInputs.begin(); }
 
         sk_sp<SkImageFilter> getInput(int index) { return fInputs[index]; }
@@ -186,7 +191,7 @@ protected:
     private:
         CropRect fCropRect;
         // most filters accept at most 2 input-filters
-        SkSTArray<2, sk_sp<SkImageFilter>, true> fInputs;
+        skia_private::STArray<2, sk_sp<SkImageFilter>, true> fInputs;
     };
 
     // Whether or not to recurse to child input filters for certain operations that walk the DAG.
@@ -195,8 +200,9 @@ protected:
         kYes = true
     };
 
+    // If 'usesSrc' is not provided, this filter uses the OR of all input's usesSource() values.
     SkImageFilter_Base(sk_sp<SkImageFilter> const* inputs, int inputCount,
-                       const SkRect* cropRect);
+                       const SkRect* cropRect, std::optional<bool> usesSrc = {});
 
     ~SkImageFilter_Base() override;
 
@@ -216,9 +222,7 @@ protected:
                                        MapDirection, const SkIRect* inputRect) const;
 
     // DEPRECRATED - Call the Context-only filterInput()
-    sk_sp<SkSpecialImage> filterInput(int index, const Context& ctx, SkIPoint* offset) const {
-        return this->filterInput(index, ctx).imageAndOffset(offset);
-    }
+    sk_sp<SkSpecialImage> filterInput(int index, const Context& ctx, SkIPoint* offset) const;
 
     // Helper function to visit each of this filter's child filters and call their
     // onGetInputLayerBounds with the provided 'desiredOutput' and 'contentBounds'. Automatically
@@ -303,7 +307,7 @@ protected:
     // other filters to need to call it.
     Context mapContext(const Context& ctx) const;
 
-#if SK_SUPPORT_GPU
+#if defined(SK_GANESH)
     static sk_sp<SkSpecialImage> DrawWithFP(GrRecordingContext* context,
                                             std::unique_ptr<GrFragmentProcessor> fp,
                                             const SkIRect& bounds,
@@ -314,14 +318,11 @@ protected:
                                             GrProtected isProtected = GrProtected::kNo);
 
     /**
-     *  Returns a version of the passed-in image (possibly the original), that is in a colorspace
-     *  with the same gamut as the one from the OutputProperties. This allows filters that do many
+     *  Returns a version of the passed-in image (possibly the original), that is in the Context's
+     *  colorspace and color type. This allows filters that do many
      *  texture samples to guarantee that any color space conversion has happened before running.
      */
-    static sk_sp<SkSpecialImage> ImageToColorSpace(SkSpecialImage* src,
-                                                   SkColorType colorType,
-                                                   SkColorSpace* colorSpace,
-                                                   const SkSurfaceProps&);
+    static sk_sp<SkSpecialImage> ImageToColorSpace(const skif::Context& ctx, SkSpecialImage* src);
 #endif
 
     // If 'srcBounds' will sample outside the border of 'originalSrcBounds' (i.e., the sample
@@ -428,7 +429,7 @@ private:
     virtual skif::LayerSpace<SkIRect> onGetOutputLayerBounds(
             const skif::Mapping& mapping, const skif::LayerSpace<SkIRect>& contentBounds) const;
 
-    SkAutoSTArray<2, sk_sp<SkImageFilter>> fInputs;
+    skia_private::AutoSTArray<2, sk_sp<SkImageFilter>> fInputs;
 
     bool fUsesSrcInput;
     CropRect fCropRect;
@@ -479,9 +480,9 @@ void SkRegisterImageImageFilterFlattenable();
 void SkRegisterLightingImageFilterFlattenables();
 void SkRegisterMagnifierImageFilterFlattenable();
 void SkRegisterMatrixConvolutionImageFilterFlattenable();
+void SkRegisterMatrixTransformImageFilterFlattenable();
 void SkRegisterMergeImageFilterFlattenable();
 void SkRegisterMorphologyImageFilterFlattenables();
-void SkRegisterOffsetImageFilterFlattenable();
 void SkRegisterPictureImageFilterFlattenable();
 #ifdef SK_ENABLE_SKSL
 void SkRegisterRuntimeImageFilterFlattenable();

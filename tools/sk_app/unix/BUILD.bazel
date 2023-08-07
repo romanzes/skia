@@ -1,10 +1,11 @@
-load("//bazel:macros.bzl", "cc_library", "exports_files_legacy", "selects")
+load("//bazel:skia_rules.bzl", "exports_files_legacy", "skia_cc_deps", "skia_filegroup")
+load("//bazel:flags.bzl", "selects")
 
 licenses(["notice"])
 
 exports_files_legacy()
 
-filegroup(
+skia_filegroup(
     name = "srcs",
     testonly = True,
     srcs = [
@@ -16,9 +17,9 @@ filegroup(
         "keysym2ucs.h",
         "main_unix.cpp",
     ] + select({
-        "//bazel/common_config_settings:dawn_backend": ["DawnVulkanWindowContext_unix.cpp"],
-        "//bazel/common_config_settings:gl_backend": ["GLWindowContext_unix.cpp"],
-        "//bazel/common_config_settings:vulkan_backend": ["VulkanWindowContext_unix.cpp"],
+        "//src/gpu:dawn_backend": ["DawnVulkanWindowContext_unix.cpp"],
+        "//src/gpu:gl_backend": ["GLWindowContext_unix.cpp"],
+        "//src/gpu:vulkan_backend": ["VulkanWindowContext_unix.cpp"],
         "//conditions:default": [],
     }),
     visibility = ["//tools/sk_app:__pkg__"],
@@ -27,12 +28,12 @@ filegroup(
 selects.config_setting_group(
     name = "dawn_or_vulkan",
     match_any = [
-        "//bazel/common_config_settings:dawn_backend",
-        "//bazel/common_config_settings:vulkan_backend",
+        "//src/gpu:dawn_backend",
+        "//src/gpu:vulkan_backend",
     ],
 )
 
-cc_library(
+skia_cc_deps(
     name = "deps",
     testonly = True,
     linkopts = [

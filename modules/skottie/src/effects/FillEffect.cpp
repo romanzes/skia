@@ -7,7 +7,7 @@
 
 #include "modules/skottie/src/effects/Effects.h"
 
-#include "include/private/SkTPin.h"
+#include "include/private/base/SkTPin.h"
 #include "modules/skottie/src/Adapter.h"
 #include "modules/skottie/src/SkottieValue.h"
 #include "modules/sksg/include/SkSGColorFilter.h"
@@ -50,7 +50,7 @@ private:
         EffectBinder(jprops, abuilder, this)
             .bind(  kColor_Index, fColor  )
             .bind(kOpacity_Index, fOpacity);
-
+        // TODO: find where sid is placed for Fill Effect placed in Essential Properties
         abuilder.dispatchColorProperty(fColorNode);
     }
 

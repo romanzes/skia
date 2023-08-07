@@ -4,15 +4,25 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
-
-#include "include/private/SkColorData.h"
-#include "include/private/SkHalf.h"
-#include "include/private/SkImageInfoPriv.h"
-#include "src/core/SkColorSpacePriv.h"
-#include "src/core/SkColorSpaceXformSteps.h"
 #include "src/core/SkConvertPixels.h"
+
+#include "include/core/SkColorType.h"
+#include "include/core/SkImageInfo.h"
+#include "include/core/SkSize.h"
+#include "include/private/SkColorData.h"
+#include "include/private/base/SkAssert.h"
+#include "include/private/base/SkTemplates.h"
+#include "src/base/SkHalf.h"
+#include "src/base/SkRectMemcpy.h"
+#include "src/core/SkColorSpaceXformSteps.h"
+#include "src/core/SkImageInfoPriv.h"
 #include "src/core/SkOpts.h"
 #include "src/core/SkRasterPipeline.h"
+#include "src/core/SkRasterPipelineOpContexts.h"
+
+#include <cstdint>
+#include <cstring>
+#include <initializer_list>
 
 static bool rect_memcpy(const SkImageInfo& dstInfo,       void* dstPixels, size_t dstRB,
                         const SkImageInfo& srcInfo, const void* srcPixels, size_t srcRB,
@@ -104,6 +114,7 @@ static bool convert_to_alpha8(const SkImageInfo& dstInfo,       void* vdst, size
         case kRGB_888x_SkColorType:
         case kRGB_101010x_SkColorType:
         case kBGR_101010x_SkColorType:
+        case kBGR_101010x_XR_SkColorType:
         case kR8_unorm_SkColorType: {
             for (int y = 0; y < srcInfo.height(); ++y) {
                memset(dst, 0xFF, srcInfo.width());
@@ -213,9 +224,6 @@ static void convert_with_pipeline(const SkImageInfo& dstInfo, void* dstRow, int 
     SkRasterPipeline_<256> pipeline;
     pipeline.append_load(srcInfo.colorType(), &src);
     steps.apply(&pipeline);
-
-    pipeline.append_gamut_clamp_if_normalized(dstInfo);
-
     pipeline.append_store(dstInfo.colorType(), &dst);
     pipeline.run(0,0, srcInfo.width(), srcInfo.height());
 }

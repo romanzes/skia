@@ -9,8 +9,8 @@
 #define GrRenderTask_DEFINED
 
 #include "include/core/SkRefCnt.h"
-#include "include/private/SkTArray.h"
-#include "src/core/SkTInternalLList.h"
+#include "include/private/base/SkTArray.h"
+#include "src/base/SkTInternalLList.h"
 #include "src/gpu/ganesh/GrSurfaceProxyView.h"
 #include "src/gpu/ganesh/GrTextureProxy.h"
 #include "src/gpu/ganesh/GrTextureResolveManager.h"
@@ -19,7 +19,11 @@ class GrMockRenderTask;
 class GrOpFlushState;
 class GrResourceAllocator;
 class GrTextureResolveRenderTask;
-namespace skgpu { namespace v1 { class OpsTask; }}
+namespace skgpu {
+namespace ganesh {
+class OpsTask;
+}
+}  // namespace skgpu
 
 // This class abstracts a task that targets a single GrSurfaceProxy, participates in the
 // GrDrawingManager's DAG, and implements the onExecute method to modify its target proxy's
@@ -65,6 +69,9 @@ public:
 
     bool isSkippable() const { return this->isSetFlag(kSkippable_Flag); }
 
+    /** If true no other task should be reordered relative to this task. */
+    bool blocksReordering() const { return this->isSetFlag(kBlocksReordering_Flag); }
+
     /*
      * Notify this GrRenderTask that it relies on the contents of 'dependedOn'
      */
@@ -77,8 +84,8 @@ public:
      */
     void addDependenciesFromOtherTask(GrRenderTask* otherTask);
 
-    SkSpan<GrRenderTask*> dependencies() { return SkMakeSpan(fDependencies); }
-    SkSpan<GrRenderTask*> dependents() { return SkMakeSpan(fDependents); }
+    SkSpan<GrRenderTask*> dependencies() { return SkSpan(fDependencies); }
+    SkSpan<GrRenderTask*> dependents() { return SkSpan(fDependents); }
 
     void replaceDependency(const GrRenderTask* toReplace, GrRenderTask* replaceWith);
     void replaceDependent(const GrRenderTask* toReplace, GrRenderTask* replaceWith);
@@ -90,13 +97,13 @@ public:
     bool dependsOn(const GrRenderTask* dependedOn) const;
 
     uint32_t uniqueID() const { return fUniqueID; }
-    int numTargets() const { return fTargets.count(); }
+    int numTargets() const { return fTargets.size(); }
     GrSurfaceProxy* target(int i) const { return fTargets[i].get(); }
 
     /*
      * Safely cast this GrRenderTask to a OpsTask (if possible).
      */
-    virtual skgpu::v1::OpsTask* asOpsTask() { return nullptr; }
+    virtual skgpu::ganesh::OpsTask* asOpsTask() { return nullptr; }
 
 #if GR_TEST_UTILS
     /*
@@ -142,6 +149,9 @@ public:
     // Used by GrRenderTaskCluster.
     SK_DECLARE_INTERNAL_LLIST_INTERFACE(GrRenderTask);
 
+#if GR_TEST_UTILS
+    const GrTextureResolveRenderTask* resolveTask() const { return fTextureResolveTask; }
+#endif
 protected:
     SkDEBUGCODE(bool deferredProxiesAreInstantiated() const;)
 
@@ -166,21 +176,22 @@ protected:
     // targetUpdateBounds must not extend beyond the proxy bounds.
     virtual ExpectedOutcome onMakeClosed(GrRecordingContext*, SkIRect* targetUpdateBounds) = 0;
 
-    SkSTArray<1, sk_sp<GrSurfaceProxy>> fTargets;
+    skia_private::STArray<1, sk_sp<GrSurfaceProxy>> fTargets;
 
     // List of texture proxies whose contents are being prepared on a worker thread
     // TODO: this list exists so we can fire off the proper upload when an renderTask begins
     // executing. Can this be replaced?
-    SkTArray<GrTextureProxy*, true> fDeferredProxies;
+    skia_private::TArray<GrTextureProxy*, true> fDeferredProxies;
 
     enum Flags {
-        kClosed_Flag    = 0x01,   //!< This task can't accept any more dependencies.
-        kDisowned_Flag  = 0x02,   //!< This task is disowned by its creating GrDrawingManager.
-        kSkippable_Flag = 0x04,   //!< This task is skippable.
-        kAtlas_Flag     = 0x08,   //!< This task is atlas.
+        kClosed_Flag           = 0x01,   //!< This task can't accept any more dependencies.
+        kDisowned_Flag         = 0x02,   //!< This task is disowned by its GrDrawingManager.
+        kSkippable_Flag        = 0x04,   //!< This task is skippable.
+        kAtlas_Flag            = 0x08,   //!< This task is atlas.
+        kBlocksReordering_Flag = 0x10,   //!< No task can be reordered with respect to this task.
 
-        kWasOutput_Flag = 0x10,   //!< Flag for topological sorting
-        kTempMark_Flag  = 0x20,   //!< Flag for topological sorting
+        kWasOutput_Flag        = 0x20,   //!< Flag for topological sorting
+        kTempMark_Flag         = 0x40,   //!< Flag for topological sorting
     };
 
     void setFlag(uint32_t flag) {
@@ -197,13 +208,13 @@ protected:
 
     void setIndex(uint32_t index) {
         SkASSERT(!this->isSetFlag(kWasOutput_Flag));
-        SkASSERT(index < (1 << 26));
-        fFlags |= index << 6;
+        SkASSERT(index < (1 << 25));
+        fFlags |= index << 7;
     }
 
     uint32_t getIndex() const {
         SkASSERT(this->isSetFlag(kWasOutput_Flag));
-        return fFlags >> 6;
+        return fFlags >> 7;
     }
 
 private:
@@ -243,7 +254,7 @@ private:
             return renderTask->isSetFlag(kTempMark_Flag);
         }
         static int NumDependencies(const GrRenderTask* renderTask) {
-            return renderTask->fDependencies.count();
+            return renderTask->fDependencies.size();
         }
         static GrRenderTask* Dependency(GrRenderTask* renderTask, int index) {
             return renderTask->fDependencies[index];
@@ -259,9 +270,9 @@ private:
     uint32_t               fFlags;
 
     // 'this' GrRenderTask relies on the output of the GrRenderTasks in 'fDependencies'
-    SkSTArray<1, GrRenderTask*, true> fDependencies;
+    skia_private::STArray<1, GrRenderTask*, true> fDependencies;
     // 'this' GrRenderTask's output is relied on by the GrRenderTasks in 'fDependents'
-    SkSTArray<1, GrRenderTask*, true> fDependents;
+    skia_private::STArray<1, GrRenderTask*, true> fDependents;
 
     // For performance reasons, we should perform texture resolves back-to-back as much as possible.
     // (http://skbug.com/9406). To accomplish this, we make and reuse one single resolve task for

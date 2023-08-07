@@ -9,12 +9,15 @@
 #define SkRect_DEFINED
 
 #include "include/core/SkPoint.h"
+#include "include/core/SkScalar.h"
 #include "include/core/SkSize.h"
-#include "include/private/SkSafe32.h"
-#include "include/private/SkTFitsIn.h"
+#include "include/core/SkTypes.h"
+#include "include/private/base/SkSafe32.h"
+#include "include/private/base/SkTFitsIn.h"
 
+#include <string>
 #include <algorithm>
-#include <utility>
+#include <cstdint>
 
 struct SkRect;
 
@@ -215,7 +218,8 @@ struct SK_API SkIRect {
         @return   true if members are equal
     */
     friend bool operator==(const SkIRect& a, const SkIRect& b) {
-        return !memcmp(&a, &b, sizeof(a));
+        return a.fLeft == b.fLeft && a.fTop == b.fTop &&
+               a.fRight == b.fRight && a.fBottom == b.fBottom;
     }
 
     /** Returns true if any member in a: fLeft, fTop, fRight, and fBottom; is not
@@ -226,7 +230,8 @@ struct SK_API SkIRect {
         @return   true if members are not equal
     */
     friend bool operator!=(const SkIRect& a, const SkIRect& b) {
-        return !(a == b);
+        return a.fLeft != b.fLeft || a.fTop != b.fTop ||
+               a.fRight != b.fRight || a.fBottom != b.fBottom;
     }
 
     /** Sets SkIRect to (0, 0, 0, 0).

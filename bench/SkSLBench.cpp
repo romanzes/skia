@@ -8,14 +8,33 @@
 #include "bench/ResultsWriter.h"
 #include "bench/SkSLBench.h"
 #include "include/core/SkCanvas.h"
+#include "src/base/SkArenaAlloc.h"
+#include "src/core/SkRasterPipeline.h"
 #include "src/gpu/ganesh/GrCaps.h"
 #include "src/gpu/ganesh/GrRecordingContextPriv.h"
 #include "src/gpu/ganesh/mock/GrMockCaps.h"
 #include "src/sksl/SkSLCompiler.h"
-#include "src/sksl/SkSLDSLParser.h"
+#include "src/sksl/SkSLModuleLoader.h"
+#include "src/sksl/SkSLParser.h"
+#include "src/sksl/codegen/SkSLRasterPipelineBuilder.h"
+#include "src/sksl/codegen/SkSLRasterPipelineCodeGenerator.h"
 #include "src/sksl/codegen/SkSLVMCodeGenerator.h"
+#include "src/sksl/ir/SkSLFunctionDeclaration.h"
+#include "src/sksl/ir/SkSLProgram.h"
 
 #include <regex>
+
+#include "src/sksl/generated/sksl_shared.minified.sksl"
+#include "src/sksl/generated/sksl_compute.minified.sksl"
+#include "src/sksl/generated/sksl_frag.minified.sksl"
+#include "src/sksl/generated/sksl_gpu.minified.sksl"
+#include "src/sksl/generated/sksl_public.minified.sksl"
+#include "src/sksl/generated/sksl_rt_shader.minified.sksl"
+#include "src/sksl/generated/sksl_vert.minified.sksl"
+#if defined(SK_GRAPHITE)
+#include "src/sksl/generated/sksl_graphite_frag.minified.sksl"
+#include "src/sksl/generated/sksl_graphite_vert.minified.sksl"
+#endif
 
 class SkSLCompilerStartupBench : public Benchmark {
 protected:
@@ -42,9 +61,14 @@ enum class Output {
     kGLSL,
     kMetal,
     kSPIRV,
+#if defined(SK_ENABLE_SKSL_IN_RASTER_PIPELINE)
+    kSkRP,
+#endif
+#if defined(SK_ENABLE_SKVM)
     kSkVM,     // raw SkVM bytecode
     kSkVMOpt,  // optimized SkVM bytecode
     kSkVMJIT,  // optimized native assembly code
+#endif
 };
 
 class SkSLCompileBench : public Benchmark {
@@ -55,27 +79,32 @@ public:
             case Output::kGLSL:    return "glsl_";
             case Output::kMetal:   return "metal_";
             case Output::kSPIRV:   return "spirv_";
+#if defined(SK_ENABLE_SKSL_IN_RASTER_PIPELINE)
+            case Output::kSkRP:    return "skrp_";
+#endif
+#if defined(SK_ENABLE_SKVM)
             case Output::kSkVM:    return "skvm_";
             case Output::kSkVMOpt: return "skvm_opt_";
             case Output::kSkVMJIT: return "skvm_jit_";
+#endif
         }
         SkUNREACHABLE;
     }
 
     SkSLCompileBench(std::string name, const char* src, bool optimize, Output output)
-        : fName(std::string("sksl_") + (optimize ? "" : "unoptimized_") + output_string(output) +
-                name)
-        , fSrc(src)
-        , fCaps(GrContextOptions(), GrMockOptions())
-        , fCompiler(fCaps.shaderCaps())
-        , fOutput(output) {
-            fSettings.fOptimize = optimize;
-            // The test programs we compile don't follow Vulkan rules and thus produce invalid
-            // SPIR-V. This is harmless, so long as we don't try to validate them.
-            fSettings.fValidateSPIRV = false;
+            : fName(std::string("sksl_") + (optimize ? "" : "unoptimized_") +
+                    output_string(output) + name)
+            , fSrc(src)
+            , fCaps(GrContextOptions(), GrMockOptions())
+            , fCompiler(fCaps.shaderCaps())
+            , fOutput(output) {
+        fSettings.fOptimize = optimize;
+        // The test programs we compile don't follow Vulkan rules and thus produce invalid SPIR-V.
+        // This is harmless, so long as we don't try to validate them.
+        fSettings.fValidateSPIRV = false;
 
-            this->fixUpSource();
-        }
+        this->fixUpSource();
+    }
 
 protected:
     const char* onGetName() override {
@@ -87,7 +116,7 @@ protected:
     }
 
     bool usesRuntimeShader() const {
-        return fOutput >= Output::kSkVM;
+        return fOutput > Output::kSPIRV;
     }
 
     void fixUpSource() {
@@ -102,7 +131,6 @@ protected:
             fixup(R"(void main\(\))",                              "half4 main(float2 xy)");
             fixup(R"(sk_FragColor =)",                             "return");
             fixup(R"(sk_FragCoord)",                               "_FragCoord");
-            fixup(R"(out half4 sk_FragColor;)",                    "");
             fixup(R"(uniform sampler2D )",                         "uniform shader ");
             fixup(R"((flat |noperspective |)in )",                 "uniform ");
             fixup(R"(sample\(([A-Za-z0-9_]+), ([A-Za-z0-9_]+)\))", "$01.eval($02)");
@@ -125,13 +153,19 @@ protected:
                 case Output::kGLSL:    SkAssertResult(fCompiler.toGLSL(*program,  &result)); break;
                 case Output::kMetal:   SkAssertResult(fCompiler.toMetal(*program, &result)); break;
                 case Output::kSPIRV:   SkAssertResult(fCompiler.toSPIRV(*program, &result)); break;
+#if defined(SK_ENABLE_SKSL_IN_RASTER_PIPELINE)
+                case Output::kSkRP:    SkAssertResult(CompileToSkRP(*program)); break;
+#endif
+#if defined(SK_ENABLE_SKVM)
                 case Output::kSkVM:
                 case Output::kSkVMOpt:
                 case Output::kSkVMJIT: SkAssertResult(CompileToSkVM(*program, fOutput)); break;
+#endif
             }
         }
     }
 
+#if defined(SK_ENABLE_SKVM)
     static bool CompileToSkVM(const SkSL::Program& program, Output mode) {
         const bool optimize = (mode >= Output::kSkVMOpt);
         const bool allowJIT = (mode >= Output::kSkVMJIT);
@@ -144,13 +178,46 @@ protected:
         }
         return true;
     }
+#endif
+
+#ifdef SK_ENABLE_SKSL_IN_RASTER_PIPELINE
+    static bool CompileToSkRP(const SkSL::Program& program) {
+        const SkSL::FunctionDeclaration* main = program.getFunction("main");
+        if (!main) {
+            return false;
+        }
+
+        // Compile our program.
+        std::unique_ptr<SkSL::RP::Program> rasterProg = SkSL::MakeRasterPipelineProgram(
+                program, *main->definition(), /*debugTrace=*/nullptr, /*writeTraceOps=*/false);
+        if (!rasterProg) {
+            return false;
+        }
+
+        // We need to supply a valid uniform range, but the uniform values inside don't actually
+        // matter, since we aren't going to run the shader.
+        float uniformBuffer[1024];
+        if (rasterProg->numUniforms() > (int)std::size(uniformBuffer)) {
+            return false;
+        }
+
+        // Append the program to a raster pipeline.
+        SkSTArenaAlloc<2048> alloc;
+        SkRasterPipeline pipeline(&alloc);
+        rasterProg->appendStages(&pipeline,
+                                 &alloc,
+                                 /*callbacks=*/nullptr,
+                                 /*uniforms=*/SkSpan{uniformBuffer, rasterProg->numUniforms()});
+        return true;
+    }
+#endif  // SK_ENABLE_SKSL_IN_RASTER_PIPELINE
 
 private:
     std::string fName;
     std::string fSrc;
     GrMockCaps fCaps;
     SkSL::Compiler fCompiler;
-    SkSL::Program::Settings fSettings;
+    SkSL::ProgramSettings fSettings;
     Output fOutput;
 
     using INHERITED = Benchmark;
@@ -158,16 +225,32 @@ private:
 
 ///////////////////////////////////////////////////////////////////////////////
 
-#define COMPILER_BENCH(name, text)                                                                 \
-static constexpr char name ## _SRC[] = text;                                                       \
-DEF_BENCH(return new SkSLCompileBench(#name, name ## _SRC, /*optimize=*/false, Output::kNone);)    \
-DEF_BENCH(return new SkSLCompileBench(#name, name ## _SRC, /*optimize=*/true,  Output::kNone);)    \
-DEF_BENCH(return new SkSLCompileBench(#name, name ## _SRC, /*optimize=*/true,  Output::kGLSL);)    \
-DEF_BENCH(return new SkSLCompileBench(#name, name ## _SRC, /*optimize=*/true,  Output::kMetal);)   \
-DEF_BENCH(return new SkSLCompileBench(#name, name ## _SRC, /*optimize=*/true,  Output::kSPIRV);)   \
-DEF_BENCH(return new SkSLCompileBench(#name, name ## _SRC, /*optimize=*/true,  Output::kSkVM);)    \
-DEF_BENCH(return new SkSLCompileBench(#name, name ## _SRC, /*optimize=*/true,  Output::kSkVMOpt);) \
-DEF_BENCH(return new SkSLCompileBench(#name, name ## _SRC, /*optimize=*/true,  Output::kSkVMJIT);)
+#if defined(SK_ENABLE_SKSL_IN_RASTER_PIPELINE)
+  #define COMPILER_BENCH_SKRP(name, text) \
+  DEF_BENCH(return new SkSLCompileBench(#name, name##_SRC, /*optimize=*/true, Output::kSkRP);)
+#else
+  #define COMPILER_BENCH_SKRP(name, text) /* SkRP is disabled; no benchmarking */
+#endif
+
+#if defined(SK_ENABLE_SKVM)
+  #define COMPILER_BENCH_SKVM(name, text) \
+  DEF_BENCH(return new SkSLCompileBench(#name, name##_SRC, /*optimize=*/true, Output::kSkVM);)    \
+  DEF_BENCH(return new SkSLCompileBench(#name, name##_SRC, /*optimize=*/true, Output::kSkVMOpt);) \
+  DEF_BENCH(return new SkSLCompileBench(#name, name##_SRC, /*optimize=*/true, Output::kSkVMJIT);)
+#else
+  #define COMPILER_BENCH_SKVM(name, text) /* SkVM is disabled; no benchmarking */
+#endif
+
+#define COMPILER_BENCH(name, text)                                                               \
+  static constexpr char name ## _SRC[] = text;                                                   \
+  DEF_BENCH(return new SkSLCompileBench(#name, name##_SRC, /*optimize=*/false, Output::kNone);)  \
+  DEF_BENCH(return new SkSLCompileBench(#name, name##_SRC, /*optimize=*/true,  Output::kNone);)  \
+  DEF_BENCH(return new SkSLCompileBench(#name, name##_SRC, /*optimize=*/true,  Output::kGLSL);)  \
+  DEF_BENCH(return new SkSLCompileBench(#name, name##_SRC, /*optimize=*/true,  Output::kMetal);) \
+  DEF_BENCH(return new SkSLCompileBench(#name, name##_SRC, /*optimize=*/true,  Output::kSPIRV);) \
+  COMPILER_BENCH_SKRP(name, text)                                                                \
+  COMPILER_BENCH_SKVM(name, text)
+
 
 // This fragment shader is from the third tile on the top row of GM_gradients_2pt_conical_outside.
 // To get an ES2 compatible shader, nonconstantArrayIndexSupport in GrShaderCaps is forced off.
@@ -186,7 +269,6 @@ uniform half urange_S1;
 uniform sampler2D uTextureSampler_0_S1;
 flat in half4 vcolor_S0;
 noperspective in float2 vTransformedCoords_8_S0;
-out half4 sk_FragColor;
 half4 TextureEffect_S1_c0_c0(half4 _input, float2 _coords)
 {
 	return sample(uTextureSampler_0_S1, _coords).000r;
@@ -365,7 +447,6 @@ uniform sampler2D uTextureSampler_0_S1;
 uniform sampler2D uTextureSampler_0_S2;
 flat in half4 vcolor_S0;
 noperspective in float2 vTransformedCoords_3_S0;
-out half4 sk_FragColor;
 half4 TextureEffect_S1_c0_c0(half4 _input)
 {
 	return sample(uTextureSampler_0_S1, vTransformedCoords_3_S0);
@@ -435,7 +516,6 @@ uniform sampler2D uTextureSampler_0_S0;
 noperspective in float2 vTextureCoords_S0;
 flat in float vTexIndex_S0;
 noperspective in half4 vinColor_S0;
-out half4 sk_FragColor;
 void main()
 {
 	// Stage 0, BitmapText
@@ -458,65 +538,165 @@ COMPILER_BENCH(tiny, "void main() { sk_FragColor = half4(1); }");
 #if defined(SK_BUILD_FOR_UNIX)
 
 #include <malloc.h>
+static int64_t heap_bytes_used() {
+    return (int64_t)mallinfo().uordblks;
+}
 
-// These benchmarks aren't timed, they produce memory usage statistics. They run standalone, and
-// directly add their results to the nanobench log.
-void RunSkSLMemoryBenchmarks(NanoJSONResultsWriter* log) {
-    auto heap_bytes_used = []() { return mallinfo().uordblks; };
-    auto bench = [log](const char* name, int bytes) {
-        log->beginObject(name);          // test
-        log->beginObject("meta");        //   config
-        log->appendS32("bytes", bytes);  //     sub_result
-        log->endObject();                //   config
-        log->endObject();                // test
-    };
+#elif defined(SK_BUILD_FOR_MAC) || defined(SK_BUILD_FOR_IOS)
 
-    // Heap used by a default compiler (with no modules loaded)
-    {
-        int before = heap_bytes_used();
-        GrShaderCaps caps;
-        SkSL::Compiler compiler(&caps);
-        int after = heap_bytes_used();
-        bench("sksl_compiler_baseline", after - before);
-    }
-
-    // Heap used by a compiler with the two main GPU modules (fragment + vertex) loaded
-    {
-        int before = heap_bytes_used();
-        GrShaderCaps caps;
-        SkSL::Compiler compiler(&caps);
-        compiler.moduleForProgramKind(SkSL::ProgramKind::kVertex);
-        compiler.moduleForProgramKind(SkSL::ProgramKind::kFragment);
-        int after = heap_bytes_used();
-        bench("sksl_compiler_gpu", after - before);
-    }
-
-    // Heap used by a compiler with the two main Graphite modules (fragment + vertex) loaded
-    {
-        int before = heap_bytes_used();
-        GrShaderCaps caps;
-        SkSL::Compiler compiler(&caps);
-        compiler.moduleForProgramKind(SkSL::ProgramKind::kGraphiteVertex);
-        compiler.moduleForProgramKind(SkSL::ProgramKind::kGraphiteFragment);
-        int after = heap_bytes_used();
-        bench("sksl_compiler_graphite", after - before);
-    }
-
-    // Heap used by a compiler with the runtime shader, color filter and blending modules loaded
-    {
-        int before = heap_bytes_used();
-        GrShaderCaps caps;
-        SkSL::Compiler compiler(&caps);
-        compiler.moduleForProgramKind(SkSL::ProgramKind::kRuntimeColorFilter);
-        compiler.moduleForProgramKind(SkSL::ProgramKind::kRuntimeShader);
-        compiler.moduleForProgramKind(SkSL::ProgramKind::kRuntimeBlender);
-        int after = heap_bytes_used();
-        bench("sksl_compiler_runtimeeffect", after - before);
-    }
+#include <malloc/malloc.h>
+static int64_t heap_bytes_used() {
+    malloc_statistics_t stats;
+    malloc_zone_pressure_relief(malloc_default_zone(), 0);
+    malloc_zone_statistics(malloc_default_zone(), &stats);
+    return (int64_t)stats.size_in_use;
 }
 
 #else
 
-void RunSkSLMemoryBenchmarks(NanoJSONResultsWriter*) {}
+static int64_t heap_bytes_used() {
+    return -1;
+}
 
 #endif
+
+static void bench(NanoJSONResultsWriter* log, const char* name, int bytes) {
+    SkDEBUGCODE(SkDebugf("%s: %d bytes\n", name, bytes);)
+    log->beginObject(name);          // test
+    log->beginObject("meta");        //   config
+    log->appendS32("bytes", bytes);  //     sub_result
+    log->endObject();                //   config
+    log->endObject();                // test
+}
+
+// These benchmarks aren't timed, they produce memory usage statistics. They run standalone, and
+// directly add their results to the nanobench log.
+void RunSkSLModuleBenchmarks(NanoJSONResultsWriter* log) {
+    // Heap used by a default compiler (with no modules loaded)
+    int64_t before = heap_bytes_used();
+    GrShaderCaps caps;
+    SkSL::Compiler compiler(&caps);
+    int baselineBytes = heap_bytes_used();
+    if (baselineBytes >= 0) {
+        baselineBytes = (baselineBytes - before);
+        bench(log, "sksl_compiler_baseline", baselineBytes);
+    }
+
+    // Heap used by a compiler with the two main GPU modules (fragment + vertex) and runtime effects
+    // (shader + color filter + blender) loaded. Ganesh will load all of these in regular usage.
+    before = heap_bytes_used();
+    compiler.moduleForProgramKind(SkSL::ProgramKind::kVertex);
+    compiler.moduleForProgramKind(SkSL::ProgramKind::kFragment);
+    compiler.moduleForProgramKind(SkSL::ProgramKind::kRuntimeColorFilter);
+    compiler.moduleForProgramKind(SkSL::ProgramKind::kRuntimeShader);
+    compiler.moduleForProgramKind(SkSL::ProgramKind::kRuntimeBlender);
+    compiler.moduleForProgramKind(SkSL::ProgramKind::kPrivateRuntimeColorFilter);
+    compiler.moduleForProgramKind(SkSL::ProgramKind::kPrivateRuntimeShader);
+    compiler.moduleForProgramKind(SkSL::ProgramKind::kPrivateRuntimeBlender);
+    int64_t gpuBytes = heap_bytes_used();
+    if (gpuBytes >= 0) {
+        gpuBytes = (gpuBytes - before) + baselineBytes;
+        bench(log, "sksl_compiler_gpu", gpuBytes);
+    }
+
+#if defined(SK_GRAPHITE)
+    // Heap used by a compiler with the Graphite modules loaded.
+    before = heap_bytes_used();
+    compiler.moduleForProgramKind(SkSL::ProgramKind::kGraphiteVertex);
+    compiler.moduleForProgramKind(SkSL::ProgramKind::kGraphiteFragment);
+    int64_t graphiteBytes = heap_bytes_used();
+    if (graphiteBytes >= 0) {
+        graphiteBytes = (graphiteBytes - before) + gpuBytes;
+        bench(log, "sksl_compiler_graphite", graphiteBytes);
+    }
+#endif
+
+    // Heap used by a compiler with compute-shader support loaded.
+    before = heap_bytes_used();
+    compiler.moduleForProgramKind(SkSL::ProgramKind::kCompute);
+    int64_t computeBytes = heap_bytes_used();
+    if (computeBytes >= 0) {
+        computeBytes = (computeBytes - before) + baselineBytes;
+        bench(log, "sksl_compiler_compute", computeBytes);
+    }
+
+    // Report the minified module sizes.
+    int compilerGPUBinarySize = std::size(SKSL_MINIFIED_sksl_shared) +
+                                std::size(SKSL_MINIFIED_sksl_gpu) +
+                                std::size(SKSL_MINIFIED_sksl_vert) +
+                                std::size(SKSL_MINIFIED_sksl_frag) +
+                                std::size(SKSL_MINIFIED_sksl_public) +
+                                std::size(SKSL_MINIFIED_sksl_rt_shader);
+    bench(log, "sksl_binary_size_gpu", compilerGPUBinarySize);
+
+#if defined(SK_GRAPHITE)
+    int compilerGraphiteBinarySize = std::size(SKSL_MINIFIED_sksl_graphite_frag) +
+                                     std::size(SKSL_MINIFIED_sksl_graphite_vert);
+    bench(log, "sksl_binary_size_graphite", compilerGraphiteBinarySize);
+#endif
+
+    int compilerComputeBinarySize = std::size(SKSL_MINIFIED_sksl_compute);
+    bench(log, "sksl_binary_size_compute", compilerComputeBinarySize);
+}
+
+class SkSLModuleLoaderBench : public Benchmark {
+public:
+    SkSLModuleLoaderBench(const char* name, std::vector<SkSL::ProgramKind> moduleList)
+            : fName(name), fModuleList(std::move(moduleList)) {}
+
+    const char* onGetName() override {
+        return fName;
+    }
+
+    bool isSuitableFor(Backend backend) override {
+        return backend == kNonRendering_Backend;
+    }
+
+    int calculateLoops(int defaultLoops) const override {
+        return 1;
+    }
+
+    void onPreDraw(SkCanvas*) override {
+        SkSL::ModuleLoader::Get().unloadModules();
+    }
+
+    void onDraw(int loops, SkCanvas*) override {
+        SkASSERT(loops == 1);
+        GrShaderCaps caps;
+        SkSL::Compiler compiler(&caps);
+        for (SkSL::ProgramKind kind : fModuleList) {
+            compiler.moduleForProgramKind(kind);
+        }
+    }
+
+    const char* fName;
+    std::vector<SkSL::ProgramKind> fModuleList;
+};
+
+DEF_BENCH(return new SkSLModuleLoaderBench("sksl_module_loader_ganesh",
+                                           {
+                                                   SkSL::ProgramKind::kVertex,
+                                                   SkSL::ProgramKind::kFragment,
+                                                   SkSL::ProgramKind::kRuntimeColorFilter,
+                                                   SkSL::ProgramKind::kRuntimeShader,
+                                                   SkSL::ProgramKind::kRuntimeBlender,
+                                                   SkSL::ProgramKind::kPrivateRuntimeColorFilter,
+                                                   SkSL::ProgramKind::kPrivateRuntimeShader,
+                                                   SkSL::ProgramKind::kPrivateRuntimeBlender,
+                                                   SkSL::ProgramKind::kCompute,
+                                           });)
+
+DEF_BENCH(return new SkSLModuleLoaderBench("sksl_module_loader_graphite",
+                                           {
+                                                   SkSL::ProgramKind::kVertex,
+                                                   SkSL::ProgramKind::kFragment,
+                                                   SkSL::ProgramKind::kRuntimeColorFilter,
+                                                   SkSL::ProgramKind::kRuntimeShader,
+                                                   SkSL::ProgramKind::kRuntimeBlender,
+                                                   SkSL::ProgramKind::kPrivateRuntimeColorFilter,
+                                                   SkSL::ProgramKind::kPrivateRuntimeShader,
+                                                   SkSL::ProgramKind::kPrivateRuntimeBlender,
+                                                   SkSL::ProgramKind::kCompute,
+                                                   SkSL::ProgramKind::kGraphiteVertex,
+                                                   SkSL::ProgramKind::kGraphiteFragment,
+                                           });)

@@ -9,7 +9,6 @@
 #define GrShaderCaps_DEFINED
 
 #include "include/core/SkRefCnt.h"
-#include "src/gpu/ganesh/glsl/GrGLSL.h"
 #include "src/sksl/SkSLUtil.h"
 
 struct GrContextOptions;
@@ -19,8 +18,6 @@ struct GrShaderCaps : SkSL::ShaderCaps {
     GrShaderCaps() {}
 
     void dumpJSON(SkJSONWriter*) const;
-
-    bool supportsDistanceFieldText() const { return fShaderDerivativeSupport; }
 
     const char* noperspectiveInterpolationExtensionString() const {
         SkASSERT(this->fNoPerspectiveInterpolationSupport);
@@ -35,11 +32,8 @@ struct GrShaderCaps : SkSL::ShaderCaps {
     void applyOptionsOverrides(const GrContextOptions& options);
 
     bool fDstReadInShaderSupport = false;
-    bool fDualSourceBlendingSupport = false;
     bool fPreferFlatInterpolation = false;
     bool fVertexIDSupport = false;
-    // isinf() is defined, and floating point infinities are handled according to IEEE standards.
-    bool fInfinitySupport = false;
     // Returns true if `expr` in `myArray[expr]` can be any integer expression. If false, `expr`
     // must be a constant-index-expression as defined in the OpenGL ES2 specification, Appendix A.5.
     bool fNonconstantArrayIndexSupport = false;
@@ -58,7 +52,6 @@ struct GrShaderCaps : SkSL::ShaderCaps {
     // On Nexus 6, the GL context can get lost if a shader does not write a value to gl_FragColor.
     // https://bugs.chromium.org/p/chromium/issues/detail?id=445377
     bool fMustWriteToFragColor = false;
-    bool fColorSpaceMathNeedsFloat = false;
     // When we have the option of using either dFdx or dfDy in a shader, this returns whether we
     // should avoid using dFdx. We have found some drivers have bugs or lower precision when using
     // dFdx.

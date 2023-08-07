@@ -1,5 +1,4 @@
 
-out vec4 sk_FragColor;
 uniform vec4 colorRed;
 uniform vec4 colorGreen;
 bool do_side_effect_bb(out bool x) {
@@ -7,8 +6,7 @@ bool do_side_effect_bb(out bool x) {
     return false;
 }
 vec4 main() {
-    bool ok;
-    ok = true;
+    bool ok = true;
     vec4 green = colorGreen;
     vec4 red = colorRed;
     bool param = false;

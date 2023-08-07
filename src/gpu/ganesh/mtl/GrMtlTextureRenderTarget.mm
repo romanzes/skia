@@ -18,7 +18,7 @@
 GR_NORETAIN_BEGIN
 
 GrMtlTextureRenderTarget::GrMtlTextureRenderTarget(GrMtlGpu* gpu,
-                                                   SkBudgeted budgeted,
+                                                   skgpu::Budgeted budgeted,
                                                    SkISize dimensions,
                                                    sk_sp<GrMtlAttachment> texture,
                                                    sk_sp<GrMtlAttachment> colorAttachment,
@@ -69,7 +69,7 @@ bool create_rt_attachments(GrMtlGpu* gpu, SkISize dimensions, MTLPixelFormat for
 
 sk_sp<GrMtlTextureRenderTarget> GrMtlTextureRenderTarget::MakeNewTextureRenderTarget(
         GrMtlGpu* gpu,
-        SkBudgeted budgeted,
+        skgpu::Budgeted budgeted,
         SkISize dimensions,
         int sampleCnt,
         MTLPixelFormat format,
@@ -117,7 +117,8 @@ sk_sp<GrMtlTextureRenderTarget> GrMtlTextureRenderTarget::MakeWrappedTextureRend
     GrAttachment::UsageFlags textureUsageFlags = GrAttachment::UsageFlags::kTexture |
                                                  GrAttachment::UsageFlags::kColorAttachment;
     sk_sp<GrMtlAttachment> textureAttachment =
-            GrMtlAttachment::MakeWrapped(gpu, dimensions, texture, textureUsageFlags, cacheable);
+            GrMtlAttachment::MakeWrapped(gpu, dimensions, texture, textureUsageFlags, cacheable,
+                                         /*label=*/"MtlAttachment_TextureAttachment");
     if (!textureAttachment) {
         return nullptr;
     }
@@ -159,6 +160,11 @@ size_t GrMtlTextureRenderTarget::onGpuMemorySize() const {
 #endif
     return GrSurface::ComputeSize(this->backendFormat(), this->dimensions(),
                                   1 /*colorSamplesPerPixel*/, this->mipmapped());
+}
+
+void GrMtlTextureRenderTarget::onSetLabel() {
+    GrMtlRenderTarget::onSetLabel();
+    GrMtlTexture::onSetLabel();
 }
 
 GR_NORETAIN_END

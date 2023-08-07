@@ -20,6 +20,8 @@
 #include "src/gpu/ganesh/effects/GrShadowGeoProc.h"
 #include "src/gpu/ganesh/ops/GrSimpleMeshDrawOpHelper.h"
 
+using namespace skia_private;
+
 namespace {
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -53,8 +55,8 @@ static const uint16_t gStrokeCircleIndices[] = {
         // clang-format on
 };
 
-static const int kIndicesPerFillCircle = SK_ARRAY_COUNT(gFillCircleIndices);
-static const int kIndicesPerStrokeCircle = SK_ARRAY_COUNT(gStrokeCircleIndices);
+static const int kIndicesPerFillCircle = std::size(gFillCircleIndices);
+static const int kIndicesPerStrokeCircle = std::size(gStrokeCircleIndices);
 static const int kVertsPerStrokeCircle = 16;
 static const int kVertsPerFillCircle = 9;
 
@@ -137,7 +139,7 @@ static const uint16_t gRRectIndices[] = {
 };
 
 // overstroke count
-static const int kIndicesPerOverstrokeRRect = SK_ARRAY_COUNT(gRRectIndices) - 6;
+static const int kIndicesPerOverstrokeRRect = std::size(gRRectIndices) - 6;
 // simple stroke count skips overstroke indices
 static const int kIndicesPerStrokeRRect = kIndicesPerOverstrokeRRect - 6*4;
 // fill count adds final quad to stroke count
@@ -550,7 +552,7 @@ private:
     }
 
     void onPrepareDraws(GrMeshDrawTarget* target) override {
-        int instanceCount = fGeoData.count();
+        int instanceCount = fGeoData.size();
 
         sk_sp<const GrBuffer> vertexBuffer;
         int firstVertex;
@@ -620,7 +622,7 @@ private:
 
     CombineResult onCombineIfPossible(GrOp* t, SkArenaAlloc*, const GrCaps& caps) override {
         ShadowCircularRRectOp* that = t->cast<ShadowCircularRRectOp>();
-        fGeoData.push_back_n(that->fGeoData.count(), that->fGeoData.begin());
+        fGeoData.push_back_n(that->fGeoData.size(), that->fGeoData.begin());
         fVertCount += that->fVertCount;
         fIndexCount += that->fIndexCount;
         return CombineResult::kMerged;
@@ -629,7 +631,7 @@ private:
 #if GR_TEST_UTILS
     SkString onDumpInfo() const override {
         SkString string;
-        for (int i = 0; i < fGeoData.count(); ++i) {
+        for (int i = 0; i < fGeoData.size(); ++i) {
             string.appendf(
                     "Color: 0x%08x Rect [L: %.2f, T: %.2f, R: %.2f, B: %.2f],"
                     "OuterRad: %.2f, Umbra: %.2f, InnerRad: %.2f, BlurRad: %.2f\n",
@@ -649,7 +651,7 @@ private:
         }
     }
 
-    SkSTArray<1, Geometry, true> fGeoData;
+    STArray<1, Geometry, true> fGeoData;
     int fVertCount;
     int fIndexCount;
     GrSurfaceProxyView fFalloffView;
@@ -664,7 +666,7 @@ private:
 
 ///////////////////////////////////////////////////////////////////////////////
 
-namespace skgpu::v1::ShadowRRectOp {
+namespace skgpu::ganesh::ShadowRRectOp {
 
 static GrSurfaceProxyView create_falloff_texture(GrRecordingContext* rContext) {
     static const skgpu::UniqueKey::Domain kDomain = skgpu::UniqueKey::GenerateDomain();
@@ -743,7 +745,7 @@ GrOp::Owner Make(GrRecordingContext* context,
                                              std::move(falloffView));
 }
 
-}  // namespace skgpu::v1::ShadowRRectOp
+}  // namespace skgpu::ganesh::ShadowRRectOp
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -772,8 +774,8 @@ GR_DRAW_OP_TEST_DEFINE(ShadowRRectOp) {
         if (isCircle) {
             SkRect circle = GrTest::TestSquare(random);
             SkRRect rrect = SkRRect::MakeOval(circle);
-            if (auto op = skgpu::v1::ShadowRRectOp::Make(
-                    context, color, viewMatrix, rrect, blurWidth, insetWidth)) {
+            if (auto op = skgpu::ganesh::ShadowRRectOp::Make(
+                        context, color, viewMatrix, rrect, blurWidth, insetWidth)) {
                 return op;
             }
         } else {
@@ -782,8 +784,8 @@ GR_DRAW_OP_TEST_DEFINE(ShadowRRectOp) {
                 // This may return a rrect with elliptical corners, which will cause an assert.
                 rrect = GrTest::TestRRectSimple(random);
             } while (!SkRRectPriv::IsSimpleCircular(rrect));
-            if (auto op = skgpu::v1::ShadowRRectOp::Make(
-                    context, color, viewMatrix, rrect, blurWidth, insetWidth)) {
+            if (auto op = skgpu::ganesh::ShadowRRectOp::Make(
+                        context, color, viewMatrix, rrect, blurWidth, insetWidth)) {
                 return op;
             }
         }

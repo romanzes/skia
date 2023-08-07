@@ -5,27 +5,29 @@
  * found in the LICENSE file.
  */
 
-#include "include/private/SkSLModifiers.h"
-#include "include/sksl/SkSLErrorReporter.h"
-#include "include/sksl/SkSLPosition.h"
+#include "include/private/base/SkTArray.h"
 #include "src/sksl/SkSLBuiltinTypes.h"
 #include "src/sksl/SkSLContext.h"
-#include "src/sksl/SkSLMangler.h"
+#include "src/sksl/SkSLErrorReporter.h"
 #include "src/sksl/SkSLMemoryLayout.h"
+#include "src/sksl/SkSLPosition.h"
 #include "src/sksl/SkSLUtil.h"
+#include "src/sksl/ir/SkSLModifiers.h"
 #include "src/sksl/ir/SkSLType.h"
 #include "tests/Test.h"
 
 #include <memory>
 #include <string>
 #include <string_view>
-#include <vector>
+#include <utility>
+
+using namespace skia_private;
 
 DEF_TEST(SkSLMemoryLayout140Test, r) {
     SkSL::TestingOnly_AbortErrorReporter errors;
     SkSL::ShaderCaps caps;
-    SkSL::Mangler mangler;
-    SkSL::Context context(errors, caps, mangler);
+    SkSL::BuiltinTypes types;
+    SkSL::Context context(types, &caps, errors);
     SkSL::MemoryLayout layout(SkSL::MemoryLayout::Standard::k140);
 
     // basic types
@@ -46,6 +48,7 @@ DEF_TEST(SkSLMemoryLayout140Test, r) {
     REPORTER_ASSERT(r, 48 == layout.size(*context.fTypes.fFloat3x3));
     REPORTER_ASSERT(r, 64 == layout.size(*context.fTypes.fFloat4x2));
     REPORTER_ASSERT(r, 64 == layout.size(*context.fTypes.fFloat4x4));
+    REPORTER_ASSERT(r,  4 == layout.size(*context.fTypes.fAtomicUInt));
     REPORTER_ASSERT(r,  4 == layout.alignment(*context.fTypes.fFloat));
     REPORTER_ASSERT(r,  8 == layout.alignment(*context.fTypes.fFloat2));
     REPORTER_ASSERT(r, 16 == layout.alignment(*context.fTypes.fFloat3));
@@ -63,43 +66,44 @@ DEF_TEST(SkSLMemoryLayout140Test, r) {
     REPORTER_ASSERT(r, 16 == layout.alignment(*context.fTypes.fFloat3x3));
     REPORTER_ASSERT(r, 16 == layout.alignment(*context.fTypes.fFloat4x2));
     REPORTER_ASSERT(r, 16 == layout.alignment(*context.fTypes.fFloat4x4));
+    REPORTER_ASSERT(r,  4 == layout.alignment(*context.fTypes.fAtomicUInt));
 
     // struct 1
-    std::vector<SkSL::Type::Field> fields1;
+    TArray<SkSL::Field> fields1;
     fields1.emplace_back(SkSL::Position(), SkSL::Modifiers(), std::string_view("a"),
             context.fTypes.fFloat3.get());
-    std::unique_ptr<SkSL::Type> s1 = SkSL::Type::MakeStructType(SkSL::Position(),
-            std::string("s1"), fields1);
+    std::unique_ptr<SkSL::Type> s1 =
+            SkSL::Type::MakeStructType(context, SkSL::Position(), std::string("s1"), fields1);
     REPORTER_ASSERT(r, 16 == layout.size(*s1));
     REPORTER_ASSERT(r, 16 == layout.alignment(*s1));
 
     fields1.emplace_back(SkSL::Position(), SkSL::Modifiers(), std::string_view("b"),
             context.fTypes.fFloat.get());
-    std::unique_ptr<SkSL::Type> s2 = SkSL::Type::MakeStructType(SkSL::Position(), std::string("s2"),
-            fields1);
+    std::unique_ptr<SkSL::Type> s2 =
+            SkSL::Type::MakeStructType(context, SkSL::Position(), std::string("s2"), fields1);
     REPORTER_ASSERT(r, 16 == layout.size(*s2));
     REPORTER_ASSERT(r, 16 == layout.alignment(*s2));
 
     fields1.emplace_back(SkSL::Position(), SkSL::Modifiers(), std::string_view("c"),
             context.fTypes.fBool.get());
-    std::unique_ptr<SkSL::Type> s3 = SkSL::Type::MakeStructType(SkSL::Position(), std::string("s3"),
-            fields1);
+    std::unique_ptr<SkSL::Type> s3 =
+            SkSL::Type::MakeStructType(context, SkSL::Position(), std::string("s3"), fields1);
     REPORTER_ASSERT(r, 32 == layout.size(*s3));
     REPORTER_ASSERT(r, 16 == layout.alignment(*s3));
 
     // struct 2
-    std::vector<SkSL::Type::Field> fields2;
+    TArray<SkSL::Field> fields2;
     fields2.emplace_back(SkSL::Position(), SkSL::Modifiers(), std::string_view("a"),
             context.fTypes.fInt.get());
-    std::unique_ptr<SkSL::Type> s4 = SkSL::Type::MakeStructType(SkSL::Position(), std::string("s4"),
-            fields2);
+    std::unique_ptr<SkSL::Type> s4 =
+            SkSL::Type::MakeStructType(context, SkSL::Position(), std::string("s4"), fields2);
     REPORTER_ASSERT(r, 16 == layout.size(*s4));
     REPORTER_ASSERT(r, 16 == layout.alignment(*s4));
 
     fields2.emplace_back(SkSL::Position(), SkSL::Modifiers(), std::string_view("b"),
             context.fTypes.fFloat3.get());
-    std::unique_ptr<SkSL::Type> s5 = SkSL::Type::MakeStructType(SkSL::Position(), std::string("s5"),
-            fields2);
+    std::unique_ptr<SkSL::Type> s5 =
+            SkSL::Type::MakeStructType(context, SkSL::Position(), std::string("s5"), fields2);
     REPORTER_ASSERT(r, 32 == layout.size(*s5));
     REPORTER_ASSERT(r, 16 == layout.alignment(*s5));
 
@@ -120,8 +124,8 @@ DEF_TEST(SkSLMemoryLayout140Test, r) {
 DEF_TEST(SkSLMemoryLayout430Test, r) {
     SkSL::TestingOnly_AbortErrorReporter errors;
     SkSL::ShaderCaps caps;
-    SkSL::Mangler mangler;
-    SkSL::Context context(errors, caps, mangler);
+    SkSL::BuiltinTypes types;
+    SkSL::Context context(types, &caps, errors);
     SkSL::MemoryLayout layout(SkSL::MemoryLayout::Standard::k430);
 
     // basic types
@@ -142,6 +146,7 @@ DEF_TEST(SkSLMemoryLayout430Test, r) {
     REPORTER_ASSERT(r, 48 == layout.size(*context.fTypes.fFloat3x3));
     REPORTER_ASSERT(r, 32 == layout.size(*context.fTypes.fFloat4x2));
     REPORTER_ASSERT(r, 64 == layout.size(*context.fTypes.fFloat4x4));
+    REPORTER_ASSERT(r,  4 == layout.size(*context.fTypes.fAtomicUInt));
     REPORTER_ASSERT(r,  4 == layout.alignment(*context.fTypes.fFloat));
     REPORTER_ASSERT(r,  8 == layout.alignment(*context.fTypes.fFloat2));
     REPORTER_ASSERT(r, 16 == layout.alignment(*context.fTypes.fFloat3));
@@ -159,43 +164,44 @@ DEF_TEST(SkSLMemoryLayout430Test, r) {
     REPORTER_ASSERT(r, 16 == layout.alignment(*context.fTypes.fFloat3x3));
     REPORTER_ASSERT(r,  8 == layout.alignment(*context.fTypes.fFloat4x2));
     REPORTER_ASSERT(r, 16 == layout.alignment(*context.fTypes.fFloat4x4));
+    REPORTER_ASSERT(r,  4 == layout.alignment(*context.fTypes.fAtomicUInt));
 
     // struct 1
-    std::vector<SkSL::Type::Field> fields1;
+    TArray<SkSL::Field> fields1;
     fields1.emplace_back(SkSL::Position(), SkSL::Modifiers(), std::string_view("a"),
                          context.fTypes.fFloat3.get());
-    std::unique_ptr<SkSL::Type> s1 = SkSL::Type::MakeStructType(SkSL::Position(), std::string("s1"),
-            fields1);
+    std::unique_ptr<SkSL::Type> s1 =
+            SkSL::Type::MakeStructType(context, SkSL::Position(), std::string("s1"), fields1);
     REPORTER_ASSERT(r, 16 == layout.size(*s1));
     REPORTER_ASSERT(r, 16 == layout.alignment(*s1));
 
     fields1.emplace_back(SkSL::Position(), SkSL::Modifiers(), std::string_view("b"),
             context.fTypes.fFloat.get());
-    std::unique_ptr<SkSL::Type> s2 = SkSL::Type::MakeStructType(SkSL::Position(), std::string("s2"),
-            fields1);
+    std::unique_ptr<SkSL::Type> s2 =
+            SkSL::Type::MakeStructType(context, SkSL::Position(), std::string("s2"), fields1);
     REPORTER_ASSERT(r, 16 == layout.size(*s2));
     REPORTER_ASSERT(r, 16 == layout.alignment(*s2));
 
     fields1.emplace_back(SkSL::Position(), SkSL::Modifiers(), std::string_view("c"),
             context.fTypes.fBool.get());
-    std::unique_ptr<SkSL::Type> s3 = SkSL::Type::MakeStructType(SkSL::Position(), std::string("s3"),
-            fields1);
+    std::unique_ptr<SkSL::Type> s3 =
+            SkSL::Type::MakeStructType(context, SkSL::Position(), std::string("s3"), fields1);
     REPORTER_ASSERT(r, 32 == layout.size(*s3));
     REPORTER_ASSERT(r, 16 == layout.alignment(*s3));
 
     // struct 2
-    std::vector<SkSL::Type::Field> fields2;
+    TArray<SkSL::Field> fields2;
     fields2.emplace_back(SkSL::Position(), SkSL::Modifiers(), std::string_view("a"),
             context.fTypes.fInt.get());
-    std::unique_ptr<SkSL::Type> s4 = SkSL::Type::MakeStructType(SkSL::Position(), std::string("s4"),
-            fields2);
+    std::unique_ptr<SkSL::Type> s4 =
+            SkSL::Type::MakeStructType(context, SkSL::Position(), std::string("s4"), fields2);
     REPORTER_ASSERT(r, 4 == layout.size(*s4));
     REPORTER_ASSERT(r, 4 == layout.alignment(*s4));
 
     fields2.emplace_back(SkSL::Position(), SkSL::Modifiers(), std::string_view("b"),
             context.fTypes.fFloat3.get());
-    std::unique_ptr<SkSL::Type> s5 = SkSL::Type::MakeStructType(SkSL::Position(), std::string("s5"),
-            fields2);
+    std::unique_ptr<SkSL::Type> s5 =
+            SkSL::Type::MakeStructType(context, SkSL::Position(), std::string("s5"), fields2);
     REPORTER_ASSERT(r, 32 == layout.size(*s5));
     REPORTER_ASSERT(r, 16 == layout.alignment(*s5));
 
@@ -216,8 +222,8 @@ DEF_TEST(SkSLMemoryLayout430Test, r) {
 DEF_TEST(SkSLMemoryLayoutWGSLUniformTest, r) {
     SkSL::TestingOnly_AbortErrorReporter errors;
     SkSL::ShaderCaps caps;
-    SkSL::Mangler mangler;
-    SkSL::Context context(errors, caps, mangler);
+    SkSL::BuiltinTypes types;
+    SkSL::Context context(types, &caps, errors);
     SkSL::MemoryLayout layout(SkSL::MemoryLayout::Standard::kWGSLUniform);
 
     // The values here are taken from https://www.w3.org/TR/WGSL/#alignment-and-size, table titled
@@ -335,6 +341,10 @@ DEF_TEST(SkSLMemoryLayoutWGSLUniformTest, r) {
     REPORTER_ASSERT(r, 16 == layout.stride(*context.fTypes.fFloat4x4));
     REPORTER_ASSERT(r, 8 == layout.stride(*context.fTypes.fHalf4x4));
 
+    // atomic<u32>
+    REPORTER_ASSERT(r, 4 == layout.size(*context.fTypes.fAtomicUInt));
+    REPORTER_ASSERT(r, 4 == layout.alignment(*context.fTypes.fAtomicUInt));
+
     // bool is not a host-shareable type and returns 0 for WGSL.
     REPORTER_ASSERT(r, 0 == layout.size(*context.fTypes.fBool));
     REPORTER_ASSERT(r, 0 == layout.size(*context.fTypes.fBool2));
@@ -395,7 +405,7 @@ DEF_TEST(SkSLMemoryLayoutWGSLUniformTest, r) {
     //     x: f32        // offset(16) align(4)               size(4)
     //     // padding    // offset(20)                        size(12)
     // }
-    std::vector<SkSL::Type::Field> fields;
+    TArray<SkSL::Field> fields;
     fields.emplace_back(SkSL::Position(),
                         SkSL::Modifiers(),
                         std::string_view("u"),
@@ -406,14 +416,14 @@ DEF_TEST(SkSLMemoryLayoutWGSLUniformTest, r) {
                         context.fTypes.fFloat.get());
     fields.emplace_back(SkSL::Position(),
                         SkSL::Modifiers(),
-                        std::string_view("v"),
+                        std::string_view("w"),
                         context.fTypes.fFloat2.get());
     fields.emplace_back(SkSL::Position(),
                         SkSL::Modifiers(),
-                        std::string_view("w"),
+                        std::string_view("x"),
                         context.fTypes.fFloat.get());
-    std::unique_ptr<SkSL::Type> structA =
-            SkSL::Type::MakeStructType(SkSL::Position(), std::string_view("A"), std::move(fields));
+    std::unique_ptr<SkSL::Type> structA = SkSL::Type::MakeStructType(
+            context, SkSL::Position(), std::string_view("A"), std::move(fields));
     REPORTER_ASSERT(r, 32 == layout.size(*structA));
     REPORTER_ASSERT(r, 16 == layout.alignment(*structA));
     fields = {};
@@ -457,8 +467,8 @@ DEF_TEST(SkSLMemoryLayoutWGSLUniformTest, r) {
     fields.emplace_back(SkSL::Position(), SkSL::Modifiers(), std::string_view("g"), array.get());
     fields.emplace_back(
             SkSL::Position(), SkSL::Modifiers(), std::string_view("h"), context.fTypes.fInt.get());
-    std::unique_ptr<SkSL::Type> structB =
-            SkSL::Type::MakeStructType(SkSL::Position(), std::string_view("B"), std::move(fields));
+    std::unique_ptr<SkSL::Type> structB = SkSL::Type::MakeStructType(
+            context, SkSL::Position(), std::string_view("B"), std::move(fields));
     REPORTER_ASSERT(r, 208 == layout.size(*structB));
     REPORTER_ASSERT(r, 16 == layout.alignment(*structB));
 }
@@ -466,8 +476,8 @@ DEF_TEST(SkSLMemoryLayoutWGSLUniformTest, r) {
 DEF_TEST(SkSLMemoryLayoutWGSLStorageTest, r) {
     SkSL::TestingOnly_AbortErrorReporter errors;
     SkSL::ShaderCaps caps;
-    SkSL::Mangler mangler;
-    SkSL::Context context(errors, caps, mangler);
+    SkSL::BuiltinTypes types;
+    SkSL::Context context(types, &caps, errors);
     SkSL::MemoryLayout layout(SkSL::MemoryLayout::Standard::kWGSLStorage);
 
     // The values here are taken from https://www.w3.org/TR/WGSL/#alignment-and-size, table titled
@@ -585,6 +595,10 @@ DEF_TEST(SkSLMemoryLayoutWGSLStorageTest, r) {
     REPORTER_ASSERT(r, 16 == layout.stride(*context.fTypes.fFloat4x4));
     REPORTER_ASSERT(r, 8 == layout.stride(*context.fTypes.fHalf4x4));
 
+    // atomic<u32>
+    REPORTER_ASSERT(r, 4 == layout.size(*context.fTypes.fAtomicUInt));
+    REPORTER_ASSERT(r, 4 == layout.alignment(*context.fTypes.fAtomicUInt));
+
     // bool is not a host-shareable type and returns 0 for WGSL.
     REPORTER_ASSERT(r, 0 == layout.size(*context.fTypes.fBool));
     REPORTER_ASSERT(r, 0 == layout.size(*context.fTypes.fBool2));
@@ -644,7 +658,7 @@ DEF_TEST(SkSLMemoryLayoutWGSLStorageTest, r) {
     //     x: f32        // offset(16) align(4)               size(4)
     //     // padding    // offset(20)                        size(4)
     // }
-    std::vector<SkSL::Type::Field> fields;
+    TArray<SkSL::Field> fields;
     fields.emplace_back(SkSL::Position(),
                         SkSL::Modifiers(),
                         std::string_view("u"),
@@ -655,14 +669,14 @@ DEF_TEST(SkSLMemoryLayoutWGSLStorageTest, r) {
                         context.fTypes.fFloat.get());
     fields.emplace_back(SkSL::Position(),
                         SkSL::Modifiers(),
-                        std::string_view("v"),
+                        std::string_view("w"),
                         context.fTypes.fFloat2.get());
     fields.emplace_back(SkSL::Position(),
                         SkSL::Modifiers(),
-                        std::string_view("w"),
+                        std::string_view("x"),
                         context.fTypes.fFloat.get());
-    std::unique_ptr<SkSL::Type> structA =
-            SkSL::Type::MakeStructType(SkSL::Position(), std::string_view("A"), std::move(fields));
+    std::unique_ptr<SkSL::Type> structA = SkSL::Type::MakeStructType(
+            context, SkSL::Position(), std::string_view("A"), std::move(fields));
     REPORTER_ASSERT(r, 24 == layout.size(*structA));
     REPORTER_ASSERT(r, 8 == layout.alignment(*structA));
     fields = {};
@@ -706,8 +720,8 @@ DEF_TEST(SkSLMemoryLayoutWGSLStorageTest, r) {
     fields.emplace_back(SkSL::Position(), SkSL::Modifiers(), std::string_view("g"), array.get());
     fields.emplace_back(
             SkSL::Position(), SkSL::Modifiers(), std::string_view("h"), context.fTypes.fInt.get());
-    std::unique_ptr<SkSL::Type> structB =
-            SkSL::Type::MakeStructType(SkSL::Position(), std::string_view("B"), std::move(fields));
+    std::unique_ptr<SkSL::Type> structB = SkSL::Type::MakeStructType(
+            context, SkSL::Position(), std::string_view("B"), std::move(fields));
     REPORTER_ASSERT(r, 160 == layout.size(*structB));
     REPORTER_ASSERT(r, 16 == layout.alignment(*structB));
 }
@@ -715,16 +729,16 @@ DEF_TEST(SkSLMemoryLayoutWGSLStorageTest, r) {
 DEF_TEST(SkSLMemoryLayoutWGSLUnsupportedTypesTest, r) {
     SkSL::TestingOnly_AbortErrorReporter errors;
     SkSL::ShaderCaps caps;
-    SkSL::Mangler mangler;
-    SkSL::Context context(errors, caps, mangler);
+    SkSL::BuiltinTypes types;
+    SkSL::Context context(types, &caps, errors);
 
     auto testArray = SkSL::Type::MakeArrayType("bool[3]", *context.fTypes.fBool, 3);
 
-    std::vector<SkSL::Type::Field> fields;
+    TArray<SkSL::Field> fields;
     fields.emplace_back(
             SkSL::Position(), SkSL::Modifiers(), std::string_view("foo"), testArray.get());
     auto testStruct = SkSL::Type::MakeStructType(
-            SkSL::Position(), std::string_view("Test"), std::move(fields));
+            context, SkSL::Position(), std::string_view("Test"), std::move(fields));
 
     SkSL::MemoryLayout layout(SkSL::MemoryLayout::Standard::kWGSLUniform);
     REPORTER_ASSERT(r, !layout.isSupported(*context.fTypes.fBool));
@@ -742,16 +756,16 @@ DEF_TEST(SkSLMemoryLayoutWGSLUnsupportedTypesTest, r) {
 DEF_TEST(SkSLMemoryLayoutWGSLSupportedTypesTest, r) {
     SkSL::TestingOnly_AbortErrorReporter errors;
     SkSL::ShaderCaps caps;
-    SkSL::Mangler mangler;
-    SkSL::Context context(errors, caps, mangler);
+    SkSL::BuiltinTypes types;
+    SkSL::Context context(types, &caps, errors);
 
     auto testArray = SkSL::Type::MakeArrayType("float[3]", *context.fTypes.fFloat, 3);
 
-    std::vector<SkSL::Type::Field> fields;
+    TArray<SkSL::Field> fields;
     fields.emplace_back(
             SkSL::Position(), SkSL::Modifiers(), std::string_view("foo"), testArray.get());
     auto testStruct = SkSL::Type::MakeStructType(
-            SkSL::Position(), std::string_view("Test"), std::move(fields));
+            context, SkSL::Position(), std::string_view("Test"), std::move(fields));
 
     SkSL::MemoryLayout layout(SkSL::MemoryLayout::Standard::kWGSLUniform);
 
@@ -814,6 +828,9 @@ DEF_TEST(SkSLMemoryLayoutWGSLSupportedTypesTest, r) {
     // mat4x4<f32>, mat4x4<f16>
     REPORTER_ASSERT(r, layout.isSupported(*context.fTypes.fFloat4x4));
     REPORTER_ASSERT(r, layout.isSupported(*context.fTypes.fHalf4x4));
+
+    // atomic<u32>
+    REPORTER_ASSERT(r, layout.isSupported(*context.fTypes.fAtomicUInt));
 
     // arrays and structs
     REPORTER_ASSERT(r, layout.isSupported(*testArray));

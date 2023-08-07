@@ -5,53 +5,62 @@
  * found in the LICENSE file.
  */
 
+#include "include/core/SkAlphaType.h"
 #include "include/core/SkBitmap.h"
 #include "include/core/SkCanvas.h"
 #include "include/core/SkColor.h"
 #include "include/core/SkColorSpace.h"
+#include "include/core/SkColorType.h"
 #include "include/core/SkDeferredDisplayList.h"
 #include "include/core/SkDeferredDisplayListRecorder.h"
-#include "include/core/SkImage.h"
 #include "include/core/SkImageInfo.h"
 #include "include/core/SkPaint.h"
 #include "include/core/SkPromiseImageTexture.h"
 #include "include/core/SkRect.h"
 #include "include/core/SkRefCnt.h"
+#include "include/core/SkSize.h"
 #include "include/core/SkSurface.h"
 #include "include/core/SkSurfaceCharacterization.h"
 #include "include/core/SkSurfaceProps.h"
 #include "include/core/SkTypes.h"
+#include "include/gpu/GpuTypes.h"
 #include "include/gpu/GrBackendSurface.h"
 #include "include/gpu/GrContextThreadSafeProxy.h"
 #include "include/gpu/GrDirectContext.h"
 #include "include/gpu/GrRecordingContext.h"
 #include "include/gpu/GrTypes.h"
-#include "include/gpu/gl/GrGLTypes.h"
-#include "include/private/gpu/ganesh/GrTypesPriv.h"
+#include "include/gpu/ganesh/SkImageGanesh.h"
+#include "include/gpu/ganesh/SkSurfaceGanesh.h"
 #include "src/core/SkDeferredDisplayListPriv.h"
 #include "src/gpu/ganesh/GrCaps.h"
 #include "src/gpu/ganesh/GrDirectContextPriv.h"
-#include "src/gpu/ganesh/GrGpu.h"
 #include "src/gpu/ganesh/GrRecordingContextPriv.h"
-#include "src/gpu/ganesh/GrRenderTargetProxy.h"
 #include "src/gpu/ganesh/GrTextureProxy.h"
-#include "src/gpu/ganesh/gl/GrGLDefines_impl.h"
-#include "src/image/SkImage_GpuBase.h"
-#include "src/image/SkSurface_Gpu.h"
+#include "tests/CtsEnforcement.h"
 #include "tests/Test.h"
-#include "tests/TestUtils.h"
 #include "tools/gpu/BackendSurfaceFactory.h"
-#include "tools/gpu/GrContextFactory.h"
 #include "tools/gpu/ManagedBackendTexture.h"
 #include "tools/gpu/ProxyUtils.h"
 
+#include <cstddef>
 #include <initializer_list>
 #include <memory>
 #include <utility>
 
+class SkImage;
+struct GrContextOptions;
+
+#ifdef SK_GL
+#include "include/gpu/gl/GrGLTypes.h"
+#include "src/gpu/ganesh/gl/GrGLDefines_impl.h"
+#endif
+
 #ifdef SK_VULKAN
+#include "include/gpu/vk/GrVkTypes.h"
+#include "include/private/chromium/GrVkSecondaryCBDrawContext.h"
 #include "src/gpu/ganesh/vk/GrVkCaps.h"
-#include "src/gpu/ganesh/vk/GrVkSecondaryCBDrawContext_impl.h"
+#include "tools/gpu/vk/VkTestHelper.h"
+#include <vulkan/vulkan_core.h>
 #endif
 
 class SurfaceParameters {
@@ -234,6 +243,7 @@ public:
             GrGLFramebufferInfo fboInfo;
             fboInfo.fFBOID = 0;
             fboInfo.fFormat = GR_GL_RGBA8;
+            fboInfo.fProtected = skgpu::Protected::kNo;
             static constexpr int kStencilBits = 8;
             GrBackendRenderTarget backendRT(fWidth, fHeight, 1, kStencilBits, fboInfo);
 
@@ -241,10 +251,8 @@ public:
                 return nullptr;
             }
 
-            sk_sp<SkSurface> result = SkSurface::MakeFromBackendRenderTarget(dContext, backendRT,
-                                                                             fOrigin, fColorType,
-                                                                             fColorSpace,
-                                                                             &fSurfaceProps);
+            sk_sp<SkSurface> result = SkSurfaces::WrapBackendRenderTarget(
+                    dContext, backendRT, fOrigin, fColorType, fColorSpace, &fSurfaceProps);
             SkASSERT(result->isCompatible(c));
             return result;
         }
@@ -284,11 +292,12 @@ public:
             return nullptr;
         }
 
-        GrBackendTexture texture =
-                surface->getBackendTexture(SkSurface::kFlushRead_BackendHandleAccess);
+        GrBackendTexture texture = SkSurfaces::GetBackendTexture(
+                surface.get(), SkSurfaces::BackendHandleAccess::kFlushRead);
         if (texture.isValid()) {
             SkASSERT(c.isCompatible(texture));
         }
+
         SkASSERT(c.isValid());
         SkASSERT(surface->isCompatible(c));
         return surface;
@@ -331,7 +340,10 @@ private:
 };
 
 // Test out operator== && operator!=
-DEF_GPUTEST_FOR_RENDERING_CONTEXTS(DDLOperatorEqTest, reporter, ctxInfo) {
+DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(DDLOperatorEqTest,
+                                       reporter,
+                                       ctxInfo,
+                                       CtsEnforcement::kNever) {
     auto context = ctxInfo.directContext();
 
     for (int i = -1; i < SurfaceParameters::kNumParams; ++i) {
@@ -472,7 +484,7 @@ void DDLSurfaceCharacterizationTestImpl(GrDirectContext* dContext, skiatest::Rep
     {
         SkImageInfo ii = SkImageInfo::MakeN32(64, 64, kOpaque_SkAlphaType);
 
-        sk_sp<SkSurface> rasterSurface = SkSurface::MakeRaster(ii);
+        sk_sp<SkSurface> rasterSurface = SkSurfaces::Raster(ii);
         SkSurfaceCharacterization c;
         REPORTER_ASSERT(reporter, !rasterSurface->characterize(&c));
     }
@@ -620,7 +632,10 @@ void DDLSurfaceCharacterizationTestImpl(GrDirectContext* dContext, skiatest::Rep
 //    FBO0 w/ MSAA, FBO0 w/o MSAA, not-FBO0 w/ MSAA, not-FBO0 w/o MSAA
 // and then tries all sixteen combinations to check the expected compatibility.
 // Note: this is a GL-only test
-DEF_GPUTEST_FOR_GL_RENDERING_CONTEXTS(CharacterizationFBO0nessTest, reporter, ctxInfo) {
+DEF_GANESH_TEST_FOR_GL_RENDERING_CONTEXTS(CharacterizationFBO0nessTest,
+                                          reporter,
+                                          ctxInfo,
+                                          CtsEnforcement::kApiLevel_T) {
     auto context = ctxInfo.directContext();
     const GrCaps* caps = context->priv().caps();
     sk_sp<GrContextThreadSafeProxy> proxy = context->threadSafeProxy();
@@ -668,10 +683,12 @@ DEF_GPUTEST_FOR_GL_RENDERING_CONTEXTS(CharacterizationFBO0nessTest, reporter, ct
             GrBackendRenderTarget backendRT(128, 128, numSamples, kStencilBits, fboInfo);
             SkAssertResult(backendRT.isValid());
 
-            surfaces[index] = SkSurface::MakeFromBackendRenderTarget(context, backendRT,
-                                                                     kTopLeft_GrSurfaceOrigin,
-                                                                     kRGBA_8888_SkColorType,
-                                                                     nullptr, &surfaceProps);
+            surfaces[index] = SkSurfaces::WrapBackendRenderTarget(context,
+                                                                  backendRT,
+                                                                  kTopLeft_GrSurfaceOrigin,
+                                                                  kRGBA_8888_SkColorType,
+                                                                  nullptr,
+                                                                  &surfaceProps);
             ++index;
         }
     }
@@ -687,7 +704,10 @@ DEF_GPUTEST_FOR_GL_RENDERING_CONTEXTS(CharacterizationFBO0nessTest, reporter, ct
 #endif
 
 #ifdef SK_VULKAN
-DEF_GPUTEST_FOR_VULKAN_CONTEXT(CharacterizationVkSCBnessTest, reporter, ctxInfo) {
+DEF_GANESH_TEST_FOR_VULKAN_CONTEXT(CharacterizationVkSCBnessTest,
+                                   reporter,
+                                   ctxInfo,
+                                   CtsEnforcement::kApiLevel_T) {
     auto dContext = ctxInfo.directContext();
 
     SurfaceParameters params(dContext);
@@ -705,17 +725,38 @@ DEF_GPUTEST_FOR_VULKAN_CONTEXT(CharacterizationVkSCBnessTest, reporter, ctxInfo)
 }
 #endif
 
-DEF_GPUTEST_FOR_RENDERING_CONTEXTS(DDLSurfaceCharacterizationTest, reporter, ctxInfo) {
+DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(DDLSurfaceCharacterizationTest,
+                                       reporter,
+                                       ctxInfo,
+                                       CtsEnforcement::kNever) {
     auto context = ctxInfo.directContext();
 
     DDLSurfaceCharacterizationTestImpl(context, reporter);
 }
 
+#if defined(SK_VULKAN)
+DEF_GANESH_TEST(VkProtectedContext_DDLSurfaceCharacterizationTest,
+                reporter,
+                ctxInfo,
+                CtsEnforcement::kNever) {
+    auto protectedTestHelper = std::make_unique<VkTestHelper>(true);
+    if (!protectedTestHelper->init()) {
+        return;
+    }
+    REPORTER_ASSERT(reporter, protectedTestHelper->directContext() != nullptr);
+
+    DDLSurfaceCharacterizationTestImpl(protectedTestHelper->directContext(), reporter);
+}
+#endif
+
 // Test that a DDL created w/o textureability can be replayed into both a textureable and
 // non-textureable destination. Note that DDLSurfaceCharacterizationTest tests that a
 // textureable DDL cannot be played into a non-textureable destination but can be replayed
 // into a textureable destination.
-DEF_GPUTEST_FOR_RENDERING_CONTEXTS(DDLNonTextureabilityTest, reporter, ctxInfo) {
+DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(DDLNonTextureabilityTest,
+                                       reporter,
+                                       ctxInfo,
+                                       CtsEnforcement::kNever) {
     auto context = ctxInfo.directContext();
 
     // Create a bitmap that we can readback into
@@ -759,7 +800,6 @@ DEF_GPUTEST_FOR_RENDERING_CONTEXTS(DDLNonTextureabilityTest, reporter, ctxInfo) 
 
         context->flush();
     }
-
 }
 
 static void test_make_render_target(skiatest::Reporter* reporter,
@@ -786,7 +826,8 @@ static void test_make_render_target(skiatest::Reporter* reporter,
         }
 
         REPORTER_ASSERT(reporter, c.isValid());
-        GrBackendTexture backend = s->getBackendTexture(SkSurface::kFlushRead_BackendHandleAccess);
+        GrBackendTexture backend =
+                SkSurfaces::GetBackendTexture(s.get(), SkSurfaces::BackendHandleAccess::kFlushRead);
         if (backend.isValid()) {
             REPORTER_ASSERT(reporter, c.isCompatible(backend));
         }
@@ -796,14 +837,14 @@ static void test_make_render_target(skiatest::Reporter* reporter,
 
     // Make an SkSurface from scratch
     {
-        sk_sp<SkSurface> s = SkSurface::MakeRenderTarget(dContext, c, SkBudgeted::kYes);
+        sk_sp<SkSurface> s = SkSurfaces::RenderTarget(dContext, c, skgpu::Budgeted::kYes);
         REPORTER_ASSERT(reporter, s);
         REPORTER_ASSERT(reporter, s->isCompatible(c));
     }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// This tests the SkSurface::MakeRenderTarget variants that take an SkSurfaceCharacterization.
+// This tests the SkSurfaces::RenderTarget variants that take an SkSurfaceCharacterization.
 // In particular, the SkSurface, backendTexture and SkSurfaceCharacterization
 // should always be compatible.
 void DDLMakeRenderTargetTestImpl(GrDirectContext* dContext, skiatest::Reporter* reporter) {
@@ -822,11 +863,30 @@ void DDLMakeRenderTargetTestImpl(GrDirectContext* dContext, skiatest::Reporter* 
     }
 }
 
-DEF_GPUTEST_FOR_RENDERING_CONTEXTS(DDLMakeRenderTargetTest, reporter, ctxInfo) {
+DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(DDLMakeRenderTargetTest,
+                                       reporter,
+                                       ctxInfo,
+                                       CtsEnforcement::kNever) {
     auto context = ctxInfo.directContext();
 
     DDLMakeRenderTargetTestImpl(context, reporter);
 }
+
+#if defined(SK_VULKAN)
+
+DEF_GANESH_TEST(VkProtectedContext_DDLMakeRenderTargetTest,
+                reporter,
+                ctxInfo,
+                CtsEnforcement::kNever) {
+    auto protectedTestHelper = std::make_unique<VkTestHelper>(true);
+    if (!protectedTestHelper->init()) {
+        return;
+    }
+    REPORTER_ASSERT(reporter, protectedTestHelper->directContext() != nullptr);
+
+    DDLMakeRenderTargetTestImpl(protectedTestHelper->directContext(), reporter);
+}
+#endif
 
 ////////////////////////////////////////////////////////////////////////////////
 static constexpr int kSize = 8;
@@ -842,7 +902,10 @@ struct TextureReleaseChecker {
 enum class DDLStage { kMakeImage, kDrawImage, kDetach, kDrawDDL };
 
 // This tests the ability to create and use wrapped textures in a DDL world
-DEF_GPUTEST_FOR_RENDERING_CONTEXTS(DDLWrapBackendTest, reporter, ctxInfo) {
+DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(DDLWrapBackendTest,
+                                       reporter,
+                                       ctxInfo,
+                                       CtsEnforcement::kNever) {
     auto dContext = ctxInfo.directContext();
 
     auto mbet = sk_gpu_test::ManagedBackendTexture::MakeWithoutData(dContext,
@@ -878,7 +941,7 @@ DEF_GPUTEST_FOR_RENDERING_CONTEXTS(DDLWrapBackendTest, reporter, ctxInfo) {
 
     // Wrapped Backend Textures are not supported in DDL
     TextureReleaseChecker releaseChecker;
-    sk_sp<SkImage> image = SkImage::MakeFromTexture(
+    sk_sp<SkImage> image = SkImages::BorrowTextureFrom(
             rContext,
             mbet->texture(),
             kTopLeft_GrSurfaceOrigin,
@@ -892,12 +955,15 @@ DEF_GPUTEST_FOR_RENDERING_CONTEXTS(DDLWrapBackendTest, reporter, ctxInfo) {
 
 ////////////////////////////////////////////////////////////////////////////////
 // Test out the behavior of an invalid DDLRecorder
-DEF_GPUTEST_FOR_RENDERING_CONTEXTS(DDLInvalidRecorder, reporter, ctxInfo) {
+DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(DDLInvalidRecorder,
+                                       reporter,
+                                       ctxInfo,
+                                       CtsEnforcement::kNever) {
     auto dContext = ctxInfo.directContext();
 
     {
         SkImageInfo ii = SkImageInfo::MakeN32Premul(32, 32);
-        sk_sp<SkSurface> s = SkSurface::MakeRenderTarget(dContext, SkBudgeted::kNo, ii);
+        sk_sp<SkSurface> s = SkSurfaces::RenderTarget(dContext, skgpu::Budgeted::kNo, ii);
 
         SkSurfaceCharacterization characterization;
         SkAssertResult(s->characterize(&characterization));
@@ -918,7 +984,10 @@ DEF_GPUTEST_FOR_RENDERING_CONTEXTS(DDLInvalidRecorder, reporter, ctxInfo) {
     }
 }
 
-DEF_GPUTEST_FOR_RENDERING_CONTEXTS(DDLCreateCharacterizationFailures, reporter, ctxInfo) {
+DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(DDLCreateCharacterizationFailures,
+                                       reporter,
+                                       ctxInfo,
+                                       CtsEnforcement::kNever) {
     auto dContext = ctxInfo.directContext();
     size_t maxResourceBytes = dContext->getResourceCacheLimit();
     auto proxy = dContext->threadSafeProxy().get();
@@ -1041,11 +1110,14 @@ static void tracking_release_proc(void* context) {
     info->fReleased = true;
 }
 
-DEF_GPUTEST_FOR_RENDERING_CONTEXTS(DDLSkSurfaceFlush, reporter, ctxInfo) {
+DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(DDLSkSurfaceFlush,
+                                       reporter,
+                                       ctxInfo,
+                                       CtsEnforcement::kNever) {
     auto context = ctxInfo.directContext();
 
     SkImageInfo ii = SkImageInfo::Make(32, 32, kRGBA_8888_SkColorType, kPremul_SkAlphaType);
-    sk_sp<SkSurface> s = SkSurface::MakeRenderTarget(context, SkBudgeted::kNo, ii);
+    sk_sp<SkSurface> s = SkSurfaces::RenderTarget(context, skgpu::Budgeted::kNo, ii);
 
     SkSurfaceCharacterization characterization;
     SkAssertResult(s->characterize(&characterization));
@@ -1070,18 +1142,18 @@ DEF_GPUTEST_FOR_RENDERING_CONTEXTS(DDLSkSurfaceFlush, reporter, ctxInfo) {
 
         SkCanvas* canvas = recorder.getCanvas();
 
-        sk_sp<SkImage> promiseImage = SkImage::MakePromiseTexture(
-                                                      canvas->recordingContext()->threadSafeProxy(),
-                                                      format,
-                                                      SkISize::Make(32, 32),
-                                                      GrMipmapped::kNo,
-                                                      kTopLeft_GrSurfaceOrigin,
-                                                      kRGBA_8888_SkColorType,
-                                                      kPremul_SkAlphaType,
-                                                      nullptr,
-                                                      tracking_fulfill_proc,
-                                                      tracking_release_proc,
-                                                      &fulfillInfo);
+        sk_sp<SkImage> promiseImage =
+                SkImages::PromiseTextureFrom(canvas->recordingContext()->threadSafeProxy(),
+                                             format,
+                                             SkISize::Make(32, 32),
+                                             GrMipmapped::kNo,
+                                             kTopLeft_GrSurfaceOrigin,
+                                             kRGBA_8888_SkColorType,
+                                             kPremul_SkAlphaType,
+                                             nullptr,
+                                             tracking_fulfill_proc,
+                                             tracking_release_proc,
+                                             &fulfillInfo);
 
         canvas->clear(SK_ColorRED);
         canvas->drawImage(promiseImage, 0, 0);
@@ -1110,11 +1182,11 @@ DEF_GPUTEST_FOR_RENDERING_CONTEXTS(DDLSkSurfaceFlush, reporter, ctxInfo) {
 
 ////////////////////////////////////////////////////////////////////////////////
 // Ensure that reusing a single DDLRecorder to create multiple DDLs works cleanly
-DEF_GPUTEST_FOR_RENDERING_CONTEXTS(DDLMultipleDDLs, reporter, ctxInfo) {
+DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(DDLMultipleDDLs, reporter, ctxInfo, CtsEnforcement::kNever) {
     auto context = ctxInfo.directContext();
 
     SkImageInfo ii = SkImageInfo::MakeN32Premul(32, 32);
-    sk_sp<SkSurface> s = SkSurface::MakeRenderTarget(context, SkBudgeted::kNo, ii);
+    sk_sp<SkSurface> s = SkSurfaces::RenderTarget(context, skgpu::Budgeted::kNo, ii);
 
     SkBitmap bitmap;
     bitmap.allocPixels(ii);
@@ -1173,11 +1245,14 @@ static sk_sp<SkPromiseImageTexture> noop_fulfill_proc(void*) {
 ////////////////////////////////////////////////////////////////////////////////
 // Check that the texture-specific flags (i.e., for external & rectangle textures) work
 // for promise images. As such, this is a GL-only test.
-DEF_GPUTEST_FOR_GL_RENDERING_CONTEXTS(DDLTextureFlagsTest, reporter, ctxInfo) {
+DEF_GANESH_TEST_FOR_GL_RENDERING_CONTEXTS(DDLTextureFlagsTest,
+                                          reporter,
+                                          ctxInfo,
+                                          CtsEnforcement::kNever) {
     auto context = ctxInfo.directContext();
 
     SkImageInfo ii = SkImageInfo::MakeN32Premul(32, 32);
-    sk_sp<SkSurface> s = SkSurface::MakeRenderTarget(context, SkBudgeted::kNo, ii);
+    sk_sp<SkSurface> s = SkSurfaces::RenderTarget(context, skgpu::Budgeted::kNo, ii);
 
     SkSurfaceCharacterization characterization;
     SkAssertResult(s->characterize(&characterization));
@@ -1188,7 +1263,7 @@ DEF_GPUTEST_FOR_GL_RENDERING_CONTEXTS(DDLTextureFlagsTest, reporter, ctxInfo) {
         for (auto mipmapped : { GrMipmapped::kNo, GrMipmapped::kYes }) {
             GrBackendFormat format = GrBackendFormat::MakeGL(GR_GL_RGBA8, target);
 
-            sk_sp<SkImage> image = SkImage::MakePromiseTexture(
+            sk_sp<SkImage> image = SkImages::PromiseTextureFrom(
                     recorder.getCanvas()->recordingContext()->threadSafeProxy(),
                     format,
                     SkISize::Make(32, 32),
@@ -1196,10 +1271,10 @@ DEF_GPUTEST_FOR_GL_RENDERING_CONTEXTS(DDLTextureFlagsTest, reporter, ctxInfo) {
                     kTopLeft_GrSurfaceOrigin,
                     kRGBA_8888_SkColorType,
                     kPremul_SkAlphaType,
-                    /*color space*/nullptr,
+                    /*color space*/ nullptr,
                     noop_fulfill_proc,
                     /*release proc*/ nullptr,
-                    /*context*/nullptr);
+                    /*context*/ nullptr);
             if (GR_GL_TEXTURE_2D != target && mipmapped == GrMipmapped::kYes) {
                 REPORTER_ASSERT(reporter, !image);
                 continue;
@@ -1225,7 +1300,10 @@ DEF_GPUTEST_FOR_GL_RENDERING_CONTEXTS(DDLTextureFlagsTest, reporter, ctxInfo) {
 
 ////////////////////////////////////////////////////////////////////////////////
 // Test colorType and pixelConfig compatibility.
-DEF_GPUTEST_FOR_GL_RENDERING_CONTEXTS(DDLCompatibilityTest, reporter, ctxInfo) {
+DEF_GANESH_TEST_FOR_GL_RENDERING_CONTEXTS(DDLCompatibilityTest,
+                                          reporter,
+                                          ctxInfo,
+                                          CtsEnforcement::kNever) {
     auto context = ctxInfo.directContext();
 
     for (int ct = 0; ct <= kLastEnum_SkColorType; ++ct) {
@@ -1237,5 +1315,4 @@ DEF_GPUTEST_FOR_GL_RENDERING_CONTEXTS(DDLCompatibilityTest, reporter, ctxInfo) {
 
         test_make_render_target(reporter, context, params);
     }
-
 }

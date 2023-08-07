@@ -5,11 +5,11 @@
  * found in the LICENSE file.
  */
 
-#include "include/private/SkTPin.h"
+#include "include/private/base/SkTPin.h"
 #include "include/utils/SkParse.h"
 #include "modules/svg/include/SkSVGAttributeParser.h"
 #include "modules/svg/include/SkSVGTypes.h"
-#include "src/utils/SkUTF.h"
+#include "src/base/SkUTF.h"
 
 namespace {
 
@@ -229,7 +229,7 @@ bool SkSVGAttributeParser::parseLengthUnitToken(SkSVGLength::Unit* unit) {
         { "pc", SkSVGLength::Unit::kPC         },
     };
 
-    for (size_t i = 0; i < SK_ARRAY_COUNT(gUnitInfo); ++i) {
+    for (size_t i = 0; i < std::size(gUnitInfo); ++i) {
         if (this->parseExpectedStringToken(gUnitInfo[i].fUnitName)) {
             *unit = gUnitInfo[i].fUnit;
             return true;
@@ -374,7 +374,7 @@ bool SkSVGAttributeParser::parse(SkSVGColorType* color) {
 }
 
 bool SkSVGAttributeParser::parseSVGColor(SkSVGColor* color, SkSVGColor::Vars&& vars) {
-    static const constexpr size_t kVarsLimit = 32;
+    static const constexpr int kVarsLimit = 32;
 
     if (SkSVGColorType c; this->parseSVGColorType(&c)) {
         *color = SkSVGColor(c, std::move(vars));
@@ -745,7 +745,7 @@ bool SkSVGAttributeParser::parse(SkSVGLineCap* cap) {
     };
 
     bool parsedValue = false;
-    for (size_t i = 0; i < SK_ARRAY_COUNT(gCapInfo); ++i) {
+    for (size_t i = 0; i < std::size(gCapInfo); ++i) {
         if (this->parseExpectedStringToken(gCapInfo[i].fName)) {
             *cap = SkSVGLineCap(gCapInfo[i].fType);
             parsedValue = true;
@@ -770,7 +770,7 @@ bool SkSVGAttributeParser::parse(SkSVGLineJoin* join) {
     };
 
     bool parsedValue = false;
-    for (size_t i = 0; i < SK_ARRAY_COUNT(gJoinInfo); ++i) {
+    for (size_t i = 0; i < std::size(gJoinInfo); ++i) {
         if (this->parseExpectedStringToken(gJoinInfo[i].fName)) {
             *join = SkSVGLineJoin(gJoinInfo[i].fType);
             parsedValue = true;
@@ -800,7 +800,7 @@ bool SkSVGAttributeParser::parse(SkSVGObjectBoundingBoxUnits* objectBoundingBoxU
 // https://www.w3.org/TR/SVG11/shapes.html#PolygonElementPointsAttribute
 template <>
 bool SkSVGAttributeParser::parse(SkSVGPointsType* points) {
-    SkTDArray<SkPoint> pts;
+    SkSVGPointsType pts;
 
     // Skip initial wsp.
     // list-of-points:
@@ -839,7 +839,7 @@ bool SkSVGAttributeParser::parse(SkSVGPointsType* points) {
     }
 
     if (parsedValue && this->parseEOSToken()) {
-        *points = pts;
+        *points = std::move(pts);
         return true;
     }
 
@@ -859,7 +859,7 @@ bool SkSVGAttributeParser::parse(SkSVGFillRule* fillRule) {
     };
 
     bool parsedValue = false;
-    for (size_t i = 0; i < SK_ARRAY_COUNT(gFillRuleInfo); ++i) {
+    for (size_t i = 0; i < std::size(gFillRuleInfo); ++i) {
         if (this->parseExpectedStringToken(gFillRuleInfo[i].fName)) {
             *fillRule = SkSVGFillRule(gFillRuleInfo[i].fType);
             parsedValue = true;
@@ -906,7 +906,7 @@ bool SkSVGAttributeParser::parse(SkSVGDashArray* dashArray) {
         *dashArray = SkSVGDashArray(SkSVGDashArray::Type::kInherit);
         parsedValue = true;
     } else {
-        SkTDArray<SkSVGLength> dashes;
+        std::vector<SkSVGLength> dashes;
         for (;;) {
             SkSVGLength dash;
             // parseLength() also consumes trailing separators.

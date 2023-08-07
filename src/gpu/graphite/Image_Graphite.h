@@ -8,82 +8,54 @@
 #ifndef skgpu_graphite_Image_Graphite_DEFINED
 #define skgpu_graphite_Image_Graphite_DEFINED
 
-#include "src/image/SkImage_Base.h"
+#include "src/gpu/graphite/Image_Base_Graphite.h"
 
+#include "include/gpu/graphite/Image.h"
 #include "src/gpu/graphite/TextureProxyView.h"
+
+namespace skgpu {
+    class RefCntedCallback;
+}
 
 namespace skgpu::graphite {
 
 class Context;
 class Recorder;
 
-class Image final : public SkImage_Base {
+class Image final : public Image_Base {
 public:
+    Image(uint32_t uniqueID, TextureProxyView, const SkColorInfo&);
     Image(TextureProxyView, const SkColorInfo&);
     ~Image() override;
 
-    bool onReadPixels(GrDirectContext*,
-                      const SkImageInfo& dstInfo,
-                      void* dstPixels,
-                      size_t dstRowBytes,
-                      int srcX,
-                      int srcY,
-                      CachingHint) const override { return false; }
-    // Temporary and only for testing purposes.
-    // To be removed once asynchronous readback is working.
-    bool testingOnly_ReadPixels(Context*,
-                                Recorder*,
-                                const SkImageInfo& dstInfo,
-                                void* dstPixels,
-                                size_t dstRowBytes,
-                                int srcX,
-                                int srcY);
-
-    bool onHasMipmaps() const override { return false; }
-
-    bool isGraphiteBacked() const override { return true; }
-
-    bool getROPixels(GrDirectContext*,
-                     SkBitmap*,
-                     CachingHint = kAllow_CachingHint) const override { return false; }
-
-    sk_sp<SkImage> onMakeSubset(const SkIRect&, GrDirectContext*) const override {
-        return nullptr;
+    bool onHasMipmaps() const override {
+        return fTextureProxyView.proxy()->mipmapped() == skgpu::Mipmapped::kYes;
     }
 
-    bool onIsValid(GrRecordingContext*) const override { return true; }
+    SkImage_Base::Type type() const override { return SkImage_Base::Type::kGraphite; }
 
-    sk_sp<SkImage> onMakeColorTypeAndColorSpace(SkColorType,
-                                                sk_sp<SkColorSpace>,
-                                                GrDirectContext*) const override {
-        return nullptr;
-    }
+    sk_sp<SkImage> onReinterpretColorSpace(sk_sp<SkColorSpace>) const override;
 
-    sk_sp<SkImage> onReinterpretColorSpace(sk_sp<SkColorSpace>) const override {
-        return nullptr;
-    }
+    TextureProxyView textureProxyView() const { return fTextureProxyView; }
+
+    static sk_sp<TextureProxy> MakePromiseImageLazyProxy(
+            SkISize dimensions,
+            TextureInfo,
+            Volatile,
+            SkImages::GraphitePromiseImageFulfillProc,
+            sk_sp<RefCntedCallback>,
+            SkImages::GraphitePromiseTextureReleaseProc);
+    sk_sp<SkImage> makeTextureImage(Recorder*, RequiredProperties) const override;
 
 private:
-#if SK_SUPPORT_GPU
-    std::unique_ptr<GrFragmentProcessor> onAsFragmentProcessor(
-            GrRecordingContext*,
-            SkSamplingOptions,
-            const SkTileMode[2],
-            const SkMatrix&,
-            const SkRect* subset,
-            const SkRect* domain) const override {
-        return nullptr;
-    }
-    std::tuple<GrSurfaceProxyView, GrColorType> onAsView(
-            GrRecordingContext*,
-            GrMipmapped,
-            GrImageTexGenPolicy policy) const override {
-        return {};
-    }
-#endif
-
-    std::tuple<TextureProxyView, SkColorType> onAsView(Recorder*,
-                                                       Mipmapped) const override;
+    sk_sp<SkImage> copyImage(const SkIRect& subset, Recorder*, RequiredProperties) const;
+    using Image_Base::onMakeSubset;
+    sk_sp<SkImage> onMakeSubset(Recorder*, const SkIRect&, RequiredProperties) const override;
+    using Image_Base::onMakeColorTypeAndColorSpace;
+    sk_sp<SkImage> makeColorTypeAndColorSpace(Recorder*,
+                                              SkColorType targetCT,
+                                              sk_sp<SkColorSpace> targetCS,
+                                              RequiredProperties) const override;
 
     TextureProxyView fTextureProxyView;
 };

@@ -9,7 +9,7 @@
 
 #include "src/gpu/ganesh/GrTexture.h"
 #include "src/gpu/ganesh/mtl/GrMtlGpu.h"
-#include "src/gpu/ganesh/mtl/GrMtlUtil.h"
+#include "src/gpu/mtl/MtlUtilsPriv.h"
 
 #if !__has_feature(objc_arc)
 #error This file must be compiled with Arc. Use -fobjc-arc flag
@@ -18,7 +18,7 @@
 GR_NORETAIN_BEGIN
 
 GrMtlTexture::GrMtlTexture(GrMtlGpu* gpu,
-                           SkBudgeted budgeted,
+                           skgpu::Budgeted budgeted,
                            SkISize dimensions,
                            sk_sp<GrMtlAttachment> texture,
                            GrMipmapStatus mipmapStatus,
@@ -33,7 +33,7 @@ GrMtlTexture::GrMtlTexture(GrMtlGpu* gpu,
     }
     SkASSERT(!mtlTexture.framebufferOnly);
     this->registerWithCache(budgeted);
-    if (GrMtlFormatIsCompressed(fTexture->mtlFormat())) {
+    if (skgpu::MtlFormatIsCompressed(fTexture->mtlFormat())) {
         this->setReadOnly();
     }
 }
@@ -78,7 +78,7 @@ GrMtlTexture::GrMtlTexture(GrMtlGpu* gpu,
 }
 
 sk_sp<GrMtlTexture> GrMtlTexture::MakeNewTexture(GrMtlGpu* gpu,
-                                                 SkBudgeted budgeted,
+                                                 skgpu::Budgeted budgeted,
                                                  SkISize dimensions,
                                                  MTLPixelFormat format,
                                                  uint32_t mipLevels,
@@ -105,7 +105,8 @@ sk_sp<GrMtlTexture> GrMtlTexture::MakeWrappedTexture(GrMtlGpu* gpu,
     }
     sk_sp<GrMtlAttachment> attachment =
             GrMtlAttachment::MakeWrapped(gpu, dimensions, texture,
-                                         GrAttachment::UsageFlags::kTexture, cacheable);
+                                         GrAttachment::UsageFlags::kTexture, cacheable,
+                                         /*label=*/"MtlAttachment_MakeWrapped");
     if (!attachment) {
         return nullptr;
     }
@@ -136,6 +137,14 @@ GrBackendTexture GrMtlTexture::getBackendTexture() const {
 
 GrBackendFormat GrMtlTexture::backendFormat() const {
     return GrBackendFormat::MakeMtl(fTexture->mtlFormat());
+}
+
+void GrMtlTexture::onSetLabel() {
+    SkASSERT(fTexture);
+    if (!this->getLabel().empty()) {
+        NSString* labelStr = @(this->getLabel().c_str());
+        fTexture->mtlTexture().label = [@"_Skia_" stringByAppendingString:labelStr];
+    }
 }
 
 GR_NORETAIN_END

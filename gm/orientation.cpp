@@ -7,6 +7,7 @@
 
 #include "gm/gm.h"
 #include "include/codec/SkEncodedOrigin.h"
+#include "include/core/SkBlurTypes.h"
 #include "include/core/SkCanvas.h"
 #include "include/core/SkFont.h"
 #include "include/core/SkImage.h"
@@ -17,6 +18,7 @@
 #include "include/core/SkSurface.h"
 #include "tools/Resources.h"
 #include "tools/ToolUtils.h"
+
 
 static constexpr int kImgW = 100;
 static constexpr int kImgH =  80;
@@ -48,9 +50,8 @@ static void make_images() {
             swap(size.fWidth, size.fHeight);
         }
         using std::swap;
-        auto surf = SkSurface::MakeRaster(SkImageInfo::Make(size,
-                                                            kRGBA_8888_SkColorType,
-                                                            kPremul_SkAlphaType));
+        auto surf = SkSurfaces::Raster(
+                SkImageInfo::Make(size, kRGBA_8888_SkColorType, kPremul_SkAlphaType));
         auto* canvas = surf->getCanvas();
         SkMatrix m = SkEncodedOriginToMatrix(origin, kImgW, kImgH);
         SkAssertResult(m.invert(&m));
@@ -114,7 +115,7 @@ static void make_images() {
         num.append(".png");
         SkPixmap pm;
         surf->makeImageSnapshot()->peekPixels(&pm);
-        ToolUtils::EncodeImageToFile(num.c_str(), pm, SkEncodedImageFormat::kPNG, 100);
+        ToolUtils::EncodeImageToPngFile(num.c_str(), pm);
     }
 }
 

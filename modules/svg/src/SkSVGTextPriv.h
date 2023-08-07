@@ -8,10 +8,11 @@
 #ifndef SkSVGTextPriv_DEFINED
 #define SkSVGTextPriv_DEFINED
 
+#include "include/private/base/SkTArray.h"
 #include "modules/skshaper/include/SkShaper.h"
 #include "modules/svg/include/SkSVGRenderContext.h"
 #include "modules/svg/include/SkSVGText.h"
-#include "src/core/SkTLazy.h"
+#include "src/base/SkTLazy.h"
 
 #include <functional>
 #include <tuple>
@@ -125,9 +126,9 @@ private:
     };
 
     struct ShapeBuffer {
-        SkSTArray<128, char              , true> fUtf8;
+        skia_private::STArray<128, char              , true> fUtf8;
         // per-utf8-char cumulative pos adjustments
-        SkSTArray<128, PositionAdjustment, true> fUtf8PosAdjust;
+        skia_private::STArray<128, PositionAdjustment, true> fUtf8PosAdjust;
 
         void reserve(size_t size) {
             fUtf8.reserve_back(SkToInt(size));
@@ -135,8 +136,8 @@ private:
         }
 
         void reset() {
-            fUtf8.reset();
-            fUtf8PosAdjust.reset();
+            fUtf8.clear();
+            fUtf8PosAdjust.clear();
         }
 
         void append(SkUnichar, PositionAdjustment);

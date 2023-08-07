@@ -9,15 +9,19 @@
 #ifndef SKFONTHOST_FREETYPE_COMMON_H_
 #define SKFONTHOST_FREETYPE_COMMON_H_
 
+#include "include/core/SkSpan.h"
 #include "include/core/SkTypeface.h"
 #include "include/core/SkTypes.h"
-#include "include/private/SkMutex.h"
+#include "include/private/base/SkMutex.h"
+#include "include/private/base/SkTArray.h"
+#include "src/base/SkSharedMutex.h"
 #include "src/core/SkGlyph.h"
 #include "src/core/SkScalerContext.h"
-#include "src/core/SkSharedMutex.h"
 #include "src/utils/SkCharToGlyphCache.h"
 
-#include "include/core/SkFontMgr.h"
+struct SkAdvancedTypefaceMetrics;
+class SkFontDescriptor;
+class SkFontData;
 
 // These are forward declared to avoid pimpl but also hide the FreeType implementation.
 typedef struct FT_LibraryRec_* FT_Library;
@@ -90,7 +94,7 @@ public:
             SkFixed fDefault;
             SkFixed fMaximum;
         };
-        using AxisDefinitions = SkSTArray<4, AxisDefinition, true>;
+        using AxisDefinitions = skia_private::STArray<4, AxisDefinition, true>;
         bool recognizedFont(SkStreamAsset* stream, int* numFonts) const;
         bool scanFont(SkStreamAsset* stream, int ttcIndex,
                       SkString* name, SkFontStyle* style, bool* isFixedPitch,
@@ -115,6 +119,9 @@ public:
     std::unique_ptr<SkFontData> makeFontData() const;
     class FaceRec;
     FaceRec* getFaceRec() const;
+
+    static constexpr SkTypeface::FactoryId FactoryId = SkSetFourByteTag('f','r','e','e');
+    static sk_sp<SkTypeface> MakeFromStream(std::unique_ptr<SkStreamAsset>, const SkFontArguments&);
 
 protected:
     SkTypeface_FreeType(const SkFontStyle& style, bool isFixedPitch);
@@ -161,6 +168,24 @@ private:
     mutable bool fGlyphMasksMayNeedCurrentColor;
 
     using INHERITED = SkTypeface;
+};
+
+class SkTypeface_FreeTypeStream : public SkTypeface_FreeType {
+public:
+    SkTypeface_FreeTypeStream(std::unique_ptr<SkFontData> fontData, const SkString familyName,
+                              const SkFontStyle& style, bool isFixedPitch);
+    ~SkTypeface_FreeTypeStream() override;
+
+protected:
+    void onGetFamilyName(SkString* familyName) const override;
+    void onGetFontDescriptor(SkFontDescriptor*, bool* serialize) const override;
+    std::unique_ptr<SkStreamAsset> onOpenStream(int* ttcIndex) const override;
+    std::unique_ptr<SkFontData> onMakeFontData() const override;
+    sk_sp<SkTypeface> onMakeClone(const SkFontArguments&) const override;
+
+private:
+    const SkString fFamilyName;
+    const std::unique_ptr<const SkFontData> fData;
 };
 
 #endif // SKFONTHOST_FREETYPE_COMMON_H_

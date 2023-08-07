@@ -213,7 +213,7 @@ void GLTestContext::teardown() {
 
 void GLTestContext::testAbandon() {
     INHERITED::testAbandon();
-#ifdef SK_GL
+#if defined(SK_GL) && GR_TEST_UTILS
     if (fGLInterface) {
         fGLInterface->abandon();
         fOriginalGLInterface->abandon();
@@ -247,7 +247,7 @@ void GLTestContext::overrideVersion(const char* version, const char* shadingLang
     newInterface->fFunctions.fGetString = getString;
     fGLInterface = std::move(newInterface);
 #endif
-};
+}
 
 sk_sp<GrDirectContext> GLTestContext::makeContext(const GrContextOptions& options) {
 #ifdef SK_GL

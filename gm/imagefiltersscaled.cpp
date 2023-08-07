@@ -37,7 +37,7 @@ static sk_sp<SkImage> make_gradient_circle(int width, int height) {
     SkScalar x = SkIntToScalar(width / 2);
     SkScalar y = SkIntToScalar(height / 2);
     SkScalar radius = std::min(x, y) * 4 / 5;
-    sk_sp<SkSurface> surface(SkSurface::MakeRasterN32Premul(width, height));
+    sk_sp<SkSurface> surface(SkSurfaces::Raster(SkImageInfo::MakeN32Premul(width, height)));
     SkCanvas* canvas = surface->getCanvas();
     canvas->clear(0x00000000);
     SkColor colors[2];
@@ -123,9 +123,9 @@ protected:
         SkRect bounds = r;
         bounds.outset(margin, margin);
 
-        for (size_t j = 0; j < SK_ARRAY_COUNT(scales); ++j) {
+        for (size_t j = 0; j < std::size(scales); ++j) {
             canvas->save();
-            for (size_t i = 0; i < SK_ARRAY_COUNT(filters); ++i) {
+            for (size_t i = 0; i < std::size(filters); ++i) {
                 SkPaint paint;
                 paint.setColor(SK_ColorBLUE);
                 paint.setImageFilter(filters[i]);

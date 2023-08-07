@@ -8,6 +8,7 @@
 #ifndef GrDawnTexture_DEFINED
 #define GrDawnTexture_DEFINED
 
+#include "include/gpu/ganesh/SkImageGanesh.h"
 #include "src/gpu/ganesh/GrTexture.h"
 #include "webgpu/webgpu_cpp.h"
 
@@ -20,14 +21,14 @@ public:
                                      wgpu::TextureFormat format,
                                      GrRenderable,
                                      int sampleCnt,
-                                     SkBudgeted,
+                                     skgpu::Budgeted,
                                      int mipLevels,
                                      GrMipmapStatus,
                                      std::string_view label);
 
     static sk_sp<GrDawnTexture> MakeWrapped(GrDawnGpu*, SkISize dimensions, GrRenderable,
                                             int sampleCnt, GrWrapCacheable, GrIOType,
-                                            const GrDawnTextureInfo&);
+                                            const GrDawnTextureInfo&, std::string_view label);
 
     ~GrDawnTexture() override;
 
@@ -50,7 +51,7 @@ protected:
     void onAbandon() override;
     void onRelease() override;
 
-    bool onStealBackendTexture(GrBackendTexture*, SkImage::BackendTextureReleaseProc*) override {
+    bool onStealBackendTexture(GrBackendTexture*, SkImages::BackendTextureReleaseProc*) override {
         return false;
     }
 
