@@ -23,7 +23,7 @@ deps = {
   "third_party/externals/expat"                  : "https://chromium.googlesource.com/external/github.com/libexpat/libexpat.git@441f98d02deafd9b090aea568282b28f66a50e36",
   "third_party/externals/freetype"               : "https://chromium.googlesource.com/chromium/src/third_party/freetype2.git@d857bd535b6c7e877f262a9b61ed21ee11b35dab",
   "third_party/externals/harfbuzz"               : "https://chromium.googlesource.com/external/github.com/harfbuzz/harfbuzz.git@09a266236147497bd8149240062c31c16fbc81e3",
-  "third_party/externals/icu"                    : "https://chromium.googlesource.com/chromium/deps/icu.git@de4ce0071eb47ed54cbda54869001210cf3a8ae5",
+  "third_party/externals/icu"                    : "https://chromium.googlesource.com/chromium/deps/icu.git@e8c3bc9ea97d4423ad0515e5f1c064f486dae8b1",
   "third_party/externals/libjpeg-turbo"          : "https://chromium.googlesource.com/chromium/deps/libjpeg_turbo.git@ed683925e4897a84b3bffc5c1414c85b97a129a3",
   "third_party/externals/libpng"                 : "https://skia.googlesource.com/third_party/libpng.git@386707c6d19b974ca2e3db7f5c61873813c6fe44",
   "third_party/externals/libwebp"                : "https://chromium.googlesource.com/webm/libwebp.git@fd7b5d48464475408d32d2611bdb6947d4246b97",
