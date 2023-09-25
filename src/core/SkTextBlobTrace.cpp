@@ -4,6 +4,7 @@
 #include "src/core/SkTextBlobTrace.h"
 
 #include "include/core/SkTextBlob.h"
+#include "src/base/SkTLazy.h"
 #include "src/core/SkFontPriv.h"
 #include "src/core/SkPtrRecorder.h"
 #include "src/core/SkReadBuffer.h"
@@ -83,7 +84,8 @@ SkTextBlobTrace::Capture::Capture() : fTypefaceSet(new SkRefCntSet) {
 
 SkTextBlobTrace::Capture::~Capture() = default;
 
-void SkTextBlobTrace::Capture::capture(const SkGlyphRunList& glyphRunList, const SkPaint& paint) {
+void SkTextBlobTrace::Capture::capture(
+        const sktext::GlyphRunList& glyphRunList, const SkPaint& paint) {
     const SkTextBlob* blob = glyphRunList.blob();
     if (blob != nullptr) {
         fWriteBuffer.writeUInt(blob->uniqueID());

@@ -9,7 +9,9 @@
 #define GrGLGpu_DEFINED
 
 #include "include/core/SkTypes.h"
-#include "include/private/SkTArray.h"
+#include "include/gpu/ganesh/gl/GrGLBackendSurface.h"
+#include "include/private/base/SkTArray.h"
+#include "src/core/SkChecksum.h"
 #include "src/core/SkLRUCache.h"
 #include "src/gpu/ganesh/GrFinishCallbacks.h"
 #include "src/gpu/ganesh/GrGpu.h"
@@ -28,6 +30,7 @@
 class GrGLBuffer;
 class GrGLOpsRenderPass;
 class GrPipeline;
+enum class SkTextureCompressionType;
 
 namespace skgpu {
 class Swizzle;
@@ -51,6 +54,8 @@ public:
     GrGLVersion glVersion() const { return fGLContext->version(); }
     SkSL::GLSLGeneration glslGeneration() const { return fGLContext->glslGeneration(); }
     const GrGLCaps& glCaps() const { return *fGLContext->caps(); }
+
+    GrStagingBufferManager* stagingBufferManager() override { return fStagingBufferManager.get(); }
 
     // Used by GrGLProgram to configure OpenGL state.
     void bindTexture(int unitIdx, GrSamplerState samplerState, const skgpu::Swizzle&, GrGLTexture*);
@@ -120,8 +125,8 @@ public:
     // equal to the proxy bounds. This is because the render pass will have to do a full size
     // resolve back into the single sample FBO when rendering is complete.
     void drawSingleIntoMSAAFBO(GrGLRenderTarget* rt, const SkIRect& drawBounds) {
-        this->copySurfaceAsDraw(rt, true/*drawToMultisampleFBO*/, rt, drawBounds,
-                                drawBounds.topLeft());
+        this->copySurfaceAsDraw(rt, true/*drawToMultisampleFBO*/, rt, drawBounds, drawBounds,
+                                GrSamplerState::Filter::kNearest);
     }
 
     // The GrGLOpsRenderPass does not buffer up draws before submitting them to the gpu.
@@ -180,13 +185,15 @@ public:
     void resetShaderCacheForTesting() const override { fProgramCache->reset(); }
 #endif
 
+    void willExecute() override;
+
     void submit(GrOpsRenderPass* renderPass) override;
 
-    GrFence SK_WARN_UNUSED_RESULT insertFence() override;
+    [[nodiscard]] GrFence insertFence() override;
     bool waitFence(GrFence) override;
     void deleteFence(GrFence) override;
 
-    std::unique_ptr<GrSemaphore> SK_WARN_UNUSED_RESULT makeSemaphore(bool isOwned) override;
+    [[nodiscard]] std::unique_ptr<GrSemaphore> makeSemaphore(bool isOwned) override;
     std::unique_ptr<GrSemaphore> wrapBackendSemaphore(const GrBackendSemaphore&,
                                                       GrSemaphoreWrapType,
                                                       GrWrapOwnership) override;
@@ -213,6 +220,10 @@ public:
     // Version for programs that aren't GrGLProgram.
     void flushProgram(GrGLuint);
 
+    // GrGLOpsRenderPass directly makes GL draws. GrGLGpu uses this notification to mark the
+    // destination surface dirty if color writes are enabled.
+    void didDrawTo(GrRenderTarget*);
+
 private:
     GrGLGpu(std::unique_ptr<GrGLContext>, GrDirectContext*);
 
@@ -221,7 +232,8 @@ private:
                                             const GrBackendFormat&,
                                             GrRenderable,
                                             GrMipmapped,
-                                            GrProtected) override;
+                                            GrProtected,
+                                            std::string_view label) override;
 
     GrBackendTexture onCreateCompressedBackendTexture(SkISize dimensions,
                                                       const GrBackendFormat&,
@@ -247,17 +259,18 @@ private:
                                      const GrBackendFormat&,
                                      GrRenderable,
                                      int renderTargetSampleCnt,
-                                     SkBudgeted,
+                                     skgpu::Budgeted,
                                      GrProtected,
                                      int mipLevelCount,
                                      uint32_t levelClearMask,
                                      std::string_view label) override;
     sk_sp<GrTexture> onCreateCompressedTexture(SkISize dimensions,
                                                const GrBackendFormat&,
-                                               SkBudgeted,
+                                               skgpu::Budgeted,
                                                GrMipmapped,
                                                GrProtected,
-                                               const void* data, size_t dataSize) override;
+                                               const void* data,
+                                               size_t dataSize) override;
 
     sk_sp<GrGpuBuffer> onCreateBuffer(size_t size, GrGpuBufferType, GrAccessPattern) override;
 
@@ -279,12 +292,12 @@ private:
     int getCompatibleStencilIndex(GrGLFormat format);
 
     GrBackendFormat getPreferredStencilFormat(const GrBackendFormat& format) override {
-        int idx = this->getCompatibleStencilIndex(format.asGLFormat());
+        int idx = this->getCompatibleStencilIndex(GrBackendFormats::AsGLFormat(format));
         if (idx < 0) {
             return {};
         }
-        return GrBackendFormat::MakeGL(GrGLFormatToEnum(this->glCaps().stencilFormats()[idx]),
-                                       GR_GL_TEXTURE_NONE);
+        return GrBackendFormats::MakeGL(GrGLFormatToEnum(this->glCaps().stencilFormats()[idx]),
+                                        GR_GL_TEXTURE_NONE);
     }
 
     void onFBOChanged();
@@ -299,12 +312,14 @@ private:
                            GrRenderable,
                            GrGLTextureParameters::SamplerOverriddenState*,
                            int mipLevelCount,
-                           GrProtected isProtected);
+                           GrProtected isProtected,
+                           std::string_view label);
 
     GrGLuint createCompressedTexture2D(SkISize dimensions,
-                                       SkImage::CompressionType compression,
+                                       SkTextureCompressionType compression,
                                        GrGLFormat,
                                        GrMipmapped,
+                                       GrProtected,
                                        GrGLTextureParameters::SamplerOverriddenState*);
 
     bool onReadPixels(GrSurface*,
@@ -321,6 +336,12 @@ private:
                        const GrMipLevel[],
                        int mipLevelCount,
                        bool prepForTexSampling) override;
+
+    bool onTransferFromBufferToBuffer(sk_sp<GrGpuBuffer> src,
+                                      size_t srcOffset,
+                                      sk_sp<GrGpuBuffer> dst,
+                                      size_t dstOffset,
+                                      size_t size) override;
 
     bool onTransferPixelsTo(GrTexture*,
                             SkIRect,
@@ -355,8 +376,9 @@ private:
 
     bool onRegenerateMipMapLevels(GrTexture*) override;
 
-    bool onCopySurface(GrSurface* dst, GrSurface* src, const SkIRect& srcRect,
-                       const SkIPoint& dstPoint) override;
+    bool onCopySurface(GrSurface* dst, const SkIRect& dstRect,
+                       GrSurface* src, const SkIRect& srcRect,
+                       GrSamplerState::Filter) override;
 
     // binds texture unit in GL
     void setTextureUnit(int unitIdx);
@@ -366,26 +388,27 @@ private:
     void addFinishedProc(GrGpuFinishedProc finishedProc,
                          GrGpuFinishedContext finishedContext) override;
 
-    GrOpsRenderPass* onGetOpsRenderPass(GrRenderTarget*,
-                                        bool useMultisampleFBO,
-                                        GrAttachment*,
-                                        GrSurfaceOrigin,
-                                        const SkIRect&,
-                                        const GrOpsRenderPass::LoadAndStoreInfo&,
-                                        const GrOpsRenderPass::StencilLoadAndStoreInfo&,
-                                        const SkTArray<GrSurfaceProxy*, true>& sampledProxies,
-                                        GrXferBarrierFlags renderPassXferBarriers) override;
+    GrOpsRenderPass* onGetOpsRenderPass(
+            GrRenderTarget*,
+            bool useMultisampleFBO,
+            GrAttachment*,
+            GrSurfaceOrigin,
+            const SkIRect&,
+            const GrOpsRenderPass::LoadAndStoreInfo&,
+            const GrOpsRenderPass::StencilLoadAndStoreInfo&,
+            const skia_private::TArray<GrSurfaceProxy*, true>& sampledProxies,
+            GrXferBarrierFlags renderPassXferBarriers) override;
 
     bool onSubmitToGpu(bool syncCpu) override;
 
     bool waitSync(GrGLsync, uint64_t timeout, bool flush);
 
     bool copySurfaceAsDraw(GrSurface* dst, bool drawToMultisampleFBO, GrSurface* src,
-                           const SkIRect& srcRect, const SkIPoint& dstPoint);
+                           const SkIRect& srcRect, const SkIRect& dstRect, GrSamplerState::Filter);
     void copySurfaceAsCopyTexSubImage(GrSurface* dst, GrSurface* src, const SkIRect& srcRect,
                                       const SkIPoint& dstPoint);
     bool copySurfaceAsBlitFramebuffer(GrSurface* dst, GrSurface* src, const SkIRect& srcRect,
-                                      const SkIPoint& dstPoint);
+                                      const SkIRect& dstRect, GrSamplerState::Filter);
 
     class ProgramCache : public GrThreadSafePipelineBuilder {
     public:
@@ -412,7 +435,7 @@ private:
 
         struct DescHash {
             uint32_t operator()(const GrProgramDesc& desc) const {
-                return SkOpts::hash_fn(desc.asKey(), desc.keyLength(), 0);
+                return SkChecksum::Hash32(desc.asKey(), desc.keyLength());
             }
         };
 
@@ -443,14 +466,7 @@ private:
     // and the binding for 'target' will change.
     void bindTextureToScratchUnit(GrGLenum target, GrGLint textureID);
 
-    // The passed bounds contains the render target's color values that will subsequently be
-    // written.
-    void flushRenderTarget(GrGLRenderTarget*, bool useMultisampleFBO, GrSurfaceOrigin,
-                           const SkIRect& bounds);
-    // This version has an implicit bounds of the entire render target.
     void flushRenderTarget(GrGLRenderTarget*, bool useMultisampleFBO);
-    // This version can be used when the render target's colors will not be written.
-    void flushRenderTargetNoColorWrites(GrGLRenderTarget*, bool useMultisampleFBO);
 
     void flushStencil(const GrStencilSettings&, GrSurfaceOrigin);
     void disableStencil();
@@ -498,7 +514,7 @@ private:
 
     // Helper for onCreateCompressedTexture. Compressed textures are read-only so we only use this
     // to populate a new texture. Returns false if we failed to create and upload the texture.
-    bool uploadCompressedTexData(SkImage::CompressionType compressionType,
+    bool uploadCompressedTexData(SkTextureCompressionType compressionType,
                                  GrGLFormat,
                                  SkISize dimensions,
                                  GrMipmapped,
@@ -682,7 +698,7 @@ private:
 
     auto* hwBufferState(GrGpuBufferType type) {
         unsigned typeAsUInt = static_cast<unsigned>(type);
-        SkASSERT(typeAsUInt < SK_ARRAY_COUNT(fHWBufferState));
+        SkASSERT(typeAsUInt < std::size(fHWBufferState));
         SkASSERT(type != GrGpuBufferType::kUniform);
         return &fHWBufferState[typeAsUInt];
     }
@@ -746,7 +762,7 @@ private:
         };
         TargetBinding fTargetBindings[3];
     };
-    SkAutoTArray<TextureUnitBindings> fHWTextureUnitBindings;
+    skia_private::AutoTArray<TextureUnitBindings> fHWTextureUnitBindings;
 
     GrGLfloat fHWClearColor[4];
 
@@ -785,6 +801,9 @@ private:
     std::unique_ptr<SamplerObjectCache> fSamplerObjectCache;
 
     std::unique_ptr<GrGLOpsRenderPass> fCachedOpsRenderPass;
+
+    std::unique_ptr<GrStagingBufferManager> fStagingBufferManager;
+
     GrFinishCallbacks fFinishCallbacks;
 
     // If we've called a command that requires us to call glFlush than this will be set to true

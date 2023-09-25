@@ -28,12 +28,12 @@ namespace skiagm {
 
 static void paint_rgn(SkCanvas* canvas, const SkAAClip& clip,
                       const SkPaint& paint) {
-    SkMask mask;
+    SkMaskBuilder mask;
     SkBitmap bm;
 
     clip.copyToMask(&mask);
 
-    SkAutoMaskFreeImage amfi(mask.fImage);
+    SkAutoMaskFreeImage amfi(mask.image());
 
     bm.installMaskPixels(mask);
 
@@ -169,7 +169,7 @@ protected:
         SkFont  font(ToolUtils::create_portable_typeface(), 24);
         int xOff = 0;
 
-        for (size_t op = 0; op < SK_ARRAY_COUNT(gOps); op++) {
+        for (size_t op = 0; op < std::size(gOps); op++) {
             canvas->drawString(gOps[op].fName, 75.0f, 50.0f, font, textPaint);
 
             if (kAAClip_GeomType == fGeomType) {

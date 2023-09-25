@@ -9,11 +9,13 @@
 
 #include "include/core/SkTypes.h"
 #include "include/private/SkSLDefines.h"
-#include "include/sksl/SkSLErrorReporter.h"
 #include "src/sksl/SkSLAnalysis.h"
 #include "src/sksl/SkSLConstantFolder.h"
 #include "src/sksl/SkSLContext.h"
+#include "src/sksl/SkSLErrorReporter.h"
+#include "src/sksl/SkSLOperator.h"
 #include "src/sksl/SkSLProgramSettings.h"
+#include "src/sksl/ir/SkSLBinaryExpression.h"
 #include "src/sksl/ir/SkSLConstructorArray.h"
 #include "src/sksl/ir/SkSLConstructorCompound.h"
 #include "src/sksl/ir/SkSLConstructorDiagonalMatrix.h"
@@ -21,6 +23,8 @@
 #include "src/sksl/ir/SkSLLiteral.h"
 #include "src/sksl/ir/SkSLType.h"
 #include "src/sksl/ir/SkSLVariableReference.h"
+
+#include <optional>
 
 namespace SkSL {
 
@@ -53,7 +57,7 @@ static std::unique_ptr<Expression> simplify_negation(const Context& context,
         }
         case Expression::Kind::kConstructorArray:
             // Convert `-array[N](literal, ...)` into `array[N](-literal, ...)`.
-            if (value->isCompileTimeConstant()) {
+            if (Analysis::IsCompileTimeConstant(*value)) {
                 const ConstructorArray& ctor = value->as<ConstructorArray>();
                 return ConstructorArray::Make(context, pos, ctor.type(),
                                               negate_operands(context, pos, ctor.arguments()));
@@ -62,7 +66,7 @@ static std::unique_ptr<Expression> simplify_negation(const Context& context,
 
         case Expression::Kind::kConstructorDiagonalMatrix:
             // Convert `-matrix(literal)` into `matrix(-literal)`.
-            if (value->isCompileTimeConstant()) {
+            if (Analysis::IsCompileTimeConstant(*value)) {
                 const ConstructorDiagonalMatrix& ctor = value->as<ConstructorDiagonalMatrix>();
                 if (std::unique_ptr<Expression> simplified = simplify_negation(context,
                                                                                pos,
@@ -75,7 +79,7 @@ static std::unique_ptr<Expression> simplify_negation(const Context& context,
 
         case Expression::Kind::kConstructorSplat:
             // Convert `-vector(literal)` into `vector(-literal)`.
-            if (value->isCompileTimeConstant()) {
+            if (Analysis::IsCompileTimeConstant(*value)) {
                 const ConstructorSplat& ctor = value->as<ConstructorSplat>();
                 if (std::unique_ptr<Expression> simplified = simplify_negation(context,
                                                                                pos,
@@ -87,7 +91,7 @@ static std::unique_ptr<Expression> simplify_negation(const Context& context,
 
         case Expression::Kind::kConstructorCompound:
             // Convert `-vecN(literal, ...)` into `vecN(-literal, ...)`.
-            if (value->isCompileTimeConstant()) {
+            if (Analysis::IsCompileTimeConstant(*value)) {
                 const ConstructorCompound& ctor = value->as<ConstructorCompound>();
                 return ConstructorCompound::Make(context, pos, ctor.type(),
                         negate_operands(context, pos, ctor.arguments()));
@@ -104,7 +108,7 @@ static ExpressionArray negate_operands(const Context& context,
                                        Position pos,
                                        const ExpressionArray& array) {
     ExpressionArray replacement;
-    replacement.reserve_back(array.size());
+    replacement.reserve_exact(array.size());
     for (const std::unique_ptr<Expression>& expr : array) {
         // The logic below is very similar to `negate_operand`, but with different ownership rules.
         if (std::unique_ptr<Expression> simplified = simplify_negation(context, pos, *expr)) {
@@ -146,6 +150,25 @@ static std::unique_ptr<Expression> logical_not_operand(const Context& context,
             if (prefix.getOperator().kind() == Operator::Kind::LOGICALNOT) {
                 prefix.operand()->fPosition = pos;
                 return std::move(prefix.operand());
+            }
+            break;
+        }
+        case Expression::Kind::kBinary: {
+            BinaryExpression& binary = operand->as<BinaryExpression>();
+            std::optional<Operator> replacement;
+            switch (binary.getOperator().kind()) {
+                case OperatorKind::EQEQ: replacement = OperatorKind::NEQ;  break;
+                case OperatorKind::NEQ:  replacement = OperatorKind::EQEQ; break;
+                case OperatorKind::LT:   replacement = OperatorKind::GTEQ; break;
+                case OperatorKind::LTEQ: replacement = OperatorKind::GT;   break;
+                case OperatorKind::GT:   replacement = OperatorKind::LTEQ; break;
+                case OperatorKind::GTEQ: replacement = OperatorKind::LT;   break;
+                default:                                                   break;
+            }
+            if (replacement.has_value()) {
+                return BinaryExpression::Make(context, pos, std::move(binary.left()),
+                                              *replacement, std::move(binary.right()),
+                                              &binary.type());
             }
             break;
         }
@@ -268,6 +291,14 @@ std::unique_ptr<Expression> PrefixExpression::Make(const Context& context, Posit
     }
 
     return std::make_unique<PrefixExpression>(pos, op, std::move(base));
+}
+
+std::string PrefixExpression::description(OperatorPrecedence parentPrecedence) const {
+    bool needsParens = (OperatorPrecedence::kPrefix >= parentPrecedence);
+    return std::string(needsParens ? "(" : "") +
+           std::string(this->getOperator().tightOperatorName()) +
+           this->operand()->description(OperatorPrecedence::kPrefix) +
+           std::string(needsParens ? ")" : "");
 }
 
 }  // namespace SkSL

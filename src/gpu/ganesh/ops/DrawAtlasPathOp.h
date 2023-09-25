@@ -12,7 +12,11 @@
 #include "src/gpu/ganesh/ops/AtlasInstancedHelper.h"
 #include "src/gpu/ganesh/ops/GrDrawOp.h"
 
-namespace skgpu::v1 {
+class GrBuffer;
+class GrGpuBuffer;
+class GrProgramInfo;
+
+namespace skgpu::ganesh {
 
 // Fills a rectangle of pixels with a clip against coverage values from an atlas.
 class DrawAtlasPathOp final : public GrDrawOp {
@@ -91,6 +95,6 @@ private:
     GrProcessorSet fProcessors;
 };
 
-} // namespace skgpu::v1
+}  // namespace skgpu::ganesh
 
 #endif // DrawAtlasPathOp_DEFINED

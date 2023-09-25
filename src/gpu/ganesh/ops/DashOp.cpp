@@ -19,6 +19,7 @@
 #include "src/gpu/ganesh/GrMemoryPool.h"
 #include "src/gpu/ganesh/GrOpFlushState.h"
 #include "src/gpu/ganesh/GrProcessor.h"
+#include "src/gpu/ganesh/GrProcessorUnitTest.h"
 #include "src/gpu/ganesh/GrProgramInfo.h"
 #include "src/gpu/ganesh/GrRecordingContextPriv.h"
 #include "src/gpu/ganesh/GrStyle.h"
@@ -32,13 +33,15 @@
 #include "src/gpu/ganesh/ops/GrMeshDrawOp.h"
 #include "src/gpu/ganesh/ops/GrSimpleMeshDrawOpHelper.h"
 
-using AAMode = skgpu::v1::DashOp::AAMode;
+using namespace skia_private;
+
+using AAMode = skgpu::ganesh::DashOp::AAMode;
 
 #if GR_TEST_UTILS
-static const int kAAModeCnt = static_cast<int>(skgpu::v1::DashOp::AAMode::kCoverageWithMSAA) + 1;
+constexpr int kAAModeCnt = static_cast<int>(skgpu::ganesh::DashOp::AAMode::kCoverageWithMSAA) + 1;
 #endif
 
-namespace skgpu::v1::DashOp {
+namespace skgpu::ganesh::DashOp {
 
 namespace {
 
@@ -329,7 +332,7 @@ private:
     }
 
     void onPrepareDraws(GrMeshDrawTarget* target) override {
-        int instanceCount = fLines.count();
+        int instanceCount = fLines.size();
         SkPaint::Cap cap = this->cap();
         DashCap capType = (SkPaint::kRound_Cap == cap) ? kRound_DashCap : kNonRound_DashCap;
 
@@ -348,8 +351,8 @@ private:
         // rectangles.  We preserve all of this work in the rects / draws arrays below.  Then we
         // iterate again over these decomposed dashes to generate vertices
         static const int kNumStackDashes = 128;
-        SkSTArray<kNumStackDashes, SkRect, true> rects;
-        SkSTArray<kNumStackDashes, DashDraw, true> draws;
+        STArray<kNumStackDashes, SkRect, true> rects;
+        STArray<kNumStackDashes, DashDraw, true> draws;
 
         int totalRectCount = 0;
         int rectOffset = 0;
@@ -654,7 +657,7 @@ private:
             return CombineResult::kCannotCombine;
         }
 
-        fLines.push_back_n(that->fLines.count(), that->fLines.begin());
+        fLines.push_back_n(that->fLines.size(), that->fLines.begin());
         return CombineResult::kMerged;
     }
 
@@ -682,7 +685,7 @@ private:
     bool fullDash() const { return fFullDash; }
     SkPaint::Cap cap() const { return fCap; }
 
-    SkSTArray<1, LineData, true> fLines;
+    STArray<1, LineData, true> fLines;
     SkPMColor4f fColor;
     bool fUsesLocalCoords : 1;
     bool fFullDash : 1;
@@ -756,9 +759,6 @@ private:
 
     SkMatrix    fLocalMatrix         = SkMatrix::InvalidMatrix();
     SkPMColor4f fColor               = SK_PMColor4fILLEGAL;
-    float       fPrevRadius          = SK_FloatNaN;
-    float       fPrevCenterX         = SK_FloatNaN;
-    float       fPrevIntervalLength  = SK_FloatNaN;
 
     UniformHandle fParamUniform;
     UniformHandle fColorUniform;
@@ -871,7 +871,7 @@ DashingCircleEffect::DashingCircleEffect(const SkPMColor4f& color,
     this->setVertexAttributesWithImplicitOffsets(&fInPosition, 3);
 }
 
-GR_DEFINE_GEOMETRY_PROCESSOR_TEST(DashingCircleEffect);
+GR_DEFINE_GEOMETRY_PROCESSOR_TEST(DashingCircleEffect)
 
 #if GR_TEST_UTILS
 GrGeometryProcessor* DashingCircleEffect::TestCreate(GrProcessorTestData* d) {
@@ -1085,7 +1085,7 @@ DashingLineEffect::DashingLineEffect(const SkPMColor4f& color,
     this->setVertexAttributesWithImplicitOffsets(&fInPosition, 3);
 }
 
-GR_DEFINE_GEOMETRY_PROCESSOR_TEST(DashingLineEffect);
+GR_DEFINE_GEOMETRY_PROCESSOR_TEST(DashingLineEffect)
 
 #if GR_TEST_UTILS
 GrGeometryProcessor* DashingLineEffect::TestCreate(GrProcessorTestData* d) {
@@ -1224,7 +1224,7 @@ bool CanDrawDashLine(const SkPoint pts[2], const GrStyle& style, const SkMatrix&
     return true;
 }
 
-} // namespace skgpu::v1::DashOp
+} // namespace skgpu::ganesh::DashOp
 
 #if GR_TEST_UTILS
 
@@ -1300,8 +1300,8 @@ GR_DRAW_OP_TEST_DEFINE(DashOpImpl) {
 
     GrStyle style(p);
 
-    return skgpu::v1::DashOp::MakeDashLineOp(context, std::move(paint), viewMatrix, pts, aaMode,
-                                             style, GrGetRandomStencil(random, context));
+    return skgpu::ganesh::DashOp::MakeDashLineOp(context, std::move(paint), viewMatrix, pts, aaMode,
+                                                 style, GrGetRandomStencil(random, context));
 }
 
 #endif // GR_TEST_UTILS

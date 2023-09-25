@@ -22,13 +22,18 @@ static DEFINE_double(duration, 1.0,
 static DEFINE_double(frame, 1.0,
                      "A double value in [0, 1] that specifies the point in animation to draw.");
 
+#include "include/encode/SkPngEncoder.h"
 #include "include/gpu/GrBackendSurface.h"
+#include "include/gpu/ganesh/SkSurfaceGanesh.h"
 #include "src/gpu/ganesh/GrDirectContextPriv.h"
 #include "src/gpu/ganesh/GrGpu.h"
 #include "src/gpu/ganesh/GrRenderTarget.h"
 #include "src/gpu/ganesh/GrResourceProvider.h"
+#include "src/gpu/ganesh/GrTexture.h"
 #include "tools/gpu/ManagedBackendTexture.h"
 #include "tools/gpu/gl/GLTestContext.h"
+
+using namespace skia_private;
 
 // Globals externed in fiddle_main.h
 GrBackendTexture backEndTexture;
@@ -108,9 +113,9 @@ static void dump_output(const sk_sp<SkData>& data,
     }
 }
 
-static sk_sp<SkData> encode_snapshot(const sk_sp<SkSurface>& surface) {
+static sk_sp<SkData> encode_snapshot(GrDirectContext* ctx, const sk_sp<SkSurface>& surface) {
     sk_sp<SkImage> img(surface->makeImageSnapshot());
-    return img ? img->encodeToData() : nullptr;
+    return SkPngEncoder::Encode(ctx, img.get(), {});
 }
 
 static SkCanvas* prepare_canvas(SkCanvas * canvas) {
@@ -170,15 +175,15 @@ static bool setup_backend_objects(GrDirectContext* dContext,
         auto resourceProvider = dContext->priv().resourceProvider();
 
         SkISize offscreenDims = {options.fOffScreenWidth, options.fOffScreenHeight};
-        SkAutoTMalloc<uint32_t> data(offscreenDims.area());
-        sk_memset32(data.get(), 0, offscreenDims.area());
+        AutoTMalloc<uint32_t> data(offscreenDims.area());
+        SkOpts::memset32(data.get(), 0, offscreenDims.area());
 
         // This backend object should be renderable but not textureable. Given the limitations
         // of how we're creating it though it will wind up being secretly textureable.
         // We use this fact to initialize it with data but don't allow mipmaps
         GrMipLevel level0 = {data.get(), offscreenDims.width()*sizeof(uint32_t), nullptr};
 
-        constexpr int kSampleCnt = 0;
+        constexpr int kSampleCnt = 1;
         sk_sp<GrTexture> tmp =
                 resourceProvider->createTexture(offscreenDims,
                                                 renderableFormat,
@@ -186,7 +191,7 @@ static bool setup_backend_objects(GrDirectContext* dContext,
                                                 GrColorType::kRGBA_8888,
                                                 GrRenderable::kYes,
                                                 kSampleCnt,
-                                                SkBudgeted::kNo,
+                                                skgpu::Budgeted::kNo,
                                                 GrMipmapped::kNo,
                                                 GrProtected::kNo,
                                                 &level0,
@@ -245,7 +250,7 @@ int main(int argc, char** argv) {
             perror(options.source);
             return 1;
         } else {
-            image = SkImage::MakeFromEncoded(std::move(data));
+            image = SkImages::DeferredFromEncodedData(std::move(data));
             if (!image) {
                 perror("Unable to decode the source image.");
                 return 1;
@@ -266,10 +271,10 @@ int main(int argc, char** argv) {
     SkImageInfo info = SkImageInfo::Make(options.size.width(), options.size.height(), colorType,
                                          kPremul_SkAlphaType, colorSpace);
     if (options.raster) {
-        auto rasterSurface = SkSurface::MakeRaster(info);
+        auto rasterSurface = SkSurfaces::Raster(info);
         srand(0);
         draw(prepare_canvas(rasterSurface->getCanvas()));
-        rasterData = encode_snapshot(rasterSurface);
+        rasterData = encode_snapshot(nullptr, rasterSurface);
     }
 #ifdef SK_GL
     if (options.gpu) {
@@ -283,14 +288,14 @@ int main(int argc, char** argv) {
                 exit(1);
             }
 
-            auto surface = SkSurface::MakeRenderTarget(direct.get(), SkBudgeted::kNo, info);
+            auto surface = SkSurfaces::RenderTarget(direct.get(), skgpu::Budgeted::kNo, info);
             if (!surface) {
                 fputs("Unable to get render surface.\n", stderr);
                 exit(1);
             }
             srand(0);
             draw(prepare_canvas(surface->getCanvas()));
-            gpuData = encode_snapshot(surface);
+            gpuData = encode_snapshot(direct.get(), surface);
         }
     }
 #endif

@@ -5,7 +5,11 @@
  * found in the LICENSE file.
  */
 
+#include "modules/skottie/src/SkottieJson.h"
+
 #include "modules/skottie/utils/SkottieUtils.h"
+
+#include "include/core/SkImage.h"
 
 namespace skottie_utils {
 

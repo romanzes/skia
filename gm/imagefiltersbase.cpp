@@ -45,7 +45,7 @@ public:
 protected:
     FailImageFilter() : INHERITED(nullptr, 0, nullptr) {}
 
-    sk_sp<SkSpecialImage> onFilterImage(const Context&, SkIPoint* offset) const override {
+    sk_sp<SkSpecialImage> onFilterImage(const skif::Context&, SkIPoint* offset) const override {
         return nullptr;
     }
 
@@ -68,7 +68,7 @@ public:
 
     SK_FLATTENABLE_HOOKS(IdentityImageFilter)
 protected:
-    sk_sp<SkSpecialImage> onFilterImage(const Context& ctx, SkIPoint* offset) const override {
+    sk_sp<SkSpecialImage> onFilterImage(const skif::Context& ctx, SkIPoint* offset) const override {
         offset->set(0, 0);
         return sk_ref_sp<SkSpecialImage>(ctx.sourceImage());
     }
@@ -245,9 +245,9 @@ protected:
         SkScalar DY = r.height() + MARGIN;
 
         canvas->translate(MARGIN, MARGIN);
-        for (size_t i = 0; i < SK_ARRAY_COUNT(drawProc); ++i) {
+        for (size_t i = 0; i < std::size(drawProc); ++i) {
             canvas->save();
-            for (size_t j = 0; j < SK_ARRAY_COUNT(filters); ++j) {
+            for (size_t j = 0; j < std::size(filters); ++j) {
                 drawProc[i](canvas, fAtlas.get(), r, filters[j]);
 
                 draw_frame(canvas, r);

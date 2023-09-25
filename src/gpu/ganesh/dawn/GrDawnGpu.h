@@ -10,8 +10,9 @@
 
 #include "src/gpu/ganesh/GrGpu.h"
 
-#include "include/private/SkTHash.h"
+#include "src/core/SkChecksum.h"
 #include "src/core/SkLRUCache.h"
+#include "src/core/SkTHash.h"
 #include "src/gpu/ganesh/GrFinishCallbacks.h"
 #include "src/gpu/ganesh/GrProgramDesc.h"
 #include "src/gpu/ganesh/GrStagingBufferManager.h"
@@ -78,11 +79,11 @@ public:
 
     void submit(GrOpsRenderPass*) override;
 
-    GrFence SK_WARN_UNUSED_RESULT insertFence() override;
+    [[nodiscard]] GrFence insertFence() override;
     bool waitFence(GrFence) override;
     void deleteFence(GrFence) override;
 
-    std::unique_ptr<GrSemaphore> SK_WARN_UNUSED_RESULT makeSemaphore(bool isOwned = true) override;
+    [[nodiscard]] std::unique_ptr<GrSemaphore> makeSemaphore(bool isOwned = true) override;
     std::unique_ptr<GrSemaphore> wrapBackendSemaphore(const GrBackendSemaphore&,
                                                       GrSemaphoreWrapType,
                                                       GrWrapOwnership) override;
@@ -105,7 +106,7 @@ public:
     std::string SkSLToSPIRV(const char* shaderString,
                             SkSL::ProgramKind,
                             uint32_t rtFlipOffset,
-                            SkSL::Program::Inputs*);
+                            SkSL::Program::Interface*);
     wgpu::ShaderModule createShaderModule(const std::string& spirvSource);
 
 private:
@@ -115,7 +116,7 @@ private:
                                      const GrBackendFormat&,
                                      GrRenderable,
                                      int renderTargetSampleCnt,
-                                     SkBudgeted,
+                                     skgpu::Budgeted,
                                      GrProtected,
                                      int mipLevelCount,
                                      uint32_t levelClearMask,
@@ -123,10 +124,11 @@ private:
 
     sk_sp<GrTexture> onCreateCompressedTexture(SkISize dimensions,
                                                const GrBackendFormat&,
-                                               SkBudgeted,
+                                               skgpu::Budgeted,
                                                GrMipmapped,
                                                GrProtected,
-                                               const void* data, size_t dataSize) override;
+                                               const void* data,
+                                               size_t dataSize) override;
 
     sk_sp<GrTexture> onWrapBackendTexture(const GrBackendTexture&,
                                           GrWrapOwnership,
@@ -145,7 +147,8 @@ private:
                                             const GrBackendFormat&,
                                             GrRenderable,
                                             GrMipmapped,
-                                            GrProtected) override;
+                                            GrProtected,
+                                            std::string_view label) override;
 
     bool onClearBackendTexture(const GrBackendTexture&,
                                sk_sp<skgpu::RefCntedCallback> finishedCallback,
@@ -178,6 +181,12 @@ private:
                        int mipLevelCount,
                        bool) override;
 
+    bool onTransferFromBufferToBuffer(sk_sp<GrGpuBuffer> src,
+                                      size_t srcOffset,
+                                      sk_sp<GrGpuBuffer> dst,
+                                      size_t dstOffset,
+                                      size_t size) override;
+
     bool onTransferPixelsTo(GrTexture*,
                             SkIRect,
                             GrColorType textureColorType,
@@ -197,21 +206,23 @@ private:
 
     bool onRegenerateMipMapLevels(GrTexture*) override;
 
-    bool onCopySurface(GrSurface* dst, GrSurface* src,
-                       const SkIRect& srcRect, const SkIPoint& dstPoint) override;
+    bool onCopySurface(GrSurface* dst, const SkIRect& dstRect,
+                       GrSurface* src, const SkIRect& srcRect,
+                       GrSamplerState::Filter) override;
 
     void addFinishedProc(GrGpuFinishedProc finishedProc,
                          GrGpuFinishedContext finishedContext) override;
 
-    GrOpsRenderPass* onGetOpsRenderPass(GrRenderTarget*,
-                                        bool useMSAASurface,
-                                        GrAttachment*,
-                                        GrSurfaceOrigin,
-                                        const SkIRect&,
-                                        const GrOpsRenderPass::LoadAndStoreInfo&,
-                                        const GrOpsRenderPass::StencilLoadAndStoreInfo&,
-                                        const SkTArray<GrSurfaceProxy*, true>& sampledProxies,
-                                        GrXferBarrierFlags renderPassXferBarriers) override;
+    GrOpsRenderPass* onGetOpsRenderPass(
+            GrRenderTarget*,
+            bool useMSAASurface,
+            GrAttachment*,
+            GrSurfaceOrigin,
+            const SkIRect&,
+            const GrOpsRenderPass::LoadAndStoreInfo&,
+            const GrOpsRenderPass::StencilLoadAndStoreInfo&,
+            const skia_private::TArray<GrSurfaceProxy*, true>& sampledProxies,
+            GrXferBarrierFlags renderPassXferBarriers) override;
 
     bool onSubmitToGpu(bool syncCpu) override;
     void onSubmittedWorkDone(WGPUQueueWorkDoneStatus status);
@@ -267,11 +278,11 @@ private:
     // fence because Dawn currently does not support unregistering a callback to prevent a potential
     // use-after-free.
     bool fSubmittedWorkDoneCallbackPending = false;
-    SkTHashSet<GrDawnAsyncWait*> fQueueFences;
+    skia_private::THashSet<GrDawnAsyncWait*> fQueueFences;
 
     struct ProgramDescHash {
         uint32_t operator()(const GrProgramDesc& desc) const {
-            return SkOpts::hash_fn(desc.asKey(), desc.keyLength(), 0);
+            return SkChecksum::Hash32(desc.asKey(), desc.keyLength());
         }
     };
 

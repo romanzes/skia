@@ -8,13 +8,13 @@
 #ifndef GrResourceAllocator_DEFINED
 #define GrResourceAllocator_DEFINED
 
-#include "include/private/SkTHash.h"
+#include "src/core/SkTHash.h"
 
 #include "src/gpu/ganesh/GrHashMapWithCache.h"
 #include "src/gpu/ganesh/GrSurface.h"
 #include "src/gpu/ganesh/GrSurfaceProxy.h"
 
-#include "src/core/SkArenaAlloc.h"
+#include "src/base/SkArenaAlloc.h"
 #include "src/core/SkTMultiMap.h"
 
 class GrDirectContext;
@@ -143,12 +143,13 @@ private:
     };
     typedef SkTMultiMap<Register, skgpu::ScratchKey, FreePoolTraits> FreePoolMultiMap;
 
-    typedef SkTHashMap<uint32_t, Interval*, GrCheapHash>        IntvlHash;
+    typedef skia_private::THashMap<uint32_t, Interval*, GrCheapHash> IntvlHash;
 
     struct UniqueKeyHash {
         uint32_t operator()(const skgpu::UniqueKey& key) const { return key.hash(); }
     };
-    typedef SkTHashMap<skgpu::UniqueKey, Register*, UniqueKeyHash> UniqueKeyRegisterHash;
+    typedef skia_private::THashMap<skgpu::UniqueKey, Register*, UniqueKeyHash>
+            UniqueKeyRegisterHash;
 
     // Each proxy – with some exceptions – is assigned a register. After all assignments are made,
     // another pass is performed to instantiate and assign actual surfaces to the proxies. Right

@@ -9,22 +9,25 @@
 #ifndef SkNWayCanvas_DEFINED
 #define SkNWayCanvas_DEFINED
 
-#include "include/core/SkBlendMode.h"
-#include "include/core/SkCanvas.h"
 #include "include/core/SkCanvasVirtualEnforcer.h"
-#include "include/core/SkClipOp.h"
 #include "include/core/SkColor.h"
 #include "include/core/SkM44.h"
 #include "include/core/SkRefCnt.h"
 #include "include/core/SkSamplingOptions.h"
 #include "include/core/SkScalar.h"
 #include "include/core/SkTypes.h"
-#include "include/private/SkTDArray.h"
+#include "include/private/base/SkTDArray.h"
 #include "include/utils/SkNoDrawCanvas.h"
 
+#include <cstddef>
+
+namespace sktext {
+class GlyphRunList;
+}
+
+class SkCanvas;
 class SkData;
 class SkDrawable;
-class SkGlyphRunList;
 class SkImage;
 class SkMatrix;
 class SkPaint;
@@ -35,16 +38,14 @@ class SkRegion;
 class SkShader;
 class SkTextBlob;
 class SkVertices;
+enum class SkBlendMode;
+enum class SkClipOp;
 struct SkDrawShadowRec;
 struct SkPoint;
 struct SkRSXform;
 struct SkRect;
 
-#if SK_SUPPORT_GPU
-namespace sktext::gpu {
-class Slug;
-}
-#endif
+namespace sktext::gpu { class Slug; }
 
 class SK_API SkNWayCanvas : public SkCanvasVirtualEnforcer<SkNoDrawCanvas> {
 public:
@@ -69,12 +70,10 @@ protected:
     void didTranslate(SkScalar, SkScalar) override;
 
     void onDrawDRRect(const SkRRect&, const SkRRect&, const SkPaint&) override;
-    void onDrawGlyphRunList(const SkGlyphRunList&, const SkPaint&) override;
+    void onDrawGlyphRunList(const sktext::GlyphRunList&, const SkPaint&) override;
     void onDrawTextBlob(const SkTextBlob* blob, SkScalar x, SkScalar y,
                         const SkPaint& paint) override;
-#if SK_SUPPORT_GPU
     void onDrawSlug(const sktext::gpu::Slug* slug) override;
-#endif
     void onDrawPatch(const SkPoint cubics[12], const SkColor colors[4],
                      const SkPoint texCoords[4], SkBlendMode, const SkPaint& paint) override;
 
@@ -115,11 +114,7 @@ protected:
                           SkBlendMode) override;
     void onDrawEdgeAAImageSet2(const ImageSetEntry[], int count, const SkPoint[], const SkMatrix[],
                                const SkSamplingOptions&,const SkPaint*, SrcRectConstraint) override;
-
-    void onFlush() override;
-
     class Iter;
-
 private:
     using INHERITED = SkCanvasVirtualEnforcer<SkNoDrawCanvas>;
 };

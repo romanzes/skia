@@ -9,18 +9,21 @@
 #ifndef GrGLCaps_DEFINED
 #define GrGLCaps_DEFINED
 
-#include <functional>
-#include "include/private/SkChecksum.h"
-#include "include/private/SkTArray.h"
-#include "include/private/SkTHash.h"
+#include "include/gpu/ganesh/gl/GrGLBackendSurface.h"
+#include "include/private/base/SkTArray.h"
 #include "include/private/gpu/ganesh/GrGLTypesPriv.h"
+#include "src/core/SkChecksum.h"
+#include "src/core/SkTHash.h"
 #include "src/gpu/Swizzle.h"
 #include "src/gpu/ganesh/GrCaps.h"
 #include "src/gpu/ganesh/gl/GrGLAttachment.h"
 #include "src/gpu/ganesh/gl/GrGLUtil.h"
 
+#include <functional>
+
 class GrGLContextInfo;
 class GrGLRenderTarget;
+enum class SkTextureCompressionType;
 
 /**
  * Stores some capabilities of a GL context. Most are determined by the GL
@@ -60,8 +63,6 @@ public:
          * GL_MAX_SAMPLES value.
          */
         kES_EXT_MsToTexture_MSFBOType,
-
-        kLast_MSFBOType = kES_EXT_MsToTexture_MSFBOType
     };
 
     enum BlitFramebufferFlags {
@@ -76,19 +77,21 @@ public:
 
     enum InvalidateFBType {
         kNone_InvalidateFBType,
-        kDiscard_InvalidateFBType,       //<! glDiscardFramebuffer()
-        kInvalidate_InvalidateFBType,    //<! glInvalidateFramebuffer()
+        kDiscard_InvalidateFBType,     //<! glDiscardFramebuffer()
+        kInvalidate_InvalidateFBType,  //<! glInvalidateFramebuffer()
+    };
 
-        kLast_InvalidateFBType = kInvalidate_InvalidateFBType
+    enum class InvalidateBufferType {
+        kNone,
+        kNullData,   // Call glBufferData with a null data pointer.
+        kInvalidate  // glInvalidateBufferData
     };
 
     enum MapBufferType {
         kNone_MapBufferType,
-        kMapBuffer_MapBufferType,         // glMapBuffer()
-        kMapBufferRange_MapBufferType,    // glMapBufferRange()
-        kChromium_MapBufferType,          // GL_CHROMIUM_map_sub
-
-        kLast_MapBufferType = kChromium_MapBufferType,
+        kMapBuffer_MapBufferType,       // glMapBuffer()
+        kMapBufferRange_MapBufferType,  // glMapBufferRange()
+        kChromium_MapBufferType,        // GL_CHROMIUM_map_sub
     };
 
     enum class TransferBufferType {
@@ -109,6 +112,12 @@ public:
         kMultiDrawIndirect,  // ARB_multi_draw_indirect, EXT_multi_draw_indirect, or GL 4.3 core.
         kANGLEOrWebGL  // ANGLE_base_vertex_base_instance or
                        // WEBGL_draw_instanced_base_vertex_base_instance
+    };
+
+    enum class RegenerateMipmapType {
+        kBaseLevel,
+        kBasePlusMaxLevel,
+        kBasePlusSync
     };
 
     /**
@@ -132,12 +141,13 @@ public:
 
     int getRenderTargetSampleCount(int requestedCount,
                                    const GrBackendFormat& format) const override {
-        return this->getRenderTargetSampleCount(requestedCount, format.asGLFormat());
+        return this->getRenderTargetSampleCount(requestedCount,
+                                                GrBackendFormats::AsGLFormat(format));
     }
     int getRenderTargetSampleCount(int requestedCount, GrGLFormat) const;
 
     int maxRenderTargetSampleCount(const GrBackendFormat& format) const override {
-        return this->maxRenderTargetSampleCount(format.asGLFormat());
+        return this->maxRenderTargetSampleCount(GrBackendFormats::AsGLFormat(format));
     }
     int maxRenderTargetSampleCount(GrGLFormat) const;
 
@@ -194,7 +204,7 @@ public:
     * to be supported by the driver but are legal GLenum names given the GL
     * version and extensions supported.
     */
-    const SkTArray<GrGLFormat, true>& stencilFormats() const {
+    const skia_private::TArray<GrGLFormat, true>& stencilFormats() const {
         return fStencilFormats;
     }
 
@@ -308,6 +318,9 @@ public:
     /// How are multi draws implemented (if at all)?
     MultiDrawType multiDrawType() const { return fMultiDrawType; }
 
+    /// How is restricting sampled miplevels in onRegenerateMipmapLevels implemented?
+    RegenerateMipmapType regenerateMipmapType() const { return fRegenerateMipmapType; }
+
     /// The maximum number of fragment uniform vectors (GLES has min. 16).
     int maxFragmentUniformVectors() const { return fMaxFragmentUniformVectors; }
 
@@ -361,7 +374,7 @@ public:
 
     void onDumpJSON(SkJSONWriter*) const override;
 
-    bool useBufferDataNullHint() const { return fUseBufferDataNullHint; }
+    InvalidateBufferType invalidateBufferType() const { return fInvalidateBufferType; }
 
     // Certain Intel GPUs on Mac fail to clear if the glClearColor is made up of only 1s and 0s.
     bool clearToBoundaryValuesIsBroken() const { return fClearToBoundaryValuesIsBroken; }
@@ -425,6 +438,11 @@ public:
         return fRebindColorAttachmentAfterCheckFramebufferStatus;
     }
 
+    // During writePixels, call glFlush() before issuing glTexSubImage2D().
+    bool flushBeforeWritePixels() const {
+        return fFlushBeforeWritePixels;
+    }
+
     // Returns the observed maximum number of instances the driver can handle in a single draw call
     // without crashing, or 'pendingInstanceCount' if this workaround is not necessary.
     // NOTE: the return value may be larger than pendingInstanceCount.
@@ -442,8 +460,8 @@ public:
                        GrGLFormat srcFormat, int srcSampleCnt,
                        const GrTextureType* srcTypeIfTexture,
                        const SkRect& srcBounds, bool srcBoundsExact,
-                       const SkIRect& srcRect, const SkIPoint& dstPoint) const;
-    bool canCopyAsDraw(GrGLFormat dstFormat, bool srcIsTexturable) const;
+                       const SkIRect& srcRect, const SkIRect& dstRect) const;
+    bool canCopyAsDraw(GrGLFormat dstFormat, bool srcIsTexturable, bool scalingCopy) const;
 
     DstCopyRestrictions getDstCopyRestrictions(const GrRenderTargetProxy* src,
                                                GrColorType) const override;
@@ -470,14 +488,17 @@ public:
     /* Is there support for enabling/disabling sRGB writes for sRGB-capable color buffers? */
     bool srgbWriteControl() const { return fSRGBWriteControl; }
 
-    /** Skip checks for GL errors, shader compilation success, program link success. */
+    /**
+     * Skip checks for GL errors and framebuffer completeness. Note that this does not skip
+     *  checking shader compilation and program linking status.
+     */
     bool skipErrorChecks() const { return fSkipErrorChecks; }
 
     bool supportsProtected() const { return fSupportsProtected; }
 
     bool clientCanDisableMultisample() const { return fClientCanDisableMultisample; }
 
-    GrBackendFormat getBackendFormatFromCompressionType(SkImage::CompressionType) const override;
+    GrBackendFormat getBackendFormatFromCompressionType(SkTextureCompressionType) const override;
 
     skgpu::Swizzle getWriteSwizzle(const GrBackendFormat&, GrColorType) const override;
 
@@ -490,7 +511,7 @@ public:
 #if GR_TEST_UTILS
     GrGLStandard standard() const { return fStandard; }
 
-    std::vector<TestFormatColorTypeCombination> getTestingCombinations() const override;
+    std::vector<GrTest::TestFormatColorTypeCombination> getTestingCombinations() const override;
 #endif
 
 private:
@@ -510,7 +531,7 @@ private:
         bool fDisableRGBA16FTexStorageForCrBug1008003 = false;
         bool fDisableBGRATextureStorageForIntelWindowsES = false;
         bool fDisableLuminance16F = false;
-        bool fDontDisableTexStorageOnAndroid = false;
+        bool fDisableTexStorage = false;
         bool fDisallowDirectRG8ReadPixels = false;
         bool fDisallowBGRA8ReadPixels = false;
         bool fDisallowR8ForPowerVRSGX54x = false;
@@ -535,8 +556,8 @@ private:
     void initFormatTable(const GrGLContextInfo&, const GrGLInterface*, const FormatWorkarounds&);
     void setupSampleCounts(const GrGLContextInfo&, const GrGLInterface*);
     bool onSurfaceSupportsWritePixels(const GrSurface*) const override;
-    bool onCanCopySurface(const GrSurfaceProxy* dst, const GrSurfaceProxy* src,
-                          const SkIRect& srcRect, const SkIPoint& dstPoint) const override;
+    bool onCanCopySurface(const GrSurfaceProxy* dst, const SkIRect& dstRect,
+                          const GrSurfaceProxy* src, const SkIRect& srcRect) const override;
     GrBackendFormat onGetDefaultBackendFormat(GrColorType) const override;
     bool onAreColorTypeAndFormatCompatible(GrColorType, const GrBackendFormat&) const override;
 
@@ -551,18 +572,20 @@ private:
 
     GrGLStandard fStandard = kNone_GrGLStandard;
 
-    SkTArray<GrGLFormat, true> fStencilFormats;
-    SkTArray<GrGLenum, true> fProgramBinaryFormats;
+    skia_private::TArray<GrGLFormat, true> fStencilFormats;
+    skia_private::TArray<GrGLenum, true> fProgramBinaryFormats;
 
     int fMaxFragmentUniformVectors = 0;
     float fMaxTextureMaxAnisotropy = 1.f;
 
-    MSFBOType           fMSFBOType          = kNone_MSFBOType;
-    InvalidateFBType    fInvalidateFBType   = kNone_InvalidateFBType;
-    MapBufferType       fMapBufferType      = kNone_MapBufferType;
-    TransferBufferType  fTransferBufferType = TransferBufferType::kNone;
-    FenceType           fFenceType          = FenceType::kNone;
-    MultiDrawType       fMultiDrawType      = MultiDrawType::kNone;
+    MSFBOType            fMSFBOType            = kNone_MSFBOType;
+    InvalidateFBType     fInvalidateFBType     = kNone_InvalidateFBType;
+    InvalidateBufferType fInvalidateBufferType = InvalidateBufferType::kNone;
+    MapBufferType        fMapBufferType        = kNone_MapBufferType;
+    TransferBufferType   fTransferBufferType   = TransferBufferType::kNone;
+    FenceType            fFenceType            = FenceType::kNone;
+    MultiDrawType        fMultiDrawType        = MultiDrawType::kNone;
+    RegenerateMipmapType fRegenerateMipmapType = RegenerateMipmapType::kBaseLevel;
 
     bool fPackFlipYSupport : 1;
     bool fTextureUsageSupport : 1;
@@ -578,7 +601,6 @@ private:
     bool fRectangleTextureSupport : 1;
     bool fMipmapLevelControlSupport : 1;
     bool fMipmapLodControlSupport : 1;
-    bool fUseBufferDataNullHint : 1;
     bool fClearTextureSupport : 1;
     bool fProgramBinarySupport : 1;
     bool fProgramParameterSupport : 1;
@@ -607,6 +629,8 @@ private:
     bool fMustResetBlendFuncBetweenDualSourceAndDisable : 1;
     bool fBindTexture0WhenChangingTextureFBOMultisampleCount : 1;
     bool fRebindColorAttachmentAfterCheckFramebufferStatus : 1;
+    bool fFlushBeforeWritePixels : 1;
+    bool fDisableScalingCopyAsDraws : 1;
     int fMaxInstancesPerDrawWithoutCrashing = 0;
 
     uint32_t fBlitFramebufferFlags = kNoSupport_BlitFramebufferFlag;

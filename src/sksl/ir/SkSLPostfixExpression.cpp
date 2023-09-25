@@ -8,20 +8,23 @@
 #include "src/sksl/ir/SkSLPostfixExpression.h"
 
 #include "include/core/SkTypes.h"
-#include "include/sksl/SkSLErrorReporter.h"
 #include "src/sksl/SkSLAnalysis.h"
 #include "src/sksl/SkSLContext.h"
+#include "src/sksl/SkSLErrorReporter.h"
+#include "src/sksl/SkSLOperator.h"
 #include "src/sksl/ir/SkSLType.h"
 #include "src/sksl/ir/SkSLVariableReference.h"
 
 namespace SkSL {
 
-std::unique_ptr<Expression> PostfixExpression::Convert(const Context& context, Position pos,
-        std::unique_ptr<Expression> base, Operator op) {
+std::unique_ptr<Expression> PostfixExpression::Convert(const Context& context,
+                                                       Position pos,
+                                                       std::unique_ptr<Expression> base,
+                                                       Operator op) {
     const Type& baseType = base->type();
     if (!baseType.isNumber()) {
         context.fErrors->error(pos, "'" + std::string(op.tightOperatorName()) +
-                "' cannot operate on '" + baseType.displayName() + "'");
+                                    "' cannot operate on '" + baseType.displayName() + "'");
         return nullptr;
     }
     if (!Analysis::UpdateVariableRefKind(base.get(), VariableRefKind::kReadWrite,
@@ -31,11 +34,21 @@ std::unique_ptr<Expression> PostfixExpression::Convert(const Context& context, P
     return PostfixExpression::Make(context, pos, std::move(base), op);
 }
 
-std::unique_ptr<Expression> PostfixExpression::Make(const Context& context, Position pos,
-        std::unique_ptr<Expression> base, Operator op) {
+std::unique_ptr<Expression> PostfixExpression::Make(const Context& context,
+                                                    Position pos,
+                                                    std::unique_ptr<Expression> base,
+                                                    Operator op) {
     SkASSERT(base->type().isNumber());
     SkASSERT(Analysis::IsAssignable(*base));
     return std::make_unique<PostfixExpression>(pos, std::move(base), op);
+}
+
+std::string PostfixExpression::description(OperatorPrecedence parentPrecedence) const {
+    bool needsParens = (OperatorPrecedence::kPostfix >= parentPrecedence);
+    return std::string(needsParens ? "(" : "") +
+           this->operand()->description(OperatorPrecedence::kPostfix) +
+           std::string(this->getOperator().tightOperatorName()) +
+           std::string(needsParens ? ")" : "");
 }
 
 }  // namespace SkSL

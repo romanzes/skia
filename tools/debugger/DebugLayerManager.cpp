@@ -16,9 +16,11 @@
 #include "include/core/SkRect.h"
 #include "include/core/SkSurface.h"
 #include "include/core/SkTypes.h"
-#include "include/private/SkTHash.h"
+#include "include/private/base/SkDebug.h"
+#include "src/core/SkTHash.h"
 #include "tools/debugger/DebugCanvas.h"
 
+#include <cstdint>
 #include <memory>
 #include <unordered_map>
 #include <utility>
@@ -74,7 +76,6 @@ void DebugLayerManager::storeSkPicture(int nodeId, int frame, sk_sp<SkPicture> p
 void DebugLayerManager::drawLayerEventTo(SkSurface* surface, const int nodeId, const int frame) {
     auto& evt = fDraws[{frame, nodeId}];
     evt.debugCanvas->drawTo(surface->getCanvas(), evt.command);
-    surface->flush();
 }
 
 sk_sp<SkImage> DebugLayerManager::getLayerAsImage(const int nodeId, const int frame) {
@@ -105,8 +106,8 @@ sk_sp<SkImage> DebugLayerManager::getLayerAsImage(const int nodeId, const int fr
   // the color type and alpha type are chosen here to match wasm-skp-debugger/cpu.js which was
   // chosen to match the capabilities of HTML canvas, which this ultimately has to be drawn into.
   // TODO(nifong): introduce a method of letting the user choose the backend for this.
-  auto surface = SkSurface::MakeRaster(SkImageInfo::Make(drawEvent.layerBounds,
-    kRGBA_8888_SkColorType, kUnpremul_SkAlphaType, nullptr));
+  auto surface = SkSurfaces::Raster(SkImageInfo::Make(
+          drawEvent.layerBounds, kRGBA_8888_SkColorType, kUnpremul_SkAlphaType, nullptr));
   // draw everything from the last full redraw up to the current frame.
   // other frames drawn are partial, meaning they were clipped to not completely cover the layer.
   // count back up with i

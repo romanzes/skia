@@ -10,14 +10,17 @@
 
 #include "include/core/SkColor.h"
 #include "include/core/SkPaint.h"
+#include "src/gpu/graphite/Caps.h"
 
-enum class SkBackend : uint8_t;
-class SkPaintParamsKeyBuilder;
-class SkPipelineDataGatherer;
+class SkColorInfo;
 class SkShader;
-class SkKeyContext;
 
 namespace skgpu::graphite {
+
+class KeyContext;
+class PaintParamsKeyBuilder;
+class PipelineDataGatherer;
+class TextureProxy;
 
 // TBD: If occlusion culling is eliminated as a phase, we can easily move the paint conversion
 // back to Device when the command is recorded (similar to SkPaint -> GrPaint), and then
@@ -27,8 +30,18 @@ namespace skgpu::graphite {
 // assumed to be anti-aliased.
 class PaintParams {
 public:
-    PaintParams(const SkColor4f& color, sk_sp<SkBlender>, sk_sp<SkShader>);
-    explicit PaintParams(const SkPaint&);
+    PaintParams(const SkColor4f& color,
+                sk_sp<SkBlender> finalBlender,
+                sk_sp<SkShader>,
+                sk_sp<SkColorFilter>,
+                sk_sp<SkBlender> primitiveBlender,
+                DstReadRequirement dstReadReq,
+                bool skipColorXform,
+                bool dither);
+    explicit PaintParams(const SkPaint&,
+                         sk_sp<SkBlender> primitiveBlender,
+                         DstReadRequirement dstReadReq,
+                         bool skipColorXform);
 
     PaintParams(const PaintParams&);
     ~PaintParams();
@@ -37,25 +50,45 @@ public:
 
     SkColor4f color() const { return fColor; }
 
-    std::optional<SkBlendMode> asBlendMode() const;
-    SkBlender* blender() const { return fBlender.get(); }
-    sk_sp<SkBlender> refBlender() const;
+    std::optional<SkBlendMode> asFinalBlendMode() const;
+    SkBlender* finalBlender() const { return fFinalBlender.get(); }
+    sk_sp<SkBlender> refFinalBlender() const;
 
     SkShader* shader() const { return fShader.get(); }
     sk_sp<SkShader> refShader() const;
 
-    void toKey(const SkKeyContext&,
-               SkPaintParamsKeyBuilder*,
-               SkPipelineDataGatherer*) const;
+    SkColorFilter* colorFilter() const { return fColorFilter.get(); }
+    sk_sp<SkColorFilter> refColorFilter() const;
+
+    SkBlender* primitiveBlender() const { return fPrimitiveBlender.get(); }
+    sk_sp<SkBlender> refPrimitiveBlender() const;
+
+    DstReadRequirement dstReadRequirement() const { return fDstReadReq; }
+    bool skipColorXform() const { return fSkipColorXform; }
+    bool dither() const { return fDither; }
+
+    /** Converts an SkColor4f to the destination color space. */
+    static SkColor4f Color4fPrepForDst(SkColor4f srgb, const SkColorInfo& dstColorInfo);
+
+    void toKey(const KeyContext&, PaintParamsKeyBuilder*, PipelineDataGatherer*) const;
 
 private:
-    SkColor4f        fColor;
-    sk_sp<SkBlender> fBlender; // A nullptr here means SrcOver blending
-    sk_sp<SkShader>  fShader; // For now only use SkShader::asAGradient() when converting to GPU
+    SkColor4f            fColor;
+    sk_sp<SkBlender>     fFinalBlender; // A nullptr here means SrcOver blending
+    sk_sp<SkShader>      fShader;
+    sk_sp<SkColorFilter> fColorFilter;
+    // A nullptr fPrimitiveBlender means there's no primitive color blending and it is skipped.
+    // In the case where there is primitive blending, the primitive color is the source color and
+    // the dest is the paint's color (or the paint's shader's computed color).
+    sk_sp<SkBlender>     fPrimitiveBlender;
+    DstReadRequirement   fDstReadReq;
+    bool                 fSkipColorXform;
+    bool                 fDither;
+
     // TODO: Will also store ColorFilter, dither, and any extra shader from an
     // active clipShader().
 };
 
-} // namespace skgpu
+} // namespace skgpu::graphite
 
 #endif // skgpu_PaintParams_DEFINED

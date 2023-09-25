@@ -87,6 +87,8 @@ protected:
                                       numColorSamples, GrMipmapped::kNo);
     }
 
+    void onSetLabel() override;
+
 private:
     // Extra param to disambiguate from constructor used by subclasses.
     enum Wrapped { kWrapped };
@@ -111,8 +113,6 @@ private:
 
     GrD3DGpu* getD3DGpu() const;
 
-    void onSetLabel() override{}
-
     bool completeStencilAttachment(GrAttachment* stencil, bool useMSAASurface) override {
         SkASSERT(useMSAASurface == (this->numSamples() > 1));
         return true;
@@ -120,7 +120,7 @@ private:
 
     // In Direct3D we call the release proc after we are finished with the underlying
     // GrD3DTextureResource::Resource object (which occurs after the GPU finishes all work on it).
-    void onSetRelease(sk_sp<skgpu::RefCntedCallback> releaseHelper) override {
+    void onSetRelease(sk_sp<RefCntedReleaseProc> releaseHelper) override {
         // Forward the release proc on to GrD3DTextureResource
         this->setResourceRelease(std::move(releaseHelper));
     }

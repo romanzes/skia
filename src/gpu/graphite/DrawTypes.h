@@ -9,7 +9,8 @@
 #define skgpu_graphite_DrawTypes_DEFINED
 
 #include "include/gpu/graphite/GraphiteTypes.h"
-#include "include/gpu/graphite/TextureInfo.h"
+
+#include "src/gpu/graphite/ResourceTypes.h"
 
 #include <array>
 
@@ -26,49 +27,6 @@ enum class CType : unsigned {
     kSkMatrix,
 
     kLast = kSkMatrix
-};
-
-/**
- * This enum is used to specify the load operation to be used when a RenderPass begins execution
- */
-enum class LoadOp : uint8_t {
-    kLoad,
-    kClear,
-    kDiscard,
-
-    kLast = kDiscard
-};
-inline static constexpr int kLoadOpCount = (int)(LoadOp::kLast) + 1;
-
-/**
- * This enum is used to specify the store operation to be used when a RenderPass ends execution.
- */
-enum class StoreOp : uint8_t {
-    kStore,
-    kDiscard,
-
-    kLast = kDiscard
-};
-inline static constexpr int kStoreOpCount = (int)(StoreOp::kLast) + 1;
-
-struct AttachmentDesc {
-    TextureInfo fTextureInfo;
-    LoadOp fLoadOp;
-    StoreOp fStoreOp;
-};
-
-struct RenderPassDesc {
-    AttachmentDesc fColorAttachment;
-    std::array<float, 4> fClearColor;
-    AttachmentDesc fColorResolveAttachment;
-
-    AttachmentDesc fDepthStencilAttachment;
-    float fClearDepth;
-    uint32_t fClearStencil;
-
-    // TODO:
-    // * bounds (TBD whether exact bounds vs. granular)
-    // * input attachments
 };
 
 /**
@@ -115,7 +73,7 @@ enum class VertexAttribType : uint8_t {
     kInt,
     kUInt,
 
-    kUShort_norm,
+    kUShort_norm,  // unsigned short, e.g. depth, 0 -> 0.0f, 65535 -> 1.0f.
 
     kUShort4_norm, // vector of 4 unsigned shorts. 0 -> 0.0f, 65535 -> 1.0f.
 
@@ -181,25 +139,8 @@ static constexpr inline size_t VertexAttribTypeSize(VertexAttribType type) {
         case VertexAttribType::kUShort4_norm:
             return 4 * sizeof(uint16_t);
     }
+    SkUNREACHABLE;
 }
-
-/*
- * Struct returned by the DrawBufferManager that can be passed into bind buffer calls on the
- * CommandBuffer.
- */
-struct BindBufferInfo {
-    const Buffer* fBuffer = nullptr;
-    size_t fOffset = 0;
-
-    operator bool() const { return SkToBool(fBuffer); }
-
-    bool operator==(const BindBufferInfo& o) const {
-        return fBuffer == o.fBuffer && (!fBuffer || fOffset == o.fOffset);
-    }
-    bool operator!=(const BindBufferInfo& o) const {
-        return !(*this == o);
-    }
-};
 
 enum class UniformSlot {
     // TODO: Want this?

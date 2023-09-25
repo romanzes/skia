@@ -9,18 +9,38 @@
 #include "include/core/SkFontMgr.h"
 #include "include/core/SkStream.h"
 #include "include/core/SkTypeface.h"
-#include "include/private/SkMutex.h"
-#include "include/private/SkOnce.h"
+#include "include/private/base/SkMutex.h"
+#include "include/private/base/SkOnce.h"
 #include "include/utils/SkCustomTypeface.h"
+#include "src/base/SkEndian.h"
+#include "src/base/SkNoDestructor.h"
+#include "src/base/SkUTF.h"
 #include "src/core/SkAdvancedTypefaceMetrics.h"
-#include "src/core/SkEndian.h"
 #include "src/core/SkFontDescriptor.h"
 #include "src/core/SkFontPriv.h"
 #include "src/core/SkScalerContext.h"
 #include "src/core/SkSurfacePriv.h"
 #include "src/core/SkTypefaceCache.h"
 #include "src/sfnt/SkOTTable_OS_2.h"
-#include "src/utils/SkUTF.h"
+
+#ifdef SK_TYPEFACE_FACTORY_FREETYPE
+#include "src/ports/SkFontHost_FreeType_common.h"
+#endif
+
+#ifdef SK_TYPEFACE_FACTORY_CORETEXT
+#include "src/ports/SkTypeface_mac_ct.h"
+#endif
+
+#ifdef SK_TYPEFACE_FACTORY_DIRECTWRITE
+#include "src/ports/SkTypeface_win_dw.h"
+#endif
+
+// TODO(https://crbug.com/skia/14338): This needs to be set by Bazel rules.
+#ifdef SK_TYPEFACE_FACTORY_FONTATIONS
+#include "src/ports/SkTypeface_fontations_priv.h"
+#endif
+
+using namespace skia_private;
 
 SkTypeface::SkTypeface(const SkFontStyle& style, bool isFixedPitch)
     : fUniqueID(SkTypefaceCache::NewTypefaceID()), fStyle(style), fIsFixedPitch(isFixedPitch) { }
@@ -34,6 +54,15 @@ namespace {
 class SkEmptyTypeface : public SkTypeface {
 public:
     static sk_sp<SkTypeface> Make() { return sk_sp<SkTypeface>(new SkEmptyTypeface); }
+
+    static constexpr SkTypeface::FactoryId FactoryId = SkSetFourByteTag('e','m','t','y');
+    static sk_sp<SkTypeface> MakeFromStream(std::unique_ptr<SkStreamAsset> stream,
+                                            const SkFontArguments&) {
+        if (stream->getLength() == 0) {
+            return SkEmptyTypeface::Make();
+        }
+        return nullptr;
+    }
 protected:
     SkEmptyTypeface() : SkTypeface(SkFontStyle(), true) { }
 
@@ -51,7 +80,10 @@ protected:
     std::unique_ptr<SkAdvancedTypefaceMetrics> onGetAdvancedMetrics() const override {
         return nullptr;
     }
-    void onGetFontDescriptor(SkFontDescriptor*, bool*) const override { }
+    void onGetFontDescriptor(SkFontDescriptor* desc, bool* serialize) const override {
+        desc->setFactoryId(FactoryId);
+        *serialize = false;
+    }
     void onCharsToGlyphs(const SkUnichar* chars, int count, SkGlyphID glyphs[]) const override {
         sk_bzero(glyphs, count * sizeof(glyphs[0]));
     }
@@ -131,6 +163,35 @@ bool SkTypeface::Equal(const SkTypeface* facea, const SkTypeface* faceb) {
 
 ///////////////////////////////////////////////////////////////////////////////
 
+namespace {
+
+    struct DecoderProc {
+        SkFourByteTag id;
+        sk_sp<SkTypeface> (*makeFromStream)(std::unique_ptr<SkStreamAsset>, const SkFontArguments&);
+    };
+
+    std::vector<DecoderProc>* decoders() {
+        static SkNoDestructor<std::vector<DecoderProc>> decoders{{
+            { SkEmptyTypeface::FactoryId, SkEmptyTypeface::MakeFromStream },
+            { SkCustomTypefaceBuilder::FactoryId, SkCustomTypefaceBuilder::MakeFromStream },
+#ifdef SK_TYPEFACE_FACTORY_CORETEXT
+            { SkTypeface_Mac::FactoryId, SkTypeface_Mac::MakeFromStream },
+#endif
+#ifdef SK_TYPEFACE_FACTORY_DIRECTWRITE
+            { DWriteFontTypeface::FactoryId, DWriteFontTypeface::MakeFromStream },
+#endif
+#ifdef SK_TYPEFACE_FACTORY_FREETYPE
+            { SkTypeface_FreeType::FactoryId, SkTypeface_FreeType::MakeFromStream },
+#endif
+#ifdef SK_TYPEFACE_FACTORY_FONTATIONS
+            { SkTypeface_Fontations::FactoryId, SkTypeface_Fontations::MakeFromStream },
+#endif
+        }};
+        return decoders.get();
+    }
+
+}  // namespace
+
 sk_sp<SkTypeface> SkTypeface::MakeFromName(const char name[],
                                            SkFontStyle fontStyle) {
     if (nullptr == name && (fontStyle.slant() == SkFontStyle::kItalic_Slant ||
@@ -150,6 +211,17 @@ sk_sp<SkTypeface> SkTypeface::MakeFromStream(std::unique_ptr<SkStreamAsset> stre
     if (!stream) {
         return nullptr;
     }
+    // TODO: Enable this while updating tests (FontHostStream), expectations, and nonativeFonts.
+#if 0
+    SkFontArguments args;
+    args.setCollectionIndex(index);
+    for (const DecoderProc& proc : *decoders()) {
+        sk_sp<SkTypeface> typeface = proc.makeFromStream(stream->duplicate(), args);
+        if (typeface) {
+            return typeface;
+        }
+    }
+#endif
     return SkFontMgr::RefDefault()->makeFromStream(std::move(stream), index);
 }
 
@@ -170,10 +242,19 @@ sk_sp<SkTypeface> SkTypeface::makeClone(const SkFontArguments& args) const {
 
 ///////////////////////////////////////////////////////////////////////////////
 
+void SkTypeface::Register(
+            FactoryId id,
+            sk_sp<SkTypeface> (*make)(std::unique_ptr<SkStreamAsset>, const SkFontArguments&)) {
+    decoders()->push_back(DecoderProc{id, make});
+}
+
 void SkTypeface::serialize(SkWStream* wstream, SerializeBehavior behavior) const {
     bool isLocalData = false;
     SkFontDescriptor desc;
     this->onGetFontDescriptor(&desc, &isLocalData);
+    if (desc.getFactoryId() == 0) {
+        SkDEBUGF("Factory was not set for %s.\n", desc.getFamilyName());
+    }
 
     bool shouldSerializeData = false;
     switch (behavior) {
@@ -213,20 +294,20 @@ sk_sp<SkTypeface> SkTypeface::MakeDeserialize(SkStream* stream) {
     }
 
     if (desc.hasStream()) {
-        if (auto tf = SkCustomTypefaceBuilder::Deserialize(desc.dupStream().get())) {
-            return tf;
+        for (const DecoderProc& proc : *decoders()) {
+            if (proc.id == desc.getFactoryId()) {
+                return proc.makeFromStream(desc.detachStream(), desc.getFontArguments());
+            }
         }
-    }
 
-    if (desc.hasStream()) {
-        SkFontArguments args;
-        args.setCollectionIndex(desc.getCollectionIndex());
-        args.setVariationDesignPosition({desc.getVariation(), desc.getVariationCoordinateCount()});
-        args.setPalette({desc.getPaletteIndex(),
-                         desc.getPaletteEntryOverrides(),
-                         desc.getPaletteEntryOverrideCount()});
+        SkDEBUGCODE(FactoryId id = desc.getFactoryId();)
+        SkDEBUGF("Could not find factory %c%c%c%c for %s.\n",
+                 (id >> 24) & 0xFF, (id >> 16) & 0xFF, (id >> 8) & 0xFF, (id >> 0) & 0xFF,
+                 desc.getFamilyName());
+
         sk_sp<SkFontMgr> defaultFm = SkFontMgr::RefDefault();
-        sk_sp<SkTypeface> typeface = defaultFm->makeFromStream(desc.detachStream(), args);
+        sk_sp<SkTypeface> typeface = defaultFm->makeFromStream(desc.detachStream(),
+                                                               desc.getFontArguments());
         if (typeface) {
             return typeface;
         }
@@ -355,7 +436,7 @@ public:
     }
 
 private:
-    SkAutoSTMalloc<256, SkUnichar> fStorage;
+    AutoSTMalloc<256, SkUnichar> fStorage;
 };
 }
 

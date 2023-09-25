@@ -32,38 +32,39 @@ third_party deps using `./tools/git-sync-deps`.
 ### Linux Hosts (you are running Bazel on a Linux machine)
 You can run a command like:
 ```
-bazel build //example:hello_world_gl --config=clang_linux
+bazel build //example:hello_world_gl
 ```
 
-This uses the `clang_linux` configuration (defined in `//.bazelrc`), which is a hermetic C++
-toolchain we put together to compile Skia on a Linux host (implementation is in `//toolchain`.
-It builds the _target_ defined in `//examples/BUILD.bazel` named "hello_world_gl", which uses
-the `sk_app` framework we designed to make simple applications using Skia.
+This uses a hermetic C++ toolchain we put together to compile Skia on a Linux host
+(implementation is in `//toolchain`. It builds the _target_ defined in
+`//examples/BUILD.bazel` named "hello_world_gl", which uses the `sk_app` framework
+we designed to make simple applications using Skia.
 
 Bazel will put this executable in `//bazel-bin/example/hello_world_gl` and tell you it did so in
 the logs. You can run this executable yourself, or have Bazel run it by modifying the command to
 be:
 ```
-bazel run //example:hello_world_gl --config=clang_linux
+bazel run //example:hello_world_gl
 ```
 
 If you want to pass one or more flags to `bazel run`, add them on the end after a `--` like:
 ```
-bazel run //example:hello_world_gl --config=clang_linux -- --flag_one=apple --flag_two=cherry
+bazel run //example:hello_world_gl -- --flag_one=apple --flag_two=cherry
 ```
 
 ### Mac Hosts (you are running Bazel on a Mac machine)
 You can run a command like:
 ```
-bazel build //example:bazel_test_exe --config=clang_mac
+bazel build //example:bazel_test_exe
 ```
 
-Similar to the Linux guide, this uses the `clang_mac` configuration (defined in `//.bazelrc`).
-
 When building for Mac, we require the user to have Xcode installed on their device so that we can
-use system headers and Mac-specific includes when compiling. Our Bazel toolchain assumes you have
-`xcode-select` in your path so that we may symlink the user's current Xcode directory in the
-toolchain's cache. Make sure `xcode-select -p` returns a valid path.
+use system headers and Mac-specific includes when compiling. Googlers, as per usual, follow the
+instructions at [go/skia-corp-xcode](http://go/skia-corp-xcode) to install Xcode.
+
+Our Bazel toolchain assumes you have `xcode-select` in your path so that we may symlink the
+user's current Xcode directory in the toolchain's cache. Make sure `xcode-select -p`
+returns a valid path.
 
 ## .bazelrc Tips
 You should make a [.bazelrc file](https://bazel.build/docs/bazelrc) in your home directory where
@@ -86,20 +87,25 @@ Many Linux machines have a [RAM disk mounted at /dev/shm](https://www.cyberciti.
 and using this as the location for the Bazel sandbox can dramatically improve compile times because
 [sandboxing](https://bazel.build/docs/sandboxing) has been observed to be I/O intensive.
 
-Add the following to `~/.bazelrc` if you have a `/dev/shm` partition that is 4+ GB big. 
+Add the following to `~/.bazelrc` if you have a `/dev/shm` partition that is 4+ GB big.
 ```
-build:clang --sandbox_base=/dev/shm
+build --sandbox_base=/dev/shm
+```
+
+Mac users should probably bypass sandboxing as [it is known to be slow](https://github.com/bazelbuild/bazel/issues/8230).
+```
+build --spawn_strategy=local
 ```
 
 ### Authenticate to RBE on a Linux VM
 We are in the process of setting up Remote Build Execution (RBE) for Bazel. Some users have reported
 errors when trying to use RBE (via `--config=linux_rbe`) on Linux VMs such as:
 ```
-ERROR: Failed to query remote execution capabilities: 
+ERROR: Failed to query remote execution capabilities:
 Error code 404 trying to get security access token from Compute Engine metadata for the default
 service account. This may be because the virtual machine instance does not have permission
 scopes specified. It is possible to skip checking for Compute Engine metadata by specifying the
-environment  variable NO_GCE_CHECK=true.
+environment variable NO_GCE_CHECK=true.
 ```
 For instances where it is not possible to set the `cloud-platform` scope
 [on the VM](https://skia-review.googlesource.com/c/skia/+/525577), one can directly link to their
@@ -108,3 +114,13 @@ after logging in via `gcloud auth login`:
 ```
 build:remote --google_credentials=/usr/local/google/home/<user>/.config/gcloud/application_default_credentials.json
 ```
+
+### Make local builds compatible with remote builds (e.g. better caching)
+Add the following to `//bazel/user/buildrc` if you are on a Linux x64 box and want to be able to
+share cached build results between things you build locally and build with `--config=linux_rbe`.
+```
+build --host_platform=//bazel/platform:linux_x64_hermetic
+```
+For example, if you are on a laptop, using `--config=linux_rbe` will speed up builds when you have
+access to Internet, but then if you need to go offline, you can still build locally and use the
+previous build results from the remote builds.

@@ -108,9 +108,9 @@ protected:
         SkScalar pos[] = { 0.2f, 1.0f };
 
         fFilter = SkLumaColorFilter::Make();
-        fGr1 = SkGradientShader::MakeLinear(g1Points, g1Colors, pos, SK_ARRAY_COUNT(g1Colors),
+        fGr1 = SkGradientShader::MakeLinear(g1Points, g1Colors, pos, std::size(g1Colors),
                                             SkTileMode::kClamp);
-        fGr2 = SkGradientShader::MakeLinear(g2Points, g2Colors, pos, SK_ARRAY_COUNT(g2Colors),
+        fGr2 = SkGradientShader::MakeLinear(g2Points, g2Colors, pos, std::size(g2Colors),
                                             SkTileMode::kClamp);
     }
 
@@ -142,15 +142,15 @@ protected:
         };
 
         SkScalar gridStep = kSize + 2 * kInset;
-        for (size_t i = 0; i < SK_ARRAY_COUNT(modes); ++i) {
+        for (size_t i = 0; i < std::size(modes); ++i) {
             draw_label(canvas, SkBlendMode_Name(modes[i]),
                        SkPoint::Make(gridStep * (0.5f + i), 20));
         }
 
-        for (size_t i = 0; i < SK_ARRAY_COUNT(shaders); ++i) {
+        for (size_t i = 0; i < std::size(shaders); ++i) {
             canvas->save();
             canvas->translate(kInset, gridStep * i + 30);
-            for (size_t m = 0; m < SK_ARRAY_COUNT(modes); ++m) {
+            for (size_t m = 0; m < std::size(modes); ++m) {
                 draw_scene(canvas, fFilter, modes[m], shaders[i].fShader1,
                            shaders[i].fShader2);
                 canvas->translate(gridStep, 0);
@@ -179,7 +179,7 @@ DEF_SIMPLE_GM(AlternateLuma, canvas, 384,128) {
     // Normal luma colorfilter on the left.
     SkPaint paint;
     paint.setColorFilter(SkLumaColorFilter::Make());
-    canvas->drawImage(img, 0,0, SkSamplingOptions{}, &paint);
+    canvas->drawImage(img, 0,0, SkFilterMode::kNearest, &paint);
     canvas->translate(128,0);
 
     // Original image in the middle for reference.
@@ -199,5 +199,5 @@ DEF_SIMPLE_GM(AlternateLuma, canvas, 384,128) {
                                                               &SkNamedTransferFn::kLinear,
                                                               &SkNamedGamut::kXYZ,
                                                               &unpremul));
-    canvas->drawImage(img, 0,0, SkSamplingOptions{}, &paint);
+    canvas->drawImage(img, 0,0, SkFilterMode::kNearest, &paint);
 }

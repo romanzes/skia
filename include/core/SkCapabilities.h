@@ -9,10 +9,15 @@
 #define SkCapabilities_DEFINED
 
 #include "include/core/SkRefCnt.h"
+#include "include/core/SkTypes.h"
 
 #ifdef SK_ENABLE_SKSL
 #include "include/sksl/SkSLVersion.h"
 namespace SkSL { struct ShaderCaps; }
+#endif
+
+#if defined(SK_GRAPHITE)
+namespace skgpu::graphite { class Caps; }
 #endif
 
 class SK_API SkCapabilities : public SkRefCnt {
@@ -24,6 +29,10 @@ public:
 #endif
 
 protected:
+#if defined(SK_GRAPHITE)
+    friend class skgpu::graphite::Caps; // for ctor
+#endif
+
     SkCapabilities() = default;
 
 #ifdef SK_ENABLE_SKSL

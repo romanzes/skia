@@ -18,7 +18,7 @@
 #include "include/core/SkTypes.h"
 #include "include/gpu/GrContextOptions.h"
 #include "include/gpu/GrDirectContext.h"
-#include "include/utils/SkRandom.h"
+#include "src/base/SkRandom.h"
 #include "src/core/SkGeometry.h"
 #include "src/gpu/ganesh/GrCaps.h"
 #include "src/gpu/ganesh/GrDirectContextPriv.h"
@@ -113,7 +113,7 @@ static void draw_test(SkCanvas* canvas, SkPaint::Cap cap, SkPaint::Join join) {
     strokePaint.setStrokeCap(cap);
     strokePaint.setStrokeJoin(join);
 
-    for (size_t i = 0; i < SK_ARRAY_COUNT(kTrickyCubics); ++i) {
+    for (size_t i = 0; i < std::size(kTrickyCubics); ++i) {
         auto [originalPts, numPts, fillMode, scale] = kTrickyCubics[i];
 
         SkASSERT(numPts <= 4);

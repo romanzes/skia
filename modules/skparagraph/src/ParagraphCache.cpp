@@ -5,23 +5,26 @@
 #include "modules/skparagraph/include/ParagraphCache.h"
 #include "modules/skparagraph/src/ParagraphImpl.h"
 
+using namespace skia_private;
+
 namespace skia {
 namespace textlayout {
 
 namespace {
-    SkScalar relax(SkScalar a) {
+    int32_t relax(SkScalar a) {
         // This rounding is done to match Flutter tests. Must be removed..
         if (SkScalarIsFinite(a)) {
           auto threshold = SkIntToScalar(1 << 12);
-          return SkScalarRoundToScalar(a * threshold)/threshold;
+          return SkFloat2Bits(SkScalarRoundToScalar(a * threshold)/threshold);
         } else {
-          return a;
+          return SkFloat2Bits(a);
         }
     }
 
     bool exactlyEqual(SkScalar x, SkScalar y) {
         return x == y || (x != x && y != y);
     }
+
 }  // namespace
 
 class ParagraphCacheKey {
@@ -56,8 +59,8 @@ private:
     uint32_t computeHash() const;
 
     SkString fText;
-    SkTArray<Placeholder, true> fPlaceholders;
-    SkTArray<Block, true> fTextStyles;
+    TArray<Placeholder, true> fPlaceholders;
+    TArray<Block, true> fTextStyles;
     ParagraphStyle fParagraphStyle;
     uint32_t fHash;
 };
@@ -72,8 +75,6 @@ public:
         , fCodeUnitProperties(paragraph->fCodeUnitProperties)
         , fWords(paragraph->fWords)
         , fBidiRegions(paragraph->fBidiRegions)
-        , fUTF8IndexForUTF16Index(paragraph->fUTF8IndexForUTF16Index)
-        , fUTF16IndexForUTF8Index(paragraph->fUTF16IndexForUTF8Index)
         , fHasLineBreaks(paragraph->fHasLineBreaks)
         , fHasWhitespacesInside(paragraph->fHasWhitespacesInside)
         , fTrailingSpaces(paragraph->fTrailingSpaces) { }
@@ -82,15 +83,13 @@ public:
     ParagraphCacheKey fKey;
 
     // Shaped results
-    SkTArray<Run, false> fRuns;
-    SkTArray<Cluster, true> fClusters;
-    SkTArray<size_t, true> fClustersIndexFromCodeUnit;
+    TArray<Run, false> fRuns;
+    TArray<Cluster, true> fClusters;
+    TArray<size_t, true> fClustersIndexFromCodeUnit;
     // ICU results
-    SkTArray<CodeUnitFlags> fCodeUnitProperties;
+    TArray<SkUnicode::CodeUnitFlags, true> fCodeUnitProperties;
     std::vector<size_t> fWords;
     std::vector<SkUnicode::BidiRegion> fBidiRegions;
-    SkTArray<TextIndex, true> fUTF8IndexForUTF16Index;
-    SkTArray<size_t, true> fUTF16IndexForUTF8Index;
     bool fHasLineBreaks;
     bool fHasWhitespacesInside;
     TextIndex fTrailingSpaces;
@@ -104,13 +103,12 @@ uint32_t ParagraphCacheKey::mix(uint32_t hash, uint32_t data) {
 }
 
 uint32_t ParagraphCacheKey::computeHash() const {
-    uint32_t hash = 0;
+uint32_t hash = 0;
     for (auto& ph : fPlaceholders) {
         if (ph.fRange.width() == 0) {
             continue;
         }
-        hash = mix(hash, SkGoodHash()(ph.fRange.start));
-        hash = mix(hash, SkGoodHash()(ph.fRange.end));
+        hash = mix(hash, SkGoodHash()(ph.fRange));
         hash = mix(hash, SkGoodHash()(relax(ph.fStyle.fHeight)));
         hash = mix(hash, SkGoodHash()(relax(ph.fStyle.fWidth)));
         hash = mix(hash, SkGoodHash()(ph.fStyle.fAlignment));
@@ -144,6 +142,7 @@ uint32_t ParagraphCacheKey::computeHash() const {
 
     hash = mix(hash, SkGoodHash()(relax(fParagraphStyle.getHeight())));
     hash = mix(hash, SkGoodHash()(fParagraphStyle.getTextDirection()));
+    hash = mix(hash, SkGoodHash()(fParagraphStyle.getReplaceTabCharacters() ? 1 : 0));
 
     auto& strutStyle = fParagraphStyle.getStrutStyle();
     if (strutStyle.getStrutEnabled()) {
@@ -170,7 +169,7 @@ bool ParagraphCacheKey::operator==(const ParagraphCacheKey& other) const {
     if (fText.size() != other.fText.size()) {
         return false;
     }
-    if (fPlaceholders.count() != other.fPlaceholders.count()) {
+    if (fPlaceholders.size() != other.fPlaceholders.size()) {
         return false;
     }
     if (fText != other.fText) {
@@ -192,7 +191,11 @@ bool ParagraphCacheKey::operator==(const ParagraphCacheKey& other) const {
         return false;
     }
 
-    for (size_t i = 0; i < fTextStyles.size(); ++i) {
+    if (!(fParagraphStyle.getReplaceTabCharacters() == other.fParagraphStyle.getReplaceTabCharacters())) {
+        return false;
+    }
+
+    for (int i = 0; i < fTextStyles.size(); ++i) {
         auto& tsa = fTextStyles[i];
         auto& tsb = other.fTextStyles[i];
         if (tsa.fStyle.isPlaceholder()) {
@@ -208,7 +211,7 @@ bool ParagraphCacheKey::operator==(const ParagraphCacheKey& other) const {
             return false;
         }
     }
-    for (size_t i = 0; i < fPlaceholders.size(); ++i) {
+    for (int i = 0; i < fPlaceholders.size(); ++i) {
         auto& tsa = fPlaceholders[i];
         auto& tsb = other.fPlaceholders[i];
         if (tsa.fRange.width() == 0 && tsb.fRange.width() == 0) {
@@ -250,15 +253,13 @@ ParagraphCache::~ParagraphCache() { }
 
 void ParagraphCache::updateTo(ParagraphImpl* paragraph, const Entry* entry) {
 
-    paragraph->fRuns.reset();
+    paragraph->fRuns.clear();
     paragraph->fRuns = entry->fValue->fRuns;
     paragraph->fClusters = entry->fValue->fClusters;
     paragraph->fClustersIndexFromCodeUnit = entry->fValue->fClustersIndexFromCodeUnit;
     paragraph->fCodeUnitProperties = entry->fValue->fCodeUnitProperties;
     paragraph->fWords = entry->fValue->fWords;
     paragraph->fBidiRegions = entry->fValue->fBidiRegions;
-    paragraph->fUTF8IndexForUTF16Index = entry->fValue->fUTF8IndexForUTF16Index;
-    paragraph->fUTF16IndexForUTF8Index = entry->fValue->fUTF16IndexForUTF8Index;
     paragraph->fHasLineBreaks = entry->fValue->fHasLineBreaks;
     paragraph->fHasWhitespacesInside = entry->fValue->fHasWhitespacesInside;
     paragraph->fTrailingSpaces = entry->fValue->fTrailingSpaces;

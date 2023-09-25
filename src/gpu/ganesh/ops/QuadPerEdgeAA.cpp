@@ -7,8 +7,9 @@
 
 #include "src/gpu/ganesh/ops/QuadPerEdgeAA.h"
 
-#include "include/private/SkVx.h"
+#include "src/base/SkVx.h"
 #include "src/gpu/KeyBuilder.h"
+#include "src/gpu/ganesh/GrCaps.h"
 #include "src/gpu/ganesh/GrMeshDrawTarget.h"
 #include "src/gpu/ganesh/GrResourceProvider.h"
 #include "src/gpu/ganesh/SkGr.h"
@@ -25,13 +26,13 @@ static_assert((int)GrQuadAAFlags::kBottom == SkCanvas::kBottom_QuadAAFlag);
 static_assert((int)GrQuadAAFlags::kNone   == SkCanvas::kNone_QuadAAFlags);
 static_assert((int)GrQuadAAFlags::kAll    == SkCanvas::kAll_QuadAAFlags);
 
-namespace skgpu::v1::QuadPerEdgeAA {
+namespace skgpu::ganesh::QuadPerEdgeAA {
 
 namespace {
 
-using VertexSpec = skgpu::v1::QuadPerEdgeAA::VertexSpec;
-using CoverageMode = skgpu::v1::QuadPerEdgeAA::CoverageMode;
-using ColorType = skgpu::v1::QuadPerEdgeAA::ColorType;
+using VertexSpec = skgpu::ganesh::QuadPerEdgeAA::VertexSpec;
+using CoverageMode = skgpu::ganesh::QuadPerEdgeAA::CoverageMode;
+using ColorType = skgpu::ganesh::QuadPerEdgeAA::ColorType;
 
 // Generic WriteQuadProc that can handle any VertexSpec. It writes the 4 vertices in triangle strip
 // order, although the data per-vertex is dependent on the VertexSpec.
@@ -828,7 +829,7 @@ public:
     }
 
 private:
-    using Saturate = skgpu::v1::TextureOp::Saturate;
+    using Saturate = skgpu::ganesh::TextureOp::Saturate;
 
     QuadPerEdgeAAGeometryProcessor(const VertexSpec& spec)
             : INHERITED(kQuadPerEdgeAAGeometryProcessor_ClassID)
@@ -939,4 +940,4 @@ GrGeometryProcessor* MakeTexturedProcessor(SkArenaAlloc* arena,
                                                 saturate);
 }
 
-} // namespace skgpu::v1::QuadPerEdgeAA
+}  // namespace skgpu::ganesh::QuadPerEdgeAA

@@ -126,7 +126,6 @@ private:
     const SkString                             fPrefix;
 };
 
-
 } // namespace skottie_utils
 
 #endif // SkottieUtils_DEFINED

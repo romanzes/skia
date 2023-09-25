@@ -8,21 +8,17 @@
 #include "include/core/SkTypes.h"
 
 #if defined(SK_BUILD_FOR_ANDROID) && __ANDROID_API__ >= 26
-#define GL_GLEXT_PROTOTYPES
-#define EGL_EGLEXT_PROTOTYPES
-
 
 #include "src/gpu/ganesh/GrAHardwareBufferImageGenerator.h"
 
-#include <android/hardware_buffer.h>
-
+#include "include/android/GrAHardwareBufferUtils.h"
 #include "include/core/SkColorSpace.h"
 #include "include/gpu/GrBackendSurface.h"
 #include "include/gpu/GrDirectContext.h"
 #include "include/gpu/GrRecordingContext.h"
 #include "include/gpu/gl/GrGLTypes.h"
 #include "src/core/SkMessageBus.h"
-#include "src/gpu/ganesh/GrAHardwareBufferUtils_impl.h"
+#include "src/gpu/ganesh/GrCaps.h"
 #include "src/gpu/ganesh/GrDirectContextPriv.h"
 #include "src/gpu/ganesh/GrProxyProvider.h"
 #include "src/gpu/ganesh/GrRecordingContextPriv.h"
@@ -32,20 +28,8 @@
 #include "src/gpu/ganesh/GrTexture.h"
 #include "src/gpu/ganesh/GrTextureProxy.h"
 #include "src/gpu/ganesh/SkGr.h"
-#include "src/gpu/ganesh/gl/GrGLDefines_impl.h"
 
-#include <EGL/egl.h>
-#include <EGL/eglext.h>
-#include <GLES/gl.h>
-#include <GLES/glext.h>
-
-#ifdef SK_VULKAN
-#include "include/gpu/vk/GrVkExtensions.h"
-#include "src/gpu/ganesh/vk/GrVkGpu.h"
-#endif
-
-#define PROT_CONTENT_EXT_STR "EGL_EXT_protected_content"
-#define EGL_PROTECTED_CONTENT_EXT 0x32C0
+#include <android/hardware_buffer.h>
 
 std::unique_ptr<SkImageGenerator> GrAHardwareBufferImageGenerator::Make(
         AHardwareBuffer* graphicBuffer, SkAlphaType alphaType, sk_sp<SkColorSpace> colorSpace,
@@ -67,7 +51,7 @@ std::unique_ptr<SkImageGenerator> GrAHardwareBufferImageGenerator::Make(
 GrAHardwareBufferImageGenerator::GrAHardwareBufferImageGenerator(const SkImageInfo& info,
         AHardwareBuffer* hardwareBuffer, SkAlphaType alphaType, bool isProtectedContent,
         uint32_t bufferFormat, GrSurfaceOrigin surfaceOrigin)
-    : INHERITED(info)
+    : GrTextureGenerator(info)
     , fHardwareBuffer(hardwareBuffer)
     , fBufferFormat(bufferFormat)
     , fIsProtectedContent(isProtectedContent)
@@ -174,9 +158,16 @@ GrSurfaceProxyView GrAHardwareBufferImageGenerator::makeView(GrRecordingContext*
 
                 return tex;
             },
-            backendFormat, {width, height}, GrMipmapped::kNo, GrMipmapStatus::kNotAllocated,
-            GrInternalSurfaceFlags::kReadOnly, SkBackingFit::kExact, SkBudgeted::kNo,
-            GrProtected(fIsProtectedContent), GrSurfaceProxy::UseAllocator::kYes);
+            backendFormat,
+            {width, height},
+            GrMipmapped::kNo,
+            GrMipmapStatus::kNotAllocated,
+            GrInternalSurfaceFlags::kReadOnly,
+            SkBackingFit::kExact,
+            skgpu::Budgeted::kNo,
+            GrProtected(fIsProtectedContent),
+            GrSurfaceProxy::UseAllocator::kYes,
+            "AHardwareBufferImageGenerator_MakeView");
 
     skgpu::Swizzle readSwizzle = context->priv().caps()->getReadSwizzle(backendFormat, grColorType);
 
@@ -186,29 +177,32 @@ GrSurfaceProxyView GrAHardwareBufferImageGenerator::makeView(GrRecordingContext*
 GrSurfaceProxyView GrAHardwareBufferImageGenerator::onGenerateTexture(
         GrRecordingContext* context,
         const SkImageInfo& info,
-        const SkIPoint& origin,
         GrMipmapped mipmapped,
         GrImageTexGenPolicy texGenPolicy) {
+
     GrSurfaceProxyView texProxyView = this->makeView(context);
     if (!texProxyView.proxy()) {
         return {};
     }
     SkASSERT(texProxyView.asTextureProxy());
 
-    if (texGenPolicy == GrImageTexGenPolicy::kDraw && origin.isZero() &&
-        info.dimensions() == this->getInfo().dimensions() && mipmapped == GrMipmapped::kNo) {
-        // If the caller wants the full non-MIP mapped texture we're done.
+    if (texGenPolicy == GrImageTexGenPolicy::kDraw && mipmapped == GrMipmapped::kNo) {
+        // If we have the correct mip support, we're done
         return texProxyView;
     }
-    // Otherwise, make a copy for the requested subset and/or MIP maps.
-    SkIRect subset = SkIRect::MakeXYWH(origin.fX, origin.fY, info.width(), info.height());
 
-    SkBudgeted budgeted = texGenPolicy == GrImageTexGenPolicy::kNew_Uncached_Unbudgeted
-                                  ? SkBudgeted::kNo
-                                  : SkBudgeted::kYes;
+    // Otherwise, make a copy for the requested MIP map setting.
+    skgpu::Budgeted budgeted = texGenPolicy == GrImageTexGenPolicy::kNew_Uncached_Unbudgeted
+                                       ? skgpu::Budgeted::kNo
+                                       : skgpu::Budgeted::kYes;
 
-    return GrSurfaceProxyView::Copy(context, std::move(texProxyView), mipmapped, subset,
-                                    SkBackingFit::kExact, budgeted);
+    return GrSurfaceProxyView::Copy(context,
+                                    std::move(texProxyView),
+                                    mipmapped,
+                                    SkIRect::MakeWH(info.width(), info.height()),
+                                    SkBackingFit::kExact,
+                                    budgeted,
+                                    /*label=*/"AHardwareBufferImageGenerator_GenerateTexture");
 }
 
 bool GrAHardwareBufferImageGenerator::onIsValid(GrRecordingContext* context) const {

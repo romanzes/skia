@@ -13,9 +13,12 @@
 #include "include/core/SkPaint.h"
 #include "include/core/SkRect.h"
 #include "include/core/SkScalar.h"
+#include "include/core/SkShader.h"
 #include "include/core/SkSize.h"
 #include "include/core/SkString.h"
 #include "include/core/SkSurface.h"
+#include "include/gpu/GpuTypes.h"
+#include "include/gpu/ganesh/SkSurfaceGanesh.h"
 
 namespace skiagm {
 
@@ -68,7 +71,7 @@ protected:
         constexpr int kInnerOffset = 10;
 
         auto info = SkImageInfo::MakeN32(kImageSize, kImageSize, kOpaque_SkAlphaType);
-        auto surf = SkSurface::MakeRaster(info);
+        auto surf = SkSurfaces::Raster(info);
         auto canvas = surf->getCanvas();
 
         canvas->clear(SK_ColorWHITE);
@@ -97,35 +100,35 @@ protected:
     void onDraw(SkCanvas* canvas) override {
         SkScalar gScales[] = { 0.9f, 0.8f, 0.75f, 0.6f, 0.5f, 0.4f, 0.25f, 0.2f, 0.1f };
 
-        SkASSERT(kNumVertImages-1 == (int)SK_ARRAY_COUNT(gScales)/2);
+        SkASSERT(kNumVertImages-1 == (int)std::size(gScales)/2);
 
         // Minimize vertically
-        for (int i = 0; i < (int)SK_ARRAY_COUNT(gScales); ++i) {
+        for (int i = 0; i < (int)std::size(gScales); ++i) {
             int height = SkScalarFloorToInt(fImage->height() * gScales[i]);
 
             int yOff;
-            if (i <= (int)SK_ARRAY_COUNT(gScales)/2) {
+            if (i <= (int)std::size(gScales)/2) {
                 yOff = kSpacer + i * (fImage->height() + kSpacer);
             } else {
                 // Position the more highly squashed images with their less squashed counterparts
-                yOff = (SK_ARRAY_COUNT(gScales) - i) * (fImage->height() + kSpacer) - height;
+                yOff = (std::size(gScales) - i) * (fImage->height() + kSpacer) - height;
             }
 
             this->draw(canvas, kSpacer, yOff, fImage->width(), height);
         }
 
         // Minimize horizontally
-        for (int i = 0; i < (int)SK_ARRAY_COUNT(gScales); ++i) {
+        for (int i = 0; i < (int)std::size(gScales); ++i) {
             int width = SkScalarFloorToInt(fImage->width() * gScales[i]);
 
             int xOff, yOff;
-            if (i <= (int)SK_ARRAY_COUNT(gScales)/2) {
+            if (i <= (int)std::size(gScales)/2) {
                 xOff = fImage->width() + 2*kSpacer;
                 yOff = kSpacer + i * (fImage->height() + kSpacer);
             } else {
                 // Position the more highly squashed images with their less squashed counterparts
                 xOff = fImage->width() + 2*kSpacer + fImage->width() - width;
-                yOff = kSpacer + (SK_ARRAY_COUNT(gScales) - i - 1) * (fImage->height() + kSpacer);
+                yOff = kSpacer + (std::size(gScales) - i - 1) * (fImage->height() + kSpacer);
             }
 
             this->draw(canvas, xOff, yOff, width, fImage->height());
@@ -188,13 +191,13 @@ protected:
         // texture.
         sk_sp<SkSurface> surface;
         if (auto rc = canvas->recordingContext()) {
-            surface = SkSurface::MakeRenderTarget(rc,
-                                                  SkBudgeted::kYes,
-                                                  ii,
-                                                  1,
-                                                  kTopLeft_GrSurfaceOrigin,
-                                                  /*surfaceProps=*/nullptr,
-                                                  /*shouldCreateWithMips=*/true);
+            surface = SkSurfaces::RenderTarget(rc,
+                                               skgpu::Budgeted::kYes,
+                                               ii,
+                                               /* sampleCount= */ 1,
+                                               kTopLeft_GrSurfaceOrigin,
+                                               /*surfaceProps=*/nullptr,
+                                               /*shouldCreateWithMips=*/true);
             if (!surface) {
                 // We could be in an abandoned context situation.
                 return;
@@ -202,7 +205,7 @@ protected:
         } else {
             surface = canvas->makeSurface(ii);
             if (!surface) {  // could be a recording canvas.
-                surface = SkSurface::MakeRaster(ii);
+                surface = SkSurfaces::Raster(ii);
             }
         }
 
@@ -228,7 +231,7 @@ protected:
                     }
                     canvas->restore();
                     canvas->translate(ii.width() * sx + kPad, 0);
-                    c = (c + 1) % SK_ARRAY_COUNT(kColors);
+                    c = (c + 1) % std::size(kColors);
                 }
                 canvas->restore();
                 canvas->translate(0, ii.width() * sy + kPad);

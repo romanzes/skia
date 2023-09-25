@@ -7,17 +7,18 @@
 
 #include "include/core/SkSpan.h"
 #include "include/private/SkSLDefines.h"
-#include "include/private/SkSLProgramElement.h"
-#include "include/private/SkSLStatement.h"
 #include "src/sksl/SkSLCompiler.h"
 #include "src/sksl/ir/SkSLBlock.h"
 #include "src/sksl/ir/SkSLFunctionDefinition.h"
+#include "src/sksl/ir/SkSLProgramElement.h"
+#include "src/sksl/ir/SkSLStatement.h"
 #include "src/sksl/transform/SkSLProgramWriter.h"
 #include "src/sksl/transform/SkSLTransform.h"
 
 #include <algorithm>
 #include <iterator>
 #include <memory>
+#include <vector>
 
 namespace SkSL {
 
@@ -32,6 +33,9 @@ static void eliminate_empty_statements(SkSpan<std::unique_ptr<ProgramElement>> e
         }
 
         bool visitStatementPtr(std::unique_ptr<Statement>& stmt) override {
+            // Work from the innermost blocks to the outermost.
+            INHERITED::visitStatementPtr(stmt);
+
             if (stmt->is<Block>()) {
                 StatementArray& children = stmt->as<Block>().children();
                 auto iter = std::remove_if(children.begin(), children.end(),
@@ -41,7 +45,8 @@ static void eliminate_empty_statements(SkSpan<std::unique_ptr<ProgramElement>> e
                 children.resize(std::distance(children.begin(), iter));
             }
 
-            return INHERITED::visitStatementPtr(stmt);
+            // We always check the entire program.
+            return false;
         }
 
         using INHERITED = ProgramWriter;
@@ -55,8 +60,8 @@ static void eliminate_empty_statements(SkSpan<std::unique_ptr<ProgramElement>> e
     }
 }
 
-void Transform::EliminateEmptyStatements(LoadedModule& module) {
-    return eliminate_empty_statements(SkMakeSpan(module.fElements));
+void Transform::EliminateEmptyStatements(Module& module) {
+    return eliminate_empty_statements(SkSpan(module.fElements));
 }
 
 }  // namespace SkSL

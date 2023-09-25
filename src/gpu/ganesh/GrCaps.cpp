@@ -7,9 +7,16 @@
 
 #include "src/gpu/ganesh/GrCaps.h"
 
+#include "include/core/SkColor.h"
+#include "include/core/SkRect.h"
+#include "include/core/SkSize.h"
+#include "include/core/SkTextureCompressionType.h"
+#include "include/gpu/GpuTypes.h"
 #include "include/gpu/GrBackendSurface.h"
 #include "include/gpu/GrContextOptions.h"
+#include "include/private/base/SkDebug.h"
 #include "include/private/gpu/ganesh/GrTypesPriv.h"
+#include "src/core/SkCompressedDataUtils.h"
 #include "src/gpu/ganesh/GrBackendUtils.h"
 #include "src/gpu/ganesh/GrRenderTargetProxy.h"
 #include "src/gpu/ganesh/GrSurface.h"
@@ -39,6 +46,7 @@ GrCaps::GrCaps(const GrContextOptions& options) {
     fTwoSidedStencilRefsAndMasksMustMatch = false;
     fMustClearUploadedBufferData = false;
     fShouldInitializeTextures = false;
+    fBuffersAreInitiallyZero = false;
     fSupportsAHardwareBufferImages = false;
     fFenceSyncSupport = false;
     fSemaphoreSupport = false;
@@ -51,6 +59,7 @@ GrCaps::GrCaps(const GrContextOptions& options) {
     fPerformStencilClearsAsDraws = false;
     fTransferFromBufferToTextureSupport = false;
     fTransferFromSurfaceToBufferSupport = false;
+    fTransferFromBufferToBufferSupport = false;
     fWritePixelsRowBytesSupport = false;
     fTransferPixelsToRowBytesSupport = false;
     fReadPixelsRowBytesSupport = false;
@@ -82,6 +91,8 @@ GrCaps::GrCaps(const GrContextOptions& options) {
     fNativeDrawIndexedIndirectIsBroken = false;
     fAvoidReorderingRenderTasks = false;
     fAvoidDithering = false;
+    fAvoidLineDraws = false;
+    fDisablePerspectiveSDFText = false;
 
     fPreferVRAMUseOverFlushes = true;
 
@@ -157,6 +168,10 @@ void GrCaps::applyOptionsOverrides(const GrContextOptions& options) {
     fAvoidStencilBuffers = options.fAvoidStencilBuffers;
 
     fDriverBugWorkarounds.applyOverrides(options.fDriverBugWorkarounds);
+
+    if (options.fDisableTessellationPathRenderer) {
+        fDisableTessellationPathRenderer = true;
+    }
 }
 
 
@@ -215,6 +230,7 @@ void GrCaps::dumpJSON(SkJSONWriter* writer) const {
                        fTwoSidedStencilRefsAndMasksMustMatch);
     writer->appendBool("Must clear buffer memory", fMustClearUploadedBufferData);
     writer->appendBool("Should initialize textures", fShouldInitializeTextures);
+    writer->appendBool("Buffers are initially zero", fBuffersAreInitiallyZero);
     writer->appendBool("Supports importing AHardwareBuffers", fSupportsAHardwareBufferImages);
     writer->appendBool("Fence sync support", fFenceSyncSupport);
     writer->appendBool("Semaphore support", fSemaphoreSupport);
@@ -244,6 +260,7 @@ void GrCaps::dumpJSON(SkJSONWriter* writer) const {
                        fNativeDrawIndexedIndirectIsBroken);
     writer->appendBool("Avoid DAG reordering [workaround]", fAvoidReorderingRenderTasks);
     writer->appendBool("Avoid Dithering [workaround]", fAvoidDithering);
+    writer->appendBool("Disable perspective SDF Text [workaround]", fDisablePerspectiveSDFText);
 
     if (this->advancedBlendEquationSupport()) {
         writer->appendHexU32("Advanced Blend Equation Disable Flags", fAdvBlendEqDisableFlags);
@@ -264,11 +281,11 @@ void GrCaps::dumpJSON(SkJSONWriter* writer) const {
     static_assert(0 == kBasic_BlendEquationSupport);
     static_assert(1 == kAdvanced_BlendEquationSupport);
     static_assert(2 == kAdvancedCoherent_BlendEquationSupport);
-    static_assert(SK_ARRAY_COUNT(kBlendEquationSupportNames) == kLast_BlendEquationSupport + 1);
+    static_assert(std::size(kBlendEquationSupportNames) == kLast_BlendEquationSupport + 1);
 
-    writer->appendString("Blend Equation Support",
-                         kBlendEquationSupportNames[fBlendEquationSupport]);
-    writer->appendString("Map Buffer Support", map_flags_to_string(fMapBufferFlags).c_str());
+    writer->appendCString("Blend Equation Support",
+                          kBlendEquationSupportNames[fBlendEquationSupport]);
+    writer->appendString("Map Buffer Support", map_flags_to_string(fMapBufferFlags));
 
     this->onDumpJSON(writer);
 
@@ -285,8 +302,8 @@ bool GrCaps::surfaceSupportsWritePixels(const GrSurface* surface) const {
     return surface->readOnly() ? false : this->onSurfaceSupportsWritePixels(surface);
 }
 
-bool GrCaps::canCopySurface(const GrSurfaceProxy* dst, const GrSurfaceProxy* src,
-                            const SkIRect& srcRect, const SkIPoint& dstPoint) const {
+bool GrCaps::canCopySurface(const GrSurfaceProxy* dst, const SkIRect& dstRect,
+                            const GrSurfaceProxy* src, const SkIRect& srcRect) const {
     if (dst->readOnly()) {
         return false;
     }
@@ -294,19 +311,25 @@ bool GrCaps::canCopySurface(const GrSurfaceProxy* dst, const GrSurfaceProxy* src
     if (dst->backendFormat() != src->backendFormat()) {
         return false;
     }
-    return this->onCanCopySurface(dst, src, srcRect, dstPoint);
+    // For simplicity, all GrGpu::copySurface() calls can assume that srcRect and dstRect
+    // are already contained within their respective surfaces.
+    if (!SkIRect::MakeSize(dst->dimensions()).contains(dstRect) ||
+        !SkIRect::MakeSize(src->dimensions()).contains(srcRect)) {
+        return false;
+    }
+    return this->onCanCopySurface(dst, dstRect, src, srcRect);
 }
 
 bool GrCaps::validateSurfaceParams(const SkISize& dimensions, const GrBackendFormat& format,
                                    GrRenderable renderable, int renderTargetSampleCnt,
-                                   GrMipmapped mipped, GrTextureType textureType) const {
+                                   skgpu::Mipmapped mipped, GrTextureType textureType) const {
     if (textureType != GrTextureType::kNone) {
         if (!this->isFormatTexturable(format, textureType)) {
             return false;
         }
     }
 
-    if (GrMipmapped::kYes == mipped && !this->mipmapSupport()) {
+    if (skgpu::Mipmapped::kYes == mipped && !this->mipmapSupport()) {
         return false;
     }
 
@@ -404,18 +427,18 @@ bool GrCaps::areColorTypeAndFormatCompatible(GrColorType grCT,
         return false;
     }
 
-    SkImage::CompressionType compression = GrBackendFormatToCompressionType(format);
-    if (compression != SkImage::CompressionType::kNone) {
-        return grCT == (SkCompressionTypeIsOpaque(compression) ? GrColorType::kRGB_888x
-                                                               : GrColorType::kRGBA_8888);
+    SkTextureCompressionType compression = GrBackendFormatToCompressionType(format);
+    if (compression != SkTextureCompressionType::kNone) {
+        return grCT == (SkTextureCompressionTypeIsOpaque(compression) ? GrColorType::kRGB_888x
+                                                                      : GrColorType::kRGBA_8888);
     }
 
     return this->onAreColorTypeAndFormatCompatible(grCT, format);
 }
 
 skgpu::Swizzle GrCaps::getReadSwizzle(const GrBackendFormat& format, GrColorType colorType) const {
-    SkImage::CompressionType compression = GrBackendFormatToCompressionType(format);
-    if (compression != SkImage::CompressionType::kNone) {
+    SkTextureCompressionType compression = GrBackendFormatToCompressionType(format);
+    if (compression != SkTextureCompressionType::kNone) {
         if (colorType == GrColorType::kRGB_888x || colorType == GrColorType::kRGBA_8888) {
             return skgpu::Swizzle::RGBA();
         }
@@ -428,7 +451,7 @@ skgpu::Swizzle GrCaps::getReadSwizzle(const GrBackendFormat& format, GrColorType
 }
 
 bool GrCaps::isFormatCompressed(const GrBackendFormat& format) const {
-    return GrBackendFormatToCompressionType(format) != SkImage::CompressionType::kNone;
+    return GrBackendFormatToCompressionType(format) != SkTextureCompressionType::kNone;
 }
 
 GrDstSampleFlags GrCaps::getDstSampleFlagsForProxy(const GrRenderTargetProxy* rt,

@@ -8,21 +8,23 @@
 #ifndef SKSL_FIELDACCESS
 #define SKSL_FIELDACCESS
 
-#include "include/sksl/SkSLPosition.h"
+#include "include/core/SkSpan.h"
+#include "src/sksl/SkSLPosition.h"
 #include "src/sksl/ir/SkSLExpression.h"
+#include "src/sksl/ir/SkSLIRNode.h"
 #include "src/sksl/ir/SkSLType.h"
 
+#include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <string>
 #include <string_view>
 #include <utility>
-#include <vector>
 
 namespace SkSL {
 
 class Context;
-class SymbolTable;
+enum class OperatorPrecedence : uint8_t;
 
 enum class FieldAccessOwnerKind : int8_t {
     kDefault,
@@ -38,11 +40,11 @@ class FieldAccess final : public Expression {
 public:
     using OwnerKind = FieldAccessOwnerKind;
 
-    inline static constexpr Kind kExpressionKind = Kind::kFieldAccess;
+    inline static constexpr Kind kIRNodeKind = Kind::kFieldAccess;
 
     FieldAccess(Position pos, std::unique_ptr<Expression> base, int fieldIndex,
                 OwnerKind ownerKind = OwnerKind::kDefault)
-    : INHERITED(pos, kExpressionKind, base->type().fields()[fieldIndex].fType)
+    : INHERITED(pos, kIRNodeKind, base->type().fields()[fieldIndex].fType)
     , fFieldIndex(fieldIndex)
     , fOwnerKind(ownerKind)
     , fBase(std::move(base)) {}
@@ -50,7 +52,6 @@ public:
     // Returns a field-access expression; reports errors via the ErrorReporter.
     static std::unique_ptr<Expression> Convert(const Context& context,
                                                Position pos,
-                                               SymbolTable& symbolTable,
                                                std::unique_ptr<Expression> base,
                                                std::string_view field);
 
@@ -77,10 +78,6 @@ public:
         return fOwnerKind;
     }
 
-    bool hasProperty(Property property) const override {
-        return this->base()->hasProperty(property);
-    }
-
     std::unique_ptr<Expression> clone(Position pos) const override {
         return std::make_unique<FieldAccess>(pos,
                                              this->base()->clone(),
@@ -88,10 +85,9 @@ public:
                                              this->ownerKind());
     }
 
-    std::string description() const override {
-        return this->base()->description() + "." +
-               std::string(this->base()->type().fields()[this->fieldIndex()].fName);
-    }
+    size_t initialSlot() const;
+
+    std::string description(OperatorPrecedence) const override;
 
 private:
     int fFieldIndex;

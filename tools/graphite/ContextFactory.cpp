@@ -9,8 +9,14 @@
 
 #include "include/gpu/graphite/Context.h"
 
+#ifdef SK_DAWN
+#include "tools/graphite/dawn/GraphiteDawnTestContext.h"
+#endif
 #ifdef SK_METAL
 #include "tools/graphite/mtl/GraphiteMtlTestContext.h"
+#endif
+#ifdef SK_VULKAN
+#include "tools/graphite/vk/GraphiteVulkanTestContext.h"
 #endif
 
 namespace skiatest::graphite {
@@ -21,7 +27,7 @@ ContextFactory::ContextInfo::ContextInfo(ContextInfo&& other)
     , fContext(std::move(other.fContext)) {
 }
 
-ContextFactory::ContextInfo::ContextInfo(ContextFactory::ContextType type,
+ContextFactory::ContextInfo::ContextInfo(GrContextFactory::ContextType type,
                                          std::unique_ptr<GraphiteTestContext> testContext,
                                          std::unique_ptr<skgpu::graphite::Context> context)
     : fType(type)
@@ -30,8 +36,14 @@ ContextFactory::ContextInfo::ContextInfo(ContextFactory::ContextType type,
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+ContextFactory::ContextFactory(const skgpu::graphite::ContextOptions& options)
+        : fOptions(options) {
+}
+
+ContextFactory::~ContextFactory() {}
+
 std::tuple<GraphiteTestContext*, skgpu::graphite::Context*> ContextFactory::getContextInfo(
-        ContextType type) {
+        GrContextFactory::ContextType type) {
 
     for (ContextInfo& c : fContexts) {
         if (c.type() == type) {
@@ -42,11 +54,42 @@ std::tuple<GraphiteTestContext*, skgpu::graphite::Context*> ContextFactory::getC
     std::unique_ptr<GraphiteTestContext> testCtx;
 
     switch (type) {
-        case ContextType::kMetal: {
+        case GrContextFactory::kMetal_ContextType: {
 #ifdef SK_METAL
             testCtx = graphite::MtlTestContext::Make();
 #endif
         } break;
+        case GrContextFactory::kVulkan_ContextType: {
+#ifdef SK_VULKAN
+            testCtx = graphite::VulkanTestContext::Make();
+#endif
+        } break;
+        case GrContextFactory::kDawn_ContextType:
+        {
+#ifdef SK_DAWN
+            // Pass nullopt for default backend.
+            testCtx = graphite::DawnTestContext::Make(std::nullopt);
+#endif
+        } break;
+#ifdef SK_DAWN
+
+#define CASE(TYPE)                                                              \
+        case GrContextFactory::kDawn_##TYPE##_ContextType:                      \
+        {                                                                       \
+            testCtx = graphite::DawnTestContext::Make(wgpu::BackendType::TYPE); \
+        } break;
+#else
+#define CASE(TYPE)                                                              \
+        case GrContextFactory::kDawn_##TYPE##_ContextType:                      \
+        break;
+#endif // SK_DAWN
+        CASE(D3D11)
+        CASE(D3D12)
+        CASE(Metal)
+        CASE(Vulkan)
+        CASE(OpenGL)
+        CASE(OpenGLES)
+#undef CASE
 
         default:
             break;
@@ -56,7 +99,7 @@ std::tuple<GraphiteTestContext*, skgpu::graphite::Context*> ContextFactory::getC
         return {};
     }
 
-    std::unique_ptr<skgpu::graphite::Context> context = testCtx->makeContext();
+    std::unique_ptr<skgpu::graphite::Context> context = testCtx->makeContext(fOptions);
     if (!context) {
         return {};
     }

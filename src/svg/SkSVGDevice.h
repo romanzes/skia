@@ -11,18 +11,25 @@
 #include "include/core/SkCanvas.h"
 #include "include/core/SkRefCnt.h"
 #include "include/core/SkTypes.h"
-#include "include/private/SkTArray.h"
+#include "include/private/base/SkTArray.h"
+#include "include/private/base/SkTypeTraits.h"
 #include "include/utils/SkParsePath.h"
 #include "src/core/SkClipStackDevice.h"
 
+#include <cstddef>
+#include <cstdint>
 #include <memory>
+#include <type_traits>
+
+namespace sktext {
+class GlyphRunList;
+}
 
 class SkBaseDevice;
 class SkBitmap;
 class SkBlender;
 class SkClipStack;
 class SkData;
-class SkGlyphRunList;
 class SkImage;
 class SkPaint;
 class SkPath;
@@ -58,13 +65,11 @@ protected:
                   bool pathIsMutable = false) override;
 
     void onDrawGlyphRunList(SkCanvas*,
-                            const SkGlyphRunList&,
+                            const sktext::GlyphRunList&,
                             const SkPaint& initialPaint,
                             const SkPaint& drawingPaint) override;
     void drawVertices(const SkVertices*, sk_sp<SkBlender>, const SkPaint&, bool) override;
-#ifdef SK_ENABLE_SKSL
     void drawMesh(const SkMesh&, sk_sp<SkBlender>, const SkPaint&) override;
-#endif
 private:
     SkSVGDevice(const SkISize& size, std::unique_ptr<SkXMLWriter>, uint32_t);
     ~SkSVGDevice() override;
@@ -86,10 +91,14 @@ private:
     struct ClipRec {
         std::unique_ptr<AutoElement> fClipPathElem;
         uint32_t                     fGenID;
+
+        static_assert(::sk_is_trivially_relocatable<decltype(fClipPathElem)>::value);
+
+        using sk_is_trivially_relocatable = std::true_type;
     };
 
-    std::unique_ptr<AutoElement>    fRootElement;
-    SkTArray<ClipRec>               fClipStack;
+    std::unique_ptr<AutoElement> fRootElement;
+    skia_private::TArray<ClipRec> fClipStack;
 
     using INHERITED = SkClipStackDevice;
 };

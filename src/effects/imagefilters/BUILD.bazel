@@ -1,12 +1,10 @@
-load("//bazel:macros.bzl", "exports_files_legacy", "split_srcs_and_hdrs")
+load("//bazel:skia_rules.bzl", "exports_files_legacy", "skia_filegroup", "split_srcs_and_hdrs")
 
 licenses(["notice"])
 
 exports_files_legacy()
 
 IMAGEFILTERS_FILES = [
-    "SkAlphaThresholdImageFilter.cpp",
-    "SkArithmeticImageFilter.cpp",
     "SkBlendImageFilter.cpp",
     "SkBlurImageFilter.cpp",
     "SkColorFilterImageFilter.cpp",
@@ -19,14 +17,12 @@ IMAGEFILTERS_FILES = [
     "SkLightingImageFilter.cpp",
     "SkMagnifierImageFilter.cpp",
     "SkMatrixConvolutionImageFilter.cpp",
+    "SkMatrixTransformImageFilter.cpp",
     "SkMergeImageFilter.cpp",
     "SkMorphologyImageFilter.cpp",
-    "SkOffsetImageFilter.cpp",
     "SkPictureImageFilter.cpp",
     "SkRuntimeImageFilter.cpp",
-    "SkRuntimeImageFilter.h",
     "SkShaderImageFilter.cpp",
-    "SkTileImageFilter.cpp",
 ]
 
 split_srcs_and_hdrs(
@@ -34,13 +30,13 @@ split_srcs_and_hdrs(
     files = IMAGEFILTERS_FILES,
 )
 
-filegroup(
+skia_filegroup(
     name = "srcs",
     srcs = [":imagefilters_srcs"],
     visibility = ["//src/effects:__pkg__"],
 )
 
-filegroup(
+skia_filegroup(
     name = "private_hdrs",
     srcs = [":imagefilters_hdrs"],
     visibility = ["//src/effects:__pkg__"],

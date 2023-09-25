@@ -8,8 +8,9 @@
 #include "src/gpu/ganesh/text/GrAtlasManager.h"
 
 #include "include/core/SkColorSpace.h"
+#include "include/encode/SkPngEncoder.h"
+#include "src/base/SkAutoMalloc.h"
 #include "src/codec/SkMasks.h"
-#include "src/core/SkAutoMalloc.h"
 #include "src/core/SkDistanceFieldGen.h"
 #include "src/gpu/ganesh/GrImageInfo.h"
 #include "src/gpu/ganesh/GrMeshDrawTarget.h"
@@ -118,7 +119,9 @@ static void get_packed_glyph_image(
         };
         constexpr int a565Bpp = MaskFormatBytesPerPixel(MaskFormat::kA565);
         constexpr int argbBpp = MaskFormatBytesPerPixel(MaskFormat::kARGB);
+        char* dstRow = (char*)dst;
         for (int y = 0; y < height; y++) {
+            dst = dstRow;
             for (int x = 0; x < width; x++) {
                 uint16_t color565 = 0;
                 memcpy(&color565, src, a565Bpp);
@@ -130,30 +133,24 @@ static void get_packed_glyph_image(
                 src = (char*)src + a565Bpp;
                 dst = (char*)dst + argbBpp;
             }
+            dstRow += dstRB;
         }
     } else {
-        // crbug:510931
-        // Retrieving the image from the cache can actually change the mask format. This case is
-        // very uncommon so for now we just draw a clear box for these glyphs.
-        const int bpp = MaskFormatBytesPerPixel(expectedMaskFormat);
-        for (int y = 0; y < height; y++) {
-            sk_bzero(dst, width * bpp);
-            dst = (char*)dst + dstRB;
-        }
+        SkUNREACHABLE;
     }
 }
 
-// returns true if glyph successfully added to texture atlas, false otherwise.  If the glyph's
-// mask format has changed, then addGlyphToAtlas will draw a clear box.  This will almost never
-// happen.
-// TODO we can handle some of these cases if we really want to, but the long term solution is to
-// get the actual glyph image itself when we get the glyph metrics.
+// returns true if glyph successfully added to texture atlas, false otherwise.
 GrDrawOpAtlas::ErrorCode GrAtlasManager::addGlyphToAtlas(const SkGlyph& skGlyph,
                                                          Glyph* glyph,
                                                          int srcPadding,
                                                          GrResourceProvider* resourceProvider,
                                                          GrDeferredUploadTarget* uploadTarget) {
+#if !defined(SK_DISABLE_SDF_TEXT)
     SkASSERT(0 <= srcPadding && srcPadding <= SK_DistanceFieldInset);
+#else
+    SkASSERT(0 <= srcPadding);
+#endif
 
     if (skGlyph.image() == nullptr) {
         return GrDrawOpAtlas::ErrorCode::kError;
@@ -179,6 +176,7 @@ GrDrawOpAtlas::ErrorCode GrAtlasManager::addGlyphToAtlas(const SkGlyph& skGlyph,
             // The transformed mask/image case.
             padding = 1;
             break;
+#if !defined(SK_DISABLE_SDF_TEXT)
         case SK_DistanceFieldInset:
             // The SDFT case.
             // If the srcPadding == SK_DistanceFieldInset (SDFT case) then the padding is built
@@ -186,6 +184,7 @@ GrDrawOpAtlas::ErrorCode GrAtlasManager::addGlyphToAtlas(const SkGlyph& skGlyph,
             // TODO: can the SDFT glyph image in the cache be reduced by the padding?
             padding = 0;
             break;
+#endif
         default:
             // The padding is not one of the know forms.
             return GrDrawOpAtlas::ErrorCode::kError;
@@ -234,7 +233,7 @@ GrDrawOpAtlas::ErrorCode GrAtlasManager::addToAtlas(GrResourceProvider* resource
 
 void GrAtlasManager::addGlyphToBulkAndSetUseToken(skgpu::BulkUsePlotUpdater* updater,
                                                   MaskFormat format, Glyph* glyph,
-                                                  skgpu::DrawToken token) {
+                                                  skgpu::AtlasToken token) {
     SkASSERT(glyph);
     if (updater->add(glyph->fAtlasLocator)) {
         this->getAtlas(format)->setLastUseToken(glyph->fAtlasLocator, token);
@@ -249,7 +248,6 @@ void GrAtlasManager::addGlyphToBulkAndSetUseToken(skgpu::BulkUsePlotUpdater* upd
 #include "src/gpu/ganesh/SurfaceContext.h"
 
 #include "include/core/SkBitmap.h"
-#include "include/core/SkImageEncoder.h"
 #include "include/core/SkStream.h"
 #include <stdio.h>
 
@@ -292,7 +290,7 @@ static bool save_pixels(GrDirectContext* dContext, GrSurfaceProxyView view, GrCo
         return false;
     }
 
-    if (!SkEncodeImage(&file, bm, SkEncodedImageFormat::kPNG, 100)) {
+    if (!SkPngEncoder::Encode(&file, bm.pixmap(), {})) {
         SkDebugf("------ failed to encode %s\n", filename);
         remove(filename);   // remove any partial file
         return false;
@@ -366,10 +364,8 @@ bool GrAtlasManager::initAtlas(MaskFormat format) {
 
 namespace sktext::gpu {
 
-std::tuple<bool, int> GlyphVector::regenerateAtlas(int begin, int end,
-                                                   MaskFormat maskFormat,
-                                                   int srcPadding,
-                                                   GrMeshDrawTarget* target) {
+std::tuple<bool, int> GlyphVector::regenerateAtlasForGanesh(
+        int begin, int end, MaskFormat maskFormat, int srcPadding, GrMeshDrawTarget* target) {
     GrAtlasManager* atlasManager = target->atlasManager();
     GrDeferredUploadTarget* uploadTarget = target->deferredUploadTarget();
 

@@ -18,7 +18,8 @@ public:
     static sk_sp<GrDawnRenderTarget> MakeWrapped(GrDawnGpu*,
                                                  SkISize dimensions,
                                                  int sampleCnt,
-                                                 const GrDawnRenderTargetInfo&);
+                                                 const GrDawnRenderTargetInfo&,
+                                                 std::string_view label);
 
     ~GrDawnRenderTarget() override;
 
@@ -40,7 +41,6 @@ protected:
 
     void onAbandon() override;
     void onRelease() override;
-    void onSetRelease(sk_sp<skgpu::RefCntedCallback> releaseHelper) override {}
 
     // This accounts for the texture's memory and any MSAA renderbuffer's memory.
     size_t onGpuMemorySize() const override;

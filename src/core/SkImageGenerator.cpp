@@ -7,8 +7,16 @@
 
 #include "include/core/SkImageGenerator.h"
 
-#include "include/core/SkImage.h"
+#include "include/core/SkAlphaType.h"
+#include "include/core/SkColorType.h"
+#include "include/core/SkGraphics.h"
+#include "include/private/base/SkAssert.h"
 #include "src/core/SkNextID.h"
+#include "src/image/SkImageGeneratorPriv.h"
+
+#include <memory>
+#include <optional>
+#include <utility>
 
 SkImageGenerator::SkImageGenerator(const SkImageInfo& info, uint32_t uniqueID)
     : fInfo(info)
@@ -42,36 +50,7 @@ bool SkImageGenerator::getYUVAPlanes(const SkYUVAPixmaps& yuvaPixmaps) {
     return this->onGetYUVAPlanes(yuvaPixmaps);
 }
 
-#if SK_SUPPORT_GPU
-#include "src/gpu/ganesh/GrSurfaceProxyView.h"
-
-GrSurfaceProxyView SkImageGenerator::generateTexture(GrRecordingContext* ctx,
-                                                     const SkImageInfo& info,
-                                                     const SkIPoint& origin,
-                                                     GrMipmapped mipmapped,
-                                                     GrImageTexGenPolicy texGenPolicy) {
-    SkIRect srcRect = SkIRect::MakeXYWH(origin.x(), origin.y(), info.width(), info.height());
-    if (!SkIRect::MakeWH(fInfo.width(), fInfo.height()).contains(srcRect)) {
-        return {};
-    }
-    return this->onGenerateTexture(ctx, info, origin, mipmapped, texGenPolicy);
-}
-
-GrSurfaceProxyView SkImageGenerator::onGenerateTexture(GrRecordingContext*,
-                                                       const SkImageInfo&,
-                                                       const SkIPoint&,
-                                                       GrMipmapped,
-                                                       GrImageTexGenPolicy) {
-    return {};
-}
-#endif
-
 ///////////////////////////////////////////////////////////////////////////////////////////////////
-
-#include "include/core/SkBitmap.h"
-#include "src/codec/SkColorTable.h"
-
-#include "include/core/SkGraphics.h"
 
 static SkGraphics::ImageGeneratorFromEncodedDataFactory gFactory;
 
@@ -83,8 +62,10 @@ SkGraphics::SetImageGeneratorFromEncodedDataFactory(ImageGeneratorFromEncodedDat
     return prev;
 }
 
-std::unique_ptr<SkImageGenerator> SkImageGenerator::MakeFromEncoded(
-        sk_sp<SkData> data, std::optional<SkAlphaType> at) {
+namespace SkImageGenerators {
+
+std::unique_ptr<SkImageGenerator> MakeFromEncoded(sk_sp<SkData> data,
+                                                  std::optional<SkAlphaType> at) {
     if (!data || at == kOpaque_SkAlphaType) {
         return nullptr;
     }
@@ -93,5 +74,7 @@ std::unique_ptr<SkImageGenerator> SkImageGenerator::MakeFromEncoded(
             return generator;
         }
     }
-    return SkImageGenerator::MakeFromEncodedImpl(std::move(data), at);
+    return MakeFromEncodedImpl(std::move(data), at);
 }
+
+}  // namespace SkImageGenerators

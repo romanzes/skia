@@ -8,6 +8,7 @@
 #include "gm/gm.h"
 #include "include/core/SkCanvas.h"
 #include "include/core/SkColor.h"
+#include "include/core/SkColorFilter.h"
 #include "include/core/SkMatrix.h"
 #include "include/core/SkPaint.h"
 #include "include/core/SkRect.h"
@@ -16,6 +17,8 @@
 #include "include/core/SkShader.h"
 #include "include/core/SkSize.h"
 #include "include/core/SkString.h"
+#include "include/effects/SkColorMatrix.h"
+#include "include/effects/SkImageFilters.h"
 #include "include/effects/SkPerlinNoiseShader.h"
 
 #include <utility>
@@ -26,6 +29,26 @@ enum class Type {
     kFractalNoise,
     kTurbulence,
 };
+
+sk_sp<SkShader> noise_shader(Type type,
+                             float baseFrequencyX,
+                             float baseFrequencyY,
+                             int numOctaves,
+                             float seed,
+                             bool stitchTiles,
+                             SkISize size) {
+    return (type == Type::kFractalNoise)
+                   ? SkShaders::MakeFractalNoise(baseFrequencyX,
+                                                 baseFrequencyY,
+                                                 numOctaves,
+                                                 seed,
+                                                 stitchTiles ? &size : nullptr)
+                   : SkShaders::MakeTurbulence(baseFrequencyX,
+                                               baseFrequencyY,
+                                               numOctaves,
+                                               seed,
+                                               stitchTiles ? &size : nullptr);
+}
 
 class PerlinNoiseGM : public skiagm::GM {
     SkISize fSize = {80, 80};
@@ -49,23 +72,14 @@ class PerlinNoiseGM : public skiagm::GM {
               float baseFrequencyX, float baseFrequencyY, int numOctaves, float seed,
               bool stitchTiles) {
         SkISize tileSize = SkISize::Make(fSize.width() / 2, fSize.height() / 2);
-        sk_sp<SkShader> shader;
-        switch (type) {
-            case Type::kFractalNoise:
-                shader = SkPerlinNoiseShader::MakeFractalNoise(baseFrequencyX,
-                                                               baseFrequencyY,
-                                                               numOctaves,
-                                                               seed,
-                                                               stitchTiles ? &tileSize : nullptr);
-                break;
-            case Type::kTurbulence:
-                shader = SkPerlinNoiseShader::MakeTurbulence(baseFrequencyX,
-                                                             baseFrequencyY,
-                                                             numOctaves,
-                                                             seed,
-                                                             stitchTiles ? &tileSize : nullptr);
-                break;
-        }
+        sk_sp<SkShader> shader = noise_shader(type,
+                                              baseFrequencyX,
+                                              baseFrequencyY,
+                                              numOctaves,
+                                              seed,
+                                              stitchTiles,
+                                              tileSize);
+
         SkPaint paint;
         paint.setShader(std::move(shader));
         if (stitchTiles) {
@@ -115,29 +129,18 @@ private:
     using INHERITED = GM;
 };
 
-class PerlinNoiseGM2 : public skiagm::GM {
+class PerlinNoiseLocalMatrixGM : public skiagm::GM {
     SkISize fSize = {80, 80};
 
     SkString onShortName() override { return SkString("perlinnoise_localmatrix"); }
 
     SkISize onISize() override { return {640, 480}; }
 
-    void install(SkPaint* paint, Type type,
-              float baseFrequencyX, float baseFrequencyY, int numOctaves, float seed,
-              bool stitchTiles) {
-        sk_sp<SkShader> shader = (type == Type::kFractalNoise) ?
-            SkPerlinNoiseShader::MakeFractalNoise(baseFrequencyX, baseFrequencyY, numOctaves,
-                                                  seed, stitchTiles ? &fSize : nullptr) :
-            SkPerlinNoiseShader::MakeTurbulence(baseFrequencyX, baseFrequencyY, numOctaves,
-                                                seed, stitchTiles ? &fSize : nullptr);
-        paint->setShader(std::move(shader));
-    }
-
     void onDraw(SkCanvas* canvas) override {
         canvas->translate(10, 10);
 
         SkPaint paint;
-        this->install(&paint, Type::kFractalNoise, 0.1f, 0.1f, 2, 0, false);
+        paint.setShader(noise_shader(Type::kFractalNoise, 0.1f, 0.1f, 2, 0, false, fSize));
 
         const SkScalar w = SkIntToScalar(fSize.width());
         const SkScalar h = SkIntToScalar(fSize.height());
@@ -185,7 +188,96 @@ class PerlinNoiseGM2 : public skiagm::GM {
     }
 };
 
-} // namespace
+// Demonstrate skbug.com/14166 (Perlin noise shader doesn't rotate correctly)
+class PerlinNoiseRotatedGM : public skiagm::GM {
+    static constexpr SkISize kCellSize = { 100, 100 };
+    static constexpr SkISize kRectSize = { 60, 60 };
+    static constexpr int kPad = 10;
+    static constexpr int kCellsX = 3;
+    static constexpr int kCellsY = 2;
 
-DEF_GM( return new PerlinNoiseGM; )
-DEF_GM( return new PerlinNoiseGM2; )
+    SkString onShortName() override { return SkString("perlinnoise_rotated"); }
+
+    SkISize onISize() override { return { 2*kPad + kCellsX*kCellSize.width(),
+                                          2*kPad + kCellsY*kCellSize.height() }; }
+
+    void onDraw(SkCanvas* canvas) override {
+        SkPaint outline;
+        outline.setColor(SK_ColorBLACK);
+        outline.setStrokeWidth(2.0f);
+        outline.setStyle(SkPaint::kStroke_Style);
+        outline.setAntiAlias(true);
+
+        const SkRect kRectToDraw = SkRect::MakeWH(kRectSize.width(), kRectSize.height());
+        const SkRect kMarker = SkRect::MakeWH(5, 5);
+
+        float yOffset = kPad;
+        for (auto type : { Type::kFractalNoise, Type::kTurbulence }) {
+            float xOffset = kPad;
+
+            SkPaint p;
+            p.setShader(noise_shader(type, 0.05f, 0.05f, 1, 0, false, kRectSize));
+
+            for (float rotation : {0.0f, 10.0f, 80.0f}) {
+                int saveCount = canvas->save();
+                canvas->translate(xOffset, yOffset);
+
+                canvas->drawRect(SkRect::MakeWH(kCellSize.fWidth, kCellSize.fHeight), outline);
+
+                canvas->save();
+
+                canvas->translate(kCellSize.fWidth / 2.0f, kCellSize.fHeight / 2.0f);
+                canvas->rotate(rotation);
+                canvas->translate(-kRectSize.fWidth/2.0f, -kRectSize.fHeight/2.0f);
+
+                canvas->drawRect(kRectToDraw, p);
+
+                canvas->drawRect(kRectToDraw, outline);
+                canvas->drawRect(kMarker, outline);
+
+                canvas->restoreToCount(saveCount);
+
+                xOffset += kCellSize.width();
+            }
+
+            yOffset += kCellSize.height();
+        }
+    }
+};
+
+// Demonstrate skbug.com/14411 (Intel GPUs show artifacts when applying perlin noise to layers)
+class PerlinNoiseLayeredGM : public skiagm::GM {
+    SkString onShortName() override { return SkString("perlinnoise_layered"); }
+
+    SkISize onISize() override { return {500, 500}; }
+
+    void onDraw(SkCanvas* canvas) override {
+        const sk_sp<SkImageFilter> perlin = SkImageFilters::ColorFilter(
+                SkColorFilters::Matrix(SkColorMatrix()),
+                SkImageFilters::Shader(SkShaders::MakeFractalNoise(0.3f, 0.3f, 1, 4)));
+
+        const SkPaint paint;
+        canvas->saveLayer(nullptr, &paint);
+        {
+            SkPaint p;
+            p.setImageFilter(perlin);
+            canvas->drawPaint(p);
+        }
+        canvas->restore();
+
+        canvas->saveLayer(nullptr, nullptr);
+        {
+            SkPaint p;
+            p.setImageFilter(perlin);
+            canvas->drawPaint(p);
+        }
+        canvas->restore();
+    }
+};
+
+} // anonymous namespace
+
+DEF_GM(return new PerlinNoiseGM;)
+DEF_GM(return new PerlinNoiseLocalMatrixGM;)
+DEF_GM(return new PerlinNoiseRotatedGM;)
+DEF_GM(return new PerlinNoiseLayeredGM;)

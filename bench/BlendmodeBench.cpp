@@ -11,7 +11,7 @@
 #include "include/core/SkPaint.h"
 #include "include/core/SkString.h"
 #include "include/core/SkTextBlob.h"
-#include "include/utils/SkRandom.h"
+#include "src/base/SkRandom.h"
 #include "src/core/SkBlendModePriv.h"
 #include "tools/Resources.h"
 
@@ -27,7 +27,7 @@ const char* gTypeNames[] = {
     "mask", "rect", "sprite",
 };
 
-// Benchmark that draws non-AA rects or AA text with an SkXfermode::Mode.
+// Benchmark that draws non-AA rects or AA text with an SkBlendMode.
 class XfermodeBench : public Benchmark {
 public:
     XfermodeBench(SkBlendMode mode, Type t) : fBlendMode(mode) {
