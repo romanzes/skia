@@ -345,7 +345,7 @@ bool Cluster::isSoftBreak() const {
         return false;
     }
     // END OF NON-SKIA-UPSTREAMED CHANGE
-    return fOwner->codeUnitHasProperty(fTextRange.end, CodeUnitFlags::kSoftLineBreakBefore);
+    return fOwner->codeUnitHasProperty(fTextRange.end, SkUnicode::CodeUnitFlags::kSoftLineBreakBefore);
 }
 
 bool Cluster::isGraphemeBreak() const {

@@ -377,7 +377,7 @@ Cluster::Cluster(ParagraphImpl* owner,
 
     fIsWhiteSpaceBreak = whiteSpacesBreakLen == fTextRange.width();
     fIsIntraWordBreak = intraWordBreakLen == fTextRange.width();
-    fIsHardBreak = fOwner->codeUnitHasProperty(fTextRange.end, CodeUnitFlags::kHardLineBreakBefore);
+    fIsHardBreak = fOwner->codeUnitHasProperty(fTextRange.end, SkUnicode::CodeUnitFlags::kHardLineBreakBefore);
     // NON-SKIA-UPSTREAMED CHANGE
     // Some of the symbols that Chrome doesn't recognize to be soft breaks,
     // are soft breaks in Skia by default
