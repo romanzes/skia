@@ -56,17 +56,6 @@ struct LineBreakerWithoutLittleRounding {
 
     const SkScalar fMaxWidth;
 };
-
-struct LineBreakerWithoutLittleRounding {
-    LineBreakerWithoutLittleRounding(SkScalar maxWidth)
-        : fMaxWidth(maxWidth) {}
-
-    bool breakLine(SkScalar width) const {
-        return width > fMaxWidth;
-    }
-
-    const SkScalar fMaxWidth;
-};
 }  // namespace
 
 // Since we allow cluster clipping when they don't fit
