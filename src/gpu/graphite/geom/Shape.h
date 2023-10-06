@@ -13,6 +13,7 @@
 #include "include/core/SkRRect.h"
 #include "include/core/SkRect.h"
 
+#include "src/base/SkVx.h"
 #include "src/gpu/graphite/geom/Rect.h"
 
 #include <array>
@@ -86,10 +87,6 @@ public:
     bool conservativeContains(const Rect& rect) const;
     bool conservativeContains(skvx::float2 point) const;
 
-    // True if the underlying geometry represents a closed shape, without the need for an
-    // implicit close.
-    bool closed() const;
-
     // True if the underlying shape is known to be convex, assuming no other styles. If 'simpleFill'
     // is true, it is assumed the contours will be implicitly closed when drawn or used.
     bool convex(bool simpleFill = true) const;
@@ -104,6 +101,7 @@ public:
     // based on what was last set.
     skvx::float2   p0()    const { SkASSERT(this->isLine());  return fRect.topLeft();  }
     skvx::float2   p1()    const { SkASSERT(this->isLine());  return fRect.botRight(); }
+    skvx::float4   line()  const { SkASSERT(this->isLine());  return fRect.ltrb();     }
     const Rect&    rect()  const { SkASSERT(this->isRect());  return fRect;            }
     const SkRRect& rrect() const { SkASSERT(this->isRRect()); return fRRect;           }
     const SkPath&  path()  const { SkASSERT(this->isPath());  return fPath;            }

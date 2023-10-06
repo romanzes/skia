@@ -5,27 +5,36 @@
 * found in the LICENSE file.
  */
 
+#include "include/core/SkData.h"
+#include "include/core/SkFont.h"
+#include "include/core/SkRefCnt.h"
+#include "include/core/SkSpan.h"
+#include "include/core/SkTypes.h"
+#include "src/base/SkZip.h"
+#include "src/core/SkDescriptor.h"
 #include "src/core/SkGlyph.h"
-#include "src/gpu/ganesh/GrResourceProvider.h"
-
-#include "src/core/SkGlyphBuffer.h"
 #include "src/core/SkReadBuffer.h"
-#include "src/core/SkStrikeCache.h"
+#include "src/core/SkStrike.h"
 #include "src/core/SkStrikeSpec.h"
 #include "src/core/SkWriteBuffer.h"
+#include "src/text/StrikeForGPU.h"
 #include "src/text/gpu/GlyphVector.h"
 #include "src/text/gpu/SubRunAllocator.h"
 #include "tests/Test.h"
+
+#include <initializer_list>
+#include <limits.h>
+#include <optional>
+#include <utility>
 
 using GlyphVector = sktext::gpu::GlyphVector;
 using SubRunAllocator = sktext::gpu::SubRunAllocator;
 
 namespace sktext::gpu {
-
-class TestingPeer {
+class GlyphVectorTestingPeer {
 public:
     static const SkDescriptor& GetDescriptor(const GlyphVector& v) {
-        return v.fSkStrike->getDescriptor();
+        return v.fStrikePromise.descriptor();
     }
     static SkSpan<GlyphVector::Variant> GetGlyphs(const GlyphVector& v) {
         return v.fGlyphs;
@@ -38,15 +47,15 @@ DEF_TEST(GlyphVector_Serialization, r) {
 
     SubRunAllocator alloc;
 
-    SkBulkGlyphMetricsAndImages glyphFinder{strikeSpec};
     const int N = 10;
-    SkGlyphVariant* glyphs = alloc.makePODArray<SkGlyphVariant>(N);
+    SkPackedGlyphID* glyphs = alloc.makePODArray<SkPackedGlyphID>(N);
     for (int i = 0; i < N; i++) {
-        glyphs[i] = glyphFinder.glyph(SkPackedGlyphID(SkTo<SkGlyphID>(i + 1)));
+        glyphs[i] = SkPackedGlyphID(SkGlyphID(i));
     }
 
-    GlyphVector src = GlyphVector::Make(
-            strikeSpec.findOrCreateStrike(), SkMakeSpan(glyphs, N), &alloc);
+    SkStrikePromise promise{strikeSpec.findOrCreateStrike()};
+
+    GlyphVector src = GlyphVector::Make(std::move(promise), SkSpan(glyphs, N), &alloc);
 
     SkBinaryWriteBuffer wBuffer;
     src.flatten(wBuffer);
@@ -55,23 +64,30 @@ DEF_TEST(GlyphVector_Serialization, r) {
     SkReadBuffer rBuffer{data->data(), data->size()};
     auto dst = GlyphVector::MakeFromBuffer(rBuffer, nullptr, &alloc);
     REPORTER_ASSERT(r, dst.has_value());
-    REPORTER_ASSERT(r, TestingPeer::GetDescriptor(src) == TestingPeer::GetDescriptor(*dst));
+    REPORTER_ASSERT(r,
+                    GlyphVectorTestingPeer::GetDescriptor(src) ==
+                            GlyphVectorTestingPeer::GetDescriptor(*dst));
 
-    auto srcGlyphs = TestingPeer::GetGlyphs(src);
-    auto dstGlyphs = TestingPeer::GetGlyphs(*dst);
+    auto srcGlyphs = GlyphVectorTestingPeer::GetGlyphs(src);
+    auto dstGlyphs = GlyphVectorTestingPeer::GetGlyphs(*dst);
     for (auto [srcGlyphID, dstGlyphID] : SkMakeZip(srcGlyphs, dstGlyphs)) {
         REPORTER_ASSERT(r, srcGlyphID.packedGlyphID == dstGlyphID.packedGlyphID);
     }
 }
 
 DEF_TEST(GlyphVector_BadLengths, r) {
-    {
-        SkFont font;
-        auto [strikeSpec, _] = SkStrikeSpec::MakeCanonicalized(font);
+    auto [strikeSpec, _] = SkStrikeSpec::MakeCanonicalized(SkFont());
 
+    // Strike to keep in the strike cache.
+    auto strike = strikeSpec.findOrCreateStrike();
+
+    // Be sure to keep the strike alive. The promise to serialize as the first part of the
+    // GlyphVector.
+    SkStrikePromise promise{sk_sp<SkStrike>(strike)};
+    {
         // Make broken stream by hand - zero length
         SkBinaryWriteBuffer wBuffer;
-        strikeSpec.descriptor().flatten(wBuffer);
+        promise.flatten(wBuffer);
         wBuffer.write32(0);  // length
         auto data = wBuffer.snapshotAsData();
         SkReadBuffer rBuffer{data->data(), data->size()};
@@ -81,12 +97,10 @@ DEF_TEST(GlyphVector_BadLengths, r) {
     }
 
     {
-        SkFont font;
-        auto [strikeSpec, _] = SkStrikeSpec::MakeCanonicalized(font);
-
-        // Make broken stream by hand - stream is too short
+        // Make broken stream by hand - zero length
         SkBinaryWriteBuffer wBuffer;
-        strikeSpec.descriptor().flatten(wBuffer);
+        promise.flatten(wBuffer);
+        // Make broken stream by hand - stream is too short
         wBuffer.write32(5);  // length
         wBuffer.writeUInt(12);  // random data
         wBuffer.writeUInt(12);  // random data
@@ -99,12 +113,9 @@ DEF_TEST(GlyphVector_BadLengths, r) {
     }
 
     {
-        SkFont font;
-        auto [strikeSpec, _] = SkStrikeSpec::MakeCanonicalized(font);
-
         // Make broken stream by hand - length out of range of safe calculations
         SkBinaryWriteBuffer wBuffer;
-        strikeSpec.descriptor().flatten(wBuffer);
+        promise.flatten(wBuffer);
         wBuffer.write32(INT_MAX - 10);  // length
         wBuffer.writeUInt(12);  // random data
         wBuffer.writeUInt(12);  // random data

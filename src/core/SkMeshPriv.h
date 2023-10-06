@@ -8,20 +8,9 @@
 #ifndef SkMeshPriv_DEFINED
 #define SkMeshPriv_DEFINED
 
-#include "include/core/SkMesh.h"
-
-#ifdef SK_ENABLE_SKSL
 #include "include/core/SkData.h"
-#include "include/private/gpu/ganesh/GrTypesPriv.h"
+#include "include/core/SkMesh.h"
 #include "src/core/SkSLTypeShared.h"
-
-#if SK_SUPPORT_GPU
-#include "include/gpu/GrDirectContext.h"
-#include "src/gpu/ganesh/GrDirectContextPriv.h"
-#include "src/gpu/ganesh/GrGpuBuffer.h"
-#include "src/gpu/ganesh/GrResourceCache.h"
-#include "src/gpu/ganesh/GrResourceProvider.h"
-#endif
 
 struct SkMeshSpecificationPriv {
     using Varying   = SkMeshSpecification::Varying;
@@ -29,7 +18,7 @@ struct SkMeshSpecificationPriv {
     using ColorType = SkMeshSpecification::ColorType;
 
     static SkSpan<const Varying> Varyings(const SkMeshSpecification& spec) {
-        return SkMakeSpan(spec.fVaryings);
+        return SkSpan(spec.fVaryings);
     }
 
     static const SkSL::Program* VS(const SkMeshSpecification& spec) { return spec.fVS.get(); }
@@ -48,8 +37,6 @@ struct SkMeshSpecificationPriv {
 
     static SkAlphaType AlphaType(const SkMeshSpecification& spec) { return spec.fAlphaType; }
 
-    static bool HasLocalCoords(const SkMeshSpecification& spec) { return spec.fHasLocalCoords; }
-
     static SkSLType VaryingTypeAsSLType(Varying::Type type) {
         switch (type) {
             case Varying::Type::kFloat:  return SkSLType::kFloat;
@@ -64,17 +51,6 @@ struct SkMeshSpecificationPriv {
         SkUNREACHABLE;
     }
 
-    static GrVertexAttribType AttrTypeAsVertexAttribType(Attribute::Type type) {
-        switch (type) {
-            case Attribute::Type::kFloat:        return kFloat_GrVertexAttribType;
-            case Attribute::Type::kFloat2:       return kFloat2_GrVertexAttribType;
-            case Attribute::Type::kFloat3:       return kFloat3_GrVertexAttribType;
-            case Attribute::Type::kFloat4:       return kFloat4_GrVertexAttribType;
-            case Attribute::Type::kUByte4_unorm: return kUByte4_norm_GrVertexAttribType;
-        }
-        SkUNREACHABLE;
-    }
-
     static SkSLType AttrTypeAsSLType(Attribute::Type type) {
         switch (type) {
             case Attribute::Type::kFloat:        return SkSLType::kFloat;
@@ -85,107 +61,86 @@ struct SkMeshSpecificationPriv {
         }
         SkUNREACHABLE;
     }
+
+    static int PassthroughLocalCoordsVaryingIndex(const SkMeshSpecification& spec) {
+        return spec.fPassthroughLocalCoordsVaryingIndex;
+    }
+
+    /**
+     * A varying is dead if it is never referenced OR it is only referenced as a passthrough for
+     * local coordinates. In the latter case it's index will returned as
+     * PassthroughLocalCoordsVaryingIndex. Our analysis is not very sophisticated so this is
+     * determined conservatively.
+     */
+    static bool VaryingIsDead(const SkMeshSpecification& spec, int v) {
+        SkASSERT(v >= 0 && SkToSizeT(v) < spec.fVaryings.size());
+        return (1 << v) & spec.fDeadVaryingMask;
+    }
 };
 
-struct SkMeshPriv {
-    class Buffer {
-    public:
-        virtual ~Buffer() = 0;
+namespace SkMeshPriv {
+class Buffer {
+public:
+    virtual ~Buffer() = 0;
 
-        Buffer() = default;
-        Buffer(const Buffer&) = delete;
+    Buffer() = default;
+    Buffer(const Buffer&) = delete;
 
-        Buffer& operator=(const Buffer&) = delete;
+    Buffer& operator=(const Buffer&) = delete;
 
-        virtual sk_sp<const SkData> asData() const { return nullptr; }
+    virtual const void* peek() const { return nullptr; }
 
-#if SK_SUPPORT_GPU
-        virtual sk_sp<const GrGpuBuffer> asGpuBuffer() const { return nullptr; }
-#endif
-
-        virtual size_t size() const = 0;
-    };
-
-    class IB : public Buffer, public SkMesh::IndexBuffer  {};
-    class VB : public Buffer, public SkMesh::VertexBuffer {};
-
-    template <typename Base> class CpuBuffer final : public Base {
-    public:
-        CpuBuffer()           = default;
-        ~CpuBuffer() override = default;
-
-        static sk_sp<Base> Make(sk_sp<const SkData> data);
-
-        sk_sp<const SkData> asData() const override { return fData; }
-
-        size_t size() const override { return fData->size(); }
-
-    private:
-        sk_sp<const SkData> fData;
-    };
-
-    using CpuIndexBuffer  = CpuBuffer<IB>;
-    using CpuVertexBuffer = CpuBuffer<VB>;
-
-#if SK_SUPPORT_GPU
-    template <typename Base, GrGpuBufferType> class GpuBuffer final : public Base {
-    public:
-        GpuBuffer() = default;
-
-        ~GpuBuffer() override;
-
-        static sk_sp<Base> Make(GrDirectContext*, sk_sp<const SkData>);
-
-        sk_sp<const GrGpuBuffer> asGpuBuffer() const override { return fBuffer; }
-
-        size_t size() const override { return fBuffer->size(); }
-
-    private:
-        sk_sp<GrGpuBuffer> fBuffer;
-        GrDirectContext::DirectContextID fContextID;
-    };
-
-    using GpuIndexBuffer  = GpuBuffer<IB, GrGpuBufferType::kIndex >;
-    using GpuVertexBuffer = GpuBuffer<VB, GrGpuBufferType::kVertex>;
-#endif  // SK_SUPPORT_GPU
+    virtual bool isGaneshBacked() const { return false; }
 };
+
+class IB : public Buffer, public SkMesh::IndexBuffer  {};
+class VB : public Buffer, public SkMesh::VertexBuffer {};
+
+template <typename Base> class CpuBuffer final : public Base {
+public:
+    ~CpuBuffer() override = default;
+
+    static sk_sp<Base> Make(const void* data, size_t size);
+
+    const void* peek() const override { return fData->data(); }
+
+    size_t size() const override { return fData->size(); }
+
+private:
+    CpuBuffer(sk_sp<SkData> data) : fData(std::move(data)) {}
+
+    bool onUpdate(GrDirectContext*, const void* data, size_t offset, size_t size) override;
+
+    sk_sp<SkData> fData;
+};
+
+using CpuIndexBuffer  = CpuBuffer<IB>;
+using CpuVertexBuffer = CpuBuffer<VB>;
+}  // namespace SkMeshPriv
 
 inline SkMeshPriv::Buffer::~Buffer() = default;
 
-template <typename Base> sk_sp<Base> SkMeshPriv::CpuBuffer<Base>::Make(sk_sp<const SkData> data) {
-    SkASSERT(data);
-    auto result = new CpuBuffer<Base>;
-    result->fData = std::move(data);
-    return sk_sp<Base>(result);
-}
-#if SK_SUPPORT_GPU
-
-template <typename Base, GrGpuBufferType Type> SkMeshPriv::GpuBuffer<Base, Type>::~GpuBuffer() {
-    GrResourceCache::ReturnResourceFromThread(std::move(fBuffer), fContextID);
-}
-
-template <typename Base, GrGpuBufferType Type>
-sk_sp<Base> SkMeshPriv::GpuBuffer<Base, Type>::Make(GrDirectContext* dc,sk_sp<const SkData> data) {
-    SkASSERT(dc);
-    SkASSERT(data);
-
-    sk_sp<GrGpuBuffer> buffer = dc->priv().resourceProvider()->createBuffer(
-            data->data(),
-            data->size(),
-            Type,
-            kStatic_GrAccessPattern);
-    if (!buffer) {
-        return nullptr;
+template <typename Base> sk_sp<Base> SkMeshPriv::CpuBuffer<Base>::Make(const void* data,
+                                                                       size_t size) {
+    SkASSERT(size);
+    sk_sp<SkData> storage;
+    if (data) {
+        storage = SkData::MakeWithCopy(data, size);
+    } else {
+        storage = SkData::MakeZeroInitialized(size);
     }
-
-    auto result = new GpuBuffer;
-    result->fBuffer    = std::move(buffer);
-    result->fContextID = dc->directContextID();
-    return sk_sp<Base>(result);
+    return sk_sp<Base>(new CpuBuffer<Base>(std::move(storage)));
 }
 
-#endif  // SK_SUPPORT_GPU
-
-#endif  // SK_ENABLE_SKSL
+template <typename Base> bool SkMeshPriv::CpuBuffer<Base>::onUpdate(GrDirectContext* dc,
+                                                                    const void* data,
+                                                                    size_t offset,
+                                                                    size_t size) {
+    if (dc) {
+        return false;
+    }
+    std::memcpy(SkTAddOffset<void>(fData->writable_data(), offset), data, size);
+    return true;
+}
 
 #endif

@@ -33,7 +33,7 @@ void GrShaderCaps::dumpJSON(SkJSONWriter* writer) const {
     static_assert(0 == kNotSupported_AdvBlendEqInteraction);
     static_assert(1 == kAutomatic_AdvBlendEqInteraction);
     static_assert(2 == kGeneralEnable_AdvBlendEqInteraction);
-    static_assert(SK_ARRAY_COUNT(kAdvBlendEqInteractionStr) == kLast_AdvBlendEqInteraction + 1);
+    static_assert(std::size(kAdvBlendEqInteractionStr) == kLast_AdvBlendEqInteraction + 1);
 
     writer->appendBool("FB Fetch Support", fFBFetchSupport);
     writer->appendBool("Uses precision modifiers", fUsesPrecisionModifiers);
@@ -60,6 +60,7 @@ void GrShaderCaps::dumpJSON(SkJSONWriter* writer) const {
                        fNoDefaultPrecisionForExternalSamplers);
     writer->appendBool("Rewrite matrix-vector multiply", fRewriteMatrixVectorMultiply);
     writer->appendBool("Rewrite matrix equality comparisons", fRewriteMatrixComparisons);
+    writer->appendBool("Rounding fix required for Perlin noise", fPerlinNoiseRoundingFix);
     writer->appendBool("Flat interpolation support", fFlatInterpolationSupport);
     writer->appendBool("Prefer flat interpolation", fPreferFlatInterpolation);
     writer->appendBool("No perspective interpolation support", fNoPerspectiveInterpolationSupport);
@@ -72,14 +73,12 @@ void GrShaderCaps::dumpJSON(SkJSONWriter* writer) const {
     writer->appendBool("float == fp32", fFloatIs32Bits);
     writer->appendBool("half == fp32", fHalfIs32Bits);
     writer->appendBool("Has poor fragment precision", fHasLowFragmentPrecision);
-    writer->appendBool("Color space math needs float", fColorSpaceMathNeedsFloat);
     writer->appendBool("Builtin fma() support", fBuiltinFMASupport);
     writer->appendBool("Builtin determinant() support", fBuiltinDeterminantSupport);
-    writer->appendBool("Use node pools", fUseNodePools);
 
     writer->appendS32("Max FS Samplers", fMaxFragmentSamplers);
-    writer->appendString("Advanced blend equation interaction",
-                         kAdvBlendEqInteractionStr[fAdvBlendEqInteraction]);
+    writer->appendCString("Advanced blend equation interaction",
+                          kAdvBlendEqInteractionStr[fAdvBlendEqInteraction]);
 
     writer->endObject();
 }
@@ -110,6 +109,7 @@ void GrShaderCaps::applyOptionsOverrides(const GrContextOptions& options) {
         SkASSERT(!fNoDefaultPrecisionForExternalSamplers);
         SkASSERT(!fRewriteMatrixVectorMultiply);
         SkASSERT(!fRewriteMatrixComparisons);
+        SkASSERT(!fPerlinNoiseRoundingFix);
     }
     if (options.fReducedShaderVariations) {
         fReducedShaderMode = true;

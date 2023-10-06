@@ -6,10 +6,10 @@
  */
 
 #include "include/core/SkPaint.h"
+#include "src/base/SkMathPriv.h"
 #include "src/core/SkBlitter.h"
 #include "src/core/SkFDot6.h"
 #include "src/core/SkLineClipper.h"
-#include "src/core/SkMathPriv.h"
 #include "src/core/SkPathPriv.h"
 #include "src/core/SkRasterClip.h"
 #include "src/core/SkScan.h"
@@ -212,7 +212,7 @@ void SkScan::HairRect(const SkRect& rect, const SkRasterClip& clip, SkBlitter* b
 ///////////////////////////////////////////////////////////////////////////////
 
 #include "include/core/SkPath.h"
-#include "include/private/SkVx.h"
+#include "src/base/SkVx.h"
 #include "src/core/SkGeometry.h"
 
 #define kMaxCubicSubdivideLevel 9
@@ -252,7 +252,7 @@ static void hair_quad(const SkPoint pts[3], const SkRegion* clip,
     float2 dt(SK_Scalar1 / lines);
 
     SkPoint tmp[(1 << kMaxQuadSubdivideLevel) + 1];
-    SkASSERT((unsigned)lines < SK_ARRAY_COUNT(tmp));
+    SkASSERT((unsigned)lines < std::size(tmp));
 
     tmp[0] = pts[0];
     float2 A = coeff.fA;
@@ -360,7 +360,7 @@ using mask2 = skvx::Vec<2, uint32_t>;
 
 static inline mask2 float2_is_finite(const float2& x) {
     const mask2 exp_mask = mask2(0xFF << 23);
-    return (skvx::bit_pun<mask2>(x) & exp_mask) != exp_mask;
+    return (sk_bit_cast<mask2>(x) & exp_mask) != exp_mask;
 }
 
 static void hair_cubic(const SkPoint pts[4], const SkRegion* clip, SkBlitter* blitter,
@@ -379,7 +379,7 @@ static void hair_cubic(const SkPoint pts[4], const SkRegion* clip, SkBlitter* bl
     float2 t(0);
 
     SkPoint tmp[(1 << kMaxCubicSubdivideLevel) + 1];
-    SkASSERT((unsigned)lines < SK_ARRAY_COUNT(tmp));
+    SkASSERT((unsigned)lines < std::size(tmp));
 
     tmp[0] = pts[0];
     float2 A = coeff.fA;

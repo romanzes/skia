@@ -5,10 +5,25 @@
  * found in the LICENSE file.
  */
 
-#include "include/core/SkCanvas.h"
 #include "include/core/SkMesh.h"
-#include "src/core/SkZip.h"
+#include "include/core/SkRefCnt.h"
+#include "include/core/SkSpan.h"
+#include "include/core/SkString.h"
+#include "include/core/SkTypes.h"
+#include "src/base/SkZip.h"
+#include "src/core/SkMeshPriv.h"
 #include "tests/Test.h"
+
+#include <algorithm>
+#include <cstddef>
+#include <cstdint>
+#include <initializer_list>
+#include <limits>
+#include <string>
+#include <string_view>
+#include <tuple>
+#include <utility>
+#include <vector>
 
 using Attribute = SkMeshSpecification::Attribute;
 using Varying   = SkMeshSpecification::Varying;
@@ -108,15 +123,17 @@ static bool check_for_success(skiatest::Reporter*         r,
 }
 
 // Simple valid strings to make specifications
-static const SkString kValidVS
-        {"float2 main(Attributes attrs, out Varyings v) { return float2(10); }"};
+static const SkString kValidVS {R"(
+Varyings main(const Attributes attrs) {
+    Varyings v;
+    return v;
+})"};
+
 // There are multiple valid VS signatures.
-static const SkString kValidFSes[] {
-        SkString{"void main(Varyings varyings) {}"},
-        SkString{"float2 main(Varyings varyings) { return float2(10); }"},
-        SkString{"void main(Varyings varyings, out half4 color) { color = half4(.2); }"},
+static const SkString kValidFSes[]{
+        SkString{"float2 main(const Varyings varyings) { return float2(10); }"},
         SkString{R"(
-            float2 main(Varyings varyings, out half4 color) {
+            float2 main(const Varyings varyings, out half4 color) {
                 color = half4(.2);
                 return float2(10);
             }
@@ -135,9 +152,9 @@ static const Varying kValidVaryings[] = {
 static void test_good(skiatest::Reporter* r) {
     for (const auto& validFS : kValidFSes) {
         if (!check_for_success(r,
-                               SkMakeSpan(kValidAttrs, SK_ARRAY_COUNT(kValidAttrs)),
+                               kValidAttrs,
                                kValidStride,
-                               SkMakeSpan(kValidVaryings, SK_ARRAY_COUNT(kValidVaryings)),
+                               kValidVaryings,
                                kValidVS,
                                validFS)) {
             return;
@@ -149,34 +166,33 @@ static void test_bad_sig(skiatest::Reporter* r) {
     static constexpr const char* kVSBody = "{ return float2(10); }";
 
     static constexpr const char* kInvalidVSSigs[] {
-            "float3 main(Attributes attrs, out Varyings v)",         // bad return
-            "float2 main(inout Attributes attrs, out Varyings v)",   // inout Attributes
-            "float2 main(Attributes attrs, inout Varyings v)",       // inout Varyings
-            "float2 main(Attributes attrs)",                         // no Varyings
-            "float2 main(out Varyings)",                             // no Attributes
-            "float2 main(out Varyings, in Attributes)",              // wrong param order
-            "float2 main(Attributes attrs, out Varyings v, float2)"  // extra arg
+            "float3   main(const Attributes attrs)",   // bad return
+            "Varyings main(Attributes attrs)",         // non-const Attributes
+            "Varyings main(out Attributes attrs)",     // out Varyings
+            "Varyings main()",                         // no Attributes
+            "Varyings main(const Varyings v, float2)"  // extra arg
     };
 
     static constexpr const char* kNoColorFSBody = "{ return float2(10); }";
 
     static constexpr const char* kInvalidNoColorFSSigs[] {
-            "half2 main(Varyings v)",               // bad return
-            "float2 main(in Attributes v)",         // wrong param type
-            "float2 main(out Varyings attrs)",      // out Varyings
-            "float2 main()",                        // no args
-            "float2 main(Attributes attrs, float)"  // extra arg
+            "half2  main(const Varyings v)",      // bad return
+            "float2 main(const Attributes v)",    // wrong param type
+            "float2 main(inout Varyings attrs)",  // inout Varyings
+            "float2 main(Varyings v)",            // non-const Varyings
+            "float2 main()",                      // no args
+            "float2 main(const Varyings, float)"  // extra arg
     };
 
     static constexpr const char* kColorFSBody = "{ color = half4(.2); return float2(10); }";
 
     static constexpr const char* kInvalidColorFSSigs[] {
-            "half2 main(Varyings v, out half4 color)",               // bad return
-            "float2 main(in Attributes v, out half4 color)",         // wrong first param type
-            "float2 main(in Varyings v, out half3 color)",           // wrong second param type
-            "float2 main(out Varyings attrs, out half4 color)",      // out Varyings
-            "float2 main(Varyings attrs, half4 color)",              // in color
-            "float2 main(Attributes attrs, out half4 color, float)"  // extra arg
+            "half2  main(const Varyings v, out half4 color)",        // bad return
+            "float2 main(const Attributes v, out half4 color)",      // wrong first param type
+            "float2 main(const Varyings v, out half3 color)",        // wrong second param type
+            "float2 main(out   Varyings v, out half4 color)",        // out Varyings
+            "float2 main(const Varyings v, half4 color)",            // in color
+            "float2 main(const Varyings v, out half4 color, float)"  // extra arg
     };
 
     for (const char* vsSig : kInvalidVSSigs) {
@@ -184,9 +200,9 @@ static void test_bad_sig(skiatest::Reporter* r) {
         invalidVS.appendf("%s %s", vsSig, kVSBody);
         for (const auto& validFS : kValidFSes) {
             if (!check_for_failure(r,
-                                   SkMakeSpan(kValidAttrs, SK_ARRAY_COUNT(kValidAttrs)),
+                                   kValidAttrs,
                                    kValidStride,
-                                   SkMakeSpan(kValidVaryings, SK_ARRAY_COUNT(kValidVaryings)),
+                                   kValidVaryings,
                                    invalidVS,
                                    validFS)) {
                 return;
@@ -198,9 +214,9 @@ static void test_bad_sig(skiatest::Reporter* r) {
         SkString invalidFS;
         invalidFS.appendf("%s %s", noColorFSSig, kNoColorFSBody);
         if (!check_for_failure(r,
-                               SkMakeSpan(kValidAttrs, SK_ARRAY_COUNT(kValidAttrs)),
+                               kValidAttrs,
                                kValidStride,
-                               SkMakeSpan(kValidVaryings, SK_ARRAY_COUNT(kValidVaryings)),
+                               kValidVaryings,
                                kValidVS,
                                invalidFS)) {
             return;
@@ -211,9 +227,9 @@ static void test_bad_sig(skiatest::Reporter* r) {
         SkString invalidFS;
         invalidFS.appendf("%s %s", colorFSSig, kColorFSBody);
         if (!check_for_failure(r,
-                               SkMakeSpan(kValidAttrs, SK_ARRAY_COUNT(kValidAttrs)),
+                               kValidAttrs,
                                kValidStride,
-                               SkMakeSpan(kValidVaryings, SK_ARRAY_COUNT(kValidVaryings)),
+                               kValidVaryings,
                                kValidVS,
                                invalidFS)) {
             return;
@@ -225,15 +241,15 @@ static void test_bad_sig(skiatest::Reporter* r) {
 static void test_float4_color(skiatest::Reporter* r) {
     static const SkString kFloat4FS {
         R"(
-            float2 main(Varyings varyings, out float4 color) {
+            float2 main(const Varyings varyings, out float4 color) {
                 color = float4(.2); return float2(10);
             }
         )"
     };
     check_for_success(r,
-                      SkMakeSpan(kValidAttrs, SK_ARRAY_COUNT(kValidAttrs)),
+                      kValidAttrs,
                       kValidStride,
-                      SkMakeSpan(kValidVaryings, SK_ARRAY_COUNT(kValidVaryings)),
+                      kValidVaryings,
                       kValidVS,
                       kFloat4FS);
 }
@@ -247,9 +263,9 @@ static void test_bad_globals(skiatest::Reporter* r) {
         SkString badVS = kValidVS;
         badVS.prepend(global);
         if (!check_for_failure(r,
-                               SkMakeSpan(kValidAttrs, SK_ARRAY_COUNT(kValidAttrs)),
+                               kValidAttrs,
                                kValidStride,
-                               SkMakeSpan(kValidVaryings, SK_ARRAY_COUNT(kValidVaryings)),
+                               kValidVaryings,
                                badVS,
                                kValidFSes[0])) {
             return;
@@ -259,9 +275,9 @@ static void test_bad_globals(skiatest::Reporter* r) {
         SkString badFS = kValidFSes[0];
         badFS.prepend(global);
         if (!check_for_failure(r,
-                               SkMakeSpan(kValidAttrs, SK_ARRAY_COUNT(kValidAttrs)),
+                               kValidAttrs,
                                kValidStride,
-                               SkMakeSpan(kValidVaryings, SK_ARRAY_COUNT(kValidVaryings)),
+                               kValidVaryings,
                                kValidVS,
                                badFS)) {
             return;
@@ -277,13 +293,18 @@ static void test_good_uniforms(skiatest::Reporter* r) {
     constexpr Flags kVS    = Uniform::kVertex_Flag;
     constexpr Flags kFS    = Uniform::kFragment_Flag;
     constexpr Flags kColor = Uniform::kColor_Flag;
+    constexpr Flags kHalfP = Uniform::kHalfPrecision_Flag;
 
-    auto make_uni = [](Type type, const char* name, size_t offset, uint32_t flags, int count = 0) {
+    auto make_uni = [](Type type,
+                       std::string_view name,
+                       size_t offset,
+                       uint32_t flags,
+                       int count = 0) {
         if (count) {
-            return Uniform{SkString(name), offset, type, count, flags | Uniform::kArray_Flag};
+            return Uniform{name, offset, type, count, flags | Uniform::kArray_Flag};
         } else {
             SkASSERT(!(flags & Uniform::kArray_Flag));
-            return Uniform{SkString(name), offset, type, 1, flags};
+            return Uniform{name, offset, type, 1, flags};
         }
     };
 
@@ -354,8 +375,8 @@ static void test_good_uniforms(skiatest::Reporter* r) {
                         "uniform half x[2];",
                 },
                 {
-                        make_uni(Type::kFloat, "x",  0, kVS|kFS, 2),
-                        make_uni(Type::kInt,   "y",  8, kVS    , 0)
+                        make_uni(Type::kFloat, "x",  0, kVS|kFS|kHalfP, 2),
+                        make_uni(Type::kInt,   "y",  8, kVS           , 0)
                 }
             },
 
@@ -384,8 +405,8 @@ static void test_good_uniforms(skiatest::Reporter* r) {
                             "uniform int3    i3[1];",
                     },
                     {
-                            make_uni(Type::kFloat4x4, "m",    0, kVS|kFS, 4),
-                            make_uni(Type::kInt3,     "i3", 256, kFS    , 1)
+                            make_uni(Type::kFloat4x4, "m",    0, kVS|kFS|kHalfP, 4),
+                            make_uni(Type::kInt3,     "i3", 256, kFS           , 1)
                     }
             },
 
@@ -406,14 +427,14 @@ static void test_good_uniforms(skiatest::Reporter* r) {
                              "uniform int     i;"
                     },
                     {
-                             make_uni(Type::kFloat,    "x" ,   0, kVS    , 0),
-                             make_uni(Type::kFloat4x4, "m" ,   4, kVS|kFS, 4),
-                             make_uni(Type::kInt2,     "i2", 260, kVS    , 2),
-                             make_uni(Type::kFloat3,   "v" , 276, kVS|kFS, 8),
-                             make_uni(Type::kInt3,     "i3", 372, kVS    , 0),
-                             make_uni(Type::kFloat,    "y" , 384, kFS    , 0),
-                             make_uni(Type::kInt4,     "i4", 388, kFS    , 2),
-                             make_uni(Type::kInt,      "i" , 420, kFS    , 0),
+                             make_uni(Type::kFloat,    "x" ,   0, kVS           , 0),
+                             make_uni(Type::kFloat4x4, "m" ,   4, kVS|kFS|kHalfP, 4),
+                             make_uni(Type::kInt2,     "i2", 260, kVS           , 2),
+                             make_uni(Type::kFloat3,   "v" , 276, kVS|kFS       , 8),
+                             make_uni(Type::kInt3,     "i3", 372, kVS           , 0),
+                             make_uni(Type::kFloat,    "y" , 384, kFS           , 0),
+                             make_uni(Type::kInt4,     "i4", 388, kFS           , 2),
+                             make_uni(Type::kInt,      "i" , 420, kFS           , 0),
                     }
             },
     };
@@ -433,14 +454,14 @@ static void test_good_uniforms(skiatest::Reporter* r) {
         }
         fs.prepend(unis);
 
-        auto attrs = SkMakeSpan(kValidAttrs   , SK_ARRAY_COUNT(kValidAttrs)   );
-        auto varys = SkMakeSpan(kValidVaryings, SK_ARRAY_COUNT(kValidVaryings));
+        auto attrs = SkSpan(kValidAttrs);
+        auto varys = SkSpan(kValidVaryings);
         sk_sp<SkMeshSpecification> spec;
         if (!check_for_success(r, attrs, kValidStride, varys, vs, fs, &spec)) {
             return;
         }
         SkString desc = make_description(attrs, kValidStride, varys, vs, fs);
-        auto uniforms = spec->uniforms();
+        SkSpan<const Uniform> uniforms = spec->uniforms();
         if (uniforms.size() != c.expectations.size()) {
             ERRORF(r,
                    "Expected %zu uniforms but actually %zu:\n%s",
@@ -450,18 +471,18 @@ static void test_good_uniforms(skiatest::Reporter* r) {
             return;
         }
         for (const auto& [actual, expected] : SkMakeZip(uniforms, c.expectations)) {
-            if (actual.name != expected.name) {
+            std::string name = std::string(actual.name);
+            if (name != expected.name) {
                 ERRORF(r,
-                       "Actual uniform name (%s) does not match expected name (%s)",
-                       actual.name.c_str(),
-                       expected.name.c_str());
+                       "Actual uniform name (%s) does not match expected name (%.*s)",
+                       name.c_str(),
+                       (int)expected.name.size(), expected.name.data());
                 return;
             }
-            const char* name = actual.name.c_str();
             if (actual.type != expected.type) {
                 ERRORF(r,
                        "Uniform %s: Actual type (%d) does not match expected type (%d)",
-                       name,
+                       name.c_str(),
                        static_cast<int>(actual.type),
                        static_cast<int>(expected.type));
                 return;
@@ -469,7 +490,7 @@ static void test_good_uniforms(skiatest::Reporter* r) {
             if (actual.count != expected.count) {
                 ERRORF(r,
                        "Uniform %s: Actual count (%d) does not match expected count (%d)",
-                       name,
+                       name.c_str(),
                        actual.count,
                        expected.count);
                 return;
@@ -477,7 +498,7 @@ static void test_good_uniforms(skiatest::Reporter* r) {
             if (actual.flags != expected.flags) {
                 ERRORF(r,
                        "Uniform %s: Actual flags (0x%04x) do not match expected flags (0x%04x)",
-                       name,
+                       name.c_str(),
                        actual.flags,
                        expected.flags);
                 return;
@@ -485,7 +506,7 @@ static void test_good_uniforms(skiatest::Reporter* r) {
             if (actual.offset != expected.offset) {
                 ERRORF(r,
                        "Uniform %s: Actual offset (%zu) does not match expected offset (%zu)",
-                       name,
+                       name.c_str(),
                        actual.offset,
                        expected.offset);
                 return;
@@ -524,8 +545,8 @@ static void test_bad_uniforms(skiatest::Reporter* r) {
             SkString fs = kValidFSes[0];
             fs.prepend(u2);
 
-            auto attrs = SkMakeSpan(kValidAttrs   , SK_ARRAY_COUNT(kValidAttrs)   );
-            auto varys = SkMakeSpan(kValidVaryings, SK_ARRAY_COUNT(kValidVaryings));
+            auto attrs = SkSpan(kValidAttrs);
+            auto varys = SkSpan(kValidVaryings);
             if (!check_for_failure(r, attrs, kValidStride, varys, vs, fs)) {
                 return;
             }
@@ -538,9 +559,9 @@ static void test_no_main(skiatest::Reporter* r) {
 
     // Empty VS
     if (!check_for_failure(r,
-                           SkMakeSpan(kValidAttrs, SK_ARRAY_COUNT(kValidAttrs)),
+                           kValidAttrs,
                            kValidStride,
-                           SkMakeSpan(kValidVaryings, SK_ARRAY_COUNT(kValidVaryings)),
+                           kValidVaryings,
                            SkString{},
                            kValidFSes[0])) {
         return;
@@ -548,9 +569,9 @@ static void test_no_main(skiatest::Reporter* r) {
 
     // VS with helper function but no main
     if (!check_for_failure(r,
-                           SkMakeSpan(kValidAttrs, SK_ARRAY_COUNT(kValidAttrs)),
+                           kValidAttrs,
                            kValidStride,
-                           SkMakeSpan(kValidVaryings, SK_ARRAY_COUNT(kValidVaryings)),
+                           kValidVaryings,
                            kHelper,
                            kValidFSes[0])) {
         return;
@@ -558,9 +579,9 @@ static void test_no_main(skiatest::Reporter* r) {
 
     // Empty FS
     if (!check_for_failure(r,
-                           SkMakeSpan(kValidAttrs, SK_ARRAY_COUNT(kValidAttrs)),
+                           kValidAttrs,
                            kValidStride,
-                           SkMakeSpan(kValidVaryings, SK_ARRAY_COUNT(kValidVaryings)),
+                           kValidVaryings,
                            kValidVS,
                            SkString{})) {
         return;
@@ -568,9 +589,9 @@ static void test_no_main(skiatest::Reporter* r) {
 
     // VS with helper function but no main
     if (!check_for_failure(r,
-                           SkMakeSpan(kValidAttrs, SK_ARRAY_COUNT(kValidAttrs)),
+                           kValidAttrs,
                            kValidStride,
-                           SkMakeSpan(kValidVaryings, SK_ARRAY_COUNT(kValidVaryings)),
+                           kValidVaryings,
                            kValidVS,
                            kHelper)) {
         return;
@@ -582,7 +603,7 @@ static void test_zero_attrs(skiatest::Reporter* r) {
     check_for_failure(r,
                       SkSpan<Attribute>(),
                       kValidStride,
-                      SkMakeSpan(kValidVaryings, SK_ARRAY_COUNT(kValidVaryings)),
+                      kValidVaryings,
                       kValidVS,
                       kValidFSes[0]);
 }
@@ -590,7 +611,7 @@ static void test_zero_attrs(skiatest::Reporter* r) {
 static void test_zero_varyings(skiatest::Reporter* r) {
     // Varyings are not required.
     check_for_success(r,
-                      SkMakeSpan(kValidAttrs, SK_ARRAY_COUNT(kValidAttrs)),
+                      kValidAttrs,
                       kValidStride,
                       SkSpan<Varying>(),
                       kValidVS,
@@ -600,9 +621,9 @@ static void test_zero_varyings(skiatest::Reporter* r) {
 static void test_bad_strides(skiatest::Reporter* r) {
     // Zero stride
     if (!check_for_failure(r,
-                           SkMakeSpan(kValidAttrs, SK_ARRAY_COUNT(kValidAttrs)),
+                           kValidAttrs,
                            0,
-                           SkMakeSpan(kValidVaryings, SK_ARRAY_COUNT(kValidVaryings)),
+                           kValidVaryings,
                            kValidVS,
                            kValidFSes[0])) {
         return;
@@ -610,9 +631,9 @@ static void test_bad_strides(skiatest::Reporter* r) {
 
     // Unaligned
     if (!check_for_failure(r,
-                           SkMakeSpan(kValidAttrs, SK_ARRAY_COUNT(kValidAttrs)),
+                           kValidAttrs,
                            kValidStride + 1,
-                           SkMakeSpan(kValidVaryings, SK_ARRAY_COUNT(kValidVaryings)),
+                           kValidVaryings,
                            kValidVS,
                            kValidFSes[0])) {
         return;
@@ -620,9 +641,9 @@ static void test_bad_strides(skiatest::Reporter* r) {
 
     // Too large
     if (!check_for_failure(r,
-                           SkMakeSpan(kValidAttrs, SK_ARRAY_COUNT(kValidAttrs)),
+                           kValidAttrs,
                            1 << 20,
-                           SkMakeSpan(kValidVaryings, SK_ARRAY_COUNT(kValidVaryings)),
+                           kValidVaryings,
                            kValidVS,
                            kValidFSes[0])) {
         return;
@@ -635,9 +656,9 @@ static void test_bad_offsets(skiatest::Reporter* r) {
                 {Attribute::Type::kFloat4,  1, SkString{"var"}},
         };
         if (!check_for_failure(r,
-                               SkMakeSpan(kAttributes, SK_ARRAY_COUNT(kAttributes)),
+                               kAttributes,
                                32,
-                               SkMakeSpan(kValidVaryings, SK_ARRAY_COUNT(kValidVaryings)),
+                               kValidVaryings,
                                kValidVS,
                                kValidFSes[0])) {
             return;
@@ -649,9 +670,9 @@ static void test_bad_offsets(skiatest::Reporter* r) {
                 {Attribute::Type::kFloat2,  16, SkString{"var"}},
         };
         if (!check_for_failure(r,
-                               SkMakeSpan(kAttributes, SK_ARRAY_COUNT(kAttributes)),
+                               kAttributes,
                                20,
-                               SkMakeSpan(kValidVaryings, SK_ARRAY_COUNT(kValidVaryings)),
+                               kValidVaryings,
                                kValidVS,
                                kValidFSes[0])) {
             return;
@@ -662,9 +683,9 @@ static void test_bad_offsets(skiatest::Reporter* r) {
                 {Attribute::Type::kFloat, std::numeric_limits<size_t>::max() - 3, SkString{"var"}},
         };
         if (!check_for_failure(r,
-                               SkMakeSpan(kAttributes, SK_ARRAY_COUNT(kAttributes)),
+                               kAttributes,
                                4,
-                               SkMakeSpan(kValidVaryings, SK_ARRAY_COUNT(kValidVaryings)),
+                               kValidVaryings,
                                kValidVS,
                                kValidFSes[0])) {
             return;
@@ -680,9 +701,9 @@ static void test_too_many_attrs(skiatest::Reporter* r) {
         attrs.push_back({Attribute::Type::kFloat4, 0, SkStringPrintf("attr%zu", i)});
     }
     check_for_failure(r,
-                      SkMakeSpan(attrs),
+                      attrs,
                       4*4,
-                      SkMakeSpan(kValidVaryings, SK_ARRAY_COUNT(kValidVaryings)),
+                      kValidVaryings,
                       kValidVS,
                       kValidFSes[0]);
 }
@@ -695,9 +716,9 @@ static void test_too_many_varyings(skiatest::Reporter* r) {
         varyings.push_back({Varying::Type::kFloat4, SkStringPrintf("varying%zu", i)});
     }
     check_for_failure(r,
-                      SkMakeSpan(kValidAttrs, SK_ARRAY_COUNT(kValidAttrs)),
+                      kValidAttrs,
                       kValidStride,
-                      SkMakeSpan(varyings),
+                      SkSpan(varyings),
                       kValidVS,
                       kValidFSes[0]);
 }
@@ -708,9 +729,9 @@ static void test_duplicate_attribute_names(skiatest::Reporter* r) {
             {Attribute::Type::kFloat2, 16, SkString{"var"}}
     };
     check_for_failure(r,
-                      SkMakeSpan(kAttributes, SK_ARRAY_COUNT(kAttributes)),
+                      kAttributes,
                       24,
-                      SkMakeSpan(kValidVaryings, SK_ARRAY_COUNT(kValidVaryings)),
+                      kValidVaryings,
                       kValidVS,
                       kValidFSes[0]);
 }
@@ -721,9 +742,9 @@ static void test_duplicate_varying_names(skiatest::Reporter* r) {
         {Varying::Type::kFloat3, SkString{"var"}}
     };
     check_for_failure(r,
-                      SkMakeSpan(kValidAttrs, SK_ARRAY_COUNT(kValidAttrs)),
+                      kValidAttrs,
                       kValidStride,
-                      SkMakeSpan(kVaryings, SK_ARRAY_COUNT(kVaryings)),
+                      kVaryings,
                       kValidVS,
                       kValidFSes[0]);
 }
@@ -735,9 +756,9 @@ static void test_sneaky_attribute_name(skiatest::Reporter* r) {
             {Attribute::Type::kFloat4, 0, SkString{kSneakyName}},
     };
     check_for_failure(r,
-                      SkMakeSpan(kAttributes, SK_ARRAY_COUNT(kAttributes)),
+                      kAttributes,
                       16,
-                      SkMakeSpan(kValidVaryings, SK_ARRAY_COUNT(kValidVaryings)),
+                      kValidVaryings,
                       kValidVS,
                       kValidFSes[0]);
 }
@@ -747,9 +768,35 @@ static void test_sneaky_varying_name(skiatest::Reporter* r) {
             {Varying::Type::kFloat4, SkString{kSneakyName}},
     };
     check_for_failure(r,
-                      SkMakeSpan(kValidAttrs, SK_ARRAY_COUNT(kValidAttrs)),
+                      kValidAttrs,
                       kValidStride,
-                      SkMakeSpan(kVaryings, SK_ARRAY_COUNT(kVaryings)),
+                      kVaryings,
+                      kValidVS,
+                      kValidFSes[0]);
+}
+
+static void test_good_position_varying(skiatest::Reporter* r) {
+    // Position varying can be explicit if it is float2
+    static const Varying kVaryings[] {
+            {Varying::Type::kFloat2, SkString{"position"}},
+    };
+    check_for_success(r,
+                      kValidAttrs,
+                      kValidStride,
+                      kVaryings,
+                      kValidVS,
+                      kValidFSes[0]);
+}
+
+static void test_bad_position_varying(skiatest::Reporter* r) {
+    // Position varying can be explicit but it must be float2
+    static const Varying kVaryings[] {
+            {Varying::Type::kFloat4, SkString{"position"}},
+    };
+    check_for_failure(r,
+                      kValidAttrs,
+                      kValidStride,
+                      kVaryings,
                       kValidVS,
                       kValidFSes[0]);
 }
@@ -759,9 +806,9 @@ static void test_empty_attribute_name(skiatest::Reporter* r) {
             {Attribute::Type::kFloat4, 0, SkString{}},
     };
     check_for_failure(r,
-                      SkMakeSpan(kAttributes, SK_ARRAY_COUNT(kAttributes)),
+                      kAttributes,
                       16,
-                      SkMakeSpan(kValidVaryings, SK_ARRAY_COUNT(kValidVaryings)),
+                      kValidVaryings,
                       kValidVS,
                       kValidFSes[0]);
 }
@@ -771,9 +818,9 @@ static void test_empty_varying_name(skiatest::Reporter* r) {
             {Varying::Type::kFloat4, SkString{}},
     };
     check_for_failure(r,
-                      SkMakeSpan(kValidAttrs, SK_ARRAY_COUNT(kValidAttrs)),
+                      kValidAttrs,
                       kValidStride,
-                      SkMakeSpan(kVaryings, SK_ARRAY_COUNT(kVaryings)),
+                      kVaryings,
                       kValidVS,
                       kValidFSes[0]);
 }
@@ -793,13 +840,286 @@ DEF_TEST(MeshSpec, reporter) {
     test_bad_offsets(reporter);
     test_too_many_attrs(reporter);
     test_too_many_varyings(reporter);
-    // skbug.com/12712
-    if ((false)) {
-        test_duplicate_attribute_names(reporter);
-        test_duplicate_varying_names(reporter);
-    }
+    test_duplicate_attribute_names(reporter);
+    test_duplicate_varying_names(reporter);
     test_sneaky_attribute_name(reporter);
     test_sneaky_varying_name(reporter);
+    test_good_position_varying(reporter);
+    test_bad_position_varying(reporter);
     test_empty_attribute_name(reporter);
     test_empty_varying_name(reporter);
+}
+
+
+DEF_TEST(MeshSpecVaryingPassthrough, reporter) {
+    static const Attribute kAttributes[]{
+            {Attribute::Type::kFloat2,        0, SkString{"position"}},
+            {Attribute::Type::kFloat2,        8, SkString{"uv"}      },
+            {Attribute::Type::kUByte4_unorm, 16, SkString{"color"}   },
+    };
+    static const Varying kVaryings[]{
+            {Varying::Type::kFloat2, SkString{"position"}},
+            {Varying::Type::kFloat2, SkString{"uv"}      },
+            {Varying::Type::kHalf4,  SkString{"color"}   },
+    };
+
+    static constexpr char kVS[] = R"(
+            Varyings main(const Attributes a) {
+                Varyings v;
+                v.uv       = a.uv;
+                v.position = a.position;
+                v.color    = a.color;
+                return v;
+            }
+    )";
+    auto check = [&] (const char* fs, const char* passthroughAttr) {
+        auto [spec, error] = SkMeshSpecification::Make(kAttributes,
+                                                       /*vertexStride=*/24,
+                                                       kVaryings,
+                                                       SkString(kVS),
+                                                       SkString(fs));
+        if (!spec) {
+            ERRORF(reporter, "%s\n%s", fs, error.c_str());
+            return;
+        }
+        int idx = SkMeshSpecificationPriv::PassthroughLocalCoordsVaryingIndex(*spec);
+        const SkString& actualAttr = idx >= 0 ? spec->attributes()[idx].name : SkString("<none>");
+        if (!passthroughAttr) {
+            if (idx >= 0) {
+                ERRORF(reporter, "Expected no passthrough coords attribute, found %s.\n%s",
+                       actualAttr.c_str(),
+                       fs);
+            }
+        } else if (!actualAttr.equals(passthroughAttr)) {
+            ERRORF(reporter, "Expected %s as passthrough coords attribute, found %s.\n%s",
+                   passthroughAttr,
+                   actualAttr.c_str(),
+                   fs);
+        }
+    };
+
+    // Simple
+    check(R"(float2 main(const Varyings v) {
+                  return v.uv;
+              })",
+          "uv");
+
+    // Simple, using position
+    check(R"(float2 main(const Varyings v) {
+                  return v.position;
+              })",
+          "position");
+
+    // Simple, with output color
+    check(R"(float2 main(const Varyings v, out half4 color) {
+                  color = v.color;
+                  return v.uv;
+              })",
+          "uv");
+
+    // Three returns, all the same.
+    check(R"(uniform int selector;
+
+             float2 main(const Varyings v, out half4 color) {
+                  if (selector == 0) {
+                      color = half4(1, 0, 0, 1);
+                      return v.position;
+                  }
+                  if (selector == 1) {
+                      color = half4(1, 1, 0, 1);
+                      return v.position;
+                  }
+                  color = half4(1, 0, 1, 1);
+                  return v.position;
+             })",
+          "position");
+
+    // Three returns, one not like the others
+    check(R"(uniform int selector;
+
+             float2 main(const Varyings v, out half4 color) {
+                  if (selector == 0) {
+                      color = color.bgra;
+                      return v.position;
+                  }
+                  if (selector == 1) {
+                      color = half4(1);
+                      return v.uv;
+                  }
+                  color = color;
+                  return v.position;
+             })",
+          nullptr);
+
+    // Swizzles aren't handled (yet?).
+    check(R"(float2 main(const Varyings v) {
+                  return v.uv.yx;
+              })",
+          nullptr);
+
+    // Return from non-main fools us?
+    check(R"(noinline half4 get_color(const Varyings v) { return v.color; }
+
+             float2 main(const Varyings v, out half4 color) {
+                  color = get_color(v);
+                  return v.position;
+              })",
+          "position");
+}
+
+DEF_TEST(MeshSpecUnusedVaryings, reporter) {
+    static const Attribute kAttributes[]{
+            {Attribute::Type::kFloat2,        0, SkString{"position"}},
+            {Attribute::Type::kFloat2,        8, SkString{"uv"}      },
+            {Attribute::Type::kUByte4_unorm, 16, SkString{"color"}   },
+    };
+    static const Varying kVaryings[]{
+            {Varying::Type::kFloat2, SkString{"position"}},
+            {Varying::Type::kFloat2, SkString{"uv"}      },
+            {Varying::Type::kHalf4,  SkString{"color"}   },
+    };
+
+    static constexpr char kVS[] = R"(
+            Varyings main(const Attributes a) {
+                Varyings v;
+                v.uv       = a.uv;
+                v.position = a.position;
+                v.color    = a.color;
+                return v;
+            }
+    )";
+
+    auto check = [&](const char* fs, bool positionDead, bool uvDead, bool colorDead) {
+        static_assert(std::size(kVaryings) == 3);
+        auto [spec, error] = SkMeshSpecification::Make(kAttributes,
+                                                       /*vertexStride=*/24,
+                                                       kVaryings,
+                                                       SkString(kVS),
+                                                       SkString(fs));
+        if (!spec) {
+            ERRORF(reporter, "%s\n%s", fs, error.c_str());
+            return;
+        }
+        bool positionActuallyDead = SkMeshSpecificationPriv::VaryingIsDead(*spec, 0);
+        bool uvActuallyDead       = SkMeshSpecificationPriv::VaryingIsDead(*spec, 1);
+        bool colorActuallyDead    = SkMeshSpecificationPriv::VaryingIsDead(*spec, 2);
+        auto str = [](bool dead) { return dead ? "dead" : "not dead"; };
+        if (positionActuallyDead != positionDead) {
+            ERRORF(reporter,
+                   "Expected position to be detected %s but it is detected %s.\n%s",
+                   str(positionDead),
+                   str(positionActuallyDead),
+                   fs);
+        }
+        if (uvActuallyDead != uvDead) {
+            ERRORF(reporter,
+                   "Expected uv to be detected %s but it is detected %s.\n%s",
+                   str(uvDead),
+                   str(uvActuallyDead),
+                   fs);
+        }
+        if (colorActuallyDead != colorDead) {
+            ERRORF(reporter,
+                   "Expected color to be detected %s but it is detected %s.\n%s",
+                   str(colorDead),
+                   str(colorActuallyDead),
+                   fs);
+        }
+    };
+
+    // Simple
+    check(R"(float2 main(const Varyings v) {
+                 return v.uv;
+             })",
+          true,
+          true,
+          true);
+
+    // Simple, using position
+    check(R"(float2 main(const Varyings v) {
+                 return v.position;
+             })",
+          true,
+          true,
+          true);
+
+    // Two returns that are both passthrough of the same varying
+    check(R"(float2 main(const Varyings v, out half4 color) {
+                 if (v.color.r > 0.5) {
+                     color = v.color;
+                     return v.uv;
+                 } else {
+                     color = 2*color;
+                     return v.uv;
+                 }
+             })",
+          true,
+          true,
+          false);
+
+    // Two returns that are both passthrough of the different varyings and unused other varying
+    check(R"(float2 main(const Varyings v, out half4 color) {
+                 if (v.position.x > 10) {
+                     color = half4(0);
+                     return v.uv;
+                 } else {
+                     color = half4(1);
+                     return v.position;
+                 }
+             })",
+          false,
+          false,
+          true);
+
+    // Passthrough but we also use the varying elsewhere
+    check(R"(float2 main(const Varyings v, out half4 color) {
+                 color = half4(v.uv.x, 0, 0, 1);
+                 return v.uv;
+             })",
+          true,
+          false,
+          true);
+
+    // Use two varyings is a return statement
+    check(R"(float2 main(const Varyings v) {
+                  return v.uv + v.position;
+              })",
+          false,
+          false,
+          true);
+
+    // Slightly more complicated varying use.
+    check(R"(noinline vec2 get_pos(const Varyings v) { return v.position; }
+
+             noinline half4 identity(half4 c) { return c; }
+
+             float2 main(const Varyings v, out half4 color) {
+                 color = identity(v.color);
+                 return v.uv + get_pos(v);
+             })",
+          false,
+          false,
+          false);
+
+    // Go through assignment to another Varyings.
+    check(R"(float2 main(const Varyings v) {
+                 Varyings otherVaryings;
+                 otherVaryings = v;
+                 return otherVaryings.uv;
+             })",
+          true,
+          false,
+          true);
+
+    // We're not very smart. We just look for any use of the field in any Varyings value and don't
+    // do any data flow analysis.
+    check(R"(float2 main(const Varyings v) {
+                 Varyings otherVaryings;
+                 otherVaryings.uv       = half2(5);
+                 otherVaryings.position = half2(10);
+                 return otherVaryings.position;
+             })",
+          false,
+          false,
+          true);
 }

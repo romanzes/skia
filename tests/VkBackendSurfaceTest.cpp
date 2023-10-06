@@ -10,27 +10,37 @@
 #include "include/core/SkTypes.h"
 
 #if defined(SK_VULKAN)
-
+#include "include/core/SkAlphaType.h"
+#include "include/core/SkColorSpace.h"
+#include "include/core/SkColorType.h"
 #include "include/core/SkImage.h"
+#include "include/core/SkRefCnt.h"
+#include "include/gpu/GpuTypes.h"
 #include "include/gpu/GrBackendSurface.h"
 #include "include/gpu/GrDirectContext.h"
+#include "include/gpu/GrTypes.h"
+#include "include/gpu/ganesh/SkImageGanesh.h"
 #include "include/gpu/vk/GrVkTypes.h"
-#include "include/gpu/vk/GrVkVulkan.h"
+#include "include/private/gpu/ganesh/GrTypesPriv.h"
 #include "src/gpu/ganesh/GrDirectContextPriv.h"
-#include "src/gpu/ganesh/GrTexture.h"
+#include "src/gpu/ganesh/GrSurface.h"
+#include "src/gpu/ganesh/GrSurfaceProxy.h"
 #include "src/gpu/ganesh/GrTextureProxy.h"
-#include "src/gpu/ganesh/vk/GrVkGpu.h"
-#include "src/gpu/ganesh/vk/GrVkImageLayout.h"
+#include "src/gpu/ganesh/image/GrImageUtils.h"
+#include "src/gpu/ganesh/vk/GrVkCaps.h"
+#include "src/gpu/ganesh/vk/GrVkImage.h"
 #include "src/gpu/ganesh/vk/GrVkTexture.h"
-#include "src/image/SkImage_Base.h"
-#include "src/image/SkImage_Gpu.h"
-#include "src/image/SkImage_GpuBase.h"
-#include "src/image/SkSurface_Gpu.h"
+#include "tests/CtsEnforcement.h"
 #include "tests/Test.h"
 #include "tools/gpu/ManagedBackendTexture.h"
 #include "tools/gpu/ProxyUtils.h"
 
-DEF_GPUTEST_FOR_VULKAN_CONTEXT(VkDRMModifierTest, reporter, ctxInfo) {
+#include <vulkan/vulkan_core.h>
+
+class GrTexture;
+struct GrContextOptions;
+
+DEF_GANESH_TEST_FOR_VULKAN_CONTEXT(VkDRMModifierTest, reporter, ctxInfo, CtsEnforcement::kNever) {
     auto dContext = ctxInfo.directContext();
 
     const GrVkCaps* vkCaps = static_cast<const GrVkCaps*>(dContext->priv().caps());
@@ -60,18 +70,20 @@ DEF_GPUTEST_FOR_VULKAN_CONTEXT(VkDRMModifierTest, reporter, ctxInfo) {
     REPORTER_ASSERT(reporter, drmBETex.textureType() == GrTextureType::kExternal);
 
     // Now wrap the texture in an SkImage and make sure we have the required read only properties
-    sk_sp<SkImage> drmImage = SkImage::MakeFromTexture(dContext,
-                                                       drmBETex,
-                                                       kTopLeft_GrSurfaceOrigin,
-                                                       kRGBA_8888_SkColorType,
-                                                       kPremul_SkAlphaType,
-                                                       nullptr);
+    sk_sp<SkImage> drmImage = SkImages::BorrowTextureFrom(dContext,
+                                                          drmBETex,
+                                                          kTopLeft_GrSurfaceOrigin,
+                                                          kRGBA_8888_SkColorType,
+                                                          kPremul_SkAlphaType,
+                                                          nullptr);
     REPORTER_ASSERT(reporter, drmImage);
 
-    REPORTER_ASSERT(reporter,
-            GrBackendTexture::TestingOnly_Equals(drmImage->getBackendTexture(false), drmBETex));
+    GrBackendTexture actual;
+    bool ok = SkImages::GetBackendTextureFromImage(drmImage, &actual, false);
+    REPORTER_ASSERT(reporter, ok);
+    REPORTER_ASSERT(reporter, GrBackendTexture::TestingOnly_Equals(actual, drmBETex));
 
-    auto[view, _] = as_IB(drmImage.get()) -> asView(dContext, GrMipmapped::kNo);
+    auto [view, _] = skgpu::ganesh::AsView(dContext, drmImage, GrMipmapped::kNo);
     REPORTER_ASSERT(reporter, view);
     const GrSurfaceProxy* proxy = view.proxy();
     REPORTER_ASSERT(reporter, proxy);
@@ -85,7 +97,7 @@ DEF_GPUTEST_FOR_VULKAN_CONTEXT(VkDRMModifierTest, reporter, ctxInfo) {
     drmImage.reset();
 }
 
-DEF_GPUTEST_FOR_VULKAN_CONTEXT(VkImageLayoutTest, reporter, ctxInfo) {
+DEF_GANESH_TEST_FOR_VULKAN_CONTEXT(VkImageLayoutTest, reporter, ctxInfo, CtsEnforcement::kNever) {
     auto dContext = ctxInfo.directContext();
 
     auto mbet = sk_gpu_test::ManagedBackendTexture::MakeWithoutData(
@@ -117,15 +129,15 @@ DEF_GPUTEST_FOR_VULKAN_CONTEXT(VkImageLayoutTest, reporter, ctxInfo) {
     // Setting back the layout since we didn't actually change it
     backendTex1.setVkImageLayout(initLayout);
 
-    sk_sp<SkImage> wrappedImage = SkImage::MakeFromTexture(
-            dContext,
-            backendTex1,
-            kTopLeft_GrSurfaceOrigin,
-            kRGBA_8888_SkColorType,
-            kPremul_SkAlphaType,
-            /*color space*/ nullptr,
-            sk_gpu_test::ManagedBackendTexture::ReleaseProc,
-            mbet->releaseContext());
+    sk_sp<SkImage> wrappedImage =
+            SkImages::BorrowTextureFrom(dContext,
+                                        backendTex1,
+                                        kTopLeft_GrSurfaceOrigin,
+                                        kRGBA_8888_SkColorType,
+                                        kPremul_SkAlphaType,
+                                        /*color space*/ nullptr,
+                                        sk_gpu_test::ManagedBackendTexture::ReleaseProc,
+                                        mbet->releaseContext());
     REPORTER_ASSERT(reporter, wrappedImage.get());
 
     GrSurfaceProxy* proxy = sk_gpu_test::GetTextureImageProxy(wrappedImage.get(), dContext);
@@ -142,7 +154,9 @@ DEF_GPUTEST_FOR_VULKAN_CONTEXT(VkImageLayoutTest, reporter, ctxInfo) {
     REPORTER_ASSERT(reporter, backendTex1.getVkImageInfo(&info));
     REPORTER_ASSERT(reporter, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL == info.fImageLayout);
 
-    GrBackendTexture backendTexImage = wrappedImage->getBackendTexture(false);
+    GrBackendTexture backendTexImage;
+    bool ok = SkImages::GetBackendTextureFromImage(wrappedImage, &backendTexImage, false);
+    REPORTER_ASSERT(reporter, ok);
     REPORTER_ASSERT(reporter, backendTexImage.getVkImageInfo(&info));
     REPORTER_ASSERT(reporter, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL == info.fImageLayout);
 
@@ -188,7 +202,8 @@ DEF_GPUTEST_FOR_VULKAN_CONTEXT(VkImageLayoutTest, reporter, ctxInfo) {
 // renenabled, see skbug.com/8936.
 #if 0
 // Test to make sure we transition from the EXTERNAL queue even when no layout transition is needed.
-DEF_GPUTEST_FOR_VULKAN_CONTEXT(VkTransitionExternalQueueTest, reporter, ctxInfo) {
+DEF_GANESH_TEST_FOR_VULKAN_CONTEXT(VkTransitionExternalQueueTest, reporter, ctxInfo,
+                                   CtsEnforcement::kApiLevel_T) {
     auto dContext = ctxInfo.directContext();
     GrGpu* gpu = dContext->priv().getGpu();
     GrVkGpu* vkGpu = static_cast<GrVkGpu*>(gpu);
@@ -211,7 +226,7 @@ DEF_GPUTEST_FOR_VULKAN_CONTEXT(VkTransitionExternalQueueTest, reporter, ctxInfo)
 
     GrBackendTexture vkExtTex(1, 1, vkInfo);
     REPORTER_ASSERT(reporter, vkExtTex.isValid());
-    image = SkImage::MakeFromTexture(dContext, vkExtTex, kTopLeft_GrSurfaceOrigin,
+    image = SkImages::BorrowTextureFrom(dContext, vkExtTex, kTopLeft_GrSurfaceOrigin,
                                      kRGBA_8888_SkColorType, kPremul_SkAlphaType, nullptr, nullptr,
                                      nullptr);
 

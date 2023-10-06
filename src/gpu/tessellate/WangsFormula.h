@@ -8,14 +8,15 @@
 #ifndef skgpu_tessellate_WangsFormula_DEFINED
 #define skgpu_tessellate_WangsFormula_DEFINED
 
+#include "include/core/SkM44.h"
 #include "include/core/SkMatrix.h"
 #include "include/core/SkPoint.h"
 #include "include/core/SkString.h"
-#include "include/private/SkFloatingPoint.h"
-#include "include/private/SkVx.h"
+#include "include/private/base/SkFloatingPoint.h"
+#include "src/base/SkVx.h"
 #include "src/gpu/tessellate/Tessellation.h"
 
-#define AI SK_MAYBE_UNUSED SK_ALWAYS_INLINE
+#define AI [[maybe_unused]] SK_ALWAYS_INLINE
 
 // Wang's formula gives the minimum number of evenly spaced (in the parametric sense) line segments
 // that a bezier curve must be chopped into in order to guarantee all lines stay within a distance
@@ -41,12 +42,47 @@ AI float root4(float x) {
     return sqrtf(sqrtf(x));
 }
 
+// For finite positive x > 1, return ceil(log2(x)) otherwise, return 0.
+// For +/- NaN return 0.
+// For +infinity return 128.
+// For -infinity return 0.
+//
+//     nextlog2((-inf..1]) -> 0
+//     nextlog2((1..2]) -> 1
+//     nextlog2((2..4]) -> 2
+//     nextlog2((4..8]) -> 3
+//     ...
+AI int nextlog2(float x) {
+    if (x <= 1) {
+        return 0;
+    }
+
+    uint32_t bits = (uint32_t)SkFloat2Bits(x);
+    static constexpr uint32_t kDigitsAfterBinaryPoint = std::numeric_limits<float>::digits - 1;
+
+    // The constant is a significand of all 1s -- 0b0'00000000'111'1111111111'111111111. So, if
+    // the significand of x is all 0s (and therefore an integer power of two) this will not
+    // increment the exponent, but if it is just one ULP above the power of two the carry will
+    // ripple into the exponent incrementing the exponent by 1.
+    bits += (1u << kDigitsAfterBinaryPoint) - 1u;
+
+    // Shift the exponent down, and adjust it by the exponent offset so that 2^0 is really 0 instead
+    // of 127. Remember that 1 was added to the exponent, if x is NaN, then the exponent will
+    // carry a 1 into the sign bit during the addition to bits. Be sure to strip off the sign bit.
+    // In addition, infinity is an exponent of all 1's, and a significand of all 0, so
+    // the exponent is not affected during the addition to bits, and the exponent remains all 1's.
+    const int exp = ((bits >> kDigitsAfterBinaryPoint) & 0b1111'1111) - 127;
+
+    // Return 0 for x <= 1.
+    return exp > 0 ? exp : 0;
+}
+
 // Returns nextlog2(sqrt(x)):
 //
 //   log2(sqrt(x)) == log2(x^(1/2)) == log2(x)/2 == log2(x)/log2(4) == log4(x)
 //
 AI int nextlog4(float x) {
-    return (sk_float_nextlog2(x) + 1) >> 1;
+    return (nextlog2(x) + 1) >> 1;
 }
 
 // Returns nextlog2(sqrt(sqrt(x))):
@@ -54,7 +90,7 @@ AI int nextlog4(float x) {
 //   log2(sqrt(sqrt(x))) == log2(x^(1/4)) == log2(x)/4 == log2(x)/log2(16) == log16(x)
 //
 AI int nextlog16(float x) {
-    return (sk_float_nextlog2(x) + 3) >> 2;
+    return (nextlog2(x) + 3) >> 2;
 }
 
 // Represents the upper-left 2x2 matrix of an affine transform for applying to vectors:
@@ -63,54 +99,33 @@ AI int nextlog16(float x) {
 //
 class VectorXform {
 public:
-    AI VectorXform() : fType(Type::kIdentity) {}
+    AI VectorXform() : fC0{1.0f, 0.f}, fC1{0.f, 1.f} {}
     AI explicit VectorXform(const SkMatrix& m) { *this = m; }
+    AI explicit VectorXform(const SkM44& m) { *this = m; }
+
     AI VectorXform& operator=(const SkMatrix& m) {
         SkASSERT(!m.hasPerspective());
-        if (m.getType() & SkMatrix::kAffine_Mask) {
-            fType = Type::kAffine;
-            fScaleXSkewY = {m.getScaleX(), m.getSkewY()};
-            fSkewXScaleY = {m.getSkewX(), m.getScaleY()};
-            fScaleXYXY = {m.getScaleX(), m.getScaleY(), m.getScaleX(), m.getScaleY()};
-            fSkewXYXY = {m.getSkewX(), m.getSkewY(), m.getSkewX(), m.getSkewY()};
-        } else if (m.getType() & SkMatrix::kScale_Mask) {
-            fType = Type::kScale;
-            fScaleXY = {m.getScaleX(), m.getScaleY()};
-            fScaleXYXY = {m.getScaleX(), m.getScaleY(), m.getScaleX(), m.getScaleY()};
-        } else {
-            SkASSERT(!(m.getType() & ~SkMatrix::kTranslate_Mask));
-            fType = Type::kIdentity;
-        }
+        fC0 = {m.rc(0,0), m.rc(1,0)};
+        fC1 = {m.rc(0,1), m.rc(1,1)};
+        return *this;
+    }
+    AI VectorXform& operator=(const SkM44& m) {
+        SkASSERT(m.rc(3,0) == 0.f && m.rc(3,1) == 0.f && m.rc(3,2) == 0.f && m.rc(3,3) == 1.f);
+        fC0 = {m.rc(0,0), m.rc(1,0)};
+        fC1 = {m.rc(0,1), m.rc(1,1)};
         return *this;
     }
     AI skvx::float2 operator()(skvx::float2 vector) const {
-        switch (fType) {
-            case Type::kIdentity:
-                return vector;
-            case Type::kScale:
-                return fScaleXY * vector;
-            case Type::kAffine:
-                return fScaleXSkewY * skvx::float2(vector[0]) + fSkewXScaleY * vector[1];
-        }
-        SkUNREACHABLE;
+        return fC0 * vector.x() + fC1 * vector.y();
     }
     AI skvx::float4 operator()(skvx::float4 vectors) const {
-        switch (fType) {
-            case Type::kIdentity:
-                return vectors;
-            case Type::kScale:
-                return vectors * fScaleXYXY;
-            case Type::kAffine:
-                return fScaleXYXY * vectors + fSkewXYXY * vectors.yxwz();
-        }
-        SkUNREACHABLE;
+        return join(fC0 * vectors.x() + fC1 * vectors.y(),
+                    fC0 * vectors.z() + fC1 * vectors.w());
     }
 private:
-    enum class Type { kIdentity, kScale, kAffine } fType;
-    union { skvx::float2 fScaleXY, fScaleXSkewY; };
-    skvx::float2 fSkewXScaleY;
-    skvx::float4 fScaleXYXY;
-    skvx::float4 fSkewXYXY;
+    // First and second columns of 2x2 matrix
+    skvx::float2 fC0;
+    skvx::float2 fC1;
 };
 
 // Returns Wang's formula, raised to the 4th power, specialized for a quadratic curve.
@@ -126,9 +141,9 @@ AI float quadratic_p4(float precision,
                       const SkPoint pts[],
                       const VectorXform& vectorXform = VectorXform()) {
     return quadratic_p4(precision,
-                        skvx::bit_pun<skvx::float2>(pts[0]),
-                        skvx::bit_pun<skvx::float2>(pts[1]),
-                        skvx::bit_pun<skvx::float2>(pts[2]),
+                        sk_bit_cast<skvx::float2>(pts[0]),
+                        sk_bit_cast<skvx::float2>(pts[1]),
+                        sk_bit_cast<skvx::float2>(pts[2]),
                         vectorXform);
 }
 
@@ -164,10 +179,10 @@ AI float cubic_p4(float precision,
                   const SkPoint pts[],
                   const VectorXform& vectorXform = VectorXform()) {
     return cubic_p4(precision,
-                    skvx::bit_pun<skvx::float2>(pts[0]),
-                    skvx::bit_pun<skvx::float2>(pts[1]),
-                    skvx::bit_pun<skvx::float2>(pts[2]),
-                    skvx::bit_pun<skvx::float2>(pts[3]),
+                    sk_bit_cast<skvx::float2>(pts[0]),
+                    sk_bit_cast<skvx::float2>(pts[1]),
+                    sk_bit_cast<skvx::float2>(pts[2]),
+                    sk_bit_cast<skvx::float2>(pts[3]),
                     vectorXform);
 }
 
@@ -256,9 +271,9 @@ AI float conic_p2(float precision,
                   float w,
                   const VectorXform& vectorXform = VectorXform()) {
     return conic_p2(precision,
-                    skvx::bit_pun<skvx::float2>(pts[0]),
-                    skvx::bit_pun<skvx::float2>(pts[1]),
-                    skvx::bit_pun<skvx::float2>(pts[2]),
+                    sk_bit_cast<skvx::float2>(pts[0]),
+                    sk_bit_cast<skvx::float2>(pts[1]),
+                    sk_bit_cast<skvx::float2>(pts[2]),
                     w,
                     vectorXform);
 }

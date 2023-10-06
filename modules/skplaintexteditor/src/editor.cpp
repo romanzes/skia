@@ -6,11 +6,12 @@
 #include "include/core/SkCanvas.h"
 #include "include/core/SkExecutor.h"
 #include "include/core/SkPath.h"
-#include "src/utils/SkUTF.h"
+#include "src/base/SkUTF.h"
 
 #include "modules/skplaintexteditor/src/shape.h"
 
 #include <algorithm>
+#include <cfloat>
 
 using namespace SkPlainTextEditor;
 

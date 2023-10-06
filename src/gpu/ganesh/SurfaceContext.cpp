@@ -28,14 +28,17 @@
 #include "src/gpu/ganesh/SurfaceFillContext.h"
 #include "src/gpu/ganesh/effects/GrBicubicEffect.h"
 #include "src/gpu/ganesh/effects/GrTextureEffect.h"
+#include "src/gpu/ganesh/geometry/GrRect.h"
 
 #include <memory>
+
+using namespace skia_private;
 
 #define ASSERT_SINGLE_OWNER         SKGPU_ASSERT_SINGLE_OWNER(this->singleOwner())
 #define RETURN_FALSE_IF_ABANDONED   if (this->fContext->abandoned()) { return false;   }
 #define RETURN_NULLPTR_IF_ABANDONED if (this->fContext->abandoned()) { return nullptr; }
 
-namespace skgpu {
+namespace skgpu::ganesh {
 
 SurfaceContext::SurfaceContext(GrRecordingContext* context,
                                GrSurfaceProxyView readView,
@@ -151,7 +154,8 @@ bool SurfaceContext::readPixels(GrDirectContext* dContext, GrPixmap dst, SkIPoin
                                  alphaType,
                                  this->colorInfo().refColorSpace(),
                                  dst.dimensions());
-            auto sfc = dContext->priv().makeSFC(tempInfo, SkBackingFit::kApprox);
+            auto sfc = dContext->priv().makeSFC(
+                    tempInfo, "SurfaceContext_ReadPixels", SkBackingFit::kApprox);
             if (!sfc) {
                 return false;
             }
@@ -182,7 +186,7 @@ bool SurfaceContext::readPixels(GrDirectContext* dContext, GrPixmap dst, SkIPoin
                                                                      this->colorInfo().colorType());
             sk_sp<GrSurfaceProxy> copy;
             static constexpr auto kFit = SkBackingFit::kExact;
-            static constexpr auto kBudgeted = SkBudgeted::kYes;
+            static constexpr auto kBudgeted = skgpu::Budgeted::kYes;
             static constexpr auto kMipMapped = GrMipmapped::kNo;
             if (restrictions.fMustCopyWholeSrc) {
                 copy = GrSurfaceProxy::Copy(fContext,
@@ -190,7 +194,8 @@ bool SurfaceContext::readPixels(GrDirectContext* dContext, GrPixmap dst, SkIPoin
                                             this->origin(),
                                             kMipMapped,
                                             kFit,
-                                            kBudgeted);
+                                            kBudgeted,
+                                            /*label=*/"SurfaceContext_ReadPixelsWithCopyWholeSrc");
             } else {
                 auto srcRect = SkIRect::MakePtSize(pt, dst.dimensions());
                 copy = GrSurfaceProxy::Copy(fContext,
@@ -200,6 +205,7 @@ bool SurfaceContext::readPixels(GrDirectContext* dContext, GrPixmap dst, SkIPoin
                                             srcRect,
                                             kFit,
                                             kBudgeted,
+                                            /*label=*/"SurfaceContext_ReadPixels",
                                             restrictions.fRectsMustMatch);
                 pt = {0, 0};
             }
@@ -425,7 +431,7 @@ bool SurfaceContext::internalWritePixels(GrDirectContext* dContext,
                 1,
                 GrMipmapped::kNo,
                 SkBackingFit::kApprox,
-                SkBudgeted::kYes,
+                skgpu::Budgeted::kYes,
                 GrProtected::kNo,
                 /*label=*/"SurfaceContext_InternalWritePixels");
         if (!tempProxy) {
@@ -503,7 +509,7 @@ bool SurfaceContext::internalWritePixels(GrDirectContext* dContext,
 
     auto tmpData = tmpSize ? SkData::MakeUninitialized(tmpSize) : nullptr;
     void*    tmp = tmpSize ? tmpData->writable_data()           : nullptr;
-    SkAutoSTArray<15, GrMipLevel> srcLevels(numLevels);
+    AutoSTArray<15, GrMipLevel> srcLevels(numLevels);
     bool ownAllStorage = true;
     for (int i = 0; i < numLevels; ++i) {
         if (convertAll || (mustBeTight && src[i].rowBytes() != src[i].info().minRowBytes())) {
@@ -578,6 +584,11 @@ void SurfaceContext::asyncRescaleAndReadPixels(GrDirectContext* dContext,
         colorTypeOfFinalContext = dstCT;
         backendFormatOfFinalContext =
                 this->caps()->getDefaultBackendFormat(dstCT, GrRenderable::kYes);
+        if (!backendFormatOfFinalContext.isValid()) {
+            constexpr int kSampleCnt = 1;
+            std::tie(colorTypeOfFinalContext, backendFormatOfFinalContext) =
+                    this->caps()->getFallbackColorTypeAndFormat(colorTypeOfFinalContext, kSampleCnt);
+        }
     }
     auto readInfo = this->caps()->supportedReadPixelsColorType(colorTypeOfFinalContext,
                                                                backendFormatOfFinalContext,
@@ -597,7 +608,7 @@ void SurfaceContext::asyncRescaleAndReadPixels(GrDirectContext* dContext,
         return;
     }
 
-    std::unique_ptr<skgpu::SurfaceFillContext> tempFC;
+    std::unique_ptr<SurfaceFillContext> tempFC;
     int x = srcRect.fLeft;
     int y = srcRect.fTop;
     if (needsRescale) {
@@ -618,106 +629,14 @@ void SurfaceContext::asyncRescaleAndReadPixels(GrDirectContext* dContext,
                                    callbackContext);
 }
 
-class SurfaceContext::AsyncReadResult : public SkImage::AsyncReadResult {
-public:
-    AsyncReadResult(GrDirectContext::DirectContextID intendedRecipient)
-        : fIntendedRecipient(intendedRecipient) {
-    }
-
-    ~AsyncReadResult() override {
-        for (int i = 0; i < fPlanes.count(); ++i) {
-            fPlanes[i].releaseMappedBuffer(fIntendedRecipient);
-        }
-    }
-
-    int count() const override { return fPlanes.count(); }
-    const void* data(int i) const override { return fPlanes[i].data(); }
-    size_t rowBytes(int i) const override { return fPlanes[i].rowBytes(); }
-
-    bool addTransferResult(const PixelTransferResult& result,
-                           SkISize dimensions,
-                           size_t rowBytes,
-                           GrClientMappedBufferManager* manager) {
-        SkASSERT(!result.fTransferBuffer->isMapped());
-        const void* mappedData = result.fTransferBuffer->map();
-        if (!mappedData) {
-            return false;
-        }
-        if (result.fPixelConverter) {
-            size_t size = rowBytes*dimensions.height();
-            sk_sp<SkData> data = SkData::MakeUninitialized(size);
-            result.fPixelConverter(data->writable_data(), mappedData);
-            this->addCpuPlane(std::move(data), rowBytes);
-            result.fTransferBuffer->unmap();
-        } else {
-            manager->insert(result.fTransferBuffer);
-            this->addMappedPlane(mappedData, rowBytes, std::move(result.fTransferBuffer));
-        }
-        return true;
-    }
-
-    void addCpuPlane(sk_sp<SkData> data, size_t rowBytes) {
-        SkASSERT(data);
-        SkASSERT(rowBytes > 0);
-        fPlanes.emplace_back(std::move(data), rowBytes);
-    }
-
-private:
-    void addMappedPlane(const void* data, size_t rowBytes, sk_sp<GrGpuBuffer> mappedBuffer) {
-        SkASSERT(data);
-        SkASSERT(rowBytes > 0);
-        SkASSERT(mappedBuffer);
-        SkASSERT(mappedBuffer->isMapped());
-        fPlanes.emplace_back(std::move(mappedBuffer), rowBytes);
-    }
-
-    class Plane {
-    public:
-        Plane(sk_sp<GrGpuBuffer> buffer, size_t rowBytes)
-                : fMappedBuffer(std::move(buffer)), fRowBytes(rowBytes) {}
-        Plane(sk_sp<SkData> data, size_t rowBytes) : fData(std::move(data)), fRowBytes(rowBytes) {}
-
-        Plane(const Plane&) = delete;
-        Plane(Plane&&) = default;
-
-        ~Plane() { SkASSERT(!fMappedBuffer); }
-
-        Plane& operator=(const Plane&) = delete;
-        Plane& operator=(Plane&&) = default;
-
-        void releaseMappedBuffer(GrDirectContext::DirectContextID intendedRecipient) {
-            if (fMappedBuffer) {
-                GrClientMappedBufferManager::BufferFinishedMessageBus::Post(
-                        {std::move(fMappedBuffer), intendedRecipient});
-            }
-        }
-
-        const void* data() const {
-            if (fMappedBuffer) {
-                SkASSERT(!fData);
-                SkASSERT(fMappedBuffer->isMapped());
-                return fMappedBuffer->map();
-            }
-            SkASSERT(fData);
-            return fData->data();
-        }
-
-        size_t rowBytes() const { return fRowBytes; }
-
-    private:
-        sk_sp<SkData> fData;
-        sk_sp<GrGpuBuffer> fMappedBuffer;
-        size_t fRowBytes;
-    };
-    SkSTArray<3, Plane> fPlanes;
-    GrDirectContext::DirectContextID fIntendedRecipient;
-};
-
 void SurfaceContext::asyncReadPixels(GrDirectContext* dContext,
                                      const SkIRect& rect,
                                      SkColorType colorType,
                                      ReadPixelsCallback callback,
                                      ReadPixelsContext callbackContext) {
+    using AsyncReadResult = skgpu::TAsyncReadResult<GrGpuBuffer, GrDirectContext::DirectContextID,
+                                                    PixelTransferResult>;
+
     SkASSERT(rect.fLeft >= 0 && rect.fRight <= this->width());
     SkASSERT(rect.fTop >= 0 && rect.fBottom <= this->height());
 
@@ -763,13 +682,13 @@ void SurfaceContext::asyncReadPixels(GrDirectContext* dContext,
                                             callbackContext,
                                             rect.size(),
                                             colorType,
-                                            this->caps()->transferBufferAlignment(),
+                                            this->caps()->transferBufferRowBytesAlignment(),
                                             mappedBufferManager,
                                             std::move(transferResult)};
     auto finishCallback = [](GrGpuFinishedContext c) {
         const auto* context = reinterpret_cast<const FinishContext*>(c);
         auto manager = context->fMappedBufferManager;
-        auto result = std::make_unique<AsyncReadResult>(manager->owningDirectContext());
+        auto result = std::make_unique<AsyncReadResult>(manager->ownerID());
         size_t rowBytes =
                 SkAlignTo(context->fSize.width() * SkColorTypeBytesPerPixel(context->fColorType),
                           context->fBufferAlignment);
@@ -784,13 +703,13 @@ void SurfaceContext::asyncReadPixels(GrDirectContext* dContext,
     flushInfo.fFinishedContext = finishContext;
     flushInfo.fFinishedProc = finishCallback;
 
-    dContext->priv().flushSurface(this->asSurfaceProxy(),
-                                  SkSurface::BackendSurfaceAccess::kNoAccess,
-                                  flushInfo);
+    dContext->priv().flushSurface(
+            this->asSurfaceProxy(), SkSurfaces::BackendSurfaceAccess::kNoAccess, flushInfo);
 }
 
 void SurfaceContext::asyncRescaleAndReadPixelsYUV420(GrDirectContext* dContext,
                                                      SkYUVColorSpace yuvColorSpace,
+                                                     bool readAlpha,
                                                      sk_sp<SkColorSpace> dstColorSpace,
                                                      const SkIRect& srcRect,
                                                      SkISize dstSize,
@@ -798,6 +717,9 @@ void SurfaceContext::asyncRescaleAndReadPixelsYUV420(GrDirectContext* dContext,
                                                      RescaleMode rescaleMode,
                                                      ReadPixelsCallback callback,
                                                      ReadPixelsContext callbackContext) {
+    using AsyncReadResult = skgpu::TAsyncReadResult<GrGpuBuffer, GrDirectContext::DirectContextID,
+                                                    PixelTransferResult>;
+
     SkASSERT(srcRect.fLeft >= 0 && srcRect.fRight <= this->width());
     SkASSERT(srcRect.fTop >= 0 && srcRect.fBottom <= this->height());
     SkASSERT(!dstSize.isZero());
@@ -845,12 +767,14 @@ void SurfaceContext::asyncRescaleAndReadPixelsYUV420(GrDirectContext* dContext,
         x = y = 0;
         srcView = tempFC->readSurfaceView();
     } else if (!srcView.asTextureProxy()) {
-        srcView = GrSurfaceProxyView::Copy(fContext,
-                                           std::move(srcView),
-                                           GrMipmapped::kNo,
-                                           srcRect,
-                                           SkBackingFit::kApprox,
-                                           SkBudgeted::kYes);
+        srcView = GrSurfaceProxyView::Copy(
+                fContext,
+                std::move(srcView),
+                GrMipmapped::kNo,
+                srcRect,
+                SkBackingFit::kApprox,
+                skgpu::Budgeted::kYes,
+                /*label=*/"SurfaceContext_AsyncRescaleAndReadPixelsYUV420");
         if (!srcView) {
             // If we can't get a texture copy of the contents then give up.
             callback(callbackContext, nullptr);
@@ -860,14 +784,26 @@ void SurfaceContext::asyncRescaleAndReadPixelsYUV420(GrDirectContext* dContext,
         x = y = 0;
     }
 
-    auto yInfo = SkImageInfo::MakeA8(dstSize);
-    auto yFC = dContext->priv().makeSFCWithFallback(yInfo, SkBackingFit::kApprox);
+    auto yaInfo = SkImageInfo::MakeA8(dstSize);
+    auto yFC = dContext->priv().makeSFCWithFallback(yaInfo, SkBackingFit::kApprox,
+                                                    /* sampleCount= */ 1,
+                                                    skgpu::Mipmapped::kNo, skgpu::Protected::kNo);
+    std::unique_ptr<SurfaceFillContext> aFC;
+    if (readAlpha) {
+        aFC = dContext->priv().makeSFCWithFallback(yaInfo, SkBackingFit::kApprox,
+                                                   /* sampleCount= */ 1,
+                                                   skgpu::Mipmapped::kNo, skgpu::Protected::kNo);
+    }
 
-    auto uvInfo = yInfo.makeWH(yInfo.width()/2, yInfo.height()/2);
-    auto uFC = dContext->priv().makeSFCWithFallback(uvInfo, SkBackingFit::kApprox);
-    auto vFC = dContext->priv().makeSFCWithFallback(uvInfo, SkBackingFit::kApprox);
+    auto uvInfo = yaInfo.makeWH(yaInfo.width()/2, yaInfo.height()/2);
+    auto uFC = dContext->priv().makeSFCWithFallback(uvInfo, SkBackingFit::kApprox,
+                                                    /* sampleCount= */ 1,
+                                                    skgpu::Mipmapped::kNo, skgpu::Protected::kNo);
+    auto vFC = dContext->priv().makeSFCWithFallback(uvInfo, SkBackingFit::kApprox,
+                                                    /* sampleCount= */ 1,
+                                                    skgpu::Mipmapped::kNo, skgpu::Protected::kNo);
 
-    if (!yFC || !uFC || !vFC) {
+    if (!yFC || !uFC || !vFC || (readAlpha && !aFC)) {
         callback(callbackContext, nullptr);
         return;
     }
@@ -889,7 +825,7 @@ void SurfaceContext::asyncRescaleAndReadPixelsYUV420(GrDirectContext* dContext,
     }
     bool doSynchronousRead = !this->caps()->transferFromSurfaceToBufferSupport() ||
                              !offsetAlignment;
-    PixelTransferResult yTransfer, uTransfer, vTransfer;
+    PixelTransferResult yTransfer, aTransfer, uTransfer, vTransfer;
 
     // This matrix generates (r,g,b,a) = (0, 0, 0, y)
     float yM[20];
@@ -909,6 +845,24 @@ void SurfaceContext::asyncRescaleAndReadPixelsYUV420(GrDirectContext* dContext,
         if (!yTransfer.fTransferBuffer) {
             callback(callbackContext, nullptr);
             return;
+        }
+    }
+
+    if (readAlpha) {
+        auto aFP = GrTextureEffect::Make(srcView, this->colorInfo().alphaType(), texMatrix);
+        SkASSERT(baseM[15] == 0 &&
+                 baseM[16] == 0 &&
+                 baseM[17] == 0 &&
+                 baseM[18] == 1 &&
+                 baseM[19] == 0);
+        aFC->fillWithFP(std::move(aFP));
+        if (!doSynchronousRead) {
+            aTransfer = aFC->transferPixels(GrColorType::kAlpha_8,
+                                            SkIRect::MakeSize(aFC->dimensions()));
+            if (!aTransfer.fTransferBuffer) {
+                callback(callbackContext, nullptr);
+                return;
+            }
         }
     }
 
@@ -962,12 +916,17 @@ void SurfaceContext::asyncRescaleAndReadPixelsYUV420(GrDirectContext* dContext,
     }
 
     if (doSynchronousRead) {
-        GrPixmap yPmp = GrPixmap::Allocate(yInfo);
+        GrPixmap yPmp = GrPixmap::Allocate(yaInfo);
         GrPixmap uPmp = GrPixmap::Allocate(uvInfo);
         GrPixmap vPmp = GrPixmap::Allocate(uvInfo);
+        GrPixmap aPmp;
+        if (readAlpha) {
+            aPmp = GrPixmap::Allocate(yaInfo);
+        }
         if (!yFC->readPixels(dContext, yPmp, {0, 0}) ||
             !uFC->readPixels(dContext, uPmp, {0, 0}) ||
-            !vFC->readPixels(dContext, vPmp, {0, 0})) {
+            !vFC->readPixels(dContext, vPmp, {0, 0}) ||
+            (readAlpha && !aFC->readPixels(dContext, aPmp, {0, 0}))) {
             callback(callbackContext, nullptr);
             return;
         }
@@ -975,6 +934,9 @@ void SurfaceContext::asyncRescaleAndReadPixelsYUV420(GrDirectContext* dContext,
         result->addCpuPlane(yPmp.pixelStorage(), yPmp.rowBytes());
         result->addCpuPlane(uPmp.pixelStorage(), uPmp.rowBytes());
         result->addCpuPlane(vPmp.pixelStorage(), vPmp.rowBytes());
+        if (readAlpha) {
+            result->addCpuPlane(aPmp.pixelStorage(), aPmp.rowBytes());
+        }
         callback(callbackContext, std::move(result));
         return;
     }
@@ -988,6 +950,7 @@ void SurfaceContext::asyncRescaleAndReadPixelsYUV420(GrDirectContext* dContext,
         PixelTransferResult fYTransfer;
         PixelTransferResult fUTransfer;
         PixelTransferResult fVTransfer;
+        PixelTransferResult fATransfer;
     };
     // Assumption is that the caller would like to flush. We could take a parameter or require an
     // explicit flush from the caller. We'd have to have a way to defer attaching the finish
@@ -996,30 +959,37 @@ void SurfaceContext::asyncRescaleAndReadPixelsYUV420(GrDirectContext* dContext,
                                             callbackContext,
                                             dContext->priv().clientMappedBufferManager(),
                                             dstSize,
-                                            this->caps()->transferBufferAlignment(),
+                                            this->caps()->transferBufferRowBytesAlignment(),
                                             std::move(yTransfer),
                                             std::move(uTransfer),
-                                            std::move(vTransfer)};
+                                            std::move(vTransfer),
+                                            std::move(aTransfer)};
     auto finishCallback = [](GrGpuFinishedContext c) {
         const auto* context = reinterpret_cast<const FinishContext*>(c);
         auto manager = context->fMappedBufferManager;
-        auto result = std::make_unique<AsyncReadResult>(manager->owningDirectContext());
-        size_t rowBytes = SkToSizeT(context->fSize.width());
-        rowBytes = SkAlignTo(rowBytes, context->fBufferAlignment);
-        if (!result->addTransferResult(context->fYTransfer, context->fSize, rowBytes, manager)) {
+        auto result = std::make_unique<AsyncReadResult>(manager->ownerID());
+        size_t yaRowBytes = SkToSizeT(context->fSize.width());
+        yaRowBytes = SkAlignTo(yaRowBytes, context->fBufferAlignment);
+        if (!result->addTransferResult(context->fYTransfer, context->fSize, yaRowBytes, manager)) {
             (*context->fClientCallback)(context->fClientContext, nullptr);
             delete context;
             return;
         }
-        rowBytes = SkToSizeT(context->fSize.width()) / 2;
-        rowBytes = SkAlignTo(rowBytes, context->fBufferAlignment);
+        size_t uvRowBytes = SkToSizeT(context->fSize.width()) / 2;
+        uvRowBytes = SkAlignTo(uvRowBytes, context->fBufferAlignment);
         SkISize uvSize = {context->fSize.width() / 2, context->fSize.height() / 2};
-        if (!result->addTransferResult(context->fUTransfer, uvSize, rowBytes, manager)) {
+        if (!result->addTransferResult(context->fUTransfer, uvSize, uvRowBytes, manager)) {
             (*context->fClientCallback)(context->fClientContext, nullptr);
             delete context;
             return;
         }
-        if (!result->addTransferResult(context->fVTransfer, uvSize, rowBytes, manager)) {
+        if (!result->addTransferResult(context->fVTransfer, uvSize, uvRowBytes, manager)) {
+            (*context->fClientCallback)(context->fClientContext, nullptr);
+            delete context;
+            return;
+        }
+        if (context->fATransfer.fTransferBuffer &&
+            !result->addTransferResult(context->fATransfer, context->fSize, yaRowBytes, manager)) {
             (*context->fClientCallback)(context->fClientContext, nullptr);
             delete context;
             return;
@@ -1030,47 +1000,82 @@ void SurfaceContext::asyncRescaleAndReadPixelsYUV420(GrDirectContext* dContext,
     GrFlushInfo flushInfo;
     flushInfo.fFinishedContext = finishContext;
     flushInfo.fFinishedProc = finishCallback;
-    dContext->priv().flushSurface(this->asSurfaceProxy(),
-                                  SkSurface::BackendSurfaceAccess::kNoAccess,
-                                  flushInfo);
+    dContext->priv().flushSurface(
+            this->asSurfaceProxy(), SkSurfaces::BackendSurfaceAccess::kNoAccess, flushInfo);
 }
 
 sk_sp<GrRenderTask> SurfaceContext::copy(sk_sp<GrSurfaceProxy> src,
                                          SkIRect srcRect,
                                          SkIPoint dstPoint) {
+    if (!GrClipSrcRectAndDstPoint(this->dimensions(), &dstPoint,
+                                  src->dimensions(), &srcRect)) {
+        return nullptr;
+    }
+
+    SkIRect dstRect = SkIRect::MakePtSize(dstPoint, srcRect.size());
+    return this->copyScaled(src, srcRect, dstRect, GrSamplerState::Filter::kNearest);
+}
+
+sk_sp<GrRenderTask> SurfaceContext::copyScaled(sk_sp<GrSurfaceProxy> src,
+                                               SkIRect srcRect,
+                                               SkIRect dstRect,
+                                               GrSamplerState::Filter filter) {
     ASSERT_SINGLE_OWNER
     RETURN_NULLPTR_IF_ABANDONED
     SkDEBUGCODE(this->validate();)
-    GR_CREATE_TRACE_MARKER_CONTEXT("SurfaceContext", "copy", fContext);
+    GR_CREATE_TRACE_MARKER_CONTEXT("SurfaceContext", "copyScaled", fContext);
 
     const GrCaps* caps = fContext->priv().caps();
-
-    SkASSERT(src->backendFormat().textureType() != GrTextureType::kExternal);
-    SkASSERT(src->backendFormat() == this->asSurfaceProxy()->backendFormat());
 
     if (this->asSurfaceProxy()->framebufferOnly()) {
         return nullptr;
     }
 
-    if (!caps->canCopySurface(this->asSurfaceProxy(), src.get(), srcRect, dstPoint)) {
+    // canCopySurface() verifies that src and dst rects are contained in their surfaces.
+    if (!caps->canCopySurface(this->asSurfaceProxy(), dstRect, src.get(), srcRect)) {
         return nullptr;
     }
 
-    return this->drawingManager()->newCopyRenderTask(std::move(src),
+    if (filter == GrSamplerState::Filter::kLinear && !src->isFunctionallyExact()) {
+        // If we're linear filtering an image that is approx-sized, there are cases where the filter
+        // could sample outside the logical dimensions. Specifically if we're upscaling along an
+        // axis where we are copying up to the logical dimension, but that dimension is less than
+        // the actual backing store dimension, the linear filter will access one texel beyond the
+        // logical size, potentially incorporating undefined values.
+        const bool upscalingXAtApproxEdge =
+            dstRect.width() > srcRect.width() &&
+            srcRect.fRight == src->width() &&
+            src->width() < src->backingStoreDimensions().width();
+        const bool upscalingYAtApproxEdge =
+            dstRect.height() > srcRect.height() &&
+            srcRect.height() == src->height() &&
+            srcRect.height() < src->backingStoreDimensions().height();
+        if (upscalingXAtApproxEdge || upscalingYAtApproxEdge) {
+            return nullptr;
+        }
+
+        // NOTE: Any upscaling with the linear filter will include content that's 1px outside the
+        // src rect, but as long as that's still within the logical dimensions we assume it's okay.
+    }
+
+    SkASSERT(src->backendFormat().textureType() != GrTextureType::kExternal);
+    SkASSERT(src->backendFormat() == this->asSurfaceProxy()->backendFormat());
+    return this->drawingManager()->newCopyRenderTask(this->asSurfaceProxyRef(),
+                                                     dstRect,
+                                                     std::move(src),
                                                      srcRect,
-                                                     this->asSurfaceProxyRef(),
-                                                     dstPoint,
+                                                     filter,
                                                      this->origin());
 }
 
-std::unique_ptr<skgpu::SurfaceFillContext> SurfaceContext::rescale(const GrImageInfo& info,
-                                                                   GrSurfaceOrigin origin,
-                                                                   SkIRect srcRect,
-                                                                   RescaleGamma rescaleGamma,
-                                                                   RescaleMode rescaleMode) {
+std::unique_ptr<SurfaceFillContext> SurfaceContext::rescale(const GrImageInfo& info,
+                                                            GrSurfaceOrigin origin,
+                                                            SkIRect srcRect,
+                                                            RescaleGamma rescaleGamma,
+                                                            RescaleMode rescaleMode) {
     auto sfc = fContext->priv().makeSFCWithFallback(info,
                                                     SkBackingFit::kExact,
-                                                    1,
+                                                    /* sampleCount= */ 1,
                                                     GrMipmapped::kNo,
                                                     this->asSurfaceProxy()->isProtected(),
                                                     origin);
@@ -1084,7 +1089,7 @@ std::unique_ptr<skgpu::SurfaceFillContext> SurfaceContext::rescale(const GrImage
     return sfc;
 }
 
-bool SurfaceContext::rescaleInto(skgpu::SurfaceFillContext* dst,
+bool SurfaceContext::rescaleInto(SurfaceFillContext* dst,
                                  SkIRect dstRect,
                                  SkIRect srcRect,
                                  RescaleGamma rescaleGamma,
@@ -1104,17 +1109,26 @@ bool SurfaceContext::rescaleInto(skgpu::SurfaceFillContext* dst,
     }
 
     GrSurfaceProxyView texView = this->readSurfaceView();
-    if (!texView.asTextureProxy()) {
-        // TODO: If copying supported specifying a renderable copy then we could return the copy
-        // when there are no other conversions.
-        texView = GrSurfaceProxyView::Copy(fContext, std::move(texView), GrMipmapped::kNo, srcRect,
-                                           SkBackingFit::kApprox, SkBudgeted::kNo);
-        if (!texView) {
-            return false;
+    // If we perform scaling as draws, texView must be texturable; if it's not already, we have to
+    // make a copy. However, if the scaling can use copyScaled(), we can avoid this copy.
+    auto ensureTexturable = [this](GrSurfaceProxyView texView, SkIRect srcRect) {
+        if (!texView.asTextureProxy()) {
+            // TODO: If copying supported specifying a renderable copy then we could return the copy
+            // when there are no other conversions.
+            texView = GrSurfaceProxyView::Copy(fContext,
+                                               std::move(texView),
+                                               GrMipmapped::kNo,
+                                               srcRect,
+                                               SkBackingFit::kApprox,
+                                               skgpu::Budgeted::kNo,
+                                               "SurfaceContext_RescaleInto");
+            if (texView) {
+                SkASSERT(texView.asTextureProxy());
+                srcRect = SkIRect::MakeSize(srcRect.size());
+            }
         }
-        SkASSERT(texView.asTextureProxy());
-        srcRect = SkIRect::MakeSize(srcRect.size());
-    }
+        return std::make_pair(std::move(texView), srcRect);
+    };
 
     SkISize finalSize = dstRect.size();
     if (finalSize == srcRect.size()) {
@@ -1124,13 +1138,18 @@ bool SurfaceContext::rescaleInto(skgpu::SurfaceFillContext* dst,
 
     // Within a rescaling pass A is the input (if not null) and B is the output. At the end of the
     // pass B is moved to A. If 'this' is the input on the first pass then tempA is null.
-    std::unique_ptr<skgpu::SurfaceFillContext> tempA;
-    std::unique_ptr<skgpu::SurfaceFillContext> tempB;
+    std::unique_ptr<SurfaceFillContext> tempA;
+    std::unique_ptr<SurfaceFillContext> tempB;
 
     // Assume we should ignore the rescale linear request if the surface has no color space since
     // it's unclear how we'd linearize from an unknown color space.
     if (rescaleGamma == RescaleGamma::kLinear && this->colorInfo().colorSpace() &&
         !this->colorInfo().colorSpace()->gammaIsLinear()) {
+        // Colorspace transformations are always handled by drawing so we need to be texturable
+        std::tie(texView, srcRect) = ensureTexturable(texView, srcRect);
+        if (!texView) {
+            return false;
+        }
         auto cs = this->colorInfo().colorSpace()->makeLinearGamma();
         // We'll fall back to kRGBA_8888 if half float not supported.
         GrImageInfo ii(GrColorType::kRGBA_F16,
@@ -1139,7 +1158,7 @@ bool SurfaceContext::rescaleInto(skgpu::SurfaceFillContext* dst,
                        srcRect.size());
         auto linearRTC = fContext->priv().makeSFCWithFallback(std::move(ii),
                                                               SkBackingFit::kApprox,
-                                                              1,
+                                                              /* sampleCount= */ 1,
                                                               GrMipmapped::kNo,
                                                               GrProtected::kNo,
                                                               dst->origin());
@@ -1163,7 +1182,7 @@ bool SurfaceContext::rescaleInto(skgpu::SurfaceFillContext* dst,
 
     do {
         SkISize nextDims = finalSize;
-        if (rescaleMode != RescaleMode::kNearest) {
+        if (rescaleMode != RescaleMode::kNearest && rescaleMode != RescaleMode::kLinear) {
             if (srcRect.width() > finalSize.width()) {
                 nextDims.fWidth = std::max((srcRect.width() + 1)/2, finalSize.width());
             } else if (srcRect.width() < finalSize.width()) {
@@ -1177,7 +1196,7 @@ bool SurfaceContext::rescaleInto(skgpu::SurfaceFillContext* dst,
         }
         auto input = tempA ? tempA.get() : this;
         sk_sp<GrColorSpaceXform> xform;
-        skgpu::SurfaceFillContext* stepDst;
+        SurfaceFillContext* stepDst;
         SkIRect stepDstRect;
         if (nextDims == finalSize) {
             stepDst = dst;
@@ -1185,7 +1204,11 @@ bool SurfaceContext::rescaleInto(skgpu::SurfaceFillContext* dst,
             xform = GrColorSpaceXform::Make(input->colorInfo(), dst->colorInfo());
         } else {
             GrImageInfo nextInfo(input->colorInfo(), nextDims);
-            tempB = fContext->priv().makeSFCWithFallback(nextInfo, SkBackingFit::kApprox);
+
+            tempB = fContext->priv().makeSFCWithFallback(nextInfo, SkBackingFit::kApprox,
+                                                         /* sampleCount= */ 1,
+                                                         skgpu::Mipmapped::kNo,
+                                                         skgpu::Protected::kNo);
             if (!tempB) {
                 return false;
             }
@@ -1194,6 +1217,11 @@ bool SurfaceContext::rescaleInto(skgpu::SurfaceFillContext* dst,
         }
         std::unique_ptr<GrFragmentProcessor> fp;
         if (rescaleMode == RescaleMode::kRepeatedCubic) {
+            // Cubic sampling is always handled by drawing with a shader, so we must be texturable
+            std::tie(texView, srcRect) = ensureTexturable(texView, srcRect);
+            if (!texView) {
+                return false;
+            }
             auto dir = GrBicubicEffect::Direction::kXY;
             if (nextDims.width() == srcRect.width()) {
                 dir = GrBicubicEffect::Direction::kY;
@@ -1214,19 +1242,34 @@ bool SurfaceContext::rescaleInto(skgpu::SurfaceFillContext* dst,
         } else {
             auto filter = rescaleMode == RescaleMode::kNearest ? GrSamplerState::Filter::kNearest
                                                                : GrSamplerState::Filter::kLinear;
-            auto srcRectF = SkRect::Make(srcRect);
-            fp = GrTextureEffect::MakeSubset(std::move(texView),
-                                             this->colorInfo().alphaType(),
-                                             SkMatrix::I(),
-                                             {filter, GrSamplerState::MipmapMode::kNone},
-                                             srcRectF,
-                                             srcRectF,
-                                             *this->caps());
+            if (xform ||
+                texView.origin() != stepDst->origin() ||
+                !stepDst->copyScaled(texView.refProxy(), srcRect, stepDstRect, filter)) {
+                // We could not or were unable to successful perform a scaling blit (which can be
+                // much faster if texView isn't already texturable). Scale by drawing instead.
+                std::tie(texView, srcRect) = ensureTexturable(texView, srcRect);
+                if (!texView) {
+                    return false;
+                }
+                auto srcRectF = SkRect::Make(srcRect);
+                fp = GrTextureEffect::MakeSubset(std::move(texView),
+                                                 this->colorInfo().alphaType(),
+                                                 SkMatrix::I(),
+                                                 {filter, GrSamplerState::MipmapMode::kNone},
+                                                 srcRectF,
+                                                 srcRectF,
+                                                 *this->caps());
+            }
         }
         if (xform) {
+            SkASSERT(SkToBool(fp)); // shouldn't have done a copy if there was a color xform
             fp = GrColorSpaceXformEffect::Make(std::move(fp), std::move(xform));
         }
-        stepDst->fillRectToRectWithFP(srcRect, stepDstRect, std::move(fp));
+        if (fp) {
+            // When fp is not null, we scale by drawing; if it is null, presumably the src has
+            // already been copied into stepDst.
+            stepDst->fillRectToRectWithFP(srcRect, stepDstRect, std::move(fp));
+        }
         texView = stepDst->readSurfaceView();
         tempA = std::move(tempB);
         srcRect = SkIRect::MakeSize(nextDims);
@@ -1265,13 +1308,16 @@ SurfaceContext::PixelTransferResult SurfaceContext::transferPixels(GrColorType d
     }
 
     size_t rowBytes = GrColorTypeBytesPerPixel(supportedRead.fColorType) * rect.width();
-    rowBytes = SkAlignTo(rowBytes, this->caps()->transferBufferAlignment());
+    rowBytes = SkAlignTo(rowBytes, this->caps()->transferBufferRowBytesAlignment());
     size_t size = rowBytes * rect.height();
     // By using kStream_GrAccessPattern here, we are not able to cache and reuse the buffer for
     // multiple reads. Switching to kDynamic_GrAccessPattern would allow for this, however doing
     // so causes a crash in a chromium test. See skbug.com/11297
     auto buffer = direct->priv().resourceProvider()->createBuffer(
-            size, GrGpuBufferType::kXferGpuToCpu, GrAccessPattern::kStream_GrAccessPattern);
+            size,
+            GrGpuBufferType::kXferGpuToCpu,
+            GrAccessPattern::kStream_GrAccessPattern,
+            GrResourceProvider::ZeroInit::kNo);
     if (!buffer) {
         return {};
     }
@@ -1311,4 +1357,4 @@ void SurfaceContext::validate() const {
 }
 #endif
 
-} // namespace skgpu
+}  // namespace skgpu::ganesh

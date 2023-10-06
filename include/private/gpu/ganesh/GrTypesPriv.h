@@ -8,27 +8,24 @@
 #ifndef GrTypesPriv_DEFINED
 #define GrTypesPriv_DEFINED
 
-#include <chrono>
-#include "include/core/SkImage.h"
-#include "include/core/SkImageInfo.h"
+#include "include/core/SkColor.h"
+#include "include/core/SkColorType.h"
+#include "include/core/SkData.h"
 #include "include/core/SkPath.h"
+#include "include/core/SkPathTypes.h"
 #include "include/core/SkRefCnt.h"
+#include "include/core/SkTextureCompressionType.h"
 #include "include/gpu/GrTypes.h"
-#include "include/private/SkImageInfoPriv.h"
-#include "include/private/SkMacros.h"
+#include "include/private/base/SkAssert.h"
+#include "include/private/base/SkMacros.h"
+#include "include/private/base/SkTypeTraits.h"
 
-class GrBackendFormat;
-class GrCaps;
+#include <cstddef>
+#include <cstdint>
+#include <functional>
+#include <type_traits>
+
 class GrSurfaceProxy;
-
-// The old libstdc++ uses the draft name "monotonic_clock" rather than "steady_clock". This might
-// not actually be monotonic, depending on how libstdc++ was built. However, this is only currently
-// used for idle resource purging so it shouldn't cause a correctness problem.
-#if defined(__GLIBCXX__) && (__GLIBCXX__ < 20130000)
-using GrStdSteadyClock = std::chrono::monotonic_clock;
-#else
-using GrStdSteadyClock = std::chrono::steady_clock;
-#endif
 
 /**
  *  divide, rounding up
@@ -135,6 +132,11 @@ struct GrMipLevel {
     size_t fRowBytes = 0;
     // This may be used to keep fPixels from being freed while a GrMipLevel exists.
     sk_sp<SkData> fOptionalStorage;
+
+    static_assert(::sk_is_trivially_relocatable<decltype(fPixels)>::value);
+    static_assert(::sk_is_trivially_relocatable<decltype(fOptionalStorage)>::value);
+
+    using sk_is_trivially_relocatable = std::true_type;
 };
 
 enum class GrSemaphoreWrapType {
@@ -271,9 +273,9 @@ enum GrShaderType {
     kVertex_GrShaderType,
     kFragment_GrShaderType,
 
-    kLastkFragment_GrShaderType = kFragment_GrShaderType
+    kLast_GrShaderType = kFragment_GrShaderType
 };
-static const int kGrShaderTypeCount = kLastkFragment_GrShaderType + 1;
+static const int kGrShaderTypeCount = kLast_GrShaderType + 1;
 
 enum GrShaderFlags {
     kNone_GrShaderFlags          = 0,
@@ -410,7 +412,7 @@ enum class GrGpuBufferType {
     kXferGpuToCpu,
     kUniform,
 };
-static const int kGrGpuBufferTypeCount = static_cast<int>(GrGpuBufferType::kUniform) + 1;
+static const constexpr int kGrGpuBufferTypeCount = static_cast<int>(GrGpuBufferType::kUniform) + 1;
 
 /**
  * Provides a performance hint regarding the frequency at which a data store will be accessed.
@@ -467,7 +469,7 @@ constexpr static int kGrInternalTextureFlagsMask = static_cast<int>(
 // require that both the surface and proxy have matching values for this flag. Instead we require
 // if the proxy has it set then the surface must also have it set. All other flags listed here must
 // match on the proxy and surface.
-// TODO: Add back kFramebufferOnly flag here once we update SkSurfaceCharacterization to take it
+// TODO: Add back kFramebufferOnly flag here once we update GrSurfaceCharacterization to take it
 // as a flag. skbug.com/10672
 constexpr static int kGrInternalRenderTargetFlagsMask = static_cast<int>(
         GrInternalSurfaceFlags::kGLRTFBOIDIs0 |
@@ -638,6 +640,7 @@ static constexpr GrColorType SkColorTypeToGrColorType(SkColorType ct) {
         case kRGB_101010x_SkColorType:        return GrColorType::kUnknown;
         case kBGRA_1010102_SkColorType:       return GrColorType::kBGRA_1010102;
         case kBGR_101010x_SkColorType:        return GrColorType::kUnknown;
+        case kBGR_101010x_XR_SkColorType:     return GrColorType::kUnknown;
         case kRGBA_F32_SkColorType:           return GrColorType::kRGBA_F32;
         case kR8G8_unorm_SkColorType:         return GrColorType::kRG_88;
         case kA16_unorm_SkColorType:          return GrColorType::kAlpha_16;
@@ -919,12 +922,12 @@ static constexpr size_t GrColorTypeBytesPerPixel(GrColorType ct) {
 
 // In general we try to not mix CompressionType and ColorType, but currently SkImage still requires
 // an SkColorType even for CompressedTypes so we need some conversion.
-static constexpr SkColorType GrCompressionTypeToSkColorType(SkImage::CompressionType compression) {
+static constexpr SkColorType GrCompressionTypeToSkColorType(SkTextureCompressionType compression) {
     switch (compression) {
-        case SkImage::CompressionType::kNone:            return kUnknown_SkColorType;
-        case SkImage::CompressionType::kETC2_RGB8_UNORM: return kRGB_888x_SkColorType;
-        case SkImage::CompressionType::kBC1_RGB8_UNORM:  return kRGB_888x_SkColorType;
-        case SkImage::CompressionType::kBC1_RGBA8_UNORM: return kRGBA_8888_SkColorType;
+        case SkTextureCompressionType::kNone:            return kUnknown_SkColorType;
+        case SkTextureCompressionType::kETC2_RGB8_UNORM: return kRGB_888x_SkColorType;
+        case SkTextureCompressionType::kBC1_RGB8_UNORM:  return kRGB_888x_SkColorType;
+        case SkTextureCompressionType::kBC1_RGBA8_UNORM: return kRGBA_8888_SkColorType;
     }
 
     SkUNREACHABLE;
@@ -990,12 +993,12 @@ static constexpr const char* GrColorTypeToStr(GrColorType ct) {
     SkUNREACHABLE;
 }
 
-static constexpr const char* GrCompressionTypeToStr(SkImage::CompressionType compression) {
+static constexpr const char* GrCompressionTypeToStr(SkTextureCompressionType compression) {
     switch (compression) {
-        case SkImage::CompressionType::kNone:            return "kNone";
-        case SkImage::CompressionType::kETC2_RGB8_UNORM: return "kETC2_RGB8_UNORM";
-        case SkImage::CompressionType::kBC1_RGB8_UNORM:  return "kBC1_RGB8_UNORM";
-        case SkImage::CompressionType::kBC1_RGBA8_UNORM: return "kBC1_RGBA8_UNORM";
+        case SkTextureCompressionType::kNone:            return "kNone";
+        case SkTextureCompressionType::kETC2_RGB8_UNORM: return "kETC2_RGB8_UNORM";
+        case SkTextureCompressionType::kBC1_RGB8_UNORM:  return "kBC1_RGB8_UNORM";
+        case SkTextureCompressionType::kBC1_RGBA8_UNORM: return "kBC1_RGBA8_UNORM";
     }
     SkUNREACHABLE;
 }

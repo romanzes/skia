@@ -9,11 +9,12 @@
 #define GrThreadSafeCache_DEFINED
 
 #include "include/core/SkRefCnt.h"
-#include "include/private/SkSpinlock.h"
-#include "src/core/SkArenaAlloc.h"
+#include "src/base/SkArenaAlloc.h"
+#include "src/base/SkSpinlock.h"
+#include "src/base/SkTInternalLList.h"
 #include "src/core/SkTDynamicHash.h"
-#include "src/core/SkTInternalLList.h"
 #include "src/gpu/ganesh/GrGpuBuffer.h"
+#include "src/gpu/ganesh/GrSurfaceProxy.h"
 #include "src/gpu/ganesh/GrSurfaceProxyView.h"
 
 // Ganesh creates a lot of utility textures (e.g., blurred-rrect masks) that need to be shared
@@ -80,7 +81,8 @@ public:
     void dropUniqueRefs(GrResourceCache* resourceCache)  SK_EXCLUDES(fSpinLock);
 
     // Drop uniquely held refs that were last accessed before 'purgeTime'
-    void dropUniqueRefsOlderThan(GrStdSteadyClock::time_point purgeTime)  SK_EXCLUDES(fSpinLock);
+    void dropUniqueRefsOlderThan(
+            skgpu::StdSteadyClock::time_point purgeTime)  SK_EXCLUDES(fSpinLock);
 
     SkDEBUGCODE(bool has(const skgpu::UniqueKey&)  SK_EXCLUDES(fSpinLock);)
 
@@ -267,7 +269,7 @@ private:
         }
 
         // The thread-safe cache gets to directly manipulate the llist and last-access members
-        GrStdSteadyClock::time_point fLastAccess;
+        skgpu::StdSteadyClock::time_point fLastAccess;
         SK_DECLARE_INTERNAL_LLIST_INTERFACE(Entry);
 
         // for SkTDynamicHash

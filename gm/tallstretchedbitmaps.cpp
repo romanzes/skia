@@ -15,8 +15,8 @@
 #include "include/core/SkSize.h"
 #include "include/core/SkString.h"
 #include "include/core/SkTypes.h"
-#include "include/private/SkTo.h"
-#include "include/utils/SkRandom.h"
+#include "include/private/base/SkTo.h"
+#include "src/base/SkRandom.h"
 #include "tools/ToolUtils.h"
 
 int make_bm(SkBitmap* bm, int height) {
@@ -76,7 +76,7 @@ protected:
     }
 
     void onOnceBeforeDraw() override {
-        for (size_t i = 0; i < SK_ARRAY_COUNT(fTallBmps); ++i) {
+        for (size_t i = 0; i < std::size(fTallBmps); ++i) {
             int h = SkToInt((4 + i) * 1024);
 
             fTallBmps[i].fItemCnt = make_bm(&fTallBmps[i].fBmp, h);
@@ -85,7 +85,7 @@ protected:
 
     void onDraw(SkCanvas* canvas) override {
         canvas->scale(1.3f, 1.3f);
-        for (size_t i = 0; i < SK_ARRAY_COUNT(fTallBmps); ++i) {
+        for (size_t i = 0; i < std::size(fTallBmps); ++i) {
             SkASSERT(fTallBmps[i].fItemCnt > 10);
             SkBitmap bmp = fTallBmps[i].fBmp;
             // Draw the last 10 elements of the bitmap.

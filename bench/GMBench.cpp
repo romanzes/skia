@@ -25,9 +25,7 @@ bool GMBench::isSuitableFor(Backend backend) {
 }
 
 void GMBench::onPerCanvasPreDraw(SkCanvas* canvas) {
-    auto direct = GrAsDirectContext(canvas->recordingContext());
-
-    if (fGM->gpuSetup(direct, canvas) != skiagm::DrawResult::kOk) {
+    if (fGM->gpuSetup(canvas) != skiagm::DrawResult::kOk) {
         fGpuSetupFailed = true;
     }
 
@@ -53,7 +51,6 @@ void GMBench::onDraw(int loops, SkCanvas* canvas) {
     }
 }
 
-SkIPoint GMBench::onGetSize() {
-    SkISize size = fGM->getISize();
-    return SkIPoint::Make(size.fWidth, size.fHeight);
+SkISize GMBench::onGetSize() {
+    return fGM->getISize();
 }

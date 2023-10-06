@@ -41,7 +41,6 @@ public:
 
     SkSL::Compiler* shaderCompiler() const override;
 
-    void finalizeFragmentOutputColor(GrShaderVar& outputColor) override;
     void finalizeFragmentSecondaryColor(GrShaderVar& outputColor) override;
 
 private:
@@ -54,8 +53,8 @@ private:
 
     gr_cp<ID3DBlob> compileD3DProgram(SkSL::ProgramKind kind,
                                       const std::string& sksl,
-                                      const SkSL::Program::Settings& settings,
-                                      SkSL::Program::Inputs* outInputs,
+                                      const SkSL::ProgramSettings& settings,
+                                      SkSL::Program::Interface* outInterface,
                                       std::string* outHLSL);
 
     GrGLSLUniformHandler* uniformHandler() override { return &fUniformHandler; }

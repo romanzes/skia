@@ -11,7 +11,7 @@
 #include "include/core/SkFontMgr.h"
 #include "include/core/SkRefCnt.h"
 #include "include/core/SkSize.h"
-#include "include/private/SkTemplates.h"
+#include "include/private/base/SkTemplates.h"
 #include "modules/skresources/include/SkResources.h"
 #include "modules/svg/include/SkSVGIDMapper.h"
 
@@ -22,7 +22,7 @@ class SkSVGNode;
 struct SkSVGPresentationContext;
 class SkSVGSVG;
 
-class SkSVGDOM : public SkRefCnt {
+class SK_API SkSVGDOM : public SkRefCnt {
 public:
     class Builder final {
     public:

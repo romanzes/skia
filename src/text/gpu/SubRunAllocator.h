@@ -8,14 +8,23 @@
 #ifndef sktext_gpu_SubRunAllocator_DEFINED
 #define sktext_gpu_SubRunAllocator_DEFINED
 
-#include "include/core/SkMath.h"
 #include "include/core/SkSpan.h"
-#include "include/private/SkTemplates.h"
-#include "src/core/SkArenaAlloc.h"
+#include "include/private/base/SkAssert.h"
+#include "include/private/base/SkMath.h"
+#include "include/private/base/SkTLogic.h"
+#include "include/private/base/SkTemplates.h"
+#include "include/private/base/SkTo.h"
+#include "src/base/SkArenaAlloc.h"
 
 #include <algorithm>
+#include <array>
 #include <climits>
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
+#include <limits>
 #include <memory>
+#include <new>
 #include <tuple>
 #include <utility>
 
@@ -71,7 +80,7 @@ public:
         // Following this logic, the equation for the additional bytes is
         //   (maxAlignment/minAlignment - 1) * minAlignment
         //     = maxAlignment - minAlignment.
-        int minimumSize = AlignUp(requestedSize, minAlignment)
+        int minimumSize = SkToInt(AlignUp(requestedSize, minAlignment))
                           + blockSize
                           + maxAlignment - minAlignment;
 
@@ -79,7 +88,7 @@ public:
         // maximum int. The > 32K heuristic is from the JEMalloc behavior.
         constexpr int k32K = (1 << 15);
         if (minimumSize >= k32K && minimumSize < std::numeric_limits<int>::max() - k4K) {
-            minimumSize = AlignUp(minimumSize, k4K);
+            minimumSize = SkToInt(AlignUp(minimumSize, k4K));
         }
 
         return minimumSize;
@@ -88,12 +97,18 @@ public:
     template <int size>
     using Storage = std::array<char, PlatformMinimumSizeWithOverhead(size, 1)>;
 
+    // Returns true if n * sizeof(T) will fit in an allocation block.
+    template <typename T>
+    static bool WillCountFit(int n) {
+        constexpr int kMaxN = kMaxByteSize / sizeof(T);
+        return 0 <= n && n < kMaxN;
+    }
+
     // Returns a pointer to memory suitable for holding n Ts.
     template <typename T> char* allocateBytesFor(int n = 1) {
         static_assert(alignof(T) <= kMaxAlignment, "Alignment is too big for arena");
         static_assert(sizeof(T) < kMaxByteSize, "Size is too big for arena");
-        constexpr int kMaxN = kMaxByteSize / sizeof(T);
-        SkASSERT_RELEASE(0 <= n && n < kMaxN);
+        SkASSERT_RELEASE(WillCountFit<T>(n));
 
         int size = n ? n * sizeof(T) : 1;
         return this->allocateBytes(size, alignof(T));
@@ -249,6 +264,18 @@ public:
         return reinterpret_cast<T*>(fAlloc.template allocateBytesFor<T>(n));
     }
 
+    template<typename T>
+    SkSpan<T> makePODSpan(SkSpan<const T> s) {
+        static_assert(HasNoDestructor<T>, "This is not POD. Use makeUniqueArray.");
+        if (s.empty()) {
+            return SkSpan<T>{};
+        }
+
+        T* result = this->makePODArray<T>(SkTo<int>(s.size()));
+        memcpy(result, s.data(), s.size_bytes());
+        return {result, s.size()};
+    }
+
     template<typename T, typename Src, typename Map>
     SkSpan<T> makePODArray(const Src& src, Map map) {
         static_assert(HasNoDestructor<T>, "This is not POD. Use makeUniqueArray.");
@@ -280,12 +307,37 @@ public:
         return std::unique_ptr<T[], ArrayDestroyer>{array, ArrayDestroyer{n}};
     }
 
+    template<typename T, typename U, typename Map>
+    std::unique_ptr<T[], ArrayDestroyer> makeUniqueArray(SkSpan<const U> src, Map map) {
+        static_assert(!HasNoDestructor<T>, "This is POD. Use makePODArray.");
+        int count = SkCount(src);
+        T* array = reinterpret_cast<T*>(fAlloc.template allocateBytesFor<T>(src.size()));
+        for (int i = 0; i < count; ++i) {
+            new (&array[i]) T(map(src[i]));
+        }
+        return std::unique_ptr<T[], ArrayDestroyer>{array, ArrayDestroyer{count}};
+    }
+
     void* alignedBytes(int size, int alignment);
 
 private:
     BagOfBytes fAlloc;
 };
 
+// Helper for defining allocators with inline/reserved storage.
+// For argument declarations, stick to the base type (SubRunAllocator).
+// Note: Inheriting from the storage first means the storage will outlive the
+// SubRunAllocator, letting ~SubRunAllocator read it as it calls destructors.
+// (This is mostly only relevant for strict tools like MSAN.)
+template <size_t InlineStorageSize, size_t InlineStorageAlignment>
+class STSubRunAllocator : private std::array<char,
+                                             BagOfBytes::PlatformMinimumSizeWithOverhead(
+                                                     InlineStorageSize, InlineStorageAlignment)>,
+                          public SubRunAllocator {
+public:
+    explicit STSubRunAllocator(size_t firstHeapAllocation = InlineStorageSize)
+            : SubRunAllocator{this->data(), SkToInt(this->size()), SkToInt(firstHeapAllocation)} {}
+};
 }  // namespace sktext::gpu
 
 #endif // sktext_gpu_SubRunAllocator_DEFINED

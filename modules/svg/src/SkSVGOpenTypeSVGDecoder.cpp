@@ -22,6 +22,8 @@
 
 #include <memory>
 
+using namespace skia_private;
+
 namespace {
 class DataResourceProvider final : public skresources::ResourceProvider {
 public:
@@ -56,7 +58,7 @@ private:
             return nullptr;
         }
 
-        const char* b64Data = encoding + SK_ARRAY_COUNT(kDataURIEncodingStr) - 1;
+        const char* b64Data = encoding + std::size(kDataURIEncodingStr) - 1;
         size_t b64DataLen = strlen(b64Data);
         size_t dataLen;
         if (SkBase64::Decode(b64Data, b64DataLen, nullptr, &dataLen) != SkBase64::kNoError) {
@@ -112,7 +114,7 @@ bool SkSVGOpenTypeSVGDecoder::render(SkCanvas& canvas, int upem, SkGlyphID glyph
     SkSVGPresentationContext pctx;
     pctx.fInherited.fColor.set(foregroundColor);
 
-    SkTHashMap<SkString, SkSVGColorType> namedColors;
+    THashMap<SkString, SkSVGColorType> namedColors;
     if (palette.size()) {
         for (auto&& [i, color] : SkMakeEnumerate(palette)) {
             constexpr const size_t colorStringLen = sizeof("color") - 1;

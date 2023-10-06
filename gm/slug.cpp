@@ -21,11 +21,15 @@
 #include "include/core/SkTextBlob.h"
 #include "include/core/SkTypeface.h"
 #include "include/core/SkTypes.h"
-#include "include/private/SkTDArray.h"
+#include "include/private/base/SkTDArray.h"
 #include "include/private/chromium/Slug.h"
 #include "tools/ToolUtils.h"
 
-#if SK_SUPPORT_GPU
+#if defined(SK_GRAPHITE)
+#include "include/gpu/graphite/ContextOptions.h"
+#endif
+
+#if defined(SK_GANESH) || defined(SK_GRAPHITE)
 #include "include/gpu/GrContextOptions.h"
 
 class SlugGM : public skiagm::GM {
@@ -36,6 +40,12 @@ protected:
     void modifyGrContextOptions(GrContextOptions* ctxOptions) override {
         ctxOptions->fSupportBilerpFromGlyphAtlas = true;
     }
+
+#if defined(SK_GRAPHITE)
+    void modifyGraphiteContextOptions(skgpu::graphite::ContextOptions* options) const override {
+        options->fSupportBilerpFromGlyphAtlas = true;
+    }
+#endif
 
     void onOnceBeforeDraw() override {
         fTypeface = ToolUtils::create_portable_typeface("serif", SkFontStyle());
@@ -97,8 +107,8 @@ private:
         font.setTypeface(fTypeface);
         font.setSize(16);
 
-        const SkTextBlobBuilder::RunBuffer& buf = builder.allocRun(font, fGlyphs.count(), 0, 0);
-        memcpy(buf.glyphs, fGlyphs.begin(), fGlyphs.count() * sizeof(uint16_t));
+        const SkTextBlobBuilder::RunBuffer& buf = builder.allocRun(font, fGlyphs.size(), 0, 0);
+        memcpy(buf.glyphs, fGlyphs.begin(), fGlyphs.size() * sizeof(uint16_t));
         return builder.make();
     }
 

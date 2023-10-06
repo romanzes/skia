@@ -8,12 +8,13 @@
 #include "include/core/SkSpan.h"
 #include "include/core/SkTypes.h"
 #include "include/private/SkSLDefines.h"
-#include "include/private/SkTArray.h"
-#include "include/sksl/SkSLOperator.h"
+#include "include/private/base/SkTArray.h"
 #include "src/sksl/SkSLAnalysis.h"
+#include "src/sksl/SkSLOperator.h"
 #include "src/sksl/ir/SkSLConstructor.h"
 #include "src/sksl/ir/SkSLExpression.h"
 #include "src/sksl/ir/SkSLFieldAccess.h"
+#include "src/sksl/ir/SkSLIRNode.h"
 #include "src/sksl/ir/SkSLIndexExpression.h"
 #include "src/sksl/ir/SkSLLiteral.h"
 #include "src/sksl/ir/SkSLPrefixExpression.h"
@@ -21,6 +22,7 @@
 #include "src/sksl/ir/SkSLType.h"
 #include "src/sksl/ir/SkSLVariableReference.h"
 
+#include <cstddef>
 #include <memory>
 
 namespace SkSL {

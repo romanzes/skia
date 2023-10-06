@@ -5,18 +5,48 @@
  * found in the LICENSE file.
  */
 
+#include "include/core/SkAlphaType.h"
 #include "include/core/SkBitmap.h"
 #include "include/core/SkCanvas.h"
-#include "include/core/SkColorSpace.h"
+#include "include/core/SkColor.h"
+#include "include/core/SkColorType.h"
+#include "include/core/SkFont.h"
+#include "include/core/SkFontStyle.h"
+#include "include/core/SkFontTypes.h"
+#include "include/core/SkImageInfo.h"
+#include "include/core/SkMatrix.h"
+#include "include/core/SkPaint.h"
+#include "include/core/SkPoint.h"
+#include "include/core/SkRefCnt.h"
+#include "include/core/SkScalar.h"
 #include "include/core/SkSurface.h"
+#include "include/core/SkSurfaceProps.h"
 #include "include/core/SkTextBlob.h"
+#include "include/core/SkTypeface.h"
+#include "include/core/SkTypes.h"
+#include "include/gpu/GpuTypes.h"
+#include "include/gpu/GrDirectContext.h"
+#include "include/gpu/ganesh/SkSurfaceGanesh.h"
 #include "src/core/SkDevice.h"
-#include "src/core/SkGlyphRun.h"
-#include "src/core/SkSurfacePriv.h"
-#include "src/gpu/ganesh/GrColorInfo.h"
+#include "src/core/SkScalerContext.h"
+#include "src/text/GlyphRun.h"
+#include "src/text/gpu/SDFTControl.h"
+#include "src/text/gpu/SubRunAllocator.h"
 #include "src/text/gpu/TextBlob.h"
+#include "tests/CtsEnforcement.h"
 #include "tests/Test.h"
 #include "tools/ToolUtils.h"
+
+#include <cmath>
+#include <cstddef>
+#include <cstdint>
+#include <limits>
+#include <memory>
+#include <tuple>
+#include <utility>
+
+class GrRecordingContext;
+struct GrContextOptions;
 
 using BagOfBytes = sktext::gpu::BagOfBytes;
 using SubRunAllocator = sktext::gpu::SubRunAllocator;
@@ -27,7 +57,7 @@ SkBitmap rasterize_blob(SkTextBlob* blob,
                         const SkMatrix& matrix) {
     const SkImageInfo info =
             SkImageInfo::Make(500, 500, kN32_SkColorType, kPremul_SkAlphaType);
-    auto surface = SkSurface::MakeRenderTarget(rContext, SkBudgeted::kNo, info);
+    auto surface = SkSurfaces::RenderTarget(rContext, skgpu::Budgeted::kNo, info);
     auto canvas = surface->getCanvas();
     canvas->drawColor(SK_ColorWHITE);
     canvas->concat(matrix);
@@ -49,7 +79,10 @@ bool check_for_black(const SkBitmap& bm) {
     return false;
 }
 
-DEF_GPUTEST_FOR_RENDERING_CONTEXTS(GrTextBlobScaleAnimation, reporter, ctxInfo) {
+DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(GrTextBlobScaleAnimation,
+                                       reporter,
+                                       ctxInfo,
+                                       CtsEnforcement::kApiLevel_T) {
     auto tf = ToolUtils::create_portable_typeface("Mono", SkFontStyle());
     SkFont font{tf};
     font.setHinting(SkFontHinting::kNormal);
@@ -77,7 +110,10 @@ DEF_GPUTEST_FOR_RENDERING_CONTEXTS(GrTextBlobScaleAnimation, reporter, ctxInfo) 
 }
 
 // Test extreme positions for all combinations of positions, origins, and translation matrices.
-DEF_GPUTEST_FOR_RENDERING_CONTEXTS(GrTextBlobMoveAround, reporter, ctxInfo) {
+DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(GrTextBlobMoveAround,
+                                       reporter,
+                                       ctxInfo,
+                                       CtsEnforcement::kApiLevel_T) {
     auto tf = ToolUtils::create_portable_typeface("Mono", SkFontStyle());
     SkFont font{tf};
     font.setHinting(SkFontHinting::kNormal);
@@ -101,7 +137,7 @@ DEF_GPUTEST_FOR_RENDERING_CONTEXTS(GrTextBlobMoveAround, reporter, ctxInfo) {
         SkPaint paint;
         const SkImageInfo info =
                 SkImageInfo::Make(350, 80, kN32_SkColorType, kPremul_SkAlphaType);
-        auto surface = SkSurface::MakeRenderTarget(dContext, SkBudgeted::kNo, info);
+        auto surface = SkSurfaces::RenderTarget(dContext, skgpu::Budgeted::kNo, info);
         auto canvas = surface->getCanvas();
         canvas->drawColor(SK_ColorWHITE);
         canvas->concat(matrix);
@@ -206,20 +242,6 @@ DEF_TEST(BagOfBytesBasic, r) {
     }
 }
 
-// Helper for defining allocators with inline/reserved storage.
-// For argument declarations, stick to the base type (SubRunAllocator).
-// Note: Inheriting from the storage first means the storage will outlive the
-// SubRunAllocator, letting ~SubRunAllocator read it as it calls destructors.
-// (This is mostly only relevant for strict tools like MSAN.)
-
-template <size_t inlineSize>
-class GrSTSubRunAllocator : private BagOfBytes::Storage<inlineSize>, public SubRunAllocator {
-public:
-    explicit GrSTSubRunAllocator(int firstHeapAllocation =
-                                     BagOfBytes::PlatformMinimumSizeWithOverhead(inlineSize, 1))
-            : SubRunAllocator{this->data(), SkTo<int>(this->size()), firstHeapAllocation} {}
-};
-
 DEF_TEST(SubRunAllocator, r) {
     static int created = 0;
     static int destroyed = 0;
@@ -273,7 +295,7 @@ DEF_TEST(SubRunAllocator, r) {
 
     // Exercise on stack arena
     {
-        GrSTSubRunAllocator<64> arena;
+        sktext::gpu::STSubRunAllocator<64, 16> arena;
         exercise(&arena);
     }
 
@@ -314,7 +336,7 @@ DEF_TEST(SubRunAllocator, r) {
             ~I() {}
             int i;
         };
-        GrSTSubRunAllocator<64> arena;
+        sktext::gpu::STSubRunAllocator<64, 16> arena;
         auto a = arena.makeUniqueArray<I>(8, [](size_t i) { return i; });
         for (size_t i = 0; i < 8; i++) {
             REPORTER_ASSERT(r, a[i].i == (int)i);
@@ -336,13 +358,17 @@ DEF_TEST(KeyEqualityOnPerspective, r) {
     auto runBuffer = builder.allocRun(font, 1, 0.0f, 0.0f);
     runBuffer.glyphs[0] = 3;
     auto blob = builder.make();
-    SkGlyphRunBuilder grBuilder;
+    sktext::GlyphRunBuilder grBuilder;
     auto glyphRunList = grBuilder.blobToGlyphRunList(*blob, {100, 100});
     SkPaint paint;
 
     // Build the strike device.
     SkSurfaceProps props;
-    sktext::gpu::SDFTControl control(false, false, 1, 100);
+#if !defined(SK_DISABLE_SDF_TEXT)
+    sktext::gpu::SDFTControl control(false, false, false, 1, 100);
+#else
+    sktext::gpu::SDFTControl control{};
+#endif
     SkStrikeDeviceInfo strikeDevice{props, SkScalerContextFlags::kBoostContrast, &control};
     SkMatrix matrix1;
     matrix1.setAll(1, 0, 0, 0, 1, 0, 1, 1, 1);
@@ -355,5 +381,5 @@ DEF_TEST(KeyEqualityOnPerspective, r) {
     auto key3 = std::get<1>(
             TextBlob::Key::Make(glyphRunList, paint, matrix2, strikeDevice));
     REPORTER_ASSERT(r, key1 == key2);
-    REPORTER_ASSERT(r, !(key1 == key3));
+    REPORTER_ASSERT(r, key1 == key3);
 }

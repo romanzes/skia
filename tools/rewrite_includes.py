@@ -45,6 +45,16 @@ ignorelist = [
   'include/third_party/vulkan',
   # Some node_modules/ files (used by CanvasKit et al) have c++ code which we should ignore.
   'node_modules',
+  'include/third_party/skcms',
+  # Used by Jetski and Graphite
+  'Surface.h',
+  # Used by Ganesh and Graphite
+  'Device.h',
+  # Temporary shims
+  'SkEncodedImageFormat.h',
+  'SkICC.h',
+  # Transitional
+  'tools/window',
 ]
 
 assert '/' in [os.sep, os.altsep]
@@ -57,7 +67,7 @@ for root in roots:
   for path, _, files in os.walk(root):
     if not any(snippet in fix_path(path) for snippet in ignorelist):
       for file_name in files:
-        if file_name.endswith('.h'):
+        if file_name.endswith('.h') and not file_name in ignorelist:
           if file_name in headers:
             message = ('Header filename is used more than once!\n- ' + path + '/' + file_name +
                        '\n- ' + headers[file_name])
@@ -80,7 +90,13 @@ for file_path in to_rewrite():
   if ('/generated/' in file_path or
       'tests/sksl/' in file_path or
       'third_party/skcms' in file_path or
-      file_path.startswith('bazel/rbe')):
+      'modules/skcms' in file_path or
+      # transitional
+      'jetski' in file_path or
+      'tools/window' in file_path or
+      file_path.startswith('bazel/rbe') or
+      # We intentionally list SkUserConfig.h not from the root in this file.
+      file_path == 'include/private/base/SkLoadUserConfig.h'):
     continue
   if (file_path.endswith('.h') or
       file_path.endswith('.c') or
@@ -105,11 +121,16 @@ for file_path in to_rewrite():
         header = fix_path(os.path.relpath(headers[os.path.basename(parts[1])], '.'))
         includes.append(parts[0] + '"%s"' % header + parts[2])
       else:
-        for inc in sorted(includes):
+        # deduplicate includes in this block. If a file needs to be included
+        # multiple times, the separate includes should go in different blocks.
+        includes = sorted(list(set(includes)))
+        for inc in includes:
           output.write(inc.strip('\n') + '\n')
         includes = []
         output.write(line.strip('\n') + '\n')
-
+    # Fix any straggling includes, e.g. in a file that only includes something else.
+    for inc in sorted(includes):
+      output.write(inc.strip('\n') + '\n')
     if args.dry_run and output.getvalue() != open(file_path).read():
       need_rewriting.append(file_path)
       rc = 1
@@ -120,5 +141,5 @@ if need_rewriting:
   for path in need_rewriting:
     print('\t' + path)
   print('To do this automatically, run')
-  print('python tools/rewrite_includes.py ' + ' '.join(need_rewriting))
+  print('python3 tools/rewrite_includes.py ' + ' '.join(need_rewriting))
   sys.exit(1)

@@ -9,8 +9,9 @@
 #ifndef SkJpegPriv_DEFINED
 #define SkJpegPriv_DEFINED
 
+#include "include/codec/SkEncodedOrigin.h"
 #include "include/core/SkStream.h"
-#include "include/private/SkTArray.h"
+#include "include/private/base/SkTArray.h"
 
 #include <setjmp.h>
 // stdio is needed for jpeglib
@@ -20,12 +21,6 @@ extern "C" {
     #include "jpeglib.h"
     #include "jerror.h"
 }
-
-static constexpr uint32_t kICCMarker = JPEG_APP0 + 2;
-static constexpr uint32_t kICCMarkerHeaderSize = 14;
-static constexpr uint8_t kICCSig[] = {
-        'I', 'C', 'C', '_', 'P', 'R', 'O', 'F', 'I', 'L', 'E', '\0',
-};
 
 /*
  * Error handling struct
@@ -47,7 +42,11 @@ struct skjpeg_error_mgr : jpeg_error_mgr {
         jmp_buf fJmpBuf;
     };
 
-    SkSTArray<4, jmp_buf*> fJmpBufStack;
+    skia_private::STArray<4, jmp_buf*> fJmpBufStack;
 };
+
+namespace SkJpegPriv {
+SkEncodedOrigin get_exif_orientation(jpeg_decompress_struct* dinfo);
+}
 
 #endif

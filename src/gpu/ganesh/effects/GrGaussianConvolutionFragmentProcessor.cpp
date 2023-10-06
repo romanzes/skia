@@ -7,14 +7,33 @@
 
 #include "src/gpu/ganesh/effects/GrGaussianConvolutionFragmentProcessor.h"
 
-#include "src/core/SkGpuBlurUtils.h"
+#include "include/core/SkMatrix.h"
+#include "include/core/SkRect.h"
+#include "include/core/SkSamplingOptions.h"
+#include "include/private/SkSLSampleUsage.h"
+#include "include/private/base/SkAssert.h"
+#include "include/private/gpu/ganesh/GrTypesPriv.h"
+#include "src/base/SkRandom.h"
+#include "src/core/SkSLTypeShared.h"
 #include "src/gpu/KeyBuilder.h"
-#include "src/gpu/ganesh/GrTexture.h"
-#include "src/gpu/ganesh/GrTextureProxy.h"
+#include "src/gpu/ganesh/GrBlurUtils.h"
+#include "src/gpu/ganesh/GrCaps.h"
+#include "src/gpu/ganesh/GrShaderCaps.h"
+#include "src/gpu/ganesh/GrShaderVar.h"
+#include "src/gpu/ganesh/GrSurfaceProxyView.h"
 #include "src/gpu/ganesh/effects/GrTextureEffect.h"
 #include "src/gpu/ganesh/glsl/GrGLSLFragmentShaderBuilder.h"
 #include "src/gpu/ganesh/glsl/GrGLSLProgramDataManager.h"
 #include "src/gpu/ganesh/glsl/GrGLSLUniformHandler.h"
+#include "src/sksl/SkSLGLSL.h"
+#include "src/sksl/SkSLString.h"
+
+#include <algorithm>
+#include <cstring>
+#include <string>
+#include <utility>
+
+enum SkAlphaType : int;
 
 // For brevity
 using UniformHandle = GrGLSLProgramDataManager::UniformHandle;
@@ -51,8 +70,8 @@ void GrGaussianConvolutionFragmentProcessor::Impl::emitCode(EmitArgs& args) {
     // For variable-length loops, size the kernel uniform for the maximum width so we can reuse the
     // same code for any kernel width.
     bool variableLengthLoop = should_use_variable_length_loop(*args.fShaderCaps);
-    int width = SkGpuBlurUtils::LinearKernelWidth(ce.fRadius);
-    int arrayCount = variableLengthLoop ? SkGpuBlurUtils::LinearKernelWidth(kMaxKernelRadius)
+    int width = GrBlurUtils::LinearKernelWidth(ce.fRadius);
+    int arrayCount = variableLengthLoop ? GrBlurUtils::LinearKernelWidth(kMaxKernelRadius)
                                         : width;
 
     const char* offsetsAndKernel;
@@ -73,7 +92,7 @@ void GrGaussianConvolutionFragmentProcessor::Impl::emitCode(EmitArgs& args) {
 
     std::string smoothBody = SkSL::String::printf("return %s * offsetAndKernel.y;", sample.c_str());
     fragBuilder->emitFunction(SkSLType::kHalf4, smoothFuncName.c_str(),
-                              {smoothArgs, SK_ARRAY_COUNT(smoothArgs)},
+                              {smoothArgs, std::size(smoothArgs)},
                               smoothBody.c_str());
 
     // Implement the main() function.
@@ -106,8 +125,8 @@ void GrGaussianConvolutionFragmentProcessor::Impl::onSetData(const GrGLSLProgram
     increment[static_cast<int>(conv.fDirection)] = 1;
     pdman.set2fv(fIncrementUni, 1, increment);
 
-    int kernelWidth = SkGpuBlurUtils::LinearKernelWidth(conv.fRadius);
-    SkASSERT(kernelWidth <= (int)SK_ARRAY_COUNT(fOffsetsAndKernel));
+    int kernelWidth = GrBlurUtils::LinearKernelWidth(conv.fRadius);
+    SkASSERT(kernelWidth <= kMaxKernelWidth);
     pdman.set2fv(fOffsetsAndKernelUni, kernelWidth, conv.fOffsetsAndKernel[0].ptr());
     if (fKernelWidthUni.isValid()) {
         pdman.set1i(fKernelWidthUni, kernelWidth);
@@ -127,7 +146,7 @@ std::unique_ptr<GrFragmentProcessor> GrGaussianConvolutionFragmentProcessor::Mak
         const SkIRect* pixelDomain,
         const GrCaps& caps) {
     std::unique_ptr<GrFragmentProcessor> child;
-    bool is_zero_sigma = SkGpuBlurUtils::IsEffectivelyZeroSigma(gaussianSigma);
+    bool is_zero_sigma = GrBlurUtils::IsEffectivelyZeroSigma(gaussianSigma);
     // We should sample as nearest if there will be no shader to preserve existing behaviour, but
     // the linear blur requires a linear sample.
     GrSamplerState::Filter filter = is_zero_sigma ?
@@ -188,7 +207,7 @@ GrGaussianConvolutionFragmentProcessor::GrGaussianConvolutionFragmentProcessor(
     // Assemble a gaussian kernel and offset list.
     float kernel[kMaxKernelWidth] = {};
     float offsets[kMaxKernelWidth] = {};
-    SkGpuBlurUtils::Compute1DLinearGaussianKernel(kernel, offsets, gaussianSigma, fRadius);
+    GrBlurUtils::Compute1DLinearGaussianKernel(kernel, offsets, gaussianSigma, fRadius);
 
     // Interleave the kernel and offset values into an array of SkV2s.
     for (int index = 0; index < kMaxKernelWidth; ++index) {
@@ -220,13 +239,13 @@ bool GrGaussianConvolutionFragmentProcessor::onIsEqual(const GrFragmentProcessor
     const auto& that = sBase.cast<GrGaussianConvolutionFragmentProcessor>();
     return fRadius == that.fRadius && fDirection == that.fDirection &&
            std::equal(fOffsetsAndKernel,
-                      fOffsetsAndKernel + SkGpuBlurUtils::LinearKernelWidth(fRadius),
+                      fOffsetsAndKernel + GrBlurUtils::LinearKernelWidth(fRadius),
                       that.fOffsetsAndKernel);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 
-GR_DEFINE_FRAGMENT_PROCESSOR_TEST(GrGaussianConvolutionFragmentProcessor);
+GR_DEFINE_FRAGMENT_PROCESSOR_TEST(GrGaussianConvolutionFragmentProcessor)
 
 #if GR_TEST_UTILS
 std::unique_ptr<GrFragmentProcessor> GrGaussianConvolutionFragmentProcessor::TestCreate(

@@ -5,35 +5,65 @@
  * found in the LICENSE file.
  */
 
+#include "include/core/SkAlphaType.h"
 #include "include/core/SkBitmap.h"
+#include "include/core/SkCanvas.h"
+#include "include/core/SkColor.h"
+#include "include/core/SkColorSpace.h"
+#include "include/core/SkColorType.h"
+#include "include/core/SkData.h"
+#include "include/core/SkFont.h"
+#include "include/core/SkFontStyle.h"
+#include "include/core/SkFontTypes.h"
 #include "include/core/SkGraphics.h"
+#include "include/core/SkImageInfo.h"
+#include "include/core/SkMatrix.h"
+#include "include/core/SkPaint.h"
+#include "include/core/SkRect.h"
+#include "include/core/SkRefCnt.h"
+#include "include/core/SkScalar.h"
+#include "include/core/SkSerialProcs.h"
 #include "include/core/SkSurface.h"
+#include "include/core/SkSurfaceProps.h"
 #include "include/core/SkTextBlob.h"
+#include "include/core/SkTypeface.h"
+#include "include/core/SkTypes.h"
+#include "include/gpu/GpuTypes.h"
+#include "include/gpu/GrContextOptions.h"
 #include "include/gpu/GrDirectContext.h"
-#include "include/private/SkMutex.h"
+#include "include/gpu/GrRecordingContext.h"
+#include "include/gpu/ganesh/SkSurfaceGanesh.h"
+#include "include/private/base/SkMalloc.h"
+#include "include/private/base/SkMutex.h"
 #include "include/private/chromium/SkChromeRemoteGlyphCache.h"
 #include "include/private/chromium/Slug.h"
-#include "src/core/SkDraw.h"
 #include "src/core/SkFontPriv.h"
+#include "src/core/SkGlyph.h"
 #include "src/core/SkReadBuffer.h"
-#include "src/core/SkScalerCache.h"
-#include "src/core/SkStrikeCache.h"
 #include "src/core/SkStrikeSpec.h"
-#include "src/core/SkSurfacePriv.h"
+#include "src/core/SkTHash.h"
 #include "src/core/SkTypeface_remote.h"
+#include "src/core/SkWriteBuffer.h"
 #include "src/gpu/ganesh/GrCaps.h"
 #include "src/gpu/ganesh/GrDirectContextPriv.h"
 #include "src/gpu/ganesh/GrRecordingContextPriv.h"
+#include "src/gpu/ganesh/GrShaderCaps.h"
 #include "src/text/gpu/SDFTControl.h"
+#include "tests/CtsEnforcement.h"
 #include "tests/Test.h"
 #include "tools/Resources.h"
 #include "tools/ToolUtils.h"
 #include "tools/fonts/TestEmptyTypeface.h"
 
-// Since SkRemoteGlyphCache is not re-entrant, we can't use it while drawing slugs to simulate
-// text blobs in the GPU stack.
-#if !defined(SK_EXPERIMENTAL_SIMULATE_DRAWGLYPHRUNLIST_WITH_SLUG_STRIKE_SERIALIZE)
+#include <cmath>
+#include <cstdint>
+#include <cstring>
+#include <initializer_list>
+#include <memory>
+#include <optional>
+#include <vector>
 
+using namespace skia_private;
 using Slug = sktext::gpu::Slug;
 
 class DiscardableManager : public SkStrikeServer::DiscardableHandleManager,
@@ -87,7 +117,7 @@ public:
         fLockedHandles.reset();
         fLastDeletedHandleId = fNextHandleId;
     }
-    const SkTHashSet<SkDiscardableHandleId>& lockedHandles() const {
+    const THashSet<SkDiscardableHandleId>& lockedHandles() const {
         SkAutoMutexExclusive l(fMutex);
 
         return fLockedHandles;
@@ -123,15 +153,15 @@ private:
 
     SkDiscardableHandleId fNextHandleId = 0u;
     SkDiscardableHandleId fLastDeletedHandleId = 0u;
-    SkTHashSet<SkDiscardableHandleId> fLockedHandles;
+    THashSet<SkDiscardableHandleId> fLockedHandles;
     int fCacheMissCount[SkStrikeClient::CacheMissType::kLast + 1u];
 };
 
-sk_sp<SkTextBlob> buildTextBlob(sk_sp<SkTypeface> tf, int glyphCount) {
+sk_sp<SkTextBlob> buildTextBlob(sk_sp<SkTypeface> tf, int glyphCount, int textSize = 1) {
     SkFont font;
     font.setTypeface(tf);
     font.setHinting(SkFontHinting::kNormal);
-    font.setSize(1u);
+    font.setSize(textSize);
     font.setEdging(SkFont::Edging::kAntiAlias);
     font.setSubpixel(true);
 
@@ -172,7 +202,7 @@ static void compare_blobs(const SkBitmap& expected, const SkBitmap& actual,
 sk_sp<SkSurface> MakeSurface(int width, int height, GrRecordingContext* rContext) {
     const SkImageInfo info =
             SkImageInfo::Make(width, height, kN32_SkColorType, kPremul_SkAlphaType);
-    return SkSurface::MakeRenderTarget(rContext, SkBudgeted::kNo, info);
+    return SkSurfaces::RenderTarget(rContext, skgpu::Budgeted::kNo, info);
 }
 
 SkSurfaceProps FindSurfaceProps(GrRecordingContext* rContext) {
@@ -225,24 +255,10 @@ SkBitmap RasterSlug(sk_sp<Slug> slug, int width, int height, const SkPaint& pain
     return bitmap;
 }
 
-DEF_TEST(SkRemoteGlyphCache_TypefaceSerialization, reporter) {
-    sk_sp<DiscardableManager> discardableManager = sk_make_sp<DiscardableManager>();
-    SkStrikeServer server(discardableManager.get());
-    SkStrikeClient client(discardableManager, false);
-
-    auto server_tf = SkTypeface::MakeDefault();
-    auto tf_data = server.serializeTypeface(server_tf.get());
-
-    auto client_tf = client.deserializeTypeface(tf_data->data(), tf_data->size());
-    REPORTER_ASSERT(reporter, client_tf);
-    REPORTER_ASSERT(reporter, static_cast<SkTypefaceProxy*>(client_tf.get())->remoteTypefaceID() ==
-                                      server_tf->uniqueID());
-
-    // Must unlock everything on termination, otherwise valgrind complains about memory leaks.
-    discardableManager->unlockAndDeleteAll();
-}
-
-DEF_GPUTEST_FOR_RENDERING_CONTEXTS(SkRemoteGlyphCache_StrikeSerialization, reporter, ctxInfo) {
+DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(SkRemoteGlyphCache_StrikeSerialization,
+                                       reporter,
+                                       ctxInfo,
+                                       CtsEnforcement::kNever) {
     auto dContext = ctxInfo.directContext();
     sk_sp<DiscardableManager> discardableManager = sk_make_sp<DiscardableManager>();
     SkStrikeServer server(discardableManager.get());
@@ -250,24 +266,31 @@ DEF_GPUTEST_FOR_RENDERING_CONTEXTS(SkRemoteGlyphCache_StrikeSerialization, repor
     const SkPaint paint;
 
     // Server.
-    auto serverTf = SkTypeface::MakeFromName("monospace", SkFontStyle());
-    auto serverTfData = server.serializeTypeface(serverTf.get());
+    auto serverTypeface = SkTypeface::MakeFromName("monospace", SkFontStyle());
+    const SkTypefaceID serverTypefaceID = serverTypeface->uniqueID();
 
     int glyphCount = 10;
-    auto serverBlob = buildTextBlob(serverTf, glyphCount);
+    auto serverBlob = buildTextBlob(serverTypeface, glyphCount);
     auto props = FindSurfaceProps(dContext);
-    std::unique_ptr<SkCanvas> cache_diff_canvas = server.makeAnalysisCanvas(
-            10, 10, props, nullptr, dContext->supportsDistanceFieldText());
-    cache_diff_canvas->drawTextBlob(serverBlob.get(), 0, 0, paint);
+    std::unique_ptr<SkCanvas> analysisCanvas = server.makeAnalysisCanvas(
+            10, 10, props, nullptr, dContext->supportsDistanceFieldText(),
+            !dContext->priv().caps()->disablePerspectiveSDFText());
+    analysisCanvas->drawTextBlob(serverBlob.get(), 0, 0, paint);
 
     std::vector<uint8_t> serverStrikeData;
     server.writeStrikeData(&serverStrikeData);
 
     // Client.
-    auto clientTf = client.deserializeTypeface(serverTfData->data(), serverTfData->size());
     REPORTER_ASSERT(reporter,
                     client.readStrikeData(serverStrikeData.data(), serverStrikeData.size()));
-    auto clientBlob = buildTextBlob(clientTf, glyphCount);
+    auto clientTypeface = client.retrieveTypefaceUsingServerIDForTest(serverTypefaceID);
+
+    // Ensure typeface serialization/deserialization worked.
+    REPORTER_ASSERT(reporter,
+                    static_cast<SkTypefaceProxy*>(clientTypeface.get())->remoteTypefaceID() ==
+                        serverTypefaceID);
+
+    auto clientBlob = buildTextBlob(clientTypeface, glyphCount);
 
     SkBitmap expected = RasterBlob(serverBlob, 10, 10, paint, dContext);
     SkBitmap actual = RasterBlob(clientBlob, 10, 10, paint, dContext);
@@ -282,9 +305,12 @@ static void use_padding_options(GrContextOptions* options) {
     options->fSupportBilerpFromGlyphAtlas = true;
 }
 
-DEF_GPUTEST_FOR_CONTEXTS(SkRemoteGlyphCache_StrikeSerializationSlug,
-                         sk_gpu_test::GrContextFactory::IsRenderingContext,
-                         reporter, ctxInfo, use_padding_options) {
+DEF_GANESH_TEST_FOR_CONTEXTS(SkRemoteGlyphCache_StrikeSerializationSlug,
+                             sk_gpu_test::GrContextFactory::IsRenderingContext,
+                             reporter,
+                             ctxInfo,
+                             use_padding_options,
+                             CtsEnforcement::kNever) {
     auto dContext = ctxInfo.directContext();
     sk_sp<DiscardableManager> discardableManager = sk_make_sp<DiscardableManager>();
     SkStrikeServer server(discardableManager.get());
@@ -292,14 +318,15 @@ DEF_GPUTEST_FOR_CONTEXTS(SkRemoteGlyphCache_StrikeSerializationSlug,
     const SkPaint paint;
 
     // Server.
-    auto serverTf = SkTypeface::MakeFromName("monospace", SkFontStyle());
-    auto serverTfData = server.serializeTypeface(serverTf.get());
+    auto serverTypeface = SkTypeface::MakeFromName("monospace", SkFontStyle());
+    const SkTypefaceID serverTypefaceID = serverTypeface->uniqueID();
 
     int glyphCount = 10;
-    auto serverBlob = buildTextBlob(serverTf, glyphCount);
+    auto serverBlob = buildTextBlob(serverTypeface, glyphCount);
     auto props = FindSurfaceProps(dContext);
     std::unique_ptr<SkCanvas> analysisCanvas = server.makeAnalysisCanvas(
-            10, 10, props, nullptr, dContext->supportsDistanceFieldText());
+            10, 10, props, nullptr, dContext->supportsDistanceFieldText(),
+            !dContext->priv().caps()->disablePerspectiveSDFText());
 
     // Generate strike updates.
     (void)Slug::ConvertBlob(analysisCanvas.get(), *serverBlob, {0, 0}, paint);
@@ -308,10 +335,10 @@ DEF_GPUTEST_FOR_CONTEXTS(SkRemoteGlyphCache_StrikeSerializationSlug,
     server.writeStrikeData(&serverStrikeData);
 
     // Client.
-    auto clientTf = client.deserializeTypeface(serverTfData->data(), serverTfData->size());
     REPORTER_ASSERT(reporter,
                     client.readStrikeData(serverStrikeData.data(), serverStrikeData.size()));
-    auto clientBlob = buildTextBlob(clientTf, glyphCount);
+    auto clientTypeface = client.retrieveTypefaceUsingServerIDForTest(serverTypefaceID);
+    auto clientBlob = buildTextBlob(clientTypeface, glyphCount);
 
     SkBitmap expected = RasterBlobThroughSlug(serverBlob, 10, 10, paint, dContext);
     SkBitmap actual = RasterBlobThroughSlug(clientBlob, 10, 10, paint, dContext);
@@ -322,9 +349,12 @@ DEF_GPUTEST_FOR_CONTEXTS(SkRemoteGlyphCache_StrikeSerializationSlug,
     discardableManager->unlockAndDeleteAll();
 }
 
-DEF_GPUTEST_FOR_CONTEXTS(SkRemoteGlyphCache_SlugSerialization,
-                         sk_gpu_test::GrContextFactory::IsRenderingContext,
-                         reporter, ctxInfo, use_padding_options) {
+DEF_GANESH_TEST_FOR_CONTEXTS(SkRemoteGlyphCache_StrikeSerializationSlugForcePath,
+                             sk_gpu_test::GrContextFactory::IsRenderingContext,
+                             reporter,
+                             ctxInfo,
+                             use_padding_options,
+                             CtsEnforcement::kNever) {
     auto dContext = ctxInfo.directContext();
     sk_sp<DiscardableManager> discardableManager = sk_make_sp<DiscardableManager>();
     SkStrikeServer server(discardableManager.get());
@@ -332,14 +362,58 @@ DEF_GPUTEST_FOR_CONTEXTS(SkRemoteGlyphCache_SlugSerialization,
     const SkPaint paint;
 
     // Server.
-    auto serverTf = SkTypeface::MakeFromName("monospace", SkFontStyle());
-    auto serverTfData = server.serializeTypeface(serverTf.get());
+    auto serverTypeface = SkTypeface::MakeFromName("monospace", SkFontStyle());
+    const SkTypefaceID serverTypefaceID = serverTypeface->uniqueID();
 
     int glyphCount = 10;
-    auto serverBlob = buildTextBlob(serverTf, glyphCount);
+    auto serverBlob = buildTextBlob(serverTypeface, glyphCount, 360);
     auto props = FindSurfaceProps(dContext);
     std::unique_ptr<SkCanvas> analysisCanvas = server.makeAnalysisCanvas(
-            10, 10, props, nullptr, dContext->supportsDistanceFieldText());
+            10, 10, props, nullptr, dContext->supportsDistanceFieldText(),
+            !dContext->priv().caps()->disablePerspectiveSDFText());
+
+    // Generate strike updates.
+    (void)Slug::ConvertBlob(analysisCanvas.get(), *serverBlob, {0, 0}, paint);
+
+    std::vector<uint8_t> serverStrikeData;
+    server.writeStrikeData(&serverStrikeData);
+
+    // Client.
+    REPORTER_ASSERT(reporter,
+                    client.readStrikeData(serverStrikeData.data(), serverStrikeData.size()));
+    auto clientTypeface = client.retrieveTypefaceUsingServerIDForTest(serverTypefaceID);
+    auto clientBlob = buildTextBlob(clientTypeface, glyphCount, 360);
+
+    SkBitmap expected = RasterBlobThroughSlug(serverBlob, 10, 10, paint, dContext);
+    SkBitmap actual = RasterBlobThroughSlug(clientBlob, 10, 10, paint, dContext);
+    compare_blobs(expected, actual, reporter);
+    REPORTER_ASSERT(reporter, !discardableManager->hasCacheMiss());
+
+    // Must unlock everything on termination, otherwise valgrind complains about memory leaks.
+    discardableManager->unlockAndDeleteAll();
+}
+
+DEF_GANESH_TEST_FOR_CONTEXTS(SkRemoteGlyphCache_SlugSerialization,
+                             sk_gpu_test::GrContextFactory::IsRenderingContext,
+                             reporter,
+                             ctxInfo,
+                             use_padding_options,
+                             CtsEnforcement::kNever) {
+    auto dContext = ctxInfo.directContext();
+    sk_sp<DiscardableManager> discardableManager = sk_make_sp<DiscardableManager>();
+    SkStrikeServer server(discardableManager.get());
+    SkStrikeClient client(discardableManager, false);
+    const SkPaint paint;
+
+    // Server.
+    auto serverTypeface = SkTypeface::MakeFromName("monospace", SkFontStyle());
+
+    int glyphCount = 10;
+    auto serverBlob = buildTextBlob(serverTypeface, glyphCount);
+    auto props = FindSurfaceProps(dContext);
+    std::unique_ptr<SkCanvas> analysisCanvas = server.makeAnalysisCanvas(
+            10, 10, props, nullptr, dContext->supportsDistanceFieldText(),
+            !dContext->priv().caps()->disablePerspectiveSDFText());
 
     // Generate strike updates.
     auto srcSlug = Slug::ConvertBlob(analysisCanvas.get(), *serverBlob, {0.3f, 0}, paint);
@@ -353,7 +427,7 @@ DEF_GPUTEST_FOR_CONTEXTS(SkRemoteGlyphCache_SlugSerialization,
                     client.readStrikeData(serverStrikeData.data(), serverStrikeData.size()));
 
     SkBitmap expected = RasterSlug(srcSlug, 10, 10, paint, dContext);
-    auto dstSlug = client.deserializeSlug(dstSlugData->data(), dstSlugData->size());
+    auto dstSlug = client.deserializeSlugForTest(dstSlugData->data(), dstSlugData->size());
     REPORTER_ASSERT(reporter, dstSlug != nullptr);
     SkBitmap actual = RasterSlug(dstSlug, 10, 10, paint, dContext);
     compare_blobs(expected, actual, reporter);
@@ -363,30 +437,33 @@ DEF_GPUTEST_FOR_CONTEXTS(SkRemoteGlyphCache_SlugSerialization,
     discardableManager->unlockAndDeleteAll();
 }
 
-DEF_GPUTEST_FOR_RENDERING_CONTEXTS(SkRemoteGlyphCache_ReleaseTypeFace, reporter, ctxInfo) {
+DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(SkRemoteGlyphCache_ReleaseTypeFace,
+                                       reporter,
+                                       ctxInfo,
+                                       CtsEnforcement::kNever) {
     sk_sp<DiscardableManager> discardableManager = sk_make_sp<DiscardableManager>();
     SkStrikeServer server(discardableManager.get());
     SkStrikeClient client(discardableManager, false);
 
     // Server.
-    auto serverTf     = TestEmptyTypeface::Make();
-    auto serverTfData = server.serializeTypeface(serverTf.get());
-    REPORTER_ASSERT(reporter, serverTf->unique());
+    auto serverTypeface = TestEmptyTypeface::Make();
+    REPORTER_ASSERT(reporter, serverTypeface->unique());
 
     {
         const SkPaint paint;
         int glyphCount = 10;
-        auto serverBlob = buildTextBlob(serverTf, glyphCount);
+        auto serverBlob = buildTextBlob(serverTypeface, glyphCount);
         const SkSurfaceProps props;
         std::unique_ptr<SkCanvas> cache_diff_canvas = server.makeAnalysisCanvas(
-            10, 10, props, nullptr, ctxInfo.directContext()->supportsDistanceFieldText());
+                10, 10, props, nullptr, ctxInfo.directContext()->supportsDistanceFieldText(),
+                !ctxInfo.directContext()->priv().caps()->disablePerspectiveSDFText());
         cache_diff_canvas->drawTextBlob(serverBlob.get(), 0, 0, paint);
-        REPORTER_ASSERT(reporter, !serverTf->unique());
+        REPORTER_ASSERT(reporter, !serverTypeface->unique());
 
         std::vector<uint8_t> serverStrikeData;
         server.writeStrikeData(&serverStrikeData);
     }
-    REPORTER_ASSERT(reporter, serverTf->unique());
+    REPORTER_ASSERT(reporter, serverTypeface->unique());
 
     // Must unlock everything on termination, otherwise valgrind complains about memory leaks.
     discardableManager->unlockAndDeleteAll();
@@ -397,14 +474,13 @@ DEF_TEST(SkRemoteGlyphCache_StrikeLockingServer, reporter) {
     SkStrikeServer server(discardableManager.get());
     SkStrikeClient client(discardableManager, false);
 
-    auto serverTf = SkTypeface::MakeFromName("monospace", SkFontStyle());
-    server.serializeTypeface(serverTf.get());
+    auto serverTypeface = SkTypeface::MakeFromName("monospace", SkFontStyle());
     int glyphCount = 10;
-    auto serverBlob = buildTextBlob(serverTf, glyphCount);
+    auto serverBlob = buildTextBlob(serverTypeface, glyphCount);
 
     const SkSurfaceProps props;
     std::unique_ptr<SkCanvas> cache_diff_canvas =
-            server.makeAnalysisCanvas(10, 10, props, nullptr, true);
+            server.makeAnalysisCanvas(10, 10, props, nullptr, true, true);
     SkPaint paint;
     cache_diff_canvas->drawTextBlob(serverBlob.get(), 0, 0, paint);
 
@@ -432,14 +508,13 @@ DEF_TEST(SkRemoteGlyphCache_StrikeDeletionServer, reporter) {
     SkStrikeServer server(discardableManager.get());
     SkStrikeClient client(discardableManager, false);
 
-    auto serverTf = SkTypeface::MakeFromName("monospace", SkFontStyle());
-    server.serializeTypeface(serverTf.get());
+    auto serverTypeface = SkTypeface::MakeFromName("monospace", SkFontStyle());
     int glyphCount = 10;
-    auto serverBlob = buildTextBlob(serverTf, glyphCount);
+    auto serverBlob = buildTextBlob(serverTypeface, glyphCount);
 
     const SkSurfaceProps props;
     std::unique_ptr<SkCanvas> cache_diff_canvas =
-            server.makeAnalysisCanvas(10, 10, props, nullptr, true);
+            server.makeAnalysisCanvas(10, 10, props, nullptr, true, true);
     SkPaint paint;
     cache_diff_canvas->drawTextBlob(serverBlob.get(), 0, 0, paint);
     REPORTER_ASSERT(reporter, discardableManager->handleCount() == 1u);
@@ -469,15 +544,15 @@ DEF_TEST(SkRemoteGlyphCache_StrikePinningClient, reporter) {
     SkStrikeClient client(discardableManager, false);
 
     // Server.
-    auto serverTf = SkTypeface::MakeFromName("monospace", SkFontStyle());
-    auto serverTfData = server.serializeTypeface(serverTf.get());
+    auto serverTypeface = SkTypeface::MakeFromName("monospace", SkFontStyle());
+    const SkTypefaceID serverTypefaceID = serverTypeface->uniqueID();
 
     int glyphCount = 10;
-    auto serverBlob = buildTextBlob(serverTf, glyphCount);
+    auto serverBlob = buildTextBlob(serverTypeface, glyphCount);
 
     const SkSurfaceProps props;
     std::unique_ptr<SkCanvas> cache_diff_canvas =
-            server.makeAnalysisCanvas(10, 10, props, nullptr, true);
+            server.makeAnalysisCanvas(10, 10, props, nullptr, true, true);
     SkPaint paint;
     cache_diff_canvas->drawTextBlob(serverBlob.get(), 0, 0, paint);
 
@@ -487,17 +562,17 @@ DEF_TEST(SkRemoteGlyphCache_StrikePinningClient, reporter) {
     // Client.
     REPORTER_ASSERT(reporter,
                     client.readStrikeData(serverStrikeData.data(), serverStrikeData.size()));
-    auto* clientTf = client.deserializeTypeface(serverTfData->data(), serverTfData->size()).get();
+    auto* clientTypeface = client.retrieveTypefaceUsingServerIDForTest(serverTypefaceID).get();
 
     // The cache remains alive until it is pinned in the discardable manager.
     SkGraphics::PurgeFontCache();
-    REPORTER_ASSERT(reporter, !clientTf->unique());
+    REPORTER_ASSERT(reporter, !clientTypeface->unique());
 
     // Once the strike is unpinned and purged, SkStrikeClient should be the only owner of the
     // clientTf.
     discardableManager->unlockAndDeleteAll();
     SkGraphics::PurgeFontCache();
-    REPORTER_ASSERT(reporter, clientTf->unique());
+    REPORTER_ASSERT(reporter, clientTypeface->unique());
 
     // Must unlock everything on termination, otherwise valgrind complains about memory leaks.
     discardableManager->unlockAndDeleteAll();
@@ -509,15 +584,14 @@ DEF_TEST(SkRemoteGlyphCache_ClientMemoryAccounting, reporter) {
     SkStrikeClient client(discardableManager, false);
 
     // Server.
-    auto serverTf = SkTypeface::MakeFromName("monospace", SkFontStyle());
-    auto serverTfData = server.serializeTypeface(serverTf.get());
+    auto serverTypeface = SkTypeface::MakeFromName("monospace", SkFontStyle());
 
     int glyphCount = 10;
-    auto serverBlob = buildTextBlob(serverTf, glyphCount);
+    auto serverBlob = buildTextBlob(serverTypeface, glyphCount);
 
     const SkSurfaceProps props;
     std::unique_ptr<SkCanvas> cache_diff_canvas =
-            server.makeAnalysisCanvas(10, 10, props, nullptr, true);
+            server.makeAnalysisCanvas(10, 10, props, nullptr, true, true);
     SkPaint paint;
     cache_diff_canvas->drawTextBlob(serverBlob.get(), 0, 0, paint);
 
@@ -539,13 +613,13 @@ DEF_TEST(SkRemoteGlyphCache_PurgesServerEntries, reporter) {
     SkStrikeClient client(discardableManager, false);
 
     {
-        auto serverTf = SkTypeface::MakeFromName("monospace", SkFontStyle());
+        auto serverTypeface = SkTypeface::MakeFromName("monospace", SkFontStyle());
         int glyphCount = 10;
-        auto serverBlob = buildTextBlob(serverTf, glyphCount);
+        auto serverBlob = buildTextBlob(serverTypeface, glyphCount);
 
         const SkSurfaceProps props;
         std::unique_ptr<SkCanvas> cache_diff_canvas =
-            server.makeAnalysisCanvas(10, 10, props, nullptr, true);
+            server.makeAnalysisCanvas(10, 10, props, nullptr, true, true);
         SkPaint paint;
         REPORTER_ASSERT(reporter, server.remoteStrikeMapSizeForTesting() == 0u);
         cache_diff_canvas->drawTextBlob(serverBlob.get(), 0, 0, paint);
@@ -561,13 +635,13 @@ DEF_TEST(SkRemoteGlyphCache_PurgesServerEntries, reporter) {
     // Use a different typeface. Creating a new strike should evict the previous
     // one.
     {
-        auto serverTf = SkTypeface::MakeFromName("Georgia", SkFontStyle());
+        auto serverTypeface = SkTypeface::MakeFromName("Georgia", SkFontStyle());
         int glyphCount = 10;
-        auto serverBlob = buildTextBlob(serverTf, glyphCount);
+        auto serverBlob = buildTextBlob(serverTypeface, glyphCount);
 
         const SkSurfaceProps props;
         std::unique_ptr<SkCanvas> cache_diff_canvas =
-            server.makeAnalysisCanvas(10, 10, props, nullptr, true);
+            server.makeAnalysisCanvas(10, 10, props, nullptr, true, true);
         SkPaint paint;
         REPORTER_ASSERT(reporter, server.remoteStrikeMapSizeForTesting() == 1u);
         cache_diff_canvas->drawTextBlob(serverBlob.get(), 0, 0, paint);
@@ -578,7 +652,10 @@ DEF_TEST(SkRemoteGlyphCache_PurgesServerEntries, reporter) {
     discardableManager->unlockAndDeleteAll();
 }
 
-DEF_GPUTEST_FOR_RENDERING_CONTEXTS(SkRemoteGlyphCache_DrawTextAsPath, reporter, ctxInfo) {
+DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(SkRemoteGlyphCache_DrawTextAsPath,
+                                       reporter,
+                                       ctxInfo,
+                                       CtsEnforcement::kNever) {
     auto direct = ctxInfo.directContext();
     sk_sp<DiscardableManager> discardableManager = sk_make_sp<DiscardableManager>();
     SkStrikeServer server(discardableManager.get());
@@ -590,24 +667,25 @@ DEF_GPUTEST_FOR_RENDERING_CONTEXTS(SkRemoteGlyphCache_DrawTextAsPath, reporter, 
             SkStrikeSpec::ShouldDrawAsPath(paint, SkFont(), SkMatrix::I()));
 
     // Server.
-    auto serverTf = SkTypeface::MakeFromName("monospace", SkFontStyle());
-    auto serverTfData = server.serializeTypeface(serverTf.get());
+    auto serverTypeface = SkTypeface::MakeFromName("monospace", SkFontStyle());
+    const SkTypefaceID serverTypefaceID = serverTypeface->uniqueID();
 
     int glyphCount = 10;
-    auto serverBlob = buildTextBlob(serverTf, glyphCount);
+    auto serverBlob = buildTextBlob(serverTypeface, glyphCount);
     auto props = FindSurfaceProps(direct);
     std::unique_ptr<SkCanvas> cache_diff_canvas = server.makeAnalysisCanvas(
-            10, 10, props, nullptr, direct->supportsDistanceFieldText());
+            10, 10, props, nullptr, direct->supportsDistanceFieldText(),
+            !direct->priv().caps()->disablePerspectiveSDFText());
     cache_diff_canvas->drawTextBlob(serverBlob.get(), 0, 0, paint);
 
     std::vector<uint8_t> serverStrikeData;
     server.writeStrikeData(&serverStrikeData);
 
     // Client.
-    auto clientTf = client.deserializeTypeface(serverTfData->data(), serverTfData->size());
     REPORTER_ASSERT(reporter,
                     client.readStrikeData(serverStrikeData.data(), serverStrikeData.size()));
-    auto clientBlob = buildTextBlob(clientTf, glyphCount);
+    auto clientTypeface = client.retrieveTypefaceUsingServerIDForTest(serverTypefaceID);
+    auto clientBlob = buildTextBlob(clientTypeface, glyphCount);
 
     SkBitmap expected = RasterBlob(serverBlob, 10, 10, paint, direct);
     SkBitmap actual = RasterBlob(clientBlob, 10, 10, paint, direct);
@@ -644,7 +722,7 @@ sk_sp<SkTextBlob> make_blob_causing_fallback(
     SkRect glyphBounds;
     font.getWidths(runBuffer.glyphs, 1, nullptr, &glyphBounds);
 
-    REPORTER_ASSERT(reporter, glyphBounds.width() > SkStrikeCommon::kSkSideTooBigForAtlas);
+    REPORTER_ASSERT(reporter, glyphBounds.width() > SkGlyphDigest::kSkSideTooBigForAtlas);
 
     for (int i = 0; i < runSize; i++) {
         runBuffer.pos[i] = i * 10;
@@ -653,8 +731,10 @@ sk_sp<SkTextBlob> make_blob_causing_fallback(
     return builder.make();
 }
 
-DEF_GPUTEST_FOR_RENDERING_CONTEXTS(SkRemoteGlyphCache_DrawTextAsMaskWithPathFallback,
-        reporter, ctxInfo) {
+DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(SkRemoteGlyphCache_DrawTextAsMaskWithPathFallback,
+                                       reporter,
+                                       ctxInfo,
+                                       CtsEnforcement::kNever) {
     auto direct = ctxInfo.directContext();
     sk_sp<DiscardableManager> discardableManager = sk_make_sp<DiscardableManager>();
     SkStrikeServer server(discardableManager.get());
@@ -662,29 +742,29 @@ DEF_GPUTEST_FOR_RENDERING_CONTEXTS(SkRemoteGlyphCache_DrawTextAsMaskWithPathFall
 
     SkPaint paint;
 
-    auto serverTf = MakeResourceAsTypeface("fonts/HangingS.ttf");
+    auto serverTypeface = MakeResourceAsTypeface("fonts/HangingS.ttf");
     // TODO: when the cq bots can handle this font remove the check.
-    if (serverTf == nullptr) {
+    if (serverTypeface == nullptr) {
         return;
     }
-    auto serverTfData = server.serializeTypeface(serverTf.get());
+    const SkTypefaceID serverTypefaceID = serverTypeface->uniqueID();
 
-    auto serverBlob = make_blob_causing_fallback(serverTf, serverTf.get(), reporter);
+    auto serverBlob = make_blob_causing_fallback(serverTypeface, serverTypeface.get(), reporter);
 
     auto props = FindSurfaceProps(direct);
     std::unique_ptr<SkCanvas> cache_diff_canvas = server.makeAnalysisCanvas(
-            10, 10, props, nullptr, direct->supportsDistanceFieldText());
+            10, 10, props, nullptr, direct->supportsDistanceFieldText(),
+            !direct->priv().caps()->disablePerspectiveSDFText());
     cache_diff_canvas->drawTextBlob(serverBlob.get(), 0, 0, paint);
 
     std::vector<uint8_t> serverStrikeData;
     server.writeStrikeData(&serverStrikeData);
 
     // Client.
-    auto clientTf = client.deserializeTypeface(serverTfData->data(), serverTfData->size());
     REPORTER_ASSERT(reporter,
                     client.readStrikeData(serverStrikeData.data(), serverStrikeData.size()));
-
-    auto clientBlob = make_blob_causing_fallback(clientTf, serverTf.get(), reporter);
+    auto clientTypeface = client.retrieveTypefaceUsingServerIDForTest(serverTypefaceID);
+    auto clientBlob = make_blob_causing_fallback(clientTypeface, serverTypeface.get(), reporter);
 
     SkBitmap expected = RasterBlob(serverBlob, 10, 10, paint, direct);
     SkBitmap actual = RasterBlob(clientBlob, 10, 10, paint, direct);
@@ -695,82 +775,10 @@ DEF_GPUTEST_FOR_RENDERING_CONTEXTS(SkRemoteGlyphCache_DrawTextAsMaskWithPathFall
     discardableManager->unlockAndDeleteAll();
 }
 
-#if 0
-// TODO: turn this one when I figure out how to deal with the pixel variance from linear
-//  interpolation from GPU to GPU.
-DEF_GPUTEST_FOR_RENDERING_CONTEXTS(SkRemoteGlyphCache_DrawTextAsSDFTWithAllARGBFallback,
-                                   reporter, ctxInfo) {
-    sk_sp<DiscardableManager> discardableManager = sk_make_sp<DiscardableManager>();
-    SkStrikeServer server(discardableManager.get());
-    SkStrikeClient client(discardableManager, false);
-
-    SkPaint paint;
-
-    auto serverTf = ToolUtils::planet_typeface();
-    // TODO: when the cq bots can handle this font remove the check.
-    if (serverTf == nullptr) {
-        return;
-    }
-    auto serverTfData = server.serializeTypeface(serverTf.get());
-
-    auto makeBlob = [&reporter](sk_sp<SkTypeface> typeface) {
-        SkFont font;
-        font.setSubpixel(true);
-        font.setSize(96);
-        font.setHinting(SkFontHinting::kNormal);
-        font.setTypeface(typeface);
-
-        REPORTER_ASSERT(reporter, !SkDraw::ShouldDrawTextAsPaths(font, SkPaint(), SkMatrix::I()));
-
-        // Mercury to Uranus.
-        SkGlyphID glyphs[] = {1, 2, 3, 4, 5, 6, 7, 8};
-
-        SkTextBlobBuilder builder;
-        SkRect bounds = SkRect::MakeIWH(100, 100);
-        const auto& runBuffer = builder.allocRunPosH(font, SK_ARRAY_COUNT(glyphs), 100, &bounds);
-        SkASSERT(runBuffer.utf8text == nullptr);
-        SkASSERT(runBuffer.clusters == nullptr);
-
-        std::copy(std::begin(glyphs), std::end(glyphs), runBuffer.glyphs);
-
-        for (size_t i = 0; i < SK_ARRAY_COUNT(glyphs); i++) {
-            runBuffer.pos[i] = i * 100;
-        }
-
-        return builder.make();
-    };
-
-    auto serverBlob = makeBlob(serverTf);
-
-    auto props = FindSurfaceProps(ctxInfo.grContext());
-    std::unique_ptr<SkCanvas> cache_diff_canvas = server.makeAnalysisCanvas(
-            10, 10, props, nullptr, ctxInfo.directContext()->supportsDistanceFieldText());
-    cache_diff_canvas->drawTextBlob(serverBlob.get(), 0, 400, paint);
-
-    std::vector<uint8_t> serverStrikeData;
-    server.writeStrikeData(&serverStrikeData);
-
-    // Client.
-    auto clientTf = client.deserializeTypeface(serverTfData->data(), serverTfData->size());
-    REPORTER_ASSERT(reporter,
-                    client.readStrikeData(serverStrikeData.data(), serverStrikeData.size()));
-
-    auto clientBlob = makeBlob(clientTf);
-
-    SkBitmap expected = RasterBlob(serverBlob, 800, 800, paint, ctxInfo.grContext());
-    SkBitmap actual = RasterBlob(clientBlob, 800, 800, paint, ctxInfo.grContext());
-
-    // Pixel variance can be high because of the atlas placement, and large scaling in the linear
-    // interpolation.
-    compare_blobs(expected, actual, reporter, 36);
-    REPORTER_ASSERT(reporter, !discardableManager->hasCacheMiss());
-
-    // Must unlock everything on termination, otherwise valgrind complains about memory leaks.
-    discardableManager->unlockAndDeleteAll();
-}
-#endif
-
-DEF_GPUTEST_FOR_RENDERING_CONTEXTS(SkRemoteGlyphCache_DrawTextXY, reporter, ctxInfo) {
+DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(SkRemoteGlyphCache_DrawTextXY,
+                                       reporter,
+                                       ctxInfo,
+                                       CtsEnforcement::kNever) {
     auto direct = ctxInfo.directContext();
     sk_sp<DiscardableManager> discardableManager = sk_make_sp<DiscardableManager>();
     SkStrikeServer server(discardableManager.get());
@@ -779,24 +787,25 @@ DEF_GPUTEST_FOR_RENDERING_CONTEXTS(SkRemoteGlyphCache_DrawTextXY, reporter, ctxI
     paint.setAntiAlias(true);
 
     // Server.
-    auto serverTf = SkTypeface::MakeFromName("monospace", SkFontStyle());
-    auto serverTfData = server.serializeTypeface(serverTf.get());
+    auto serverTypeface = SkTypeface::MakeFromName("monospace", SkFontStyle());
+    const SkTypefaceID serverTypefaceID = serverTypeface->uniqueID();
 
     int glyphCount = 10;
-    auto serverBlob = buildTextBlob(serverTf, glyphCount);
+    auto serverBlob = buildTextBlob(serverTypeface, glyphCount);
     auto props = FindSurfaceProps(direct);
     std::unique_ptr<SkCanvas> cache_diff_canvas = server.makeAnalysisCanvas(
-            10, 10, props, nullptr, direct->supportsDistanceFieldText());
+            10, 10, props, nullptr, direct->supportsDistanceFieldText(),
+            !direct->priv().caps()->disablePerspectiveSDFText());
     cache_diff_canvas->drawTextBlob(serverBlob.get(), 0.5, 0, paint);
 
     std::vector<uint8_t> serverStrikeData;
     server.writeStrikeData(&serverStrikeData);
 
     // Client.
-    auto clientTf = client.deserializeTypeface(serverTfData->data(), serverTfData->size());
     REPORTER_ASSERT(reporter,
                     client.readStrikeData(serverStrikeData.data(), serverStrikeData.size()));
-    auto clientBlob = buildTextBlob(clientTf, glyphCount);
+    auto clientTypeface = client.retrieveTypefaceUsingServerIDForTest(serverTypefaceID);
+    auto clientBlob = buildTextBlob(clientTypeface, glyphCount);
 
     SkBitmap expected = RasterBlob(serverBlob, 10, 10, paint, direct, nullptr, 0.5);
     SkBitmap actual = RasterBlob(clientBlob, 10, 10, paint, direct, nullptr, 0.5);
@@ -807,7 +816,11 @@ DEF_GPUTEST_FOR_RENDERING_CONTEXTS(SkRemoteGlyphCache_DrawTextXY, reporter, ctxI
     discardableManager->unlockAndDeleteAll();
 }
 
-DEF_GPUTEST_FOR_RENDERING_CONTEXTS(SkRemoteGlyphCache_DrawTextAsDFT, reporter, ctxInfo) {
+#if !defined(SK_DISABLE_SDF_TEXT)
+DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(SkRemoteGlyphCache_DrawTextAsDFT,
+                                       reporter,
+                                       ctxInfo,
+                                       CtsEnforcement::kNever) {
     auto direct = ctxInfo.directContext();
     if (!direct->priv().caps()->shaderCaps()->supportsDistanceFieldText()) {
         return;
@@ -822,18 +835,20 @@ DEF_GPUTEST_FOR_RENDERING_CONTEXTS(SkRemoteGlyphCache_DrawTextAsDFT, reporter, c
     SkMatrix matrix = SkMatrix::Scale(16, 16);
     sktext::gpu::SDFTControl control =
             direct->priv().asRecordingContext()->priv().getSDFTControl(true);
-    SkScalar approximateDeviceTextSize = SkFontPriv::ApproximateTransformedTextSize(font, matrix);
-    REPORTER_ASSERT(reporter, control.isSDFT(approximateDeviceTextSize, paint));
+    SkScalar approximateDeviceTextSize = SkFontPriv::ApproximateTransformedTextSize(font, matrix,
+                                                                                    {0, 0});
+    REPORTER_ASSERT(reporter, control.isSDFT(approximateDeviceTextSize, paint, matrix));
 
     // Server.
-    auto serverTf = SkTypeface::MakeFromName("monospace", SkFontStyle());
-    auto serverTfData = server.serializeTypeface(serverTf.get());
+    auto serverTypeface = SkTypeface::MakeFromName("monospace", SkFontStyle());
+    const SkTypefaceID serverTypefaceID = serverTypeface->uniqueID();
 
     int glyphCount = 10;
-    auto serverBlob = buildTextBlob(serverTf, glyphCount);
+    auto serverBlob = buildTextBlob(serverTypeface, glyphCount);
     const SkSurfaceProps props;
     std::unique_ptr<SkCanvas> cache_diff_canvas = server.makeAnalysisCanvas(
-            10, 10, props, nullptr, direct->supportsDistanceFieldText());
+            10, 10, props, nullptr, direct->supportsDistanceFieldText(),
+            !direct->priv().caps()->disablePerspectiveSDFText());
     cache_diff_canvas->concat(matrix);
     cache_diff_canvas->drawTextBlob(serverBlob.get(), 0, 0, paint);
 
@@ -841,10 +856,10 @@ DEF_GPUTEST_FOR_RENDERING_CONTEXTS(SkRemoteGlyphCache_DrawTextAsDFT, reporter, c
     server.writeStrikeData(&serverStrikeData);
 
     // Client.
-    auto clientTf = client.deserializeTypeface(serverTfData->data(), serverTfData->size());
     REPORTER_ASSERT(reporter,
                     client.readStrikeData(serverStrikeData.data(), serverStrikeData.size()));
-    auto clientBlob = buildTextBlob(clientTf, glyphCount);
+    auto clientTypeface = client.retrieveTypefaceUsingServerIDForTest(serverTypefaceID);
+    auto clientBlob = buildTextBlob(clientTypeface, glyphCount);
 
     SkBitmap expected = RasterBlob(serverBlob, 10, 10, paint, direct, &matrix);
     SkBitmap actual = RasterBlob(clientBlob, 10, 10, paint, direct, &matrix);
@@ -854,18 +869,31 @@ DEF_GPUTEST_FOR_RENDERING_CONTEXTS(SkRemoteGlyphCache_DrawTextAsDFT, reporter, c
     // Must unlock everything on termination, otherwise valgrind complains about memory leaks.
     discardableManager->unlockAndDeleteAll();
 }
+#endif // !defined(SK_DISABLE_SDF_TEXT)
 
-DEF_GPUTEST_FOR_RENDERING_CONTEXTS(SkRemoteGlyphCache_CacheMissReporting, reporter, ctxInfo) {
+DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(SkRemoteGlyphCache_CacheMissReporting,
+                                       reporter,
+                                       ctxInfo,
+                                       CtsEnforcement::kNever) {
     sk_sp<DiscardableManager> discardableManager = sk_make_sp<DiscardableManager>();
     SkStrikeServer server(discardableManager.get());
     SkStrikeClient client(discardableManager, false);
 
-    auto serverTf = SkTypeface::MakeFromName("monospace", SkFontStyle());
-    auto tfData = server.serializeTypeface(serverTf.get());
-    auto clientTf = client.deserializeTypeface(tfData->data(), tfData->size());
-    REPORTER_ASSERT(reporter, clientTf);
+    auto serverTypeface = SkTypeface::MakeFromName("monospace", SkFontStyle());
+
+    // Create the clientTypeface proxy directly from the serverTypeface.
+    auto clientTypeface = sk_make_sp<SkTypefaceProxy>(
+            SkTypeface::UniqueID(serverTypeface.get()),
+            serverTypeface->countGlyphs(),
+            serverTypeface->fontStyle(),
+            serverTypeface->isFixedPitch(),
+            /*glyphMaskNeedsCurrentColor=*/ false,
+            discardableManager,
+            /*isLogging=*/ false);
+
+    REPORTER_ASSERT(reporter, clientTypeface);
     int glyphCount = 10;
-    auto clientBlob = buildTextBlob(clientTf, glyphCount);
+    auto clientBlob = buildTextBlob(clientTypeface, glyphCount);
 
     // Raster the client-side blob without the glyph data, we should get cache miss notifications.
     SkPaint paint;
@@ -909,21 +937,24 @@ sk_sp<SkTextBlob> MakeEmojiBlob(sk_sp<SkTypeface> serverTf, SkScalar textSize,
     return SkTextBlob::Deserialize(serialized->data(), serialized->size(), d_procs);
 }
 
-DEF_GPUTEST_FOR_RENDERING_CONTEXTS(SkRemoteGlyphCache_TypefaceWithNoPaths, reporter, ctxInfo) {
+DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(SkRemoteGlyphCache_TypefaceWithNoPaths,
+                                       reporter,
+                                       ctxInfo,
+                                       CtsEnforcement::kNever) {
     auto direct = ctxInfo.directContext();
     sk_sp<DiscardableManager> discardableManager = sk_make_sp<DiscardableManager>();
     SkStrikeServer server(discardableManager.get());
     SkStrikeClient client(discardableManager, false);
 
-    auto serverTf = ToolUtils::emoji_typeface();
-    auto serverTfData = server.serializeTypeface(serverTf.get());
-    auto clientTf = client.deserializeTypeface(serverTfData->data(), serverTfData->size());
+    auto serverTypeface = ToolUtils::emoji_typeface();
+    const SkTypefaceID serverTypefaceID = serverTypeface->uniqueID();
 
     auto props = FindSurfaceProps(direct);
     std::unique_ptr<SkCanvas> cache_diff_canvas = server.makeAnalysisCanvas(
-            500, 500, props, nullptr, direct->supportsDistanceFieldText());
+            500, 500, props, nullptr, direct->supportsDistanceFieldText(),
+            !direct->priv().caps()->disablePerspectiveSDFText());
     for (SkScalar textSize : { 70, 180, 270, 340}) {
-        auto serverBlob = MakeEmojiBlob(serverTf, textSize);
+        auto serverBlob = MakeEmojiBlob(serverTypeface, textSize);
 
         SkPaint paint;
         cache_diff_canvas->drawTextBlob(serverBlob.get(), 100, 100, paint);
@@ -935,7 +966,8 @@ DEF_GPUTEST_FOR_RENDERING_CONTEXTS(SkRemoteGlyphCache_TypefaceWithNoPaths, repor
                             client.readStrikeData(serverStrikeData.data(),
                                                   serverStrikeData.size()));
         }
-        auto clientBlob = MakeEmojiBlob(serverTf, textSize, clientTf);
+        auto clientTypeface = client.retrieveTypefaceUsingServerIDForTest(serverTypefaceID);
+        auto clientBlob = MakeEmojiBlob(serverTypeface, textSize, clientTypeface);
         REPORTER_ASSERT(reporter, clientBlob);
 
         RasterBlob(clientBlob, 500, 500, paint, direct);
@@ -980,31 +1012,33 @@ class SkRemoteGlyphCacheTest {
         return SkTextBlob::Deserialize(serialized->data(), serialized->size(), d_procs);
     }
 };
-DEF_GPUTEST_FOR_RENDERING_CONTEXTS(SkRemoteGlyphCache_TypefaceWithPaths_MaskThenPath,
-                                   reporter, ctxInfo) {
+DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(SkRemoteGlyphCache_TypefaceWithPaths_MaskThenPath,
+                                       reporter,
+                                       ctxInfo,
+                                       CtsEnforcement::kNever) {
     auto direct = ctxInfo.directContext();
     sk_sp<DiscardableManager> discardableManager = sk_make_sp<DiscardableManager>();
     SkStrikeServer server(discardableManager.get());
     SkStrikeClient client(discardableManager, true);
 
-    auto serverTf = ToolUtils::create_portable_typeface();
-    auto serverTfData = server.serializeTypeface(serverTf.get());
-    auto clientTf = client.deserializeTypeface(serverTfData->data(), serverTfData->size());
+    auto serverTypeface = ToolUtils::create_portable_typeface();
+    const SkTypefaceID serverTypefaceID = serverTypeface->uniqueID();
 
     auto props = FindSurfaceProps(direct);
     std::unique_ptr<SkCanvas> cache_diff_canvas = server.makeAnalysisCanvas(
-            500, 500, props, nullptr, direct->supportsDistanceFieldText());
+            500, 500, props, nullptr, direct->supportsDistanceFieldText(),
+            !direct->priv().caps()->disablePerspectiveSDFText());
     SkPaint paint;
     using Rgct = SkRemoteGlyphCacheTest;
 
     // Draw from mask out of the strike which provides paths.
     {
-        auto serverBlob = Rgct::MakeNormalBlob(&paint, serverTf, true, 64);
+        auto serverBlob = Rgct::MakeNormalBlob(&paint, serverTypeface, true, 64);
         cache_diff_canvas->drawTextBlob(serverBlob.get(), 100, 100, paint);
     }
     // Draw from path out of the strike which provides paths.
     {
-        auto serverBlob = Rgct::MakeNormalBlob(&paint, serverTf, false, 440);
+        auto serverBlob = Rgct::MakeNormalBlob(&paint, serverTypeface, false, 440);
         cache_diff_canvas->drawTextBlob(serverBlob.get(), 100, 100, paint);
     }
     std::vector<uint8_t> serverStrikeData;
@@ -1014,8 +1048,11 @@ DEF_GPUTEST_FOR_RENDERING_CONTEXTS(SkRemoteGlyphCache_TypefaceWithPaths_MaskThen
                         client.readStrikeData(serverStrikeData.data(),
                                               serverStrikeData.size()));
     }
+
+    auto clientTypeface = client.retrieveTypefaceUsingServerIDForTest(serverTypefaceID);
+
     {
-        auto clientBlob = Rgct::MakeNormalBlob(&paint, serverTf, true, 64, clientTf);
+        auto clientBlob = Rgct::MakeNormalBlob(&paint, serverTypeface, true, 64, clientTypeface);
         REPORTER_ASSERT(reporter, clientBlob);
 
         RasterBlob(clientBlob, 100, 100, paint, direct);
@@ -1023,7 +1060,7 @@ DEF_GPUTEST_FOR_RENDERING_CONTEXTS(SkRemoteGlyphCache_TypefaceWithPaths_MaskThen
         discardableManager->resetCacheMissCounts();
     }
     {
-        auto clientBlob = Rgct::MakeNormalBlob(&paint, serverTf, false, 440, clientTf);
+        auto clientBlob = Rgct::MakeNormalBlob(&paint, serverTypeface, false, 440, clientTypeface);
         REPORTER_ASSERT(reporter, clientBlob);
 
         RasterBlob(clientBlob, 100, 100, paint, direct);
@@ -1034,31 +1071,33 @@ DEF_GPUTEST_FOR_RENDERING_CONTEXTS(SkRemoteGlyphCache_TypefaceWithPaths_MaskThen
     discardableManager->unlockAndDeleteAll();
 }
 
-DEF_GPUTEST_FOR_RENDERING_CONTEXTS(SkRemoteGlyphCache_TypefaceWithPaths_PathThenMask,
-                                   reporter, ctxInfo) {
+DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(SkRemoteGlyphCache_TypefaceWithPaths_PathThenMask,
+                                       reporter,
+                                       ctxInfo,
+                                       CtsEnforcement::kNever) {
     auto direct = ctxInfo.directContext();
     sk_sp<DiscardableManager> discardableManager = sk_make_sp<DiscardableManager>();
     SkStrikeServer server(discardableManager.get());
     SkStrikeClient client(discardableManager, true);
 
-    auto serverTf = ToolUtils::create_portable_typeface();
-    auto serverTfData = server.serializeTypeface(serverTf.get());
-    auto clientTf = client.deserializeTypeface(serverTfData->data(), serverTfData->size());
+    auto serverTypeface = ToolUtils::create_portable_typeface();
+    const SkTypefaceID serverTypefaceID = serverTypeface->uniqueID();
 
     auto props = FindSurfaceProps(direct);
     std::unique_ptr<SkCanvas> cache_diff_canvas = server.makeAnalysisCanvas(
-            500, 500, props, nullptr, direct->supportsDistanceFieldText());
+            500, 500, props, nullptr, direct->supportsDistanceFieldText(),
+            !direct->priv().caps()->disablePerspectiveSDFText());
     SkPaint paint;
     using Rgct = SkRemoteGlyphCacheTest;
 
     // Draw from path out of the strike which provides paths.
     {
-        auto serverBlob = Rgct::MakeNormalBlob(&paint, serverTf, false, 440);
+        auto serverBlob = Rgct::MakeNormalBlob(&paint, serverTypeface, false, 440);
         cache_diff_canvas->drawTextBlob(serverBlob.get(), 100, 100, paint);
     }
     // Draw from mask out of the strike which provides paths.
     {
-        auto serverBlob = Rgct::MakeNormalBlob(&paint, serverTf, true, 64);
+        auto serverBlob = Rgct::MakeNormalBlob(&paint, serverTypeface, true, 64);
         cache_diff_canvas->drawTextBlob(serverBlob.get(), 100, 100, paint);
     }
     std::vector<uint8_t> serverStrikeData;
@@ -1068,8 +1107,11 @@ DEF_GPUTEST_FOR_RENDERING_CONTEXTS(SkRemoteGlyphCache_TypefaceWithPaths_PathThen
                         client.readStrikeData(serverStrikeData.data(),
                                               serverStrikeData.size()));
     }
+
+    auto clientTypeface = client.retrieveTypefaceUsingServerIDForTest(serverTypefaceID);
+
     {
-        auto clientBlob = Rgct::MakeNormalBlob(&paint, serverTf, true, 64, clientTf);
+        auto clientBlob = Rgct::MakeNormalBlob(&paint, serverTypeface, true, 64, clientTypeface);
         REPORTER_ASSERT(reporter, clientBlob);
 
         RasterBlob(clientBlob, 100, 100, paint, direct);
@@ -1077,7 +1119,7 @@ DEF_GPUTEST_FOR_RENDERING_CONTEXTS(SkRemoteGlyphCache_TypefaceWithPaths_PathThen
         discardableManager->resetCacheMissCounts();
     }
     {
-        auto clientBlob = Rgct::MakeNormalBlob(&paint, serverTf, false, 440, clientTf);
+        auto clientBlob = Rgct::MakeNormalBlob(&paint, serverTypeface, false, 440, clientTypeface);
         REPORTER_ASSERT(reporter, clientBlob);
 
         RasterBlob(clientBlob, 100, 100, paint, direct);
@@ -1087,4 +1129,31 @@ DEF_GPUTEST_FOR_RENDERING_CONTEXTS(SkRemoteGlyphCache_TypefaceWithPaths_PathThen
     // Must unlock everything on termination, otherwise valgrind complains about memory leaks.
     discardableManager->unlockAndDeleteAll();
 }
-#endif
+
+DEF_TEST(SkTypefaceProxy_Basic_Serial, reporter) {
+    auto typeface = SkTypeface::MakeFromName("monospace", SkFontStyle());
+    sk_sp<DiscardableManager> discardableManager = sk_make_sp<DiscardableManager>();
+    SkTypefaceProxyPrototype srcProto{*typeface};
+
+    SkBinaryWriteBuffer writeBuffer;
+    srcProto.flatten(writeBuffer);
+
+    auto data = writeBuffer.snapshotAsData();
+    SkReadBuffer readBuffer{data->data(), data->size()};
+    std::optional<SkTypefaceProxyPrototype> dstProto =
+            SkTypefaceProxyPrototype::MakeFromBuffer(readBuffer);
+    REPORTER_ASSERT(reporter, dstProto.has_value());
+    auto proxy = sk_make_sp<SkTypefaceProxy>(dstProto.value(), discardableManager, false);
+    REPORTER_ASSERT(reporter, typeface->uniqueID() == proxy->remoteTypefaceID());
+    REPORTER_ASSERT(reporter, typeface->uniqueID() != proxy->uniqueID());
+    REPORTER_ASSERT(reporter, typeface->countGlyphs() == proxy->countGlyphs());
+    REPORTER_ASSERT(reporter, typeface->fontStyle() == proxy->fontStyle());
+    REPORTER_ASSERT(reporter, typeface->isFixedPitch() == proxy->isFixedPitch());
+
+    // Must be multiple of 4 bytes or the buffer will be invalid.
+    uint8_t brokenBytes[] = {1, 2, 3, 4, 5, 6, 7, 8};
+    SkReadBuffer brokenBuffer{std::data(brokenBytes), std::size(brokenBytes)};
+    std::optional<SkTypefaceProxyPrototype> brokenProto =
+            SkTypefaceProxyPrototype::MakeFromBuffer(brokenBuffer);
+    REPORTER_ASSERT(reporter, !brokenProto.has_value());
+}

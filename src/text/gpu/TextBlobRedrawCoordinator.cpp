@@ -7,11 +7,19 @@
 
 #include "src/text/gpu/TextBlobRedrawCoordinator.h"
 
-#include "src/core/SkGlyphRun.h"
+#include "include/core/SkMatrix.h"
+#include "include/core/SkPoint.h"
+#include "include/core/SkTypes.h"
+#include "src/core/SkDevice.h"
 #include "src/core/SkStrikeCache.h"
-#if SK_SUPPORT_GPU
-#include "src/gpu/ganesh/v1/SurfaceDrawContext_v1.h"
-#endif
+#include "src/text/GlyphRun.h"
+
+#include <utility>
+
+class SkCanvas;
+class SkPaint;
+
+using namespace skia_private;
 
 // This needs to be outside the namespace so we can declare SkMessageBus properly
 DECLARE_SKMESSAGEBUS_MESSAGE(sktext::gpu::TextBlobRedrawCoordinator::PurgeBlobMessage,
@@ -28,26 +36,23 @@ TextBlobRedrawCoordinator::TextBlobRedrawCoordinator(uint32_t messageBusID)
         , fMessageBusID(messageBusID)
         , fPurgeBlobInbox(messageBusID) { }
 
-#if SK_SUPPORT_GPU
 void TextBlobRedrawCoordinator::drawGlyphRunList(SkCanvas* canvas,
-                                                 const GrClip* clip,
-                                                 const SkMatrixProvider& viewMatrix,
-                                                 const SkGlyphRunList& glyphRunList,
+                                                 const SkMatrix& viewMatrix,
+                                                 const sktext::GlyphRunList& glyphRunList,
                                                  const SkPaint& paint,
                                                  SkStrikeDeviceInfo strikeDeviceInfo,
-                                                 skgpu::v1::SurfaceDrawContext* sdc) {
+                                                 AtlasDrawDelegate atlasDelegate) {
     sk_sp<TextBlob> blob = this->findOrCreateBlob(viewMatrix, glyphRunList, paint,
                                                   strikeDeviceInfo);
 
-    blob->draw(canvas, clip, viewMatrix, glyphRunList.origin(), paint, sdc);
+    blob->draw(canvas, glyphRunList.origin(), paint, atlasDelegate);
 }
-#endif
 
-sk_sp<TextBlob> TextBlobRedrawCoordinator::findOrCreateBlob(const SkMatrixProvider& viewMatrix,
-                                                            const SkGlyphRunList& glyphRunList,
+sk_sp<TextBlob> TextBlobRedrawCoordinator::findOrCreateBlob(const SkMatrix& viewMatrix,
+                                                            const GlyphRunList& glyphRunList,
                                                             const SkPaint& paint,
                                                             SkStrikeDeviceInfo strikeDeviceInfo) {
-    SkMatrix positionMatrix{viewMatrix.localToDevice()};
+    SkMatrix positionMatrix{viewMatrix};
     positionMatrix.preTranslate(glyphRunList.origin().x(), glyphRunList.origin().y());
 
     auto [canCache, key] = TextBlob::Key::Make(
@@ -79,7 +84,7 @@ sk_sp<TextBlob> TextBlobRedrawCoordinator::findOrCreateBlob(const SkMatrixProvid
 }
 
 sk_sp<TextBlob> TextBlobRedrawCoordinator::addOrReturnExisting(
-        const SkGlyphRunList& glyphRunList, sk_sp<TextBlob> blob) {
+        const GlyphRunList& glyphRunList, sk_sp<TextBlob> blob) {
     SkAutoSpinlock lock{fSpinLock};
     blob = this->internalAdd(std::move(blob));
     glyphRunList.temporaryShuntBlobNotifyAddedToCache(fMessageBusID);
@@ -131,18 +136,13 @@ void TextBlobRedrawCoordinator::freeAll() {
     fCurrentSize = 0;
 }
 
-void TextBlobRedrawCoordinator::PostPurgeBlobMessage(uint32_t blobID, uint32_t cacheID) {
-    SkASSERT(blobID != SK_InvalidGenID);
-    SkMessageBus<PurgeBlobMessage, uint32_t>::Post(PurgeBlobMessage(blobID, cacheID));
-}
-
 void TextBlobRedrawCoordinator::purgeStaleBlobs() {
     SkAutoSpinlock lock{fSpinLock};
     this->internalPurgeStaleBlobs();
 }
 
 void TextBlobRedrawCoordinator::internalPurgeStaleBlobs() {
-    SkTArray<PurgeBlobMessage> msgs;
+    TArray<PurgeBlobMessage> msgs;
     fPurgeBlobInbox.poll(&msgs);
 
     for (const auto& msg : msgs) {
@@ -250,7 +250,7 @@ TextBlobRedrawCoordinator::BlobIDCacheEntry::find(const TextBlob::Key& key) cons
 }
 
 int TextBlobRedrawCoordinator::BlobIDCacheEntry::findBlobIndex(const TextBlob::Key& key) const {
-    for (int i = 0; i < fBlobs.count(); ++i) {
+    for (int i = 0; i < fBlobs.size(); ++i) {
         if (fBlobs[i]->key() == key) {
             return i;
         }
@@ -259,3 +259,11 @@ int TextBlobRedrawCoordinator::BlobIDCacheEntry::findBlobIndex(const TextBlob::K
 }
 
 }  // namespace sktext::gpu
+
+namespace sktext {
+void PostPurgeBlobMessage(uint32_t blobID, uint32_t cacheID) {
+    using PurgeBlobMessage = sktext::gpu::TextBlobRedrawCoordinator::PurgeBlobMessage;
+    SkASSERT(blobID != SK_InvalidGenID);
+    SkMessageBus<PurgeBlobMessage, uint32_t>::Post(PurgeBlobMessage(blobID, cacheID));
+}
+}

@@ -11,16 +11,20 @@
 
 namespace skgpu::graphite {
 
-Resource::Resource(const Gpu* gpu, Ownership ownership, SkBudgeted budgeted)
-        : fGpu(gpu)
+Resource::Resource(const SharedContext* sharedContext,
+                   Ownership ownership,
+                   skgpu::Budgeted budgeted,
+                   size_t gpuMemorySize)
+        : fSharedContext(sharedContext)
         , fUsageRefCnt(1)
         , fCommandBufferRefCnt(0)
         , fCacheRefCnt(0)
         , fOwnership(ownership)
+        , fGpuMemorySize(gpuMemorySize)
         , fBudgeted(budgeted) {
     // If we don't own the resource that must mean its wrapped in a client object. Thus we should
     // not be budgeted
-    SkASSERT(fOwnership == Ownership::kOwned || fBudgeted == SkBudgeted::kNo);
+    SkASSERT(fOwnership == Ownership::kOwned || fBudgeted == skgpu::Budgeted::kNo);
 }
 
 Resource::~Resource() {
@@ -57,16 +61,20 @@ bool Resource::notifyARefIsZero(LastRemovedRef removedRef) const {
 }
 
 void Resource::internalDispose() {
-    SkASSERT(fGpu);
+    SkASSERT(fSharedContext);
+    this->invokeReleaseProc();
     this->freeGpuData();
-    fGpu = nullptr;
+    fSharedContext = nullptr;
     // TODO: If we ever support freeing all the backend objects without deleting the object, we'll
     // need to add a hasAnyRefs() check here.
     delete this;
 }
 
 bool Resource::isPurgeable() const {
-    return !this->hasAnyRefs();
+    // For being purgeable we don't care if there are cacheRefs on the object since the cacheRef
+    // will always be greater than 1 since we add one on insert and don't remove that ref until
+    // the Resource is removed from the cache.
+    return !(this->hasUsageRef() || this->hasCommandBufferRef());
 }
 
 } // namespace skgpu::graphite

@@ -8,9 +8,11 @@
 #ifndef skgpu_graphite_TextureUtils_DEFINED
 #define skgpu_graphite_TextureUtils_DEFINED
 
+#include "include/core/SkImage.h"
 #include "src/gpu/graphite/TextureProxyView.h"
 
 #include <functional>
+#include <tuple>
 
 class SkBitmap;
 enum SkColorType : int;
@@ -22,17 +24,25 @@ class Context;
 
 // Create TextureProxyView and SkColorType pair using pixel data in SkBitmap,
 // adding any necessary copy commands to Recorder
-std::tuple<TextureProxyView, SkColorType> MakeBitmapProxyView(Recorder* recorder,
-                                                              const SkBitmap& bitmap,
-                                                              Mipmapped mipmapped,
-                                                              SkBudgeted budgeted);
+std::tuple<TextureProxyView, SkColorType> MakeBitmapProxyView(
+        Recorder*, const SkBitmap&, sk_sp<SkMipmap>, Mipmapped, skgpu::Budgeted);
 
-using FlushPendingWorkCallback = std::function<void()>;
+sk_sp<SkImage> MakeFromBitmap(Recorder*,
+                              const SkColorInfo&,
+                              const SkBitmap&,
+                              sk_sp<SkMipmap>,
+                              skgpu::Budgeted,
+                              SkImage::RequiredProperties);
 
-bool ReadPixelsHelper(FlushPendingWorkCallback&&,
-                      Context* context, Recorder* recorder, TextureProxy* srcProxy,
-                      const SkImageInfo& dstInfo, void* dstPixels, size_t dstRowBytes,
-                      int srcX, int srcY);
+size_t ComputeSize(SkISize dimensions, const TextureInfo&);
+
+sk_sp<SkImage> RescaleImage(Recorder*,
+                            const SkImage* srcImage,
+                            SkIRect srcIRect,
+                            const SkImageInfo& dstInfo,
+                            SkImage::RescaleGamma rescaleGamma,
+                            SkImage::RescaleMode rescaleMode);
+
 } // namespace skgpu::graphite
 
 #endif // skgpu_graphite_TextureUtils_DEFINED

@@ -7,29 +7,51 @@
 
 // This is a GPU-backend specific test.
 
-#include "include/core/SkTypes.h"
-
+#include "include/core/SkAlphaType.h"
+#include "include/core/SkBlendMode.h"
 #include "include/core/SkColorSpace.h"
+#include "include/core/SkSize.h"
+#include "include/core/SkString.h"
+#include "include/core/SkSurfaceProps.h"
+#include "include/core/SkTypes.h"
+#include "include/gpu/GpuTypes.h"
+#include "include/gpu/GrBackendSurface.h"
+#include "include/gpu/GrContextOptions.h"
 #include "include/gpu/GrDirectContext.h"
-#include "include/private/SkChecksum.h"
-#include "include/utils/SkRandom.h"
+#include "include/gpu/GrTypes.h"
+#include "include/gpu/gl/GrGLTypes.h"
+#include "include/private/base/SkDebug.h"
+#include "include/private/gpu/ganesh/GrTypesPriv.h"
+#include "src/base/SkRandom.h"
 #include "src/gpu/KeyBuilder.h"
+#include "src/gpu/SkBackingFit.h"
+#include "src/gpu/Swizzle.h"
 #include "src/gpu/ganesh/GrAutoLocaleSetter.h"
+#include "src/gpu/ganesh/GrCaps.h"
 #include "src/gpu/ganesh/GrDirectContextPriv.h"
 #include "src/gpu/ganesh/GrDrawOpTest.h"
 #include "src/gpu/ganesh/GrDrawingManager.h"
 #include "src/gpu/ganesh/GrFragmentProcessor.h"
-#include "src/gpu/ganesh/GrPipeline.h"
+#include "src/gpu/ganesh/GrPaint.h"
+#include "src/gpu/ganesh/GrProcessorUnitTest.h"
 #include "src/gpu/ganesh/GrProxyProvider.h"
-#include "src/gpu/ganesh/GrXferProcessor.h"
+#include "src/gpu/ganesh/GrSurfaceProxy.h"
+#include "src/gpu/ganesh/SurfaceDrawContext.h"
 #include "src/gpu/ganesh/effects/GrBlendFragmentProcessor.h"
 #include "src/gpu/ganesh/effects/GrPorterDuffXferProcessor.h"
 #include "src/gpu/ganesh/glsl/GrGLSLFragmentShaderBuilder.h"
-#include "src/gpu/ganesh/glsl/GrGLSLProgramBuilder.h"
-#include "src/gpu/ganesh/ops/GrDrawOp.h"
-#include "src/gpu/ganesh/v1/SurfaceDrawContext_v1.h"
+#include "tests/CtsEnforcement.h"
 #include "tests/Test.h"
-#include "tools/gpu/GrContextFactory.h"
+
+#include <algorithm>
+#include <array>
+#include <cstdint>
+#include <memory>
+#include <tuple>
+#include <utility>
+
+class GrRecordingContext;
+struct GrShaderCaps;
 
 #ifdef SK_GL
 #include "src/gpu/ganesh/gl/GrGLGpu.h"
@@ -78,7 +100,7 @@ private:
 };
 }  // anonymous namespace
 
-GR_DEFINE_FRAGMENT_PROCESSOR_TEST(BigKeyProcessor);
+GR_DEFINE_FRAGMENT_PROCESSOR_TEST(BigKeyProcessor)
 
 #if GR_TEST_UTILS
 std::unique_ptr<GrFragmentProcessor> BigKeyProcessor::TestCreate(GrProcessorTestData*) {
@@ -136,10 +158,8 @@ private:
 static const int kRenderTargetHeight = 1;
 static const int kRenderTargetWidth = 1;
 
-static std::unique_ptr<skgpu::v1::SurfaceDrawContext> random_surface_draw_context(
-        GrRecordingContext* rContext,
-        SkRandom* random,
-        const GrCaps* caps) {
+static std::unique_ptr<skgpu::ganesh::SurfaceDrawContext> random_surface_draw_context(
+        GrRecordingContext* rContext, SkRandom* random, const GrCaps* caps) {
     GrSurfaceOrigin origin = random->nextBool() ? kTopLeft_GrSurfaceOrigin
                                                 : kBottomLeft_GrSurfaceOrigin;
 
@@ -150,10 +170,17 @@ static std::unique_ptr<skgpu::v1::SurfaceDrawContext> random_surface_draw_contex
     // Above could be 0 if msaa isn't supported.
     sampleCnt = std::max(1, sampleCnt);
 
-    return skgpu::v1::SurfaceDrawContext::Make(
-            rContext, GrColorType::kRGBA_8888, nullptr, SkBackingFit::kExact,
-            {kRenderTargetWidth, kRenderTargetHeight}, SkSurfaceProps(), sampleCnt,
-            GrMipmapped::kNo, GrProtected::kNo, origin);
+    return skgpu::ganesh::SurfaceDrawContext::Make(rContext,
+                                                   GrColorType::kRGBA_8888,
+                                                   nullptr,
+                                                   SkBackingFit::kExact,
+                                                   {kRenderTargetWidth, kRenderTargetHeight},
+                                                   SkSurfaceProps(),
+                                                   /*label=*/{},
+                                                   sampleCnt,
+                                                   GrMipmapped::kNo,
+                                                   GrProtected::kNo,
+                                                   origin);
 }
 
 #if GR_TEST_UTILS
@@ -252,9 +279,15 @@ bool GrDrawingManager::ProgramUnitTest(GrDirectContext* direct, int maxStages, i
         static constexpr SkISize kDims = {34, 18};
         const GrBackendFormat format = caps->getDefaultBackendFormat(GrColorType::kRGBA_8888,
                                                                      GrRenderable::kYes);
-        auto proxy = proxyProvider->createProxy(format, kDims, GrRenderable::kYes, 1,
-                                                mipmapped, SkBackingFit::kExact, SkBudgeted::kNo,
-                                                GrProtected::kNo, /*label=*/{},
+        auto proxy = proxyProvider->createProxy(format,
+                                                kDims,
+                                                GrRenderable::kYes,
+                                                1,
+                                                mipmapped,
+                                                SkBackingFit::kExact,
+                                                skgpu::Budgeted::kNo,
+                                                GrProtected::kNo,
+                                                /*label=*/{},
                                                 GrInternalSurfaceFlags::kNone);
         skgpu::Swizzle swizzle = caps->getReadSwizzle(format, GrColorType::kRGBA_8888);
         views[0] = {{std::move(proxy), kBottomLeft_GrSurfaceOrigin, swizzle},
@@ -264,9 +297,15 @@ bool GrDrawingManager::ProgramUnitTest(GrDirectContext* direct, int maxStages, i
         static constexpr SkISize kDims = {16, 22};
         const GrBackendFormat format = caps->getDefaultBackendFormat(GrColorType::kAlpha_8,
                                                                      GrRenderable::kNo);
-        auto proxy = proxyProvider->createProxy(format, kDims, GrRenderable::kNo, 1, mipmapped,
-                                                SkBackingFit::kExact, SkBudgeted::kNo,
-                                                GrProtected::kNo, /*label=*/{},
+        auto proxy = proxyProvider->createProxy(format,
+                                                kDims,
+                                                GrRenderable::kNo,
+                                                1,
+                                                mipmapped,
+                                                SkBackingFit::kExact,
+                                                skgpu::Budgeted::kNo,
+                                                GrProtected::kNo,
+                                                /*label=*/{},
                                                 GrInternalSurfaceFlags::kNone);
         skgpu::Swizzle swizzle = caps->getReadSwizzle(format, GrColorType::kAlpha_8);
         views[1] = {{std::move(proxy), kTopLeft_GrSurfaceOrigin, swizzle},
@@ -289,7 +328,7 @@ bool GrDrawingManager::ProgramUnitTest(GrDirectContext* direct, int maxStages, i
         }
 
         GrPaint paint;
-        GrProcessorTestData ptd(&random, direct, /*maxTreeDepth=*/1, SK_ARRAY_COUNT(views), views);
+        GrProcessorTestData ptd(&random, direct, /*maxTreeDepth=*/1, std::size(views), views);
         set_random_color_coverage_stages(&paint, &ptd, maxStages, maxLevels);
         set_random_xpf(&paint, &ptd);
         GrDrawRandomOp(&random, surfaceDrawContext.get(), std::move(paint));
@@ -299,9 +338,13 @@ bool GrDrawingManager::ProgramUnitTest(GrDirectContext* direct, int maxStages, i
     direct->submit(false);
 
     // Validate that GrFPs work correctly without an input.
-    auto sdc = skgpu::v1::SurfaceDrawContext::Make(
-            direct, GrColorType::kRGBA_8888, nullptr, SkBackingFit::kExact,
-            {kRenderTargetWidth, kRenderTargetHeight}, SkSurfaceProps());
+    auto sdc = skgpu::ganesh::SurfaceDrawContext::Make(direct,
+                                                       GrColorType::kRGBA_8888,
+                                                       nullptr,
+                                                       SkBackingFit::kExact,
+                                                       {kRenderTargetWidth, kRenderTargetHeight},
+                                                       SkSurfaceProps(),
+                                                       /*label=*/{});
     if (!sdc) {
         SkDebugf("Could not allocate a surfaceDrawContext");
         return false;
@@ -311,7 +354,7 @@ bool GrDrawingManager::ProgramUnitTest(GrDirectContext* direct, int maxStages, i
     for (int i = 0; i < fpFactoryCnt; ++i) {
         // Since FP factories internally randomize, call each 10 times.
         for (int j = 0; j < 10; ++j) {
-            GrProcessorTestData ptd(&random, direct, /*maxTreeDepth=*/1, SK_ARRAY_COUNT(views),
+            GrProcessorTestData ptd(&random, direct, /*maxTreeDepth=*/1, std::size(views),
                                     views);
 
             GrPaint paint;
@@ -403,7 +446,7 @@ static void test_programs(skiatest::Reporter* reporter, const sk_gpu_test::Conte
                                                                 maxLevels));
 }
 
-DEF_GPUTEST(Programs, reporter, options) {
+DEF_GANESH_TEST(Programs, reporter, options, CtsEnforcement::kNever) {
     // Set a locale that would cause shader compilation to fail because of , as decimal separator.
     // skbug 3330
 #ifdef SK_BUILD_FOR_WIN
@@ -416,6 +459,6 @@ DEF_GPUTEST(Programs, reporter, options) {
     GrContextOptions opts = options;
     opts.fSuppressPrints = true;
     sk_gpu_test::GrContextFactory debugFactory(opts);
-    skiatest::RunWithGPUTestContexts(
+    skiatest::RunWithGaneshTestContexts(
             test_programs, &sk_gpu_test::GrContextFactory::IsRenderingContext, reporter, opts);
 }

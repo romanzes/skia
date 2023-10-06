@@ -24,9 +24,9 @@
 #include "include/core/SkTypes.h"
 #include "include/effects/SkDashPathEffect.h"
 #include "include/effects/SkGradientShader.h"
-#include "include/private/SkImageInfoPriv.h"
-#include "include/private/SkTPin.h"
+#include "include/private/base/SkTPin.h"
 #include "src/core/SkColorSpaceXformSteps.h"
+#include "src/core/SkImageInfoPriv.h"
 
 #include <math.h>
 #include <string.h>
@@ -152,46 +152,6 @@ DEF_SIMPLE_GM(p3, canvas, 450, 1300) {
 
     canvas->translate(0,80);
 
-    // Draw a P3 red bitmap, using SkPixmap::erase().
-    {
-        SkBitmap bm;
-        bm.allocPixels(SkImageInfo::Make(60,60, kRGBA_F16_SkColorType, kPremul_SkAlphaType, p3));
-
-        // At the moment only SkPixmap has an erase() that takes an SkColor4f.
-        SkPixmap pm;
-        SkAssertResult(bm.peekPixels(&pm));
-        SkAssertResult(pm.erase({1,0,0,1}, p3.get()));
-
-        canvas->drawImage(bm.asImage(), 10,10);
-        compare_pixel("drawBitmap P3 red, from SkPixmap::erase",
-                      canvas, 10,10,
-                      {1,0,0,1}, p3.get());
-    }
-
-    canvas->translate(0,80);
-
-    // Draw a P3 red bitmap wrapped in a shader, using SkPixmap::erase().
-    {
-        SkBitmap bm;
-        bm.allocPixels(SkImageInfo::Make(60,60, kRGBA_F16_SkColorType, kPremul_SkAlphaType, p3));
-
-        // At the moment only SkPixmap has an erase() that takes an SkColor4f.
-        SkPixmap pm;
-        SkAssertResult(bm.peekPixels(&pm));
-        SkAssertResult(pm.erase({1,0,0,1}, p3.get()));
-
-        SkPaint paint;
-        paint.setShader(bm.makeShader(SkTileMode::kRepeat, SkTileMode::kRepeat,
-                                      SkSamplingOptions()));
-
-        canvas->drawRect({10,10,70,70}, paint);
-        compare_pixel("drawBitmapAsShader P3 red, from SkPixmap::erase",
-                      canvas, 10,10,
-                      {1,0,0,1}, p3.get());
-    }
-
-    canvas->translate(0,80);
-
     // TODO(mtklein): sample and check the middle points of these gradients too.
 
     // Draw a gradient from P3 red to P3 green interpolating in unpremul P3, checking the corners.
@@ -202,7 +162,7 @@ DEF_SIMPLE_GM(p3, canvas, 450, 1300) {
 
         SkPaint paint;
         paint.setShader(SkGradientShader::MakeLinear(points, colors, p3,
-                                                     nullptr, SK_ARRAY_COUNT(colors),
+                                                     nullptr, std::size(colors),
                                                      SkTileMode::kClamp));
         canvas->drawRect({10,10,70,70}, paint);
         canvas->save();
@@ -229,7 +189,7 @@ DEF_SIMPLE_GM(p3, canvas, 450, 1300) {
         SkPaint paint;
         paint.setShader(
                 SkGradientShader::MakeLinear(points, colors, p3,
-                                             nullptr, SK_ARRAY_COUNT(colors),
+                                             nullptr, std::size(colors),
                                              SkTileMode::kClamp,
                                              SkGradientShader::kInterpolateColorsInPremul_Flag,
                                              nullptr/*local matrix*/));
@@ -257,7 +217,7 @@ DEF_SIMPLE_GM(p3, canvas, 450, 1300) {
 
         SkPaint paint;
         paint.setShader(SkGradientShader::MakeLinear(points, colors, srgb,
-                                                     nullptr, SK_ARRAY_COUNT(colors),
+                                                     nullptr, std::size(colors),
                                                      SkTileMode::kClamp));
         canvas->drawRect({10,10,70,70}, paint);
         canvas->save();
@@ -284,7 +244,7 @@ DEF_SIMPLE_GM(p3, canvas, 450, 1300) {
         SkPaint paint;
         paint.setShader(
                 SkGradientShader::MakeLinear(points, colors, srgb,
-                                             nullptr, SK_ARRAY_COUNT(colors),
+                                             nullptr, std::size(colors),
                                              SkTileMode::kClamp,
                                              SkGradientShader::kInterpolateColorsInPremul_Flag,
                                              nullptr/*local matrix*/));
@@ -312,7 +272,7 @@ DEF_SIMPLE_GM(p3, canvas, 450, 1300) {
         SkPaint paint;
         paint.setShader(
                 SkGradientShader::MakeLinear(points, colors, p3,
-                                             nullptr, SK_ARRAY_COUNT(colors),
+                                             nullptr, std::size(colors),
                                              SkTileMode::kClamp,
                                              SkGradientShader::kInterpolateColorsInPremul_Flag,
                                              nullptr/*local matrix*/));

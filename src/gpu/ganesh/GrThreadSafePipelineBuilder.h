@@ -9,12 +9,12 @@
 #define GrThreadSafePipelineBuilder_Base_DEFINED
 
 #include "include/core/SkRefCnt.h"
-#include "include/gpu/GrConfig.h"
+#include "include/core/SkTypes.h"
 #include <atomic>
 
 #if GR_TEST_UTILS
-#include "include/private/SkTArray.h"
-class SkString;
+#include "include/core/SkString.h"
+#include "include/private/base/SkTArray.h"
 #endif
 
 class GrThreadSafePipelineBuilder : public SkRefCnt {
@@ -70,7 +70,7 @@ public:
 
 #if GR_TEST_UTILS
         void dump(SkString*);
-        void dumpKeyValuePairs(SkTArray<SkString>* keys, SkTArray<double>* values);
+        void dumpKeyValuePairs(skia_private::TArray<SkString>* keys, skia_private::TArray<double>* values);
 #endif
 
     private:
@@ -98,7 +98,7 @@ public:
 
 #if GR_TEST_UTILS
         void dump(SkString*) {}
-        void dumpKeyValuePairs(SkTArray<SkString>*, SkTArray<double>*) {}
+        void dumpKeyValuePairs(skia_private::TArray<SkString>*, skia_private::TArray<double>*) {}
 #endif
 
 #endif // GR_GPU_STATS

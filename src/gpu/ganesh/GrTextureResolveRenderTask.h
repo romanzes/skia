@@ -16,6 +16,9 @@ public:
 
     void addProxy(GrDrawingManager*, sk_sp<GrSurfaceProxy> proxy,
                   GrSurfaceProxy::ResolveFlags, const GrCaps&);
+#if GR_TEST_UTILS
+    GrSurfaceProxy::ResolveFlags flagsForProxy(sk_sp<GrSurfaceProxy>) const;
+#endif
 
 private:
     bool onIsUsed(GrSurfaceProxy* proxy) const override {
@@ -42,7 +45,7 @@ private:
         SkIRect fMSAAResolveRect;
     };
 
-    SkSTArray<4, Resolve> fResolves;
+    skia_private::STArray<4, Resolve> fResolves;
 };
 
 #endif

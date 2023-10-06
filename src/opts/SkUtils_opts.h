@@ -9,23 +9,28 @@
 #define SkUtils_opts_DEFINED
 
 #include <stdint.h>
-#include "include/private/SkVx.h"
+#include "src/base/SkVx.h"
 
 namespace SK_OPTS_NS {
 
     template <typename T>
     static void memsetT(T buffer[], T value, int count) {
     #if defined(SK_CPU_SSE_LEVEL) && SK_CPU_SSE_LEVEL >= SK_CPU_SSE_LEVEL_AVX
-        static const int N = 32 / sizeof(T);
+        static constexpr int VecSize = 32 / sizeof(T);
     #else
-        static const int N = 16 / sizeof(T);
+        static constexpr int VecSize = 16 / sizeof(T);
     #endif
-        while (count >= N) {
-            skvx::Vec<N,T>(value).store(buffer);
-            buffer += N;
-            count  -= N;
+        static_assert(VecSize > 0, "T is too big for memsetT");
+        // Create an vectorized version of value
+        skvx::Vec<VecSize,T> wideValue(value);
+        while (count >= VecSize) {
+            // Copy the value into the destination buffer (VecSize elements at a time)
+            wideValue.store(buffer);
+            buffer += VecSize;
+            count  -= VecSize;
         }
-        while (count --> 0) {
+        // If count was not an even multiple of VecSize, take care of the last few.
+        while (count-- > 0) {
             *buffer++ = value;
         }
     }

@@ -8,9 +8,11 @@
 #ifndef TriangulatingPathRenderer_DEFINED
 #define TriangulatingPathRenderer_DEFINED
 
-#include "src/gpu/ganesh/v1/PathRenderer.h"
+#if !defined(SK_ENABLE_OPTIMIZE_SIZE)
 
-namespace skgpu::v1 {
+#include "src/gpu/ganesh/PathRenderer.h"
+
+namespace skgpu::ganesh {
 
 /**
  *  Subclass that renders the path by converting to screen-space trapezoids plus
@@ -37,6 +39,8 @@ private:
     int fMaxVerbCount;
 };
 
-} // namespace skgpu::v1
+}  // namespace skgpu::ganesh
+
+#endif // SK_ENABLE_OPTIMIZE_SIZE
 
 #endif // TriangulatingPathRenderer_DEFINED

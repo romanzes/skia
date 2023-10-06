@@ -21,7 +21,6 @@
 static DEFINE_string2(skps, r, "", ".SKPs to dump.");
 static DEFINE_string(match, "", "The usual filters on file names to dump.");
 static DEFINE_bool2(optimize, O, false, "Run SkRecordOptimize before dumping.");
-static DEFINE_bool(optimize2, false, "Run SkRecordOptimize2 before dumping.");
 static DEFINE_int(tile, 1000000000, "Simulated tile size.");
 static DEFINE_bool(timeWithCommand, false,
                    "If true, print time next to command, else in first column.");
@@ -143,7 +142,7 @@ private:
 int main(int argc, char** argv) {
     CommandLineFlags::Parse(argc, argv);
 
-    for (int i = 0; i < FLAGS_skps.count(); i++) {
+    for (int i = 0; i < FLAGS_skps.size(); i++) {
         if (CommandLineFlags::ShouldSkip(FLAGS_match, FLAGS_skps[i])) {
             continue;
         }
@@ -168,9 +167,6 @@ int main(int argc, char** argv) {
         if (FLAGS_optimize) {
             SkRecordOptimize(&record);
         }
-        if (FLAGS_optimize2) {
-            SkRecordOptimize2(&record);
-        }
 
         SkBitmap bitmap;
         bitmap.allocN32Pixels(w, h);
@@ -185,7 +181,7 @@ int main(int argc, char** argv) {
             record.visit(j, dumper);
         }
 
-        if (FLAGS_write.count() > 0) {
+        if (FLAGS_write.size() > 0) {
             SkPictureRecorder r;
             SkRecordDraw(record,
                          r.beginRecording(SkRect::MakeIWH(w, h)),

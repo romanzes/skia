@@ -5,15 +5,17 @@
  * found in the LICENSE file.
  */
 
-#ifndef skgpu_DrawList_DEFINED
-#define skgpu_DrawList_DEFINED
+#ifndef skgpu_graphite_DrawList_DEFINED
+#define skgpu_graphite_DrawList_DEFINED
 
 #include "include/core/SkPaint.h"
-#include "src/core/SkTBlockList.h"
+#include "src/base/SkTBlockList.h"
 
-#include "src/gpu/graphite/DrawGeometry.h"
 #include "src/gpu/graphite/DrawOrder.h"
+#include "src/gpu/graphite/DrawParams.h"
 #include "src/gpu/graphite/PaintParams.h"
+#include "src/gpu/graphite/geom/Geometry.h"
+#include "src/gpu/graphite/geom/Rect.h"
 #include "src/gpu/graphite/geom/Transform_graphite.h"
 
 #include <limits>
@@ -22,7 +24,6 @@
 namespace skgpu::graphite {
 
 class Renderer;
-class Shape;
 
 /**
  * A DrawList represents a collection of drawing commands (and related clip/shading state) in
@@ -68,9 +69,9 @@ public:
     // 'shape' and 'stroke' parameters. If the renderer uses coverage AA, 'ordering' must have a
     // compressed painters order that reflects that. If the renderer uses stencil, the 'ordering'
     // must have a valid stencil index as well.
-    void recordDraw(const Renderer& renderer,
+    void recordDraw(const Renderer* renderer,
                     const Transform& localToDevice,
-                    const Shape& shape,
+                    const Geometry& geometry,
                     const Clip& clip,
                     DrawOrder ordering,
                     const PaintParams* paint,
@@ -79,19 +80,24 @@ public:
     int drawCount() const { return fDraws.count(); }
     int renderStepCount() const { return fRenderStepCount; }
 
+    // Bounds for a dst copy required by this DrawList.
+    const Rect& dstCopyBounds() const { return fDstCopyBounds; }
+
+    SkDEBUGCODE(bool hasAtlasDraws() const { return fAtlasShapeDrawCount > 0; })
+
 private:
     friend class DrawPass;
 
     struct Draw {
-        const Renderer& fRenderer; // Statically defined by function that recorded the Draw
-        DrawGeometry fGeometry; // The GeomParam's transform is owned by fTransforms of the DrawList
+        const Renderer* fRenderer; // Owned by SharedContext of Recorder that recorded the draw
+        DrawParams fDrawParams; // The DrawParam's transform is owned by fTransforms of the DrawList
         std::optional<PaintParams> fPaintParams; // Not present implies depth-only draw
 
-        Draw(const Renderer& renderer, const Transform& transform, const Shape& shape,
+        Draw(const Renderer* renderer, const Transform& transform, const Geometry& geometry,
              const Clip& clip, DrawOrder order, const PaintParams* paint,
              const StrokeStyle* stroke)
                 : fRenderer(renderer)
-                , fGeometry(transform, shape, clip, order, stroke)
+                , fDrawParams(transform, geometry, clip, order, stroke)
                 , fPaintParams(paint ? std::optional<PaintParams>(*paint) : std::nullopt) {}
     };
 
@@ -103,8 +109,15 @@ private:
 
     // Running total of RenderSteps for all draws, assuming nothing is culled
     int fRenderStepCount;
+
+#if defined(SK_DEBUG)
+    // The number of AtlasShape draws that have been recorded. Used in debugging.
+    int fAtlasShapeDrawCount = 0;
+#endif
+
+    Rect fDstCopyBounds = Rect::InfiniteInverted();
 };
 
-} // namespace skgpu
+} // namespace skgpu::graphite
 
-#endif // skgpu_DrawList_DEFINED
+#endif // skgpu_graphite_DrawList_DEFINED

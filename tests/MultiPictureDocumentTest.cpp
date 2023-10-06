@@ -14,20 +14,27 @@
 #include "include/core/SkFont.h"
 #include "include/core/SkImage.h"
 #include "include/core/SkImageInfo.h"
+#include "include/core/SkPaint.h"
+#include "include/core/SkPath.h"
 #include "include/core/SkPicture.h"
 #include "include/core/SkPictureRecorder.h"
 #include "include/core/SkRRect.h"
 #include "include/core/SkRect.h"
+#include "include/core/SkRefCnt.h"
+#include "include/core/SkSamplingOptions.h"
 #include "include/core/SkSerialProcs.h"
 #include "include/core/SkStream.h"
 #include "include/core/SkString.h"
 #include "include/core/SkSurface.h"
 #include "include/core/SkTextBlob.h"
-#include "src/gpu/ganesh/GrCaps.h"
+#include "include/core/SkTypeface.h"
 #include "src/utils/SkMultiPictureDocument.h"
 #include "tests/Test.h"
 #include "tools/SkSharingProc.h"
 #include "tools/ToolUtils.h"
+
+#include <memory>
+#include <vector>
 
 // Covers rects, ovals, paths, images, text
 static void draw_basic(SkCanvas* canvas, int seed, sk_sp<SkImage> image) {
@@ -103,7 +110,7 @@ DEF_TEST(SkMultiPictureDocument_Serialize_and_deserialize, reporter) {
     static const int HEIGHT = 256;
 
     // Make an image to be used in a later step.
-    auto surface(SkSurface::MakeRasterN32Premul(100, 100));
+    auto surface(SkSurfaces::Raster(SkImageInfo::MakeN32Premul(100, 100)));
     surface->getCanvas()->clear(SK_ColorGREEN);
     sk_sp<SkImage> image(surface->makeImageSnapshot());
     REPORTER_ASSERT(reporter, image);
@@ -122,7 +129,7 @@ DEF_TEST(SkMultiPictureDocument_Serialize_and_deserialize, reporter) {
         draw_advanced(pictureCanvas, i, image, sub);
         multipic->endPage();
         // Also draw the picture to an image for later comparison
-        auto surf = SkSurface::MakeRaster(info);
+        auto surf = SkSurfaces::Raster(info);
         draw_advanced(surf->getCanvas(), i, image, sub);
         expectedImages.push_back(surf->makeImageSnapshot());
     }
@@ -162,7 +169,7 @@ DEF_TEST(SkMultiPictureDocument_Serialize_and_deserialize, reporter) {
         REPORTER_ASSERT(reporter, bounds.height() == HEIGHT,
             "Page height: expected (%d) got (%d)", HEIGHT, (int)bounds.height());
 
-        auto surf = SkSurface::MakeRaster(info);
+        auto surf = SkSurfaces::Raster(info);
         surf->getCanvas()->drawPicture(frame.fPicture);
         auto img = surf->makeImageSnapshot();
         REPORTER_ASSERT(reporter, ToolUtils::equal_pixels(img.get(), expectedImages[i].get()));
@@ -172,13 +179,15 @@ DEF_TEST(SkMultiPictureDocument_Serialize_and_deserialize, reporter) {
 }
 
 
-#if SK_SUPPORT_GPU && defined(SK_BUILD_FOR_ANDROID) && __ANDROID_API__ >= 26
+#if defined(SK_GANESH) && defined(SK_BUILD_FOR_ANDROID) && __ANDROID_API__ >= 26
 
+#include "include/android/GrAHardwareBufferUtils.h"
 #include "include/core/SkBitmap.h"
 #include "include/core/SkColorSpace.h"
 #include "include/core/SkColorType.h"
 #include "include/gpu/GrDirectContext.h"
-#include "src/gpu/ganesh/GrAHardwareBufferUtils_impl.h"
+#include "include/gpu/ganesh/SkImageGanesh.h"
+#include "src/gpu/ganesh/GrCaps.h"
 #include "src/gpu/ganesh/GrDirectContextPriv.h"
 
 #include <android/hardware_buffer.h>
@@ -300,12 +309,14 @@ static sk_sp<SkImage> makeAHardwareBufferTestImage(
         false   // isRenderable
     );
     SkColorType colorType = GrAHardwareBufferUtils::GetSkColorTypeFromBufferFormat(hwbDesc.format);
-    sk_sp<SkImage> image = SkImage::MakeFromTexture(
-        context, texture, kTopLeft_GrSurfaceOrigin, colorType, kPremul_SkAlphaType,
-        SkColorSpace::MakeSRGB(),
-        nullptr, // no release proc
-        nullptr // context for release proc
-    );
+    sk_sp<SkImage> image = SkImages::BorrowTextureFrom(context,
+                                                       texture,
+                                                       kTopLeft_GrSurfaceOrigin,
+                                                       colorType,
+                                                       kPremul_SkAlphaType,
+                                                       SkColorSpace::MakeSRGB(),
+                                                       deleteProc,
+                                                       imageCtx);
 
     REPORTER_ASSERT(reporter, image);
     REPORTER_ASSERT(reporter, image->isTextureBacked());
@@ -316,8 +327,10 @@ static sk_sp<SkImage> makeAHardwareBufferTestImage(
 // Expected behavior is that the callback is called while the AHardwareBuffer is still valid and the
 // images are copied so .close() can still access them.
 // Confirm deserialized file contains images with correct data.
-DEF_GPUTEST_FOR_RENDERING_CONTEXTS(SkMultiPictureDocument_AHardwarebuffer,
-                                   reporter, ctx_info) {
+DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(SkMultiPictureDocument_AHardwarebuffer,
+                                       reporter,
+                                       ctx_info,
+                                       CtsEnforcement::kApiLevel_T) {
     auto context = ctx_info.directContext();
     if (!context->priv().caps()->supportsAHardwareBufferImages()) {
         return;
@@ -354,7 +367,7 @@ DEF_GPUTEST_FOR_RENDERING_CONTEXTS(SkMultiPictureDocument_AHardwarebuffer,
     draw_basic(pictureCanvas, 0, image);
     multipic->endPage();
     // Also draw the picture to an image for later comparison
-    auto surf = SkSurface::MakeRaster(info);
+    auto surf = SkSurfaces::Raster(info);
     draw_basic(surf->getCanvas(), 0, image);
     expectedImages.push_back(surf->makeImageSnapshot());
 
@@ -397,7 +410,7 @@ DEF_GPUTEST_FOR_RENDERING_CONTEXTS(SkMultiPictureDocument_AHardwarebuffer,
     REPORTER_ASSERT(reporter, bounds.height() == HEIGHT,
         "Page height: expected (%d) got (%d)", HEIGHT, (int)bounds.height());
 
-    auto surf2 = SkSurface::MakeRaster(info);
+    auto surf2 = SkSurfaces::Raster(info);
     surf2->getCanvas()->drawPicture(frames[0].fPicture);
     auto img = surf2->makeImageSnapshot();
     REPORTER_ASSERT(reporter, ToolUtils::equal_pixels(img.get(), expectedImages[0].get()));

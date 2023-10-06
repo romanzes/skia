@@ -11,14 +11,15 @@
 #include "include/core/SkRefCnt.h"
 #include "include/core/SkStream.h"
 #include "include/core/SkString.h"
-#include "include/private/SkMalloc.h"
-#include "include/private/SkTo.h"
+#include "include/private/base/SkDebug.h"
+#include "include/private/base/SkMalloc.h"
+#include "include/private/base/SkTo.h"
 #include "include/utils/SkParse.h"
-#include "src/utils/SkUTF.h"
+#include "src/base/SkUTF.h"
 
-#include <stdlib.h>
 #include <cmath>
 #include <cstdint>
+#include <cstdlib>
 #include <limits>
 #include <new>
 #include <tuple>
@@ -289,7 +290,7 @@ static inline float pow10(int32_t exp) {
        1.e+025f, 1.e+026f, 1.e+027f, 1.e+028f, 1.e+029f, 1.e+030f, 1.e+031f
     };
 
-    static constexpr int32_t k_exp_offset = SK_ARRAY_COUNT(g_pow10_table) / 2;
+    static constexpr int32_t k_exp_offset = std::size(g_pow10_table) / 2;
 
     // We only support negative exponents for now.
     SkASSERT(exp <= 0);

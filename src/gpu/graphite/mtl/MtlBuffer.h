@@ -9,22 +9,23 @@
 #define skgpu_graphite_MtlBuffer_DEFINED
 
 #include "include/core/SkRefCnt.h"
-#include "include/gpu/graphite/mtl/MtlTypes.h"
+#include "include/gpu/graphite/mtl/MtlGraphiteTypes.h"
 #include "src/gpu/graphite/Buffer.h"
 
 #import <Metal/Metal.h>
 
 namespace skgpu::graphite {
-class MtlGpu;
+class MtlSharedContext;
 
 class MtlBuffer : public Buffer {
 public:
-    static sk_sp<Buffer> Make(const MtlGpu*, size_t size, BufferType type, PrioritizeGpuReads);
+    static sk_sp<Buffer> Make(const MtlSharedContext*, size_t size, BufferType type, AccessPattern);
 
     id<MTLBuffer> mtlBuffer() const { return fBuffer.get(); }
 
 private:
-    MtlBuffer(const MtlGpu*, size_t size, BufferType type, PrioritizeGpuReads,
+    MtlBuffer(const MtlSharedContext*,
+              size_t size,
               sk_cfp<id<MTLBuffer>>);
 
     void onMap() override;

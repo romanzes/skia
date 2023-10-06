@@ -9,6 +9,7 @@
 #ifndef GrGLTexture_DEFINED
 #define GrGLTexture_DEFINED
 
+#include "include/gpu/ganesh/SkImageGanesh.h"
 #include "include/private/gpu/ganesh/GrGLTypesPriv.h"
 #include "src/gpu/ganesh/GrGpu.h"
 #include "src/gpu/ganesh/GrTexture.h"
@@ -24,11 +25,12 @@ public:
         GrGLuint fID                        = 0;
         GrGLFormat fFormat                  = GrGLFormat::kUnknown;
         GrBackendObjectOwnership fOwnership = GrBackendObjectOwnership::kOwned;
+        skgpu::Protected fIsProtected       = skgpu::Protected::kNo;
     };
 
     static GrTextureType TextureTypeFromTarget(GrGLenum textureTarget);
 
-    GrGLTexture(GrGLGpu*, SkBudgeted, const Desc&, GrMipmapStatus, std::string_view label);
+    GrGLTexture(GrGLGpu*, skgpu::Budgeted, const Desc&, GrMipmapStatus, std::string_view label);
 
     ~GrGLTexture() override {}
 
@@ -54,7 +56,8 @@ public:
                                           GrMipmapStatus,
                                           const Desc&,
                                           sk_sp<GrGLTextureParameters>,
-                                          GrWrapCacheable, GrIOType);
+                                          GrWrapCacheable, GrIOType,
+                                          std::string_view label);
 
     void dumpMemoryStatistics(SkTraceMemoryDump* traceMemoryDump) const override;
 
@@ -80,7 +83,7 @@ protected:
     void onAbandon() override;
     void onRelease() override;
 
-    bool onStealBackendTexture(GrBackendTexture*, SkImage::BackendTextureReleaseProc*) override;
+    bool onStealBackendTexture(GrBackendTexture*, SkImages::BackendTextureReleaseProc*) override;
 
     void onSetLabel() override;
 

@@ -29,11 +29,13 @@
 #include "include/gpu/GrBackendSurface.h"
 #include "include/gpu/GrDirectContext.h"
 #include "include/gpu/GrTypes.h"
+#include "include/gpu/ganesh/SkImageGanesh.h"
+#include "include/gpu/ganesh/gl/GrGLBackendSurface.h"
 #include "src/core/SkAutoPixmapStorage.h"
 #include "src/gpu/ganesh/GrDirectContextPriv.h"
 #include "src/gpu/ganesh/GrGpu.h"
 #include "src/gpu/ganesh/gl/GrGLCaps.h"
-#include "src/gpu/ganesh/gl/GrGLDefines_impl.h"
+#include "src/gpu/ganesh/gl/GrGLDefines.h"
 
 #include <algorithm>
 #include <cstdint>
@@ -94,19 +96,25 @@ private:
     sk_sp<SkImage> createRectangleTextureImg(GrDirectContext* dContext, GrSurfaceOrigin origin,
                                              const SkBitmap content) {
         SkASSERT(content.colorType() == kRGBA_8888_SkColorType);
-        auto format = GrBackendFormat::MakeGL(GR_GL_RGBA8, GR_GL_TEXTURE_RECTANGLE);
-        auto bet = dContext->createBackendTexture(content.width(), content.height(), format,
-                                                  GrMipmapped::kNo, GrRenderable::kNo);
+        auto format = GrBackendFormats::MakeGL(GR_GL_RGBA8, GR_GL_TEXTURE_RECTANGLE);
+        auto bet = dContext->createBackendTexture(content.width(),
+                                                  content.height(),
+                                                  format,
+                                                  GrMipmapped::kNo,
+                                                  GrRenderable::kNo,
+                                                  GrProtected::kNo,
+                                                  /*label=*/"CreateRectangleTextureImage");
         if (!bet.isValid()) {
             return nullptr;
         }
         if (!dContext->updateBackendTexture(bet, content.pixmap(), origin, nullptr, nullptr)) {
             dContext->deleteBackendTexture(bet);
         }
-        return SkImage::MakeFromAdoptedTexture(dContext, bet, origin, kRGBA_8888_SkColorType);
+        return SkImages::AdoptTextureFrom(dContext, bet, origin, kRGBA_8888_SkColorType);
     }
 
-    DrawResult onGpuSetup(GrDirectContext* context, SkString* errorMsg) override {
+    DrawResult onGpuSetup(SkCanvas* canvas, SkString* errorMsg) override {
+        auto context = GrAsDirectContext(canvas->recordingContext());
         if (!context || context->abandoned()) {
             return DrawResult::kSkip;
         }

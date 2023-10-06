@@ -17,11 +17,13 @@
 #include "include/core/SkPoint.h"
 #include "include/core/SkRect.h"
 #include "include/core/SkSize.h"
-#include "include/private/SkMalloc.h"
+#include "include/private/base/SkMalloc.h"
 #include "src/core/SkDevice.h"
 #include "src/core/SkWriter32.h"
 #include "src/utils/SkCanvasStack.h"
 
+#include <cstddef>
+#include <cstdint>
 #include <utility>
 
 /*
@@ -322,7 +324,7 @@ std::unique_ptr<SkCanvas> SkCanvasStateUtils::MakeFromCanvasState(const SkCanvas
                                                                   state_v1->layers[i].y));
     }
 
-    return std::move(canvas);
+    return canvas;
 }
 
 ////////////////////////////////////////////////////////////////////////////////

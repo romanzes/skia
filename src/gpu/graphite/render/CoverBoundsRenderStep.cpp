@@ -7,9 +7,10 @@
 
 #include "src/gpu/graphite/render/CoverBoundsRenderStep.h"
 
-#include "src/gpu/graphite/DrawGeometry.h"
+#include "src/base/SkVx.h"
+#include "src/gpu/graphite/DrawParams.h"
 #include "src/gpu/graphite/DrawWriter.h"
-#include "src/gpu/graphite/render/StencilAndCoverDSS.h"
+#include "src/gpu/graphite/render/CommonDepthStencilSettings.h"
 
 namespace skgpu::graphite {
 
@@ -18,46 +19,61 @@ CoverBoundsRenderStep::CoverBoundsRenderStep(bool inverseFill)
                      inverseFill ? "inverse" : "regular",
                      Flags::kPerformsShading,
                      /*uniforms=*/{},
-                     PrimitiveType::kTriangles,
+                     PrimitiveType::kTriangleStrip,
                      inverseFill ? kInverseCoverPass : kRegularCoverPass,
                      /*vertexAttrs=*/{{"position",
                                        VertexAttribType::kFloat4,
                                        SkSLType::kFloat4}},
-                     /*instanceAttrs=*/{})
+                     /*instanceAttrs=*/{{"bounds", VertexAttribType::kFloat4, SkSLType::kFloat4},
+                                        {"depth", VertexAttribType::kFloat, SkSLType::kFloat},
+                                        {"ssboIndex", VertexAttribType::kInt, SkSLType::kInt},
+                                        {"mat0", VertexAttribType::kFloat3, SkSLType::kFloat3},
+                                        {"mat1", VertexAttribType::kFloat3, SkSLType::kFloat3},
+                                        {"mat2", VertexAttribType::kFloat3, SkSLType::kFloat3}})
         , fInverseFill(inverseFill) {}
 
 CoverBoundsRenderStep::~CoverBoundsRenderStep() {}
 
-const char* CoverBoundsRenderStep::vertexSkSL() const {
-    return "     float4 devPosition = position;\n";
+std::string CoverBoundsRenderStep::vertexSkSL() const {
+    // Returns the body of a vertex function, which must define a float4 devPosition variable and
+    // must write to an already-defined float2 stepLocalCoords variable.
+    return "float4 devPosition = cover_bounds_vertex_fn("
+                                         "float2(sk_VertexID / 2, sk_VertexID % 2), "
+                                         "bounds, depth, float3x3(mat0, mat1, mat2), "
+                                         "stepLocalCoords);\n";
 }
 
-void CoverBoundsRenderStep::writeVertices(DrawWriter* writer, const DrawGeometry& geom) const {
-    SkV4 devPoints[4]; // ordered TL, TR, BR, BL
+void CoverBoundsRenderStep::writeVertices(DrawWriter* writer,
+                                          const DrawParams& params,
+                                          int ssboIndex) const {
+    // Each instance is 4 vertices, forming 2 triangles from a single triangle strip, so no indices
+    // are needed. sk_VertexID is used to place vertex positions, so no vertex buffer is needed.
+    DrawWriter::Instances instances{*writer, {}, {}, 4};
 
+    skvx::float4 bounds;
+    const SkM44* m;
     if (fInverseFill) {
-        // TODO: When we handle local coords, we'd need to map these corners by the inverse.
-        const SkIRect& bounds = geom.clip().scissor();
-        devPoints[0] = {(float) bounds.fLeft,  (float) bounds.fTop,    0.f, 1.f};
-        devPoints[1] = {(float) bounds.fRight, (float) bounds.fTop,    0.f, 1.f};
-        devPoints[2] = {(float) bounds.fRight, (float) bounds.fBottom, 0.f, 1.f};
-        devPoints[3] = {(float) bounds.fLeft,  (float) bounds.fBottom, 0.f, 1.f};
+        // Normally all bounding boxes are sorted such that l<r and t<b. We upload an inverted
+        // rectangle [r,b,l,t] when it's an inverse fill to encode that the bounds are already in
+        // device space and then use the inverse of the transform to compute local coordinates.
+        bounds = skvx::shuffle</*R*/2, /*B*/3, /*L*/0, /*T*/1>(
+                skvx::cast<float>(skvx::int4::Load(&params.clip().scissor())));
+        m = &params.transform().inverse();
     } else {
-        geom.transform().mapPoints(geom.shape().bounds(), devPoints);
+        bounds = params.geometry().bounds().ltrb();
+        m = &params.transform().matrix();
     }
 
-    float depth = geom.order().depthAsFloat();
-    DrawWriter::Vertices verts{*writer};
-    verts.append(6) << devPoints[0].x << devPoints[0].y << depth << devPoints[0].w // TL
-                    << devPoints[3].x << devPoints[3].y << depth << devPoints[3].w // BL
-                    << devPoints[1].x << devPoints[1].y << depth << devPoints[1].w // TR
-                    << devPoints[1].x << devPoints[1].y << depth << devPoints[1].w // TR
-                    << devPoints[3].x << devPoints[3].y << depth << devPoints[3].w // BL
-                    << devPoints[2].x << devPoints[2].y << depth << devPoints[2].w;// BR
+    // Since the local coords always have Z=0, we can discard the 3rd row and column of the matrix.
+    instances.append(1) << bounds << params.order().depthAsFloat() << ssboIndex
+                        << m->rc(0,0) << m->rc(1,0) << m->rc(3,0)
+                        << m->rc(0,1) << m->rc(1,1) << m->rc(3,1)
+                        << m->rc(0,3) << m->rc(1,3) << m->rc(3,3);
 }
 
-void CoverBoundsRenderStep::writeUniforms(const DrawGeometry&, SkPipelineDataGatherer*) const {
-    // Control points are pre-transformed to device space on the CPU, so no uniforms needed.
+void CoverBoundsRenderStep::writeUniformsAndTextures(const DrawParams&,
+                                                     PipelineDataGatherer*) const {
+    // All data is uploaded as instance attributes, so no uniforms are needed.
 }
 
 }  // namespace skgpu::graphite

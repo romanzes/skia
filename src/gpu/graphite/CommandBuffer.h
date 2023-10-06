@@ -11,28 +11,35 @@
 #include "include/core/SkColor.h"
 #include "include/core/SkRect.h"
 #include "include/core/SkRefCnt.h"
-#include "include/private/SkTArray.h"
+#include "include/private/base/SkTArray.h"
+#include "src/gpu/graphite/AttachmentTypes.h"
 #include "src/gpu/graphite/CommandTypes.h"
 #include "src/gpu/graphite/DrawTypes.h"
 #include "src/gpu/graphite/DrawWriter.h"
 
 namespace skgpu {
 class RefCntedCallback;
+class MutableTextureState;
 }
 
 namespace skgpu::graphite {
+
 class Buffer;
-class Gpu;
+class DispatchGroup;
+class DrawPass;
+class SharedContext;
 class GraphicsPipeline;
 class Resource;
 class Sampler;
 class Texture;
 class TextureProxy;
 
-
-class CommandBuffer : public SkRefCnt, private DrawDispatcher {
+class CommandBuffer {
 public:
-    ~CommandBuffer() override;
+    using DrawPassList = skia_private::TArray<std::unique_ptr<DrawPass>>;
+    using DispatchGroupList = skia_private::TArray<std::unique_ptr<DispatchGroup>>;
+
+    virtual ~CommandBuffer();
 
 #ifdef SK_DEBUG
     bool hasWork() { return fHasWork; }
@@ -40,73 +47,38 @@ public:
 
     void trackResource(sk_sp<Resource> resource);
     // Release all tracked Resources
-    void releaseResources();
+    void resetCommandBuffer();
+
+    // If any work is needed to create new resources for a fresh command buffer do that here.
+    virtual bool setNewCommandBufferResources() = 0;
 
     void addFinishedProc(sk_sp<RefCntedCallback> finishedProc);
     void callFinishedProcs(bool success);
 
-    bool beginRenderPass(const RenderPassDesc&,
-                         sk_sp<Texture> colorTexture,
-                         sk_sp<Texture> resolveTexture,
-                         sk_sp<Texture> depthStencilTexture);
-    virtual void endRenderPass() = 0;
+    virtual void addWaitSemaphores(size_t numWaitSemaphores,
+                                   const BackendSemaphore* waitSemaphores) {}
+    virtual void addSignalSemaphores(size_t numWaitSemaphores,
+                                     const BackendSemaphore* signalSemaphores) {}
+    virtual void prepareSurfaceForStateUpdate(SkSurface* targetSurface,
+                                              const MutableTextureState* newState) {}
 
-    //---------------------------------------------------------------
-    // Can only be used within renderpasses
-    //---------------------------------------------------------------
-    void bindGraphicsPipeline(sk_sp<GraphicsPipeline> graphicsPipeline);
-    void bindUniformBuffer(UniformSlot, sk_sp<Buffer>, size_t bufferOffset);
+    bool addRenderPass(const RenderPassDesc&,
+                       sk_sp<Texture> colorTexture,
+                       sk_sp<Texture> resolveTexture,
+                       sk_sp<Texture> depthStencilTexture,
+                       SkRect viewport,
+                       const DrawPassList& drawPasses);
 
-    void bindDrawBuffers(BindBufferInfo vertices,
-                         BindBufferInfo instances,
-                         BindBufferInfo indices) final;
-
-    void bindTextureAndSampler(sk_sp<Texture>, sk_sp<Sampler>, int bindIndex);
-
-    // TODO: do we want to handle multiple scissor rects and viewports?
-    void setScissor(unsigned int left, unsigned int top, unsigned int width, unsigned int height) {
-        this->onSetScissor(left, top, width, height);
-    }
-
-    void setViewport(float x, float y, float width, float height,
-                     float minDepth = 0, float maxDepth = 1) {
-        this->onSetViewport(x, y, width, height, minDepth, maxDepth);
-    }
-
-    void setBlendConstants(std::array<float, 4> blendConstants) {
-        this->onSetBlendConstants(blendConstants);
-    }
-
-    void draw(PrimitiveType type, unsigned int baseVertex, unsigned int vertexCount) final {
-        this->onDraw(type, baseVertex, vertexCount);
-        SkDEBUGCODE(fHasWork = true;)
-    }
-    void drawIndexed(PrimitiveType type, unsigned int baseIndex, unsigned int indexCount,
-                     unsigned int baseVertex) final {
-        this->onDrawIndexed(type, baseIndex, indexCount, baseVertex);
-        SkDEBUGCODE(fHasWork = true;)
-    }
-    void drawInstanced(PrimitiveType type, unsigned int baseVertex, unsigned int vertexCount,
-                       unsigned int baseInstance, unsigned int instanceCount) final {
-        this->onDrawInstanced(type, baseVertex, vertexCount, baseInstance, instanceCount);
-        SkDEBUGCODE(fHasWork = true;)
-    }
-    void drawIndexedInstanced(PrimitiveType type, unsigned int baseIndex, unsigned int indexCount,
-                              unsigned int baseVertex, unsigned int baseInstance,
-                              unsigned int instanceCount) final {
-        this->onDrawIndexedInstanced(type, baseIndex, indexCount, baseVertex, baseInstance,
-                                     instanceCount);
-        SkDEBUGCODE(fHasWork = true;)
-    }
-
-    // When using a DrawWriter dispatching directly to a CommandBuffer, binding of pipelines and
-    // uniforms must be coordinated with forNewPipeline() and forDynamicStateChange(). The direct
-    // draw calls and vertex buffer binding calls on CB should not be intermingled with the writer.
-    DrawDispatcher* asDrawDispatcher() { return this; }
+    bool addComputePass(const DispatchGroupList& dispatchGroups);
 
     //---------------------------------------------------------------
     // Can only be used outside renderpasses
     //---------------------------------------------------------------
+    bool copyBufferToBuffer(sk_sp<Buffer> srcBuffer,
+                            size_t srcOffset,
+                            sk_sp<Buffer> dstBuffer,
+                            size_t dstOffset,
+                            size_t size);
     bool copyTextureToBuffer(sk_sp<Texture>,
                              SkIRect srcRect,
                              sk_sp<Buffer>,
@@ -116,49 +88,44 @@ public:
                              sk_sp<Texture>,
                              const BufferTextureCopyData*,
                              int count);
+    bool copyTextureToTexture(sk_sp<Texture> src,
+                              SkIRect srcRect,
+                              sk_sp<Texture> dst,
+                              SkIPoint dstPoint);
+    bool synchronizeBufferToCpu(sk_sp<Buffer>);
+    bool clearBuffer(const Buffer* buffer, size_t offset, size_t size);
+
+    // This sets a translation to be applied to any subsequently added command, assuming these
+    // commands are part of a translated replay of a Graphite recording.
+    void setReplayTranslation(SkIVector translation) { fReplayTranslation = translation; }
+    void clearReplayTranslation() { fReplayTranslation = {0, 0}; }
 
 protected:
     CommandBuffer();
 
+    SkISize fRenderPassSize;
+    SkIVector fReplayTranslation;
+
 private:
-    // TODO: Once all buffer use goes through the DrawBufferManager, we likely do not need to track
-    // refs every time a buffer is bound, since the DBM will transfer ownership for any used buffer
-    // to the CommandBuffer.
-    void bindVertexBuffers(sk_sp<Buffer> vertexBuffer, size_t vertexOffset,
-                           sk_sp<Buffer> instanceBuffer, size_t instanceOffset);
-    void bindIndexBuffer(sk_sp<Buffer> indexBuffer, size_t bufferOffset);
+    // Release all tracked Resources
+    void releaseResources();
 
-    virtual bool onBeginRenderPass(const RenderPassDesc&,
-                                   const Texture* colorTexture,
-                                   const Texture* resolveTexture,
-                                   const Texture* depthStencilTexture) = 0;
+    virtual void onResetCommandBuffer() = 0;
 
-    virtual void onBindGraphicsPipeline(const GraphicsPipeline*) = 0;
-    virtual void onBindUniformBuffer(UniformSlot, const Buffer*, size_t bufferOffset) = 0;
-    virtual void onBindVertexBuffers(const Buffer* vertexBuffer, size_t vertexOffset,
-                                     const Buffer* instanceBuffer, size_t instanceOffset) = 0;
-    virtual void onBindIndexBuffer(const Buffer* indexBuffer, size_t bufferOffset) = 0;
+    virtual bool onAddRenderPass(const RenderPassDesc&,
+                                 const Texture* colorTexture,
+                                 const Texture* resolveTexture,
+                                 const Texture* depthStencilTexture,
+                                 SkRect viewport,
+                                 const DrawPassList& drawPasses) = 0;
 
-    virtual void onBindTextureAndSampler(sk_sp<Texture>,
-                                         sk_sp<Sampler>,
-                                         unsigned int bindIndex) = 0;
+    virtual bool onAddComputePass(const DispatchGroupList& dispatchGroups) = 0;
 
-    virtual void onSetScissor(unsigned int left, unsigned int top,
-                              unsigned int width, unsigned int height) = 0;
-    virtual void onSetViewport(float x, float y, float width, float height,
-                               float minDepth, float maxDepth) = 0;
-    virtual void onSetBlendConstants(std::array<float, 4> blendConstants) = 0;
-
-    virtual void onDraw(PrimitiveType type, unsigned int baseVertex, unsigned int vertexCount) = 0;
-    virtual void onDrawIndexed(PrimitiveType type, unsigned int baseIndex, unsigned int indexCount,
-                               unsigned int baseVertex) = 0;
-    virtual void onDrawInstanced(PrimitiveType type,
-                                 unsigned int baseVertex, unsigned int vertexCount,
-                                 unsigned int baseInstance, unsigned int instanceCount) = 0;
-    virtual void onDrawIndexedInstanced(PrimitiveType type, unsigned int baseIndex,
-                                        unsigned int indexCount, unsigned int baseVertex,
-                                        unsigned int baseInstance, unsigned int instanceCount) = 0;
-
+    virtual bool onCopyBufferToBuffer(const Buffer* srcBuffer,
+                                      size_t srcOffset,
+                                      const Buffer* dstBuffer,
+                                      size_t dstOffset,
+                                      size_t size) = 0;
     virtual bool onCopyTextureToBuffer(const Texture*,
                                        SkIRect srcRect,
                                        const Buffer*,
@@ -168,14 +135,20 @@ private:
                                        const Texture*,
                                        const BufferTextureCopyData*,
                                        int count) = 0;
+    virtual bool onCopyTextureToTexture(const Texture* src,
+                                        SkIRect srcRect,
+                                        const Texture* dst,
+                                        SkIPoint dstPoint) = 0;
+    virtual bool onSynchronizeBufferToCpu(const Buffer*, bool* outDidResultInWork) = 0;
+    virtual bool onClearBuffer(const Buffer*, size_t offset, size_t size) = 0;
 
 #ifdef SK_DEBUG
     bool fHasWork = false;
 #endif
 
     inline static constexpr int kInitialTrackedResourcesCount = 32;
-    SkSTArray<kInitialTrackedResourcesCount, sk_sp<Resource>> fTrackedResources;
-    SkTArray<sk_sp<RefCntedCallback>> fFinishedProcs;
+    skia_private::STArray<kInitialTrackedResourcesCount, sk_sp<Resource>> fTrackedResources;
+    skia_private::TArray<sk_sp<RefCntedCallback>> fFinishedProcs;
 };
 
 } // namespace skgpu::graphite

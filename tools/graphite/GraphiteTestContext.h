@@ -13,6 +13,7 @@
 
 namespace skgpu::graphite {
 class Context;
+struct ContextOptions;
 class Recording;
 }
 
@@ -31,9 +32,10 @@ public:
 
     virtual ~GraphiteTestContext();
 
-    virtual skgpu::graphite::BackendApi backend() = 0;
+    virtual skgpu::BackendApi backend() = 0;
 
-    virtual std::unique_ptr<skgpu::graphite::Context> makeContext() = 0;
+    virtual std::unique_ptr<skgpu::graphite::Context> makeContext(
+            const skgpu::graphite::ContextOptions&) = 0;
 
     bool getMaxGpuFrameLag(int *maxFrameLag) const {
         *maxFrameLag = kMaxFrameLag;

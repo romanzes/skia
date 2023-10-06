@@ -180,10 +180,6 @@ func (b *jobBuilder) genTasksForJob() {
 		b.dm()
 		return
 	}
-	if b.role("FM") {
-		b.fm()
-		return
-	}
 
 	// Canary bots.
 	if b.role("Canary") {
@@ -216,6 +212,11 @@ func (b *jobBuilder) genTasksForJob() {
 
 	if b.role("BazelBuild") {
 		b.bazelBuild()
+		return
+	}
+
+	if b.role("BazelTest") {
+		b.bazelTest()
 		return
 	}
 

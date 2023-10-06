@@ -8,15 +8,13 @@
 #ifndef SKSL_UTIL
 #define SKSL_UTIL
 
+#include "include/core/SkTypes.h"
 #include "include/sksl/SkSLVersion.h"
-#include "src/core/SkSLTypeShared.h"
 #include "src/sksl/SkSLGLSL.h"
 
 #include <memory>
 
-#ifndef SKSL_STANDALONE
-#include "include/core/SkTypes.h"
-#endif // SKSL_STANDALONE
+enum class SkSLType : char;
 
 namespace SkSL {
 
@@ -79,9 +77,14 @@ struct ShaderCaps {
         return SkSL::Version::k100;
     }
 
+    bool supportsDistanceFieldText() const { return fShaderDerivativeSupport; }
+
     SkSL::GLSLGeneration fGLSLGeneration = SkSL::GLSLGeneration::k330;
 
+    bool fDualSourceBlendingSupport = false;
     bool fShaderDerivativeSupport = false;
+    /** Enables sampleGrad and sampleLod functions that don't rely on implicit derivatives */
+    bool fExplicitTextureLodSupport = false;
     /** Indicates true 32-bit integer support, with unsigned types and bitwise operations */
     bool fIntegerSupport = false;
     bool fNonsquareMatrixSupport = false;
@@ -96,9 +99,12 @@ struct ShaderCaps {
     bool fExternalTextureSupport = false;
     bool fFloatIs32Bits = true;
 
+    // isinf() is defined, and floating point infinities are handled according to IEEE standards.
+    bool fInfinitySupport = false;
+
     // Used by SkSL to know when to generate polyfills.
-    bool fBuiltinFMASupport = false;
-    bool fBuiltinDeterminantSupport = false;
+    bool fBuiltinFMASupport = true;
+    bool fBuiltinDeterminantSupport = true;
 
     // Used for specific driver bug work arounds
     bool fCanUseMinAndAbsTogether = true;
@@ -136,10 +142,11 @@ struct ShaderCaps {
     bool fRewriteMatrixVectorMultiply = false;
     // Rewrites matrix equality comparisons to avoid an Adreno driver bug. (skia:11308)
     bool fRewriteMatrixComparisons = false;
-
-    // This controls behavior of the SkSL compiler, not the code we generate. By default, SkSL pools
-    // IR nodes per-program. To debug memory corruption, it can be helpful to disable that feature.
-    bool fUseNodePools = true;
+    // Strips const from function parameters in the GLSL code generator. (skia:13858)
+    bool fRemoveConstFromFunctionParameters = false;
+    // On some Android devices colors aren't accurate enough for the double lookup in the
+    // Perlin noise shader. This workaround aggressively snaps colors to multiples of 1/255.
+    bool fPerlinNoiseRoundingFix = false;
 
     const char* fVersionDeclString = "";
 
@@ -154,170 +161,26 @@ struct ShaderCaps {
 // Various sets of caps for use in tests
 class ShaderCapsFactory {
 public:
-    static std::unique_ptr<ShaderCaps> Default() {
-        std::unique_ptr<ShaderCaps> result = MakeShaderCaps();
-        result->fVersionDeclString = "#version 400";
-        result->fShaderDerivativeSupport = true;
-        result->fBuiltinDeterminantSupport = true;
-        return result;
+    static const ShaderCaps* Default() {
+        static const SkSL::ShaderCaps* sCaps = [] {
+            std::unique_ptr<ShaderCaps> caps = MakeShaderCaps();
+            caps->fVersionDeclString = "#version 400";
+            caps->fShaderDerivativeSupport = true;
+            return caps.release();
+        }();
+        return sCaps;
     }
 
-    static std::unique_ptr<ShaderCaps> Standalone() {
-        return MakeShaderCaps();
+    static const ShaderCaps* Standalone() {
+        static const SkSL::ShaderCaps* sCaps = MakeShaderCaps().release();
+        return sCaps;
     }
 
-    static std::unique_ptr<ShaderCaps> AddAndTrueToLoopCondition() {
-        std::unique_ptr<ShaderCaps> result = MakeShaderCaps();
-        result->fVersionDeclString = "#version 400";
-        result->fAddAndTrueToLoopCondition = true;
-        return result;
-    }
-
-    static std::unique_ptr<ShaderCaps> CannotUseFractForNegativeValues() {
-        std::unique_ptr<ShaderCaps> result = MakeShaderCaps();
-        result->fVersionDeclString = "#version 400";
-        result->fCanUseFractForNegativeValues = false;
-        return result;
-    }
-
-    static std::unique_ptr<ShaderCaps> CannotUseFragCoord() {
-        std::unique_ptr<ShaderCaps> result = MakeShaderCaps();
-        result->fVersionDeclString = "#version 400";
-        result->fCanUseFragCoord = false;
-        return result;
-    }
-
-    static std::unique_ptr<ShaderCaps> CannotUseMinAndAbsTogether() {
-        std::unique_ptr<ShaderCaps> result = MakeShaderCaps();
-        result->fVersionDeclString = "#version 400";
-        result->fCanUseMinAndAbsTogether = false;
-        return result;
-    }
-
-    static std::unique_ptr<ShaderCaps> EmulateAbsIntFunction() {
-        std::unique_ptr<ShaderCaps> result = MakeShaderCaps();
-        result->fVersionDeclString = "#version 400";
-        result->fEmulateAbsIntFunction = true;
-        return result;
-    }
-
-    static std::unique_ptr<ShaderCaps> FramebufferFetchSupport() {
-        std::unique_ptr<ShaderCaps> result = MakeShaderCaps();
-        result->fFBFetchSupport = true;
-        result->fFBFetchColorName = "gl_LastFragData[0]";
-        return result;
-    }
-
-    static std::unique_ptr<ShaderCaps> IncompleteShortIntPrecision() {
-        std::unique_ptr<ShaderCaps> result = MakeShaderCaps();
-        result->fVersionDeclString = "#version 310es";
-        result->fUsesPrecisionModifiers = true;
-        result->fIncompleteShortIntPrecision = true;
-        return result;
-    }
-
-    static std::unique_ptr<ShaderCaps> MustForceNegatedAtanParamToFloat() {
-        std::unique_ptr<ShaderCaps> result = MakeShaderCaps();
-        result->fVersionDeclString = "#version 400";
-        result->fMustForceNegatedAtanParamToFloat = true;
-        return result;
-    }
-
-    static std::unique_ptr<ShaderCaps> MustForceNegatedLdexpParamToMultiply() {
-        std::unique_ptr<ShaderCaps> result = MakeShaderCaps();
-        result->fVersionDeclString = "#version 400";
-        result->fMustForceNegatedLdexpParamToMultiply = true;
-        return result;
-    }
-
-    static std::unique_ptr<ShaderCaps> MustGuardDivisionEvenAfterExplicitZeroCheck() {
-        std::unique_ptr<ShaderCaps> result = MakeShaderCaps();
-        result->fMustGuardDivisionEvenAfterExplicitZeroCheck = true;
-        return result;
-    }
-
-    static std::unique_ptr<ShaderCaps> RemovePowWithConstantExponent() {
-        std::unique_ptr<ShaderCaps> result = MakeShaderCaps();
-        result->fVersionDeclString = "#version 400";
-        result->fRemovePowWithConstantExponent = true;
-        return result;
-    }
-
-    static std::unique_ptr<ShaderCaps> RewriteDoWhileLoops() {
-        std::unique_ptr<ShaderCaps> result = MakeShaderCaps();
-        result->fVersionDeclString = "#version 400";
-        result->fRewriteDoWhileLoops = true;
-        return result;
-    }
-
-    static std::unique_ptr<ShaderCaps> RewriteMatrixComparisons() {
-        std::unique_ptr<ShaderCaps> result = MakeShaderCaps();
-        result->fRewriteMatrixComparisons = true;
-        result->fUsesPrecisionModifiers = true;
-        return result;
-    }
-
-    static std::unique_ptr<ShaderCaps> RewriteMatrixVectorMultiply() {
-        std::unique_ptr<ShaderCaps> result = MakeShaderCaps();
-        result->fVersionDeclString = "#version 400";
-        result->fRewriteMatrixVectorMultiply = true;
-        return result;
-    }
-
-    static std::unique_ptr<ShaderCaps> RewriteSwitchStatements() {
-        std::unique_ptr<ShaderCaps> result = MakeShaderCaps();
-        result->fVersionDeclString = "#version 400";
-        result->fRewriteSwitchStatements = true;
-        return result;
-    }
-
-    static std::unique_ptr<ShaderCaps> SampleMaskSupport() {
-        std::unique_ptr<ShaderCaps> result = Default();
-        result->fSampleMaskSupport = true;
-        return result;
-    }
-
-    static std::unique_ptr<ShaderCaps> ShaderDerivativeExtensionString() {
-        std::unique_ptr<ShaderCaps> result = MakeShaderCaps();
-        result->fVersionDeclString = "#version 400";
-        result->fShaderDerivativeSupport = true;
-        result->fShaderDerivativeExtensionString = "GL_OES_standard_derivatives";
-        result->fUsesPrecisionModifiers = true;
-        return result;
-    }
-
-    static std::unique_ptr<ShaderCaps> UnfoldShortCircuitAsTernary() {
-        std::unique_ptr<ShaderCaps> result = MakeShaderCaps();
-        result->fVersionDeclString = "#version 400";
-        result->fUnfoldShortCircuitAsTernary = true;
-        return result;
-    }
-
-    static std::unique_ptr<ShaderCaps> UsesPrecisionModifiers() {
-        std::unique_ptr<ShaderCaps> result = MakeShaderCaps();
-        result->fVersionDeclString = "#version 400";
-        result->fUsesPrecisionModifiers = true;
-        return result;
-    }
-
-    static std::unique_ptr<ShaderCaps> Version110() {
-        std::unique_ptr<ShaderCaps> result = MakeShaderCaps();
-        result->fVersionDeclString = "#version 110";
-        result->fGLSLGeneration = SkSL::GLSLGeneration::k110;
-        return result;
-    }
-
-    static std::unique_ptr<ShaderCaps> Version450Core() {
-        std::unique_ptr<ShaderCaps> result = MakeShaderCaps();
-        result->fVersionDeclString = "#version 450 core";
-        return result;
-    }
-
-private:
+protected:
     static std::unique_ptr<ShaderCaps> MakeShaderCaps();
 };
 
-#if !defined(SKSL_STANDALONE) && (SK_SUPPORT_GPU || defined(SK_GRAPHITE_ENABLED))
+#if !defined(SKSL_STANDALONE) && (defined(SK_GANESH) || defined(SK_GRAPHITE))
 bool type_to_sksltype(const Context& context, const Type& type, SkSLType* outType);
 #endif
 
