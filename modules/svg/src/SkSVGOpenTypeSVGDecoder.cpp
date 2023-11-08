@@ -88,12 +88,12 @@ SkSVGOpenTypeSVGDecoder::~SkSVGOpenTypeSVGDecoder() = default;
 
 std::unique_ptr<SkOpenTypeSVGDecoder> SkSVGOpenTypeSVGDecoder::Make(const uint8_t* svg,
                                                                     size_t svgLength) {
+    SkDebugf("SkSVGOpenTypeSVGDecoder::Make\n");
     std::unique_ptr<SkStreamAsset> stream = SkMemoryStream::MakeDirect(svg, svgLength);
     if (!stream) {
         return nullptr;
     }
     SkSVGDOM::Builder builder;
-    SkDebugf("SkSVGOpenTypeSVGDecoder::Make\n");
     builder.setResourceProvider(DataResourceProvider::Make());
     sk_sp<SkSVGDOM> skSvg = builder.make(*stream);
     if (!skSvg) {
