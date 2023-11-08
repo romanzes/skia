@@ -107,7 +107,9 @@ ImageAsset::FrameData ImageAsset::getFrameData(float t) {
 }
 
 sk_sp<MultiFrameImageAsset> MultiFrameImageAsset::Make(sk_sp<SkData> data, bool predecode) {
+    SkDebugf("MultiFrameImageAsset::Make\n");
     if (auto codec = SkCodec::MakeFromData(std::move(data))) {
+        SkDebugf("codec is made\n");
         return sk_sp<MultiFrameImageAsset>(
               new MultiFrameImageAsset(std::make_unique<SkAnimCodecPlayer>(std::move(codec)),
                                                                              predecode));
