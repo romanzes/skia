@@ -211,8 +211,8 @@ std::unique_ptr<SkCodec> SkCodec::MakeFromStream(
         return rawFallback(std::move(stream), outResult, nullptr);
     }
 
-    SkDebugf("bytesRead: %g\n", bytesRead);
-    SkDebugf("bytesToRead: %g\n", bytesToRead);
+    SkDebugf("bytesRead: %d\n", bytesRead);
+    SkDebugf("bytesToRead: %d\n", bytesToRead);
     if (bytesRead < bytesToRead) {
         *outResult = kIncompleteInput;
     } else {
