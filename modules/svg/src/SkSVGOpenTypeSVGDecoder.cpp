@@ -93,6 +93,7 @@ std::unique_ptr<SkOpenTypeSVGDecoder> SkSVGOpenTypeSVGDecoder::Make(const uint8_
         return nullptr;
     }
     SkSVGDOM::Builder builder;
+    SkDebugf("SkSVGOpenTypeSVGDecoder::Make\n");
     builder.setResourceProvider(DataResourceProvider::Make());
     sk_sp<SkSVGDOM> skSvg = builder.make(*stream);
     if (!skSvg) {
