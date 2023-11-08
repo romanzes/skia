@@ -391,6 +391,7 @@ SkSVGDOM::Builder& SkSVGDOM::Builder::setFontManager(sk_sp<SkFontMgr> fmgr) {
 }
 
 SkSVGDOM::Builder& SkSVGDOM::Builder::setResourceProvider(sk_sp<skresources::ResourceProvider> rp) {
+    SkDebugf("SkSVGDOM::Builder::setResourceProvider\n");
     fResourceProvider = std::move(rp);
     return *this;
 }
