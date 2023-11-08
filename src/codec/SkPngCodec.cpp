@@ -794,6 +794,7 @@ private:
 static SkCodec::Result read_header(SkStream* stream, SkPngChunkReader* chunkReader,
                                    SkCodec** outCodec,
                                    png_structp* png_ptrp, png_infop* info_ptrp) {
+    SkDebugf("read_header (1)\n");
     // The image is known to be a PNG. Decode enough to know the SkImageInfo.
     png_structp png_ptr = png_create_read_struct(PNG_LIBPNG_VER_STRING, nullptr,
                                                  sk_error_fn, sk_warning_fn);
@@ -1214,6 +1215,7 @@ SkCodec::Result SkPngCodec::onIncrementalDecode(int* rowsDecoded) {
 
 std::unique_ptr<SkCodec> SkPngCodec::MakeFromStream(std::unique_ptr<SkStream> stream,
                                                     Result* result, SkPngChunkReader* chunkReader) {
+    SkDebugf("SkPngCodec::MakeFromStream\n");
     SkASSERT(result);
     if (!stream) {
         *result = SkCodec::kInvalidInput;
