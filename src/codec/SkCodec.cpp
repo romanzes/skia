@@ -147,12 +147,14 @@ std::unique_ptr<SkCodec> SkCodec::MakeFromStream(
 
     if (!stream) {
         *outResult = kInvalidInput;
+        SkDebugf("SkCodec::MakeFromStream (1)\n");
         return nullptr;
     }
 
     if (selectionPolicy != SelectionPolicy::kPreferStillImage
             && selectionPolicy != SelectionPolicy::kPreferAnimation) {
         *outResult = kInvalidParameters;
+        SkDebugf("SkCodec::MakeFromStream (2)\n");
         return nullptr;
     }
 
@@ -180,6 +182,7 @@ std::unique_ptr<SkCodec> SkCodec::MakeFromStream(
         if (!stream->rewind()) {
             SkCodecPrintf("Encoded image data could not peek or rewind to determine format!\n");
             *outResult = kCouldNotRewind;
+            SkDebugf("SkCodec::MakeFromStream (3)\n");
             return nullptr;
         }
     }
@@ -203,6 +206,7 @@ std::unique_ptr<SkCodec> SkCodec::MakeFromStream(
     }
     if (rawFallback != nullptr) {
         // Fallback to raw.
+        SkDebugf("SkCodec::MakeFromStream (4)\n");
         return rawFallback(std::move(stream), outResult, nullptr);
     }
 
@@ -211,6 +215,7 @@ std::unique_ptr<SkCodec> SkCodec::MakeFromStream(
     } else {
         *outResult = kUnimplemented;
     }
+    SkDebugf("SkCodec::MakeFromStream (5)\n");
     return nullptr;
 }
 
