@@ -197,6 +197,7 @@ sk_sp<SkData> FileResourceProvider::load(const char resource_path[],
 sk_sp<ImageAsset> FileResourceProvider::loadImageAsset(const char resource_path[],
                                                        const char resource_name[],
                                                        const char[]) const {
+    SkDebugf("FileResourceProvider::loadImageAsset\n");
     auto data = this->load(resource_path, resource_name);
 
     if (auto image = MultiFrameImageAsset::Make(data, fPredecode)) {
@@ -224,6 +225,7 @@ sk_sp<SkData> ResourceProviderProxyBase::load(const char resource_path[],
 sk_sp<ImageAsset> ResourceProviderProxyBase::loadImageAsset(const char rpath[],
                                                             const char rname[],
                                                             const char rid[]) const {
+    SkDebugf("ResourceProviderProxyBase::loadImageAsset\n");
     return fProxy ? fProxy->loadImageAsset(rpath, rname, rid)
                   : nullptr;
 }
@@ -252,6 +254,7 @@ CachingResourceProvider::CachingResourceProvider(sk_sp<ResourceProvider> rp)
 sk_sp<ImageAsset> CachingResourceProvider::loadImageAsset(const char resource_path[],
                                                           const char resource_name[],
                                                           const char resource_id[]) const {
+    SkDebugf("CachingResourceProvider::loadImageAsset\n");
     SkAutoMutexExclusive amx(fMutex);
 
     const SkString key(resource_id);
@@ -310,6 +313,7 @@ static sk_sp<SkData> decode_datauri(const char prefix[], const char uri[]) {
 sk_sp<ImageAsset> DataURIResourceProviderProxy::loadImageAsset(const char rpath[],
                                                                const char rname[],
                                                                const char rid[]) const {
+    SkDebugf("DataURIResourceProviderProxy::loadImageAsset\n");
     if (auto data = decode_datauri("data:image/", rname)) {
         return MultiFrameImageAsset::Make(std::move(data), fPredecode);
     }

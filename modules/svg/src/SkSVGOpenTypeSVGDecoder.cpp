@@ -34,6 +34,7 @@ public:
     sk_sp<skresources::ImageAsset> loadImageAsset(const char rpath[],
                                                   const char rname[],
                                                   const char rid[]) const override {
+        SkDebugf("DataResourceProvider::loadImageAsset\n");
         if (auto data = decode_datauri("data:image/", rname)) {
             return skresources::MultiFrameImageAsset::Make(std::move(data));
         }
