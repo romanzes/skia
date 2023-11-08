@@ -140,6 +140,7 @@ bool HasDecoder(std::string_view id) {
 std::unique_ptr<SkCodec> SkCodec::MakeFromStream(
         std::unique_ptr<SkStream> stream, Result* outResult,
         SkPngChunkReader* chunkReader, SelectionPolicy selectionPolicy) {
+    SkDebugf("SkCodec::MakeFromStream\n");
     Result resultStorage;
     if (!outResult) {
         outResult = &resultStorage;
