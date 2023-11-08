@@ -1333,6 +1333,7 @@ SVGSrc::SVGSrc(Path path)
                   skresources::FileResourceProvider::Make(SkOSPath::Dirname(path.c_str()),
                                                           /*predecode=*/true),
                   /*predecode=*/true);
+    SkDebugf("SVGSrc::SVGSrc\n");
     fDom = SkSVGDOM::Builder().setResourceProvider(std::move(rp))
                               .make(*stream);
     if (!fDom) {
