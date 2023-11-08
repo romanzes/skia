@@ -794,11 +794,11 @@ private:
 static SkCodec::Result read_header(SkStream* stream, SkPngChunkReader* chunkReader,
                                    SkCodec** outCodec,
                                    png_structp* png_ptrp, png_infop* info_ptrp) {
-    SkDebugf("read_header (1)\n");
     // The image is known to be a PNG. Decode enough to know the SkImageInfo.
     png_structp png_ptr = png_create_read_struct(PNG_LIBPNG_VER_STRING, nullptr,
                                                  sk_error_fn, sk_warning_fn);
     if (!png_ptr) {
+        SkDebugf("read_header (1)\n");
         return SkCodec::kInternalError;
     }
 
@@ -812,12 +812,14 @@ static SkCodec::Result read_header(SkStream* stream, SkPngChunkReader* chunkRead
 
     png_infop info_ptr = png_create_info_struct(png_ptr);
     if (info_ptr == nullptr) {
+        SkDebugf("read_header (2)\n");
         return SkCodec::kInternalError;
     }
 
     autoClean.setInfoPtr(info_ptr);
 
     if (setjmp(PNG_JMPBUF(png_ptr))) {
+        SkDebugf("read_header (3)\n");
         return SkCodec::kInvalidInput;
     }
 
@@ -834,6 +836,7 @@ static SkCodec::Result read_header(SkStream* stream, SkPngChunkReader* chunkRead
     const bool decodedBounds = autoClean.decodeBounds();
 
     if (!decodedBounds) {
+        SkDebugf("read_header (4)\n");
         return SkCodec::kIncompleteInput;
     }
 
@@ -849,6 +852,7 @@ static SkCodec::Result read_header(SkStream* stream, SkPngChunkReader* chunkRead
     if (outCodec) {
         SkASSERT(*outCodec);
     }
+    SkDebugf("read_header (5)\n");
     return SkCodec::kSuccess;
 }
 
