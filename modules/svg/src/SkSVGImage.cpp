@@ -38,6 +38,7 @@ static sk_sp<SkImage> LoadImage(const sk_sp<skresources::ResourceProvider>& rp,
     sk_sp<skresources::ImageAsset> imageAsset;
     switch (href.type()) {
         case SkSVGIRI::Type::kDataURI:
+            SkDebugf("SkSVGIRI::Type::kDataURI\n");
             imageAsset = rp->loadImageAsset("", href.iri().c_str(), "");
             break;
         case SkSVGIRI::Type::kNonlocal: {
