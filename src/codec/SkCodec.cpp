@@ -191,6 +191,7 @@ std::unique_ptr<SkCodec> SkCodec::MakeFromStream(
     auto decoders = SkCodecs::get_decoders();
     for (const SkCodecs::Decoder& proc : decoders) {
         if (proc.isFormat(buffer, bytesRead)) {
+            SkDebugf("proc.id: %s\n", proc.id);
             // png and heif are special, since we want to be able to supply a SkPngChunkReader
             // or SelectionPolicy respectively
             if (proc.id == "png") {
