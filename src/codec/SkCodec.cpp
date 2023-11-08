@@ -163,6 +163,8 @@ std::unique_ptr<SkCodec> SkCodec::MakeFromStream(
 
     char buffer[bytesToRead];
     size_t bytesRead = stream->peek(buffer, bytesToRead);
+    SkDebugf("bytesRead: %d\n", bytesRead);
+    SkDebugf("bytesToRead: %d\n", bytesToRead);
 
     // It is also possible to have a complete image less than bytesToRead bytes
     // (e.g. a 1 x 1 wbmp), meaning peek() would return less than bytesToRead.
@@ -212,8 +214,6 @@ std::unique_ptr<SkCodec> SkCodec::MakeFromStream(
         return rawFallback(std::move(stream), outResult, nullptr);
     }
 
-    SkDebugf("bytesRead: %d\n", bytesRead);
-    SkDebugf("bytesToRead: %d\n", bytesToRead);
     if (bytesRead < bytesToRead) {
         *outResult = kIncompleteInput;
     } else {
