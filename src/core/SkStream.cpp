@@ -302,6 +302,7 @@ SkMemoryStream::SkMemoryStream(const void* src, size_t size, bool copyData) {
 SkMemoryStream::SkMemoryStream(sk_sp<SkData> data) : fData(std::move(data)) {
     SkDebugf("SkMemoryStream::SkMemoryStream (4)\n");
     if (nullptr == fData) {
+        SkDebugf("fData is null\n");
         fData = SkData::MakeEmpty();
     }
     fOffset = 0;
