@@ -160,11 +160,11 @@ std::unique_ptr<SkCodec> SkCodec::MakeFromStream(
     }
 
     constexpr size_t bytesToRead = MinBufferedBytesNeeded();
+    SkDebugf("bytesToRead: %d\n", bytesToRead);
 
     char buffer[bytesToRead];
     size_t bytesRead = stream->peek(buffer, bytesToRead);
-    SkDebugf("bytesRead: %d\n", bytesRead);
-    SkDebugf("bytesToRead: %d\n", bytesToRead);
+    SkDebugf("bytesRead (1): %d\n", bytesRead);
 
     // It is also possible to have a complete image less than bytesToRead bytes
     // (e.g. a 1 x 1 wbmp), meaning peek() would return less than bytesToRead.
@@ -182,6 +182,7 @@ std::unique_ptr<SkCodec> SkCodec::MakeFromStream(
         // rewinding.
         // Attempt to read() and pass the actual amount read to the decoder.
         bytesRead = stream->read(buffer, bytesToRead);
+        SkDebugf("bytesRead (2): %d\n", bytesRead);
         if (!stream->rewind()) {
             SkCodecPrintf("Encoded image data could not peek or rewind to determine format!\n");
             *outResult = kCouldNotRewind;
