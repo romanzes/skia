@@ -184,10 +184,13 @@ std::unique_ptr<SkCodec> SkCodec::MakeFromStream(
         bytesRead = stream->read(buffer, bytesToRead);
         SkDebugf("bytesRead (2): %d\n", bytesRead);
         if (!stream->rewind()) {
+            SkDebugf("stream doesn't support rewinding\n");
             SkCodecPrintf("Encoded image data could not peek or rewind to determine format!\n");
             *outResult = kCouldNotRewind;
             SkDebugf("SkCodec::MakeFromStream (3)\n");
             return nullptr;
+        } else {
+            SkDebugf("stream supports rewinding\n");
         }
     }
 
