@@ -353,6 +353,7 @@ size_t SkMemoryStream::read(void* buffer, size_t size) {
 }
 
 size_t SkMemoryStream::peek(void* buffer, size_t size) const {
+    SkDebugf("SkMemoryStream::peek\n");
     SkASSERT(buffer != nullptr);
 
     const size_t currentOffset = fOffset;
@@ -794,6 +795,7 @@ public:
     }
 
     size_t peek(void* buff, size_t bytesToPeek) const override {
+        SkDebugf("SkBlockMemoryStream::peek\n");
         SkASSERT(buff != nullptr);
 
         bytesToPeek = std::min(bytesToPeek, fSize - fOffset);
