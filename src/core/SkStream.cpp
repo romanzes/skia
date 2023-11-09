@@ -282,21 +282,25 @@ static sk_sp<SkData> newFromParams(const void* src, size_t size, bool copyData) 
 }
 
 SkMemoryStream::SkMemoryStream() {
+    SkDebugf("SkMemoryStream::SkMemoryStream (1)\n");
     fData = SkData::MakeEmpty();
     fOffset = 0;
 }
 
 SkMemoryStream::SkMemoryStream(size_t size) {
+    SkDebugf("SkMemoryStream::SkMemoryStream (2)\n");
     fData = SkData::MakeUninitialized(size);
     fOffset = 0;
 }
 
 SkMemoryStream::SkMemoryStream(const void* src, size_t size, bool copyData) {
+    SkDebugf("SkMemoryStream::SkMemoryStream (3)\n");
     fData = newFromParams(src, size, copyData);
     fOffset = 0;
 }
 
 SkMemoryStream::SkMemoryStream(sk_sp<SkData> data) : fData(std::move(data)) {
+    SkDebugf("SkMemoryStream::SkMemoryStream (4)\n");
     if (nullptr == fData) {
         fData = SkData::MakeEmpty();
     }
@@ -316,16 +320,19 @@ std::unique_ptr<SkMemoryStream> SkMemoryStream::Make(sk_sp<SkData> data) {
 }
 
 void SkMemoryStream::setMemoryOwned(const void* src, size_t size) {
+    SkDebugf("SkMemoryStream::setMemoryOwned\n");
     fData = SkData::MakeFromMalloc(src, size);
     fOffset = 0;
 }
 
 void SkMemoryStream::setMemory(const void* src, size_t size, bool copyData) {
+    SkDebugf("SkMemoryStream::setMemory\n");
     fData = newFromParams(src, size, copyData);
     fOffset = 0;
 }
 
 void SkMemoryStream::setData(sk_sp<SkData> data) {
+    SkDebugf("SkMemoryStream::setData\n");
     if (nullptr == data) {
         fData = SkData::MakeEmpty();
     } else {
