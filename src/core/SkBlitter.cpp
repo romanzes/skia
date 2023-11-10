@@ -684,6 +684,7 @@ SkBlitter* SkBlitter::Choose(const SkPixmap& device,
                              bool drawCoverage,
                              sk_sp<SkShader> clipShader,
                              const SkSurfaceProps& props) {
+    SkDebugf("SkBlitter::Choose\n");
     SkASSERT(alloc);
 
     if (kUnknown_SkColorType == device.colorType()) {
