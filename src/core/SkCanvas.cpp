@@ -2147,16 +2147,17 @@ static SkSamplingOptions clean_sampling_for_constraint(
 void SkCanvas::onDrawImageRect2(const SkImage* image, const SkRect& src, const SkRect& dst,
                                 const SkSamplingOptions& sampling, const SkPaint* paint,
                                 SrcRectConstraint constraint) {
-    SkDebugf("SkCanvas::onDrawImageRect2\n");
     SkPaint realPaint = clean_paint_for_drawImage(paint);
     SkSamplingOptions realSampling = clean_sampling_for_constraint(sampling, constraint);
 
     if (this->internalQuickReject(dst, realPaint)) {
+        SkDebugf("SkCanvas::onDrawImageRect2 (1)\n");
         return;
     }
 
     if (this->topDevice()->drawAsTiledImageRect(this, image, &src, dst, realSampling,
                                                 realPaint, constraint)) {
+        SkDebugf("SkCanvas::onDrawImageRect2 (2)\n");
         return;
     }
 
@@ -2164,6 +2165,7 @@ void SkCanvas::onDrawImageRect2(const SkImage* image, const SkRect& src, const S
                                    image->isOpaque() ? kOpaque_ShaderOverrideOpacity
                                                      : kNotOpaque_ShaderOverrideOpacity);
     if (layer) {
+        SkDebugf("SkCanvas::onDrawImageRect2 (3)\n");
         this->topDevice()->drawImageRect(image, &src, dst, realSampling, layer->paint(),
                                          constraint);
     }
