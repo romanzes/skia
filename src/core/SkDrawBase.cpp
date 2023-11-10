@@ -157,11 +157,11 @@ static void draw_rect_as_path(const SkDrawBase& orig,
 
 void SkDrawBase::drawRect(const SkRect& prePaintRect, const SkPaint& paint,
                       const SkMatrix* paintMatrix, const SkRect* postPaintRect) const {
-    SkDebugf("SkDrawBase::drawRect\n");
     SkDEBUGCODE(this->validate();)
 
     // nothing to draw
     if (fRC->isEmpty()) {
+        SkDebugf("SkDrawBase::drawRect (1)\n");
         return;
     }
 
@@ -178,6 +178,7 @@ void SkDrawBase::drawRect(const SkRect& prePaintRect, const SkPaint& paint,
 
     if (kPath_RectType == rtype) {
         draw_rect_as_path(*this, prePaintRect, paint, *matrix);
+        SkDebugf("SkDrawBase::drawRect (2)\n");
         return;
     }
 
@@ -202,16 +203,19 @@ void SkDrawBase::drawRect(const SkRect& prePaintRect, const SkPaint& paint,
         }
     }
     if (SkPathPriv::TooBigForMath(bbox)) {
+        SkDebugf("SkDrawBase::drawRect (3)\n");
         return;
     }
 
     if (!SkRectPriv::FitsInFixed(bbox) && rtype != kHair_RectType) {
         draw_rect_as_path(*this, prePaintRect, paint, *matrix);
+        SkDebugf("SkDrawBase::drawRect (4)\n");
         return;
     }
 
     SkIRect ir = bbox.roundOut();
     if (fRC->quickReject(ir)) {
+        SkDebugf("SkDrawBase::drawRect (5)\n");
         return;
     }
 
@@ -229,6 +233,7 @@ void SkDrawBase::drawRect(const SkRect& prePaintRect, const SkPaint& paint,
             } else {
                 SkScan::FillRect(devRect, clip, blitter);
             }
+            SkDebugf("SkDrawBase::drawRect (6)\n");
             break;
         case kStroke_RectType:
             if (paint.isAntiAlias()) {
@@ -236,6 +241,7 @@ void SkDrawBase::drawRect(const SkRect& prePaintRect, const SkPaint& paint,
             } else {
                 SkScan::FrameRect(devRect, strokeSize, clip, blitter);
             }
+            SkDebugf("SkDrawBase::drawRect (7)\n");
             break;
         case kHair_RectType:
             if (paint.isAntiAlias()) {
@@ -243,6 +249,7 @@ void SkDrawBase::drawRect(const SkRect& prePaintRect, const SkPaint& paint,
             } else {
                 SkScan::HairRect(devRect, clip, blitter);
             }
+            SkDebugf("SkDrawBase::drawRect (8)\n");
             break;
         default:
             SkDEBUGFAIL("bad rtype");
