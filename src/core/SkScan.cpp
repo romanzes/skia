@@ -27,15 +27,17 @@ void SkScan::FillIRect(const SkIRect& r, const SkRegion* clip,
                 const SkIRect& clipBounds = clip->getBounds();
 
                 if (clipBounds.contains(r)) {
+                    SkDebugf("SkScan::FillIRect (2)\n");
                     blitrect(blitter, r);
                 } else {
+                    SkDebugf("SkScan::FillIRect (3)\n");
                     SkIRect rr = r;
                     if (rr.intersect(clipBounds)) {
+                        SkDebugf("SkScan::FillIRect (4)\n");
                         blitrect(blitter, rr);
                     }
                 }
             } else {
-                SkDebugf("SkScan::FillIRect (3)\n");
                 SkRegion::Cliperator    cliper(*clip, r);
                 const SkIRect&          rr = cliper.rect();
 
@@ -45,7 +47,6 @@ void SkScan::FillIRect(const SkIRect& r, const SkRegion* clip,
                 }
             }
         } else {
-            SkDebugf("SkScan::FillIRect (4)\n");
             blitrect(blitter, r);
         }
     }
