@@ -302,13 +302,13 @@ static bool clipHandlesSprite(const SkRasterClip& clip, int x, int y, const SkPi
 void SkDraw::drawBitmap(const SkBitmap& bitmap, const SkMatrix& prematrix,
                         const SkRect* dstBounds, const SkSamplingOptions& sampling,
                         const SkPaint& origPaint) const {
-    SkDebugf("SkDraw::drawBitmap\n");
     SkDEBUGCODE(this->validate();)
 
     // nothing to draw
     if (fRC->isEmpty() ||
             bitmap.width() == 0 || bitmap.height() == 0 ||
             bitmap.colorType() == kUnknown_SkColorType) {
+        SkDebugf("SkDraw::drawBitmap (1)\n");
         return;
     }
 
@@ -320,6 +320,7 @@ void SkDraw::drawBitmap(const SkBitmap& bitmap, const SkMatrix& prematrix,
     SkMatrix matrix = *fCTM * prematrix;
 
     if (clipped_out(matrix, *fRC, bitmap.width(), bitmap.height())) {
+        SkDebugf("SkDraw::drawBitmap (2)\n");
         return;
     }
 
@@ -331,6 +332,7 @@ void SkDraw::drawBitmap(const SkBitmap& bitmap, const SkMatrix& prematrix,
         //
         SkPixmap pmap;
         if (!bitmap.peekPixels(&pmap)) {
+            SkDebugf("SkDraw::drawBitmap (3)\n");
             return;
         }
         int ix = SkScalarRoundToInt(matrix.getTranslateX());
@@ -343,6 +345,7 @@ void SkDraw::drawBitmap(const SkBitmap& bitmap, const SkMatrix& prematrix,
             if (blitter) {
                 SkScan::FillIRect(SkIRect::MakeXYWH(ix, iy, pmap.width(), pmap.height()),
                                   *fRC, blitter);
+                SkDebugf("SkDraw::drawBitmap (4)\n");
                 return;
             }
             // if !blitter, then we fall-through to the slower case
@@ -360,6 +363,7 @@ void SkDraw::drawBitmap(const SkBitmap& bitmap, const SkMatrix& prematrix,
 #if defined(SK_SUPPORT_LEGACY_ALPHA_BITMAP_AS_COVERAGE)
     if (bitmap.colorType() == kAlpha_8_SkColorType && !paint->getColorFilter()) {
         draw.drawBitmapAsMask(bitmap, sampling, *paint);
+        SkDebugf("SkDraw::drawBitmap (5)\n");
         return;
     }
 #endif
@@ -367,8 +371,10 @@ void SkDraw::drawBitmap(const SkBitmap& bitmap, const SkMatrix& prematrix,
     SkPaint paintWithShader = make_paint_with_image(*paint, bitmap, sampling);
     const SkRect srcBounds = SkRect::MakeIWH(bitmap.width(), bitmap.height());
     if (dstBounds) {
+        SkDebugf("SkDraw::drawBitmap (6)\n");
         this->drawRect(srcBounds, paintWithShader, &prematrix, dstBounds);
     } else {
+        SkDebugf("SkDraw::drawBitmap (7)\n");
         draw.drawRect(srcBounds, paintWithShader);
     }
 }
