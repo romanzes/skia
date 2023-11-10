@@ -445,6 +445,7 @@ void SkRasterPipeline::build_highp_pipeline(SkRasterPipelineStage* ip) const {
         const int rewindIndex = (int)Op::stack_checkpoint;
         prepend_to_pipeline(ip, SkOpts::ops_highp[rewindIndex], fRewindCtx);
     }
+
 }
 
 SkRasterPipeline::StartPipelineFn SkRasterPipeline::build_pipeline(
@@ -457,6 +458,7 @@ SkRasterPipeline::StartPipelineFn SkRasterPipeline::build_pipeline(
 
     this->build_highp_pipeline(ip);
     SkDebugf("SkRasterPipeline::build_pipeline (2)\n");
+    this->dump();
     return SkOpts::start_pipeline_highp;
 }
 
