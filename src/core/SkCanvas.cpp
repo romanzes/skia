@@ -2147,6 +2147,7 @@ static SkSamplingOptions clean_sampling_for_constraint(
 void SkCanvas::onDrawImageRect2(const SkImage* image, const SkRect& src, const SkRect& dst,
                                 const SkSamplingOptions& sampling, const SkPaint* paint,
                                 SrcRectConstraint constraint) {
+    SkDebugf("SkCanvas::onDrawImageRect2\n");
     SkPaint realPaint = clean_paint_for_drawImage(paint);
     SkSamplingOptions realSampling = clean_sampling_for_constraint(sampling, constraint);
 
