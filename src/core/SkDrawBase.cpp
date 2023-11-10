@@ -229,11 +229,12 @@ void SkDrawBase::drawRect(const SkRect& prePaintRect, const SkPaint& paint,
     switch (rtype) {
         case kFill_RectType:
             if (paint.isAntiAlias()) {
+                SkDebugf("SkDrawBase::drawRect (6)\n");
                 SkScan::AntiFillRect(devRect, clip, blitter);
             } else {
+                SkDebugf("SkDrawBase::drawRect (7)\n");
                 SkScan::FillRect(devRect, clip, blitter);
             }
-            SkDebugf("SkDrawBase::drawRect (6)\n");
             break;
         case kStroke_RectType:
             if (paint.isAntiAlias()) {
@@ -241,7 +242,7 @@ void SkDrawBase::drawRect(const SkRect& prePaintRect, const SkPaint& paint,
             } else {
                 SkScan::FrameRect(devRect, strokeSize, clip, blitter);
             }
-            SkDebugf("SkDrawBase::drawRect (7)\n");
+            SkDebugf("SkDrawBase::drawRect (8)\n");
             break;
         case kHair_RectType:
             if (paint.isAntiAlias()) {
@@ -249,7 +250,7 @@ void SkDrawBase::drawRect(const SkRect& prePaintRect, const SkPaint& paint,
             } else {
                 SkScan::HairRect(devRect, clip, blitter);
             }
-            SkDebugf("SkDrawBase::drawRect (8)\n");
+            SkDebugf("SkDrawBase::drawRect (9)\n");
             break;
         default:
             SkDEBUGFAIL("bad rtype");
