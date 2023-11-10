@@ -657,6 +657,7 @@ bool SkImageShader::appendStages(const SkStageRec& rec, const SkShaders::MatrixR
         && sampling.mipmap != SkMipmapMode::kLinear
         && fTileModeX == SkTileMode::kClamp && fTileModeY == SkTileMode::kClamp) {
 
+        SkDebugf("p->append(SkRasterPipelineOp::bilerp_clamp_8888, upper.gather);\n");
         p->append(SkRasterPipelineOp::bilerp_clamp_8888, upper.gather);
         if (ct == kBGRA_8888_SkColorType) {
             p->append(SkRasterPipelineOp::swap_rb);
