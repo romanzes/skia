@@ -394,6 +394,7 @@ void SkBitmapDevice::drawPath(const SkPath& path,
 void SkBitmapDevice::drawBitmap(const SkBitmap& bitmap, const SkMatrix& matrix,
                                 const SkRect* dstOrNull, const SkSamplingOptions& sampling,
                                 const SkPaint& paint) {
+    SkDebugf("SkBitmapDevice::drawBitmap\n");
     const SkRect* bounds = dstOrNull;
     SkRect storage;
     if (!bounds && SkDrawTiler::NeedsTiling(this)) {

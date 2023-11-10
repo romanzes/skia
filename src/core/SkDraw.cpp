@@ -302,6 +302,7 @@ static bool clipHandlesSprite(const SkRasterClip& clip, int x, int y, const SkPi
 void SkDraw::drawBitmap(const SkBitmap& bitmap, const SkMatrix& prematrix,
                         const SkRect* dstBounds, const SkSamplingOptions& sampling,
                         const SkPaint& origPaint) const {
+    SkDebugf("SkDraw::drawBitmap\n");
     SkDEBUGCODE(this->validate();)
 
     // nothing to draw
