@@ -376,10 +376,12 @@ void SkRasterPipelineBlitter::blitRect(int x, int y, int w, int h) {
 void SkRasterPipelineBlitter::blitRectWithTrace(int x, int y, int w, int h, bool trace) {
     if (fMemset2D) {
         fMemset2D(&fDst, x,y, w,h, fMemsetColor);
+        SkDebugf("SkRasterPipelineBlitter::blitRectWithTrace (1)\n");
         return;
     }
 
     if (!fBlitRect) {
+        SkDebugf("SkRasterPipelineBlitter::blitRectWithTrace (2)\n");
         SkRasterPipeline p(fAlloc);
         p.extend(fColorPipeline);
         p.append_clamp_if_normalized(fDst.info());
@@ -389,17 +391,21 @@ void SkRasterPipelineBlitter::blitRectWithTrace(int x, int y, int w, int h, bool
                 && !fDst.colorSpace()
                 && fDst.info().alphaType() != kUnpremul_SkAlphaType
                 && fDitherRate == 0.0f) {
+            SkDebugf("SkRasterPipelineBlitter::blitRectWithTrace (3)\n");
             if (fDst.info().colorType() == kBGRA_8888_SkColorType) {
                 p.append(SkRasterPipelineOp::swap_rb);
             }
             this->append_clip_scale(&p);
             p.append(SkRasterPipelineOp::srcover_rgba_8888, &fDstPtr);
         } else {
+            SkDebugf("SkRasterPipelineBlitter::blitRectWithTrace (4)\n");
             if (fBlendMode != SkBlendMode::kSrc) {
+                SkDebugf("SkRasterPipelineBlitter::blitRectWithTrace (5)\n");
                 this->append_load_dst(&p);
                 p.extend(fBlendPipeline);
                 this->append_clip_lerp(&p);
             } else if (fClipShaderBuffer) {
+                SkDebugf("SkRasterPipelineBlitter::blitRectWithTrace (6)\n");
                 this->append_load_dst(&p);
                 this->append_clip_lerp(&p);
             }
