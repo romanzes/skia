@@ -419,7 +419,6 @@ static inline bool CanApplyDstMatrixAsCTM(const SkMatrix& m, const SkPaint& pain
 void SkBitmapDevice::drawImageRect(const SkImage* image, const SkRect* src, const SkRect& dst,
                                    const SkSamplingOptions& sampling, const SkPaint& paint,
                                    SkCanvas::SrcRectConstraint constraint) {
-    SkDebugf("SkBitmapDevice::drawImageRect\n");
     SkASSERT(dst.isFinite());
     SkASSERT(dst.isSorted());
 
@@ -427,6 +426,7 @@ void SkBitmapDevice::drawImageRect(const SkImage* image, const SkRect* src, cons
     // TODO: Elevate direct context requirement to public API and remove cheat.
     auto dContext = as_IB(image)->directContext();
     if (!as_IB(image)->getROPixels(dContext, &bitmap)) {
+        SkDebugf("SkBitmapDevice::drawImageRect (1)\n");
         return;
     }
 
@@ -451,11 +451,13 @@ void SkBitmapDevice::drawImageRect(const SkImage* image, const SkRect* src, cons
     if (src) {
         if (!bitmapBounds.contains(*src)) {
             if (!tmpSrc.intersect(bitmapBounds)) {
+                SkDebugf("SkBitmapDevice::drawImageRect (2)\n");
                 return; // nothing to draw
             }
             // recompute dst, based on the smaller tmpSrc
             matrix.mapRect(&tmpDst, tmpSrc);
             if (!tmpDst.isFinite()) {
+                SkDebugf("SkBitmapDevice::drawImageRect (3)\n");
                 return;
             }
             dstPtr = &tmpDst;
@@ -476,6 +478,7 @@ void SkBitmapDevice::drawImageRect(const SkImage* image, const SkRect* src, cons
         // the bitmap, we extract a subset.
         const SkIRect srcIR = tmpSrc.roundOut();
         if (!bitmap.extractSubset(&tmpBitmap, srcIR)) {
+            SkDebugf("SkBitmapDevice::drawImageRect (4)\n");
             return;
         }
         bitmapPtr = &tmpBitmap;
@@ -510,6 +513,7 @@ void SkBitmapDevice::drawImageRect(const SkImage* image, const SkRect* src, cons
         // matrix with the CTM, and try to call drawSprite if it can. If not,
         // it will make a shader and call drawRect, as we do below.
         if (CanApplyDstMatrixAsCTM(matrix, paint)) {
+            SkDebugf("SkBitmapDevice::drawImageRect (5)\n");
             this->drawBitmap(*bitmapPtr, matrix, dstPtr, sampling, paint);
             return;
         }
@@ -521,6 +525,7 @@ void SkBitmapDevice::drawImageRect(const SkImage* image, const SkRect* src, cons
     auto s = SkMakeBitmapShaderForPaint(paint, *bitmapPtr, SkTileMode::kClamp, SkTileMode::kClamp,
                                         sampling, &matrix, kNever_SkCopyPixelsMode);
     if (!s) {
+        SkDebugf("SkBitmapDevice::drawImageRect (6)\n");
         return;
     }
 
@@ -530,6 +535,7 @@ void SkBitmapDevice::drawImageRect(const SkImage* image, const SkRect* src, cons
 
     // Call ourself, in case the subclass wanted to share this setup code
     // but handle the drawRect code themselves.
+    SkDebugf("SkBitmapDevice::drawImageRect (7)\n");
     this->drawRect(*dstPtr, paintWithShader);
 }
 
