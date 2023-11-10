@@ -451,10 +451,12 @@ SkRasterPipeline::StartPipelineFn SkRasterPipeline::build_pipeline(
         SkRasterPipelineStage* ip) const {
     // We try to build a lowp pipeline first; if that fails, we fall back to a highp float pipeline.
     if (this->build_lowp_pipeline(ip)) {
+        SkDebugf("SkRasterPipeline::build_pipeline (1)\n");
         return SkOpts::start_pipeline_lowp;
     }
 
     this->build_highp_pipeline(ip);
+    SkDebugf("SkRasterPipeline::build_pipeline (2)\n");
     return SkOpts::start_pipeline_highp;
 }
 
