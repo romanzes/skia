@@ -157,6 +157,7 @@ static void draw_rect_as_path(const SkDrawBase& orig,
 
 void SkDrawBase::drawRect(const SkRect& prePaintRect, const SkPaint& paint,
                       const SkMatrix* paintMatrix, const SkRect* postPaintRect) const {
+    SkDebugf("SkDrawBase::drawRect\n");
     SkDEBUGCODE(this->validate();)
 
     // nothing to draw
