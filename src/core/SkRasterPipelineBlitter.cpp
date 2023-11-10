@@ -369,6 +369,7 @@ void SkRasterPipelineBlitter::blitH(int x, int y, int w) {
 }
 
 void SkRasterPipelineBlitter::blitRect(int x, int y, int w, int h) {
+    SkDebugf("SkRasterPipelineBlitter::blitRect\n");
     this->blitRectWithTrace(x, y, w, h, true);
 }
 
