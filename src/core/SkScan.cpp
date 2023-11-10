@@ -57,6 +57,7 @@ void SkScan::FillXRect(const SkXRect& xr, const SkRegion* clip,
 
 void SkScan::FillRect(const SkRect& r, const SkRegion* clip,
                        SkBlitter* blitter) {
+    SkDebugf("SkScan::FillRect\n");
     SkIRect ir;
 
     r.round(&ir);
@@ -68,15 +69,18 @@ void SkScan::FillRect(const SkRect& r, const SkRegion* clip,
 void SkScan::FillIRect(const SkIRect& r, const SkRasterClip& clip,
                        SkBlitter* blitter) {
     if (clip.isEmpty() || r.isEmpty()) {
+        SkDebugf("SkScan::FillIRect (1)\n");
         return;
     }
 
     if (clip.isBW()) {
         FillIRect(r, &clip.bwRgn(), blitter);
+        SkDebugf("SkScan::FillIRect (2)\n");
         return;
     }
 
     SkAAClipBlitterWrapper wrapper(clip, blitter);
+    SkDebugf("SkScan::FillIRect (3)\n");
     FillIRect(r, &wrapper.getRgn(), wrapper.getBlitter());
 }
 
