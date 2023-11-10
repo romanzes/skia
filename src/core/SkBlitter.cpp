@@ -131,6 +131,7 @@ void SkBlitter::blitV(int x, int y, int height, SkAlpha alpha) {
 }
 
 void SkBlitter::blitRect(int x, int y, int width, int height) {
+    SkDebugf("SkBlitter::blitRect\n");
     SkASSERT(width > 0);
     while (--height >= 0) {
         this->blitH(x, y++, width);

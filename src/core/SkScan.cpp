@@ -27,13 +27,13 @@ void SkScan::FillIRect(const SkIRect& r, const SkRegion* clip,
                 const SkIRect& clipBounds = clip->getBounds();
 
                 if (clipBounds.contains(r)) {
-                    SkDebugf("SkScan::FillIRect (2)\n");
+                    SkDebugf("SkScan::FillIRect (3)\n");
                     blitrect(blitter, r);
                 } else {
-                    SkDebugf("SkScan::FillIRect (3)\n");
+                    SkDebugf("SkScan::FillIRect (4)\n");
                     SkIRect rr = r;
                     if (rr.intersect(clipBounds)) {
-                        SkDebugf("SkScan::FillIRect (4)\n");
+                        SkDebugf("SkScan::FillIRect (5)\n");
                         blitrect(blitter, rr);
                     }
                 }
