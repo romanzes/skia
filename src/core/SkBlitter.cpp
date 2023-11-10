@@ -684,10 +684,10 @@ SkBlitter* SkBlitter::Choose(const SkPixmap& device,
                              bool drawCoverage,
                              sk_sp<SkShader> clipShader,
                              const SkSurfaceProps& props) {
-    SkDebugf("SkBlitter::Choose\n");
     SkASSERT(alloc);
 
     if (kUnknown_SkColorType == device.colorType()) {
+        SkDebugf("SkBlitter::Choose (1)\n");
         return alloc->make<SkNullBlitter>();
     }
 
@@ -702,6 +702,7 @@ SkBlitter* SkBlitter::Choose(const SkPixmap& device,
                     paint.writable()->setBlendMode(SkBlendMode::kSrcOver);
                     break;
                 case SkBlendFastPath::kSkipDrawing:
+                    SkDebugf("SkBlitter::Choose (2)\n");
                     return alloc->make<SkNullBlitter>();
                 default:
                     break;
@@ -727,8 +728,10 @@ SkBlitter* SkBlitter::Choose(const SkPixmap& device,
         if (device.colorType() == kAlpha_8_SkColorType) {
             SkASSERT(!paint->getShader());
             SkASSERT(paint->isSrcOver());
+            SkDebugf("SkBlitter::Choose (3)\n");
             return alloc->make<SkA8_Coverage_Blitter>(device, *paint);
         }
+        SkDebugf("SkBlitter::Choose (4)\n");
         return alloc->make<SkNullBlitter>();
     }
 
@@ -744,6 +747,7 @@ SkBlitter* SkBlitter::Choose(const SkPixmap& device,
 
     // We'll end here for many interesting cases: color spaces, color filters, most color types.
     if (clipShader || !UseLegacyBlitter(device, *paint, ctm)) {
+        SkDebugf("SkBlitter::Choose (5)\n");
         return CreateSkRPBlitter();
     }
 
@@ -766,17 +770,22 @@ SkBlitter* SkBlitter::Choose(const SkPixmap& device,
 
         // Creating the context isn't always possible... try fallbacks before giving up.
         if (!shaderContext) {
+            SkDebugf("SkBlitter::Choose (6)\n");
             return CreateSkRPBlitter();
         }
     }
 
     if (shaderContext) {
+        SkDebugf("SkBlitter::Choose (7)\n");
         return alloc->make<SkARGB32_Shader_Blitter>(device, *paint, shaderContext);
     } else if (paint->getColor() == SK_ColorBLACK) {
+        SkDebugf("SkBlitter::Choose (8)\n");
         return alloc->make<SkARGB32_Black_Blitter>(device, *paint);
     } else if (paint->getAlpha() == 0xFF) {
+        SkDebugf("SkBlitter::Choose (9)\n");
         return alloc->make<SkARGB32_Opaque_Blitter>(device, *paint);
     } else {
+        SkDebugf("SkBlitter::Choose (10)\n");
         return alloc->make<SkARGB32_Blitter>(device, *paint);
     }
 }
