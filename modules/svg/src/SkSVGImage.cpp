@@ -90,7 +90,7 @@ void SkSVGImage::onRender(const SkSVGRenderContext& ctx) const {
 
     // TODO: image-rendering property
     ctx.canvas()->drawImageRect(
-            imgInfo.fImage, imgInfo.fDst, SkSamplingOptions(SkFilterMode::kLinear));
+            imgInfo.fImage, imgInfo.fDst, SkSamplingOptions(SkFilterMode::kLinear, SkMipmapMode::kLinear));
 }
 
 SkPath SkSVGImage::onAsPath(const SkSVGRenderContext&) const { return {}; }
