@@ -419,6 +419,7 @@ static inline bool CanApplyDstMatrixAsCTM(const SkMatrix& m, const SkPaint& pain
 void SkBitmapDevice::drawImageRect(const SkImage* image, const SkRect* src, const SkRect& dst,
                                    const SkSamplingOptions& sampling, const SkPaint& paint,
                                    SkCanvas::SrcRectConstraint constraint) {
+    SkDebugf("SkBitmapDevice::drawImageRect\n");
     SkASSERT(dst.isFinite());
     SkASSERT(dst.isSorted());
 
