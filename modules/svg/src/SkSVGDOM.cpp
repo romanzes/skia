@@ -434,6 +434,7 @@ SkSVGDOM::SkSVGDOM(sk_sp<SkSVGSVG> root, sk_sp<SkFontMgr> fmgr,
 }
 
 void SkSVGDOM::render(SkCanvas* canvas) const {
+    SkDebugf("SkSVGDOM::render\n");
     TRACE_EVENT0("skia", TRACE_FUNC);
     if (fRoot) {
         SkSVGLengthContext       lctx(fContainerSize);
