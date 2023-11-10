@@ -107,7 +107,6 @@ SkBlitter* SkCreateRasterPipelineBlitter(const SkPixmap& dst,
                                          SkArenaAlloc* alloc,
                                          sk_sp<SkShader> clipShader,
                                          const SkSurfaceProps& props) {
-    SkDebugf("SkCreateRasterPipelineBlitter (1)\n");
     SkColorSpace* dstCS = dst.colorSpace();
     SkColorType dstCT = dst.colorType();
     SkColor4f dstPaintColor = paint_color_to_dst(paint, dst);
@@ -120,6 +119,7 @@ SkBlitter* SkCreateRasterPipelineBlitter(const SkPixmap& dst,
         shaderPipeline.append_constant_color(alloc, dstPaintColor.premul().vec());
         bool is_opaque    = dstPaintColor.fA == 1.0f,
              is_constant  = true;
+        SkDebugf("SkCreateRasterPipelineBlitter (1)\n");
         return SkRasterPipelineBlitter::Create(dst, paint, dstPaintColor, alloc, shaderPipeline,
                                                is_opaque, is_constant, std::move(clipShader));
     }
@@ -133,6 +133,7 @@ SkBlitter* SkCreateRasterPipelineBlitter(const SkPixmap& dst,
             shaderPipeline.append(SkRasterPipelineOp::scale_1_float,
                                   alloc->make<float>(dstPaintColor.fA));
         }
+        SkDebugf("SkCreateRasterPipelineBlitter (2)\n");
         return SkRasterPipelineBlitter::Create(dst, paint, dstPaintColor, alloc, shaderPipeline,
                                                is_opaque, is_constant, std::move(clipShader));
     }
@@ -147,7 +148,6 @@ SkBlitter* SkCreateRasterPipelineBlitter(const SkPixmap& dst,
                                          bool is_opaque,
                                          SkArenaAlloc* alloc,
                                          sk_sp<SkShader> clipShader) {
-    SkDebugf("SkCreateRasterPipelineBlitter (2)\n");
     bool is_constant = false;  // If this were the case, it'd be better to just set a paint color.
     return SkRasterPipelineBlitter::Create(dst, paint, paint_color_to_dst(paint, dst), alloc,
                                            shaderPipeline, is_opaque, is_constant,
