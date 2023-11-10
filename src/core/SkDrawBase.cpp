@@ -233,7 +233,7 @@ void SkDrawBase::drawRect(const SkRect& prePaintRect, const SkPaint& paint,
                 SkScan::AntiFillRect(devRect, clip, blitter);
             } else {
                 SkDebugf("SkDrawBase::drawRect (7)\n");
-                SkScan::FillRect(devRect, clip, blitter);
+                SkScan::AntiFillRect(devRect, clip, blitter);
             }
             break;
         case kStroke_RectType:
