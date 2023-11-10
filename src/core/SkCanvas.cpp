@@ -1317,6 +1317,7 @@ void SkCanvas::clipRect(const SkRect& rect, SkClipOp op, bool doAA) {
     if (!rect.isFinite()) {
         return;
     }
+    SkDebugf("Testing\n");
     this->checkForDeferredSave();
     ClipEdgeStyle edgeStyle = doAA ? kSoft_ClipEdgeStyle : kHard_ClipEdgeStyle;
     this->onClipRect(rect.makeSorted(), op, edgeStyle);
