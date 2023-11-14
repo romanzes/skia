@@ -1314,6 +1314,7 @@ void SkCanvas::resetMatrix() {
 //////////////////////////////////////////////////////////////////////////////
 
 void SkCanvas::clipRect(const SkRect& rect, SkClipOp op, bool doAA) {
+    SkDebugf("test\n");
     SK_DUMP_GOOGLE3_STACK();
     if (!rect.isFinite()) {
         return;
