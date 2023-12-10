@@ -77,6 +77,7 @@ SkSVGImage::ImageInfo SkSVGImage::LoadImage(const sk_sp<skresources::ResourcePro
 }
 
 void SkSVGImage::onRender(const SkSVGRenderContext& ctx) const {
+    SkDebugf("SkSVGImage::onRender\n");
     // Per spec: x, w, width, height attributes establish the new viewport.
     const SkSVGLengthContext& lctx = ctx.lengthContext();
     const SkRect viewPort = lctx.resolveRect(fX, fY, fWidth, fHeight);
