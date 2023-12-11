@@ -361,9 +361,10 @@ void SkSVGRenderContext::applyMask(const SkSVGFuncIRI& mask) {
 
     const auto* mask_node = static_cast<const SkSVGMask*>(node.get());
     const auto mask_bounds = mask_node->bounds(*this);
+    SkDebugf("mask bounds: %f, %f, %f, %f\n", mask_bounds.x(), mask_bounds.y(), mask_bounds.width(), mask_bounds.height());
 
     // Isolation/mask layer.
-//    fCanvas->saveLayer(mask_bounds, nullptr);
+    fCanvas->saveLayer(mask_bounds, nullptr);
 
     // Render and filter mask content.
     mask_node->renderMask(*this);
@@ -371,10 +372,10 @@ void SkSVGRenderContext::applyMask(const SkSVGFuncIRI& mask) {
     // Content layer
     SkPaint masking_paint;
     masking_paint.setBlendMode(SkBlendMode::kSrcIn);
-//    fCanvas->saveLayer(mask_bounds, &masking_paint);
+    fCanvas->saveLayer(mask_bounds, &masking_paint);
 
     // Content is also clipped to the specified mask bounds.
-//    fCanvas->clipRect(mask_bounds, true);
+    fCanvas->clipRect(mask_bounds, true);
 
     // At this point we're set up for content rendering.
     // The pending layers are restored in the destructor (render context scope exit).
