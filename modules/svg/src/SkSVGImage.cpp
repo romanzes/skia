@@ -100,7 +100,7 @@ void SkSVGImage::onRender(const SkSVGRenderContext& ctx) const {
     */
     SkDebugf("SkSVGImage::onRender: %f, %f, %f, %f\n", imgInfo.fDst.fLeft, imgInfo.fDst.fTop, imgInfo.fDst.fRight, imgInfo.fDst.fBottom);
     SkDebugf("scale: %f, %f\n", ctx.canvas()->getTotalMatrix().getScaleX(), ctx.canvas()->getTotalMatrix().getScaleY());
-    ctx.canvas()->Scale(0.5, 0.5);
+    ctx.canvas()->scale(0.5, 0.5);
     // END OF NON-SKIA-UPSTREAMED CHANGE
 }
 
