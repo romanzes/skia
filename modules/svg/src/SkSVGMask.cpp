@@ -58,6 +58,8 @@ void SkSVGMask::renderMask(const SkSVGRenderContext& ctx) const {
     lctx.canvas()->saveLayer(nullptr, &mask_filter);
 
     const auto obbt = ctx.transformForCurrentOBB(fMaskContentUnits);
+    SkDebugf("translating mask layer: %f, %f\n", obbt.offset.x, obbt.offset.y);
+    SkDebugf("scaling mask layer: %f, %f\n", obbt.scale.x, obbt.scale.y);
     lctx.canvas()->translate(obbt.offset.x, obbt.offset.y);
     lctx.canvas()->scale(obbt.scale.x, obbt.scale.y);
 
