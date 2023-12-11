@@ -48,6 +48,10 @@ void SkSVGMask::renderMask(const SkSVGRenderContext& ctx) const {
     mask_filter.setColorFilter(
                 SkColorFilters::Compose(SkLumaColorFilter::Make(), std::move(ci_filter)));
 
+    const auto obbt = ctx.transformForCurrentOBB(fMaskContentUnits);
+    lctx.canvas()->translate(obbt.offset.x, obbt.offset.y);
+    lctx.canvas()->scale(obbt.scale.x, obbt.scale.y);
+
     // Mask color filter layer.
     // Note: We could avoid this extra layer if we invert the stacking order
     // (mask/content -> content/mask, kSrcIn -> kDstIn) and apply the filter
@@ -55,10 +59,6 @@ void SkSVGMask::renderMask(const SkSVGRenderContext& ctx) const {
     // until after node content, which introduces extra state/complexity.
     // Something to consider if masking performance ever becomes an issue.
     lctx.canvas()->saveLayer(nullptr, &mask_filter);
-
-    const auto obbt = ctx.transformForCurrentOBB(fMaskContentUnits);
-    lctx.canvas()->translate(obbt.offset.x, obbt.offset.y);
-    lctx.canvas()->scale(obbt.scale.x, obbt.scale.y);
 
     for (const auto& child : fChildren) {
         child->render(lctx);
