@@ -53,7 +53,7 @@ static sk_sp<SkImage> LoadImage(const sk_sp<skresources::ResourceProvider>& rp,
 
     if (imageAsset) {
         auto result = imageAsset->getFrameData(0).image;
-        SkDebugf("LoadImage: %i, %i", result->width(), result->height());
+        SkDebugf("LoadImage: %i, %i\n", result->width(), result->height());
         return result;
     } else { return nullptr; }
 }
@@ -99,6 +99,7 @@ void SkSVGImage::onRender(const SkSVGRenderContext& ctx) const {
             imgInfo.fImage, imgInfo.fDst, SkSamplingOptions(SkFilterMode::kLinear));
     */
     SkDebugf("SkSVGImage::onRender: %f, %f, %f, %f\n", imgInfo.fDst.fLeft, imgInfo.fDst.fTop, imgInfo.fDst.fRight, imgInfo.fDst.fBottom);
+    SkDebugf("scale: %f, %f\n", ctx.canvas()->getTotalMatrix().getScaleX(), ctx.canvas()->getTotalMatrix().getScaleY());
     ctx.canvas()->drawImageRect(
             imgInfo.fImage, imgInfo.fDst, SkSamplingOptions(SkFilterMode::kLinear, SkMipmapMode::kLinear));
     // END OF NON-SKIA-UPSTREAMED CHANGE
