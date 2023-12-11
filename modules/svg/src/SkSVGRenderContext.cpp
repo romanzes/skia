@@ -363,7 +363,7 @@ void SkSVGRenderContext::applyMask(const SkSVGFuncIRI& mask) {
     const auto mask_bounds = mask_node->bounds(*this);
 
     // Isolation/mask layer.
-    fCanvas->saveLayer(mask_bounds, nullptr);
+//    fCanvas->saveLayer(mask_bounds, nullptr);
 
     // Render and filter mask content.
     mask_node->renderMask(*this);
