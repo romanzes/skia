@@ -94,8 +94,9 @@ void SkSVGImage::onRender(const SkSVGRenderContext& ctx) const {
     ctx.canvas()->drawImageRect(
             imgInfo.fImage, imgInfo.fDst, SkSamplingOptions(SkFilterMode::kLinear));
     */
-    ctx.canvas()->drawImageRect(imgInfo.fImage, imgInfo.fDst,
-                                SkSamplingOptions(SkFilterMode::kLinear, SkMipmapMode::kLinear));
+    SkDebugf("SkSVGImage::onRender: %i, %i, %i, %i\n", imgInfo.fDst->fLeft, imgInfo.fDst->fTop, imgInfo.fDst->fRight, imgInfo.fDst->fBottom);
+    ctx.canvas()->drawImageRect(
+            imgInfo.fImage, imgInfo.fDst, SkSamplingOptions(SkFilterMode::kLinear));
     // END OF NON-SKIA-UPSTREAMED CHANGE
 }
 
