@@ -55,7 +55,7 @@ void SkSVGMask::renderMask(const SkSVGRenderContext& ctx) const {
     // via the top (mask) layer paint.  That requires deferring mask rendering
     // until after node content, which introduces extra state/complexity.
     // Something to consider if masking performance ever becomes an issue.
-    lctx.canvas()->saveLayer(nullptr, &mask_filter);
+//    lctx.canvas()->saveLayer(nullptr, &mask_filter);
 
     const auto obbt = ctx.transformForCurrentOBB(fMaskContentUnits);
     lctx.canvas()->translate(obbt.offset.x, obbt.offset.y);
