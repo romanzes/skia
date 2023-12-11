@@ -102,7 +102,7 @@ void SkSVGImage::onRender(const SkSVGRenderContext& ctx) const {
     SkDebugf("scale: %f, %f\n", ctx.canvas()->getTotalMatrix().getScaleX(), ctx.canvas()->getTotalMatrix().getScaleY());
     ctx.canvas()->scale(0.5, 0.5);
     ctx.canvas()->drawImageRect(
-            imgInfo.fImage, dst, SkSamplingOptions(SkFilterMode::kLinear, SkMipmapMode::kLinear));
+            imgInfo.fImage, imgInfo.fDst, SkSamplingOptions(SkFilterMode::kLinear, SkMipmapMode::kLinear));
     // END OF NON-SKIA-UPSTREAMED CHANGE
 }
 
