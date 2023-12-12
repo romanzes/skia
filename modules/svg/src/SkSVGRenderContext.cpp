@@ -346,6 +346,9 @@ void SkSVGRenderContext::applyClip(const SkSVGFuncIRI& clip) {
 
     this->saveOnce();
 
+    SkRect clipBounds = clipPath.getBounds();
+    SkDebugf("clipBounds: %f, %f, %f, %f\n", clipBounds.x(), clipBounds.y(), clipBounds.width(), clipBounds.height());
+
     fCanvas->clipPath(clipPath, true);
     fClipPath.set(clipPath);
 }
