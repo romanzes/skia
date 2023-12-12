@@ -898,7 +898,6 @@ void SkCanvas::internalSaveLayer(const SaveLayerRec& rec, SaveLayerStrategy stra
     this->internalSave();
 
     if (this->isClipEmpty()) {
-        SkDebugf("SkCanvas::internalSaveLayer (1)\n");
         // Early out if the layer wouldn't draw anything
         return;
     }
@@ -937,7 +936,6 @@ void SkCanvas::internalSaveLayer(const SaveLayerRec& rec, SaveLayerStrategy stra
 
     if (!mappingAndBounds) {
         abortLayer();
-        SkDebugf("SkCanvas::internalSaveLayer (2)\n");
         return;
     }
 
@@ -970,12 +968,12 @@ void SkCanvas::internalSaveLayer(const SaveLayerRec& rec, SaveLayerStrategy stra
         // Regardless of if we drew the "restored" image filter or not, mark the layer as empty
         // until the restore() since we don't care about any of its content.
         abortLayer();
-        SkDebugf("SkCanvas::internalSaveLayer (3)\n");
         return;
     }
 
     sk_sp<SkBaseDevice> newDevice;
     if (strategy == kFullLayer_SaveLayerStrategy) {
+        SkDebugf("SkCanvas::internalSaveLayer: kFullLayer_SaveLayerStrategy\n");
         SkASSERT(!layerBounds.isEmpty());
 
         SkColorType layerColorType = SkToBool(rec.fSaveLayerFlags & kF16ColorType)
@@ -996,6 +994,7 @@ void SkCanvas::internalSaveLayer(const SaveLayerRec& rec, SaveLayerStrategy stra
 
     bool initBackdrop = (rec.fSaveLayerFlags & kInitWithPrevious_SaveLayerFlag) || rec.fBackdrop;
     if (!newDevice) {
+        SkDebugf("SkCanvas::internalSaveLayer: !newDevice\n");
         // Either we weren't meant to allocate a full layer, or the full layer creation failed.
         // Using an explicit NoPixelsDevice lets us reflect what the layer state would have been
         // on success (or kFull_LayerStrategy) while squashing draw calls that target something that
@@ -1018,6 +1017,7 @@ void SkCanvas::internalSaveLayer(const SaveLayerRec& rec, SaveLayerStrategy stra
             layerBounds.top());
 
     if (initBackdrop) {
+        SkDebugf("SkCanvas::internalSaveLayer: initBackdrop\n");
         SkPaint backdropPaint;
         const SkImageFilter* backdropFilter = optimize_layer_filter(rec.fBackdrop, &backdropPaint);
         // The new device was constructed to be compatible with 'filter', not necessarily
@@ -1037,7 +1037,6 @@ void SkCanvas::internalSaveLayer(const SaveLayerRec& rec, SaveLayerStrategy stra
 
     fMCRec->newLayer(std::move(newDevice), sk_ref_sp(filter), restorePaint);
     fQuickRejectBounds = this->computeDeviceClipBounds();
-    SkDebugf("SkCanvas::internalSaveLayer (4)\n");
 }
 
 int SkCanvas::saveLayerAlphaf(const SkRect* bounds, float alpha) {
