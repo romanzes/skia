@@ -514,6 +514,7 @@ SkRect SkSVGRenderContext::resolveOBBRect(const SkSVGLength& x, const SkSVGLengt
 
     auto r = lctx->resolveRect(x, y, w, h);
     const auto obbt = this->transformForCurrentOBB(obbu);
+    SkDebugf("SkSVGRenderContext::resolveOBBRect: r: %f, %f, %f, %f\n", r.x(), r.y(), r.width(), r.height());
 
     return SkRect::MakeXYWH(obbt.scale.x * r.x() + obbt.offset.x,
                             obbt.scale.y * r.y() + obbt.offset.y,
