@@ -898,6 +898,7 @@ void SkCanvas::internalSaveLayer(const SaveLayerRec& rec, SaveLayerStrategy stra
     this->internalSave();
 
     if (this->isClipEmpty()) {
+        SkDebugf("SkCanvas::internalSaveLayer (1)\n");
         // Early out if the layer wouldn't draw anything
         return;
     }
@@ -936,6 +937,7 @@ void SkCanvas::internalSaveLayer(const SaveLayerRec& rec, SaveLayerStrategy stra
 
     if (!mappingAndBounds) {
         abortLayer();
+        SkDebugf("SkCanvas::internalSaveLayer (2)\n");
         return;
     }
 
@@ -968,6 +970,7 @@ void SkCanvas::internalSaveLayer(const SaveLayerRec& rec, SaveLayerStrategy stra
         // Regardless of if we drew the "restored" image filter or not, mark the layer as empty
         // until the restore() since we don't care about any of its content.
         abortLayer();
+        SkDebugf("SkCanvas::internalSaveLayer (3)\n");
         return;
     }
 
@@ -1034,6 +1037,7 @@ void SkCanvas::internalSaveLayer(const SaveLayerRec& rec, SaveLayerStrategy stra
 
     fMCRec->newLayer(std::move(newDevice), sk_ref_sp(filter), restorePaint);
     fQuickRejectBounds = this->computeDeviceClipBounds();
+    SkDebugf("SkCanvas::internalSaveLayer (4)\n");
 }
 
 int SkCanvas::saveLayerAlphaf(const SkRect* bounds, float alpha) {
