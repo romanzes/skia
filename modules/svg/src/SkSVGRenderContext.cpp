@@ -372,7 +372,7 @@ void SkSVGRenderContext::applyMask(const SkSVGFuncIRI& mask) {
 
     // Isolation/mask layer.
     // When this line is not commented out, the embedded raster gets cropped, see also the line below
-//    fCanvas->saveLayer(mask_bounds, nullptr);
+    fCanvas->saveLayer(mask_bounds, nullptr);
 
     // Render and filter mask content.
     mask_node->renderMask(*this);
