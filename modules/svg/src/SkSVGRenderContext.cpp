@@ -364,15 +364,15 @@ void SkSVGRenderContext::applyMask(const SkSVGFuncIRI& mask) {
     const auto* mask_node = static_cast<const SkSVGMask*>(node.get());
     const auto mask_bounds = mask_node->bounds(*this);
 //    const auto debug_bounds = SkRect::MakeLTRB(0.0, 0.0, mask_bounds.right() - 5.0, mask_bounds.bottom() - 5.0);
-    SkPaint debugPaint;
-    debugPaint.setColor(SK_ColorRED);
-    debugPaint.setStroke(true);
-    debugPaint.setStrokeWidth(10.0);
-    fCanvas->drawRect(mask_bounds, debugPaint);
+//    SkPaint debugPaint;
+//    debugPaint.setColor(SK_ColorRED);
+//    debugPaint.setStroke(true);
+//    debugPaint.setStrokeWidth(10.0);
+//    fCanvas->drawRect(mask_bounds, debugPaint);
 
     // Isolation/mask layer.
     // When this line is not commented out, the embedded raster gets cropped, see also the line below
-    fCanvas->saveLayer(nullptr, nullptr);
+    fCanvas->saveLayer(mask_bounds, nullptr);
 
     // Render and filter mask content.
     mask_node->renderMask(*this);
@@ -380,10 +380,10 @@ void SkSVGRenderContext::applyMask(const SkSVGFuncIRI& mask) {
     // Content layer
     SkPaint masking_paint;
     masking_paint.setBlendMode(SkBlendMode::kSrcIn);
-    fCanvas->saveLayer(nullptr, &masking_paint);
+    fCanvas->saveLayer(mask_bounds, &masking_paint);
 
     // When this line is not commented out, the embedded raster gets cropped, see also the line above
-//    fCanvas->clipRect(mask_bounds, true);
+    fCanvas->clipRect(mask_bounds, true);
 
     // At this point we're set up for content rendering.
     // The pending layers are restored in the destructor (render context scope exit).
