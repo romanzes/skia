@@ -479,7 +479,7 @@ int SkCanvas::saveLayer(const SaveLayerRec& rec) {
     if (rec.fPaint && rec.fPaint->nothingToDraw()) {
         // no need for the layer (or any of the draws until the matching restore()
         this->save();
-        this->clipRect({0,0,0,0});
+//        this->clipRect({0,0,0,0});
     } else {
         SaveLayerStrategy strategy = this->getSaveLayerStrategy(rec);
         fSaveCount += 1;

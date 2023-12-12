@@ -364,6 +364,7 @@ void SkSVGRenderContext::applyMask(const SkSVGFuncIRI& mask) {
     SkDebugf("mask bounds: %f, %f, %f, %f\n", mask_bounds.x(), mask_bounds.y(), mask_bounds.width(), mask_bounds.height());
 
     // Isolation/mask layer.
+    // When this line is not commented out, the embedded raster gets cropped, see also the line below
     fCanvas->saveLayer(mask_bounds, nullptr);
 
     // Render and filter mask content.
@@ -374,7 +375,7 @@ void SkSVGRenderContext::applyMask(const SkSVGFuncIRI& mask) {
     masking_paint.setBlendMode(SkBlendMode::kSrcIn);
     fCanvas->saveLayer(mask_bounds, &masking_paint);
 
-    // Content is also clipped to the specified mask bounds.
+    // When this line is not commented out, the embedded raster gets cropped, see also the line above
 //    fCanvas->clipRect(mask_bounds, true);
 
     // At this point we're set up for content rendering.
