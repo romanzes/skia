@@ -477,10 +477,12 @@ int SkCanvas::saveLayer(const SkRect* bounds, const SkPaint* paint) {
 int SkCanvas::saveLayer(const SaveLayerRec& rec) {
     TRACE_EVENT0("skia", TRACE_FUNC);
     if (rec.fPaint && rec.fPaint->nothingToDraw()) {
+        SkDebugf("SkCanvas::saveLayer (1)\n");
         // no need for the layer (or any of the draws until the matching restore()
         this->save();
-//        this->clipRect({0,0,0,0});
+        this->clipRect({0,0,0,0});
     } else {
+        SkDebugf("SkCanvas::saveLayer (2)\n");
         SaveLayerStrategy strategy = this->getSaveLayerStrategy(rec);
         fSaveCount += 1;
         this->internalSaveLayer(rec, strategy);
