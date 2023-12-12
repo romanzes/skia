@@ -77,6 +77,7 @@ SkScalar SkSVGLengthContext::resolve(const SkSVGLength& l, LengthType t) const {
 
 SkRect SkSVGLengthContext::resolveRect(const SkSVGLength& x, const SkSVGLength& y,
                                        const SkSVGLength& w, const SkSVGLength& h) const {
+    SkDebugf("SkSVGLengthContext::resolveRect(%f, %f, %f, %f)\n", x, y, w, h);
     return SkRect::MakeXYWH(
         this->resolve(x, SkSVGLengthContext::LengthType::kHorizontal),
         this->resolve(y, SkSVGLengthContext::LengthType::kVertical),
