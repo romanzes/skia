@@ -362,7 +362,7 @@ void SkSVGRenderContext::applyMask(const SkSVGFuncIRI& mask) {
 
     const auto* mask_node = static_cast<const SkSVGMask*>(node.get());
     const auto mask_bounds = mask_node->bounds(*this);
-    const auto debug_bounds = SkRect::MakeLTRB(mask_bounds.right() - 100.0, mask_bounds.bottom() - 100.0, mask_bounds.right(), mask_bounds.bottom());
+    const auto debug_bounds = SkRect::MakeLTRB(mask_bounds.right() - 50.0, mask_bounds.bottom() - 50.0, mask_bounds.right(), mask_bounds.bottom());
     SkPaint debugPaint;
     debugPaint.setColor(SK_ColorRED);
     debugPaint.setStroke(true);
