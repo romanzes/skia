@@ -372,7 +372,7 @@ void SkSVGRenderContext::applyMask(const SkSVGFuncIRI& mask) {
     // Content layer
     SkPaint masking_paint;
     masking_paint.setBlendMode(SkBlendMode::kSrcIn);
-    fCanvas->saveLayer(mask_bounds, &masking_paint);
+//    fCanvas->saveLayer(mask_bounds, &masking_paint);
 
     // Content is also clipped to the specified mask bounds.
     fCanvas->clipRect(mask_bounds, true);
