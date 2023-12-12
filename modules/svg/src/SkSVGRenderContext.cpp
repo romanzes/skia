@@ -362,17 +362,17 @@ void SkSVGRenderContext::applyMask(const SkSVGFuncIRI& mask) {
 
     const auto* mask_node = static_cast<const SkSVGMask*>(node.get());
     const auto mask_bounds = mask_node->bounds(*this);
-    const auto debug_bounds = SkRect::MakeLTRB(0.0, 0.0, mask_bounds.right() - 5.0, mask_bounds.bottom() - 5.0);
+//    const auto debug_bounds = SkRect::MakeLTRB(0.0, 0.0, mask_bounds.right() - 5.0, mask_bounds.bottom() - 5.0);
     SkPaint debugPaint;
     debugPaint.setColor(SK_ColorRED);
     debugPaint.setStroke(true);
     debugPaint.setStrokeWidth(10.0);
-    fCanvas->drawRect(debug_bounds, debugPaint);
+    fCanvas->drawRect(mask_bounds, debugPaint);
     SkDebugf("mask bounds: %f, %f, %f, %f\n", mask_bounds.x(), mask_bounds.y(), mask_bounds.width(), mask_bounds.height());
 
     // Isolation/mask layer.
     // When this line is not commented out, the embedded raster gets cropped, see also the line below
-    fCanvas->saveLayer(mask_bounds, nullptr);
+//    fCanvas->saveLayer(mask_bounds, nullptr);
 
     // Render and filter mask content.
     mask_node->renderMask(*this);
