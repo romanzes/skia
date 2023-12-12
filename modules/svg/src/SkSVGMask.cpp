@@ -27,7 +27,7 @@ bool SkSVGMask::parseAndSetAttribute(const char* n, const char* v) {
 SkRect SkSVGMask::bounds(const SkSVGRenderContext& ctx) const {
     SkDebugf("SkSVGMask::bounds: resolveOBBRect(%f, %f, %f, %f)\n", fX, fY, fWidth, fHeight);
     auto result = ctx.resolveOBBRect(fX, fY, fWidth, fHeight, fMaskUnits);
-    SkDebugf("SkSVGMask::bounds: result: \n", result.x(), result.y(), result.width(), result.height());
+    SkDebugf("SkSVGMask::bounds: result: %f, %f, %f, %f\n", result.x(), result.y(), result.width(), result.height());
     return result;
 }
 
