@@ -989,7 +989,7 @@ void SkCanvas::internalSaveLayer(const SaveLayerRec& rec, SaveLayerStrategy stra
         const auto createInfo = SkBaseDevice::CreateInfo(info, geo, SkBaseDevice::kNever_TileUsage,
                                                          fAllocator.get());
         // Use the original paint as a hint so that it includes the image filter
-//        newDevice.reset(priorDevice->onCreateDevice(createInfo, rec.fPaint));
+        newDevice.reset(priorDevice->onCreateDevice(createInfo, rec.fPaint));
     }
 
     bool initBackdrop = (rec.fSaveLayerFlags & kInitWithPrevious_SaveLayerFlag) || rec.fBackdrop;
