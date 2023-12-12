@@ -361,6 +361,11 @@ void SkSVGRenderContext::applyMask(const SkSVGFuncIRI& mask) {
 
     const auto* mask_node = static_cast<const SkSVGMask*>(node.get());
     const auto mask_bounds = mask_node->bounds(*this);
+    SkPaint debugPaint;
+    debugPaint.setColor(SK_ColorRED);
+    debugPaint.setStroke(true);
+    debugPaint.setStrokeWidth(10.0);
+    fCanvas->drawRect(mask_bounds, debugPaint);
     SkDebugf("mask bounds: %f, %f, %f, %f\n", mask_bounds.x(), mask_bounds.y(), mask_bounds.width(), mask_bounds.height());
 
     // Isolation/mask layer.
