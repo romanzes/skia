@@ -477,12 +477,10 @@ int SkCanvas::saveLayer(const SkRect* bounds, const SkPaint* paint) {
 int SkCanvas::saveLayer(const SaveLayerRec& rec) {
     TRACE_EVENT0("skia", TRACE_FUNC);
     if (rec.fPaint && rec.fPaint->nothingToDraw()) {
-        SkDebugf("SkCanvas::saveLayer (1)\n");
         // no need for the layer (or any of the draws until the matching restore()
         this->save();
         this->clipRect({0,0,0,0});
     } else {
-        SkDebugf("SkCanvas::saveLayer (2)\n");
         SaveLayerStrategy strategy = this->getSaveLayerStrategy(rec);
         fSaveCount += 1;
         this->internalSaveLayer(rec, strategy);
@@ -973,7 +971,6 @@ void SkCanvas::internalSaveLayer(const SaveLayerRec& rec, SaveLayerStrategy stra
 
     sk_sp<SkBaseDevice> newDevice;
     if (strategy == kFullLayer_SaveLayerStrategy) {
-        SkDebugf("SkCanvas::internalSaveLayer: kFullLayer_SaveLayerStrategy\n");
         SkASSERT(!layerBounds.isEmpty());
 
         SkColorType layerColorType = SkToBool(rec.fSaveLayerFlags & kF16ColorType)
@@ -994,7 +991,6 @@ void SkCanvas::internalSaveLayer(const SaveLayerRec& rec, SaveLayerStrategy stra
 
     bool initBackdrop = (rec.fSaveLayerFlags & kInitWithPrevious_SaveLayerFlag) || rec.fBackdrop;
     if (!newDevice) {
-        SkDebugf("SkCanvas::internalSaveLayer: !newDevice\n");
         // Either we weren't meant to allocate a full layer, or the full layer creation failed.
         // Using an explicit NoPixelsDevice lets us reflect what the layer state would have been
         // on success (or kFull_LayerStrategy) while squashing draw calls that target something that
@@ -1017,7 +1013,6 @@ void SkCanvas::internalSaveLayer(const SaveLayerRec& rec, SaveLayerStrategy stra
             layerBounds.top());
 
     if (initBackdrop) {
-        SkDebugf("SkCanvas::internalSaveLayer: initBackdrop\n");
         SkPaint backdropPaint;
         const SkImageFilter* backdropFilter = optimize_layer_filter(rec.fBackdrop, &backdropPaint);
         // The new device was constructed to be compatible with 'filter', not necessarily
