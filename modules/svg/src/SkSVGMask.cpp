@@ -27,7 +27,8 @@ bool SkSVGMask::parseAndSetAttribute(const char* n, const char* v) {
 SkRect SkSVGMask::bounds(const SkSVGRenderContext& ctx) const {
     auto result = ctx.resolveOBBRect(fX, fY, fWidth, fHeight, fMaskUnits);
     SkDebugf("SkSVGMask::bounds: result: %f, %f, %f, %f\n", result.x(), result.y(), result.width(), result.height());
-    return SkRect::MakeXYWH(result.x(), result.y(), result.width() * 2.0, result.height() * 2.0);
+//    return SkRect::MakeXYWH(result.x(), result.y(), result.width() * 2.0, result.height() * 2.0);
+    return result;
 }
 
 void SkSVGMask::renderMask(const SkSVGRenderContext& ctx) const {
