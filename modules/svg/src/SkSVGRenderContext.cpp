@@ -375,7 +375,7 @@ void SkSVGRenderContext::applyMask(const SkSVGFuncIRI& mask) {
     fCanvas->saveLayer(mask_bounds, &masking_paint);
 
     // Content is also clipped to the specified mask bounds.
-    fCanvas->clipRect(mask_bounds, true);
+//    fCanvas->clipRect(mask_bounds, true);
 
     // At this point we're set up for content rendering.
     // The pending layers are restored in the destructor (render context scope exit).
