@@ -364,7 +364,7 @@ void SkSVGRenderContext::applyMask(const SkSVGFuncIRI& mask) {
     SkDebugf("mask bounds: %f, %f, %f, %f\n", mask_bounds.x(), mask_bounds.y(), mask_bounds.width(), mask_bounds.height());
 
     // Isolation/mask layer.
-    fCanvas->saveLayer(mask_bounds, nullptr);
+//    fCanvas->saveLayer(mask_bounds, nullptr);
 
     // Render and filter mask content.
     mask_node->renderMask(*this);
