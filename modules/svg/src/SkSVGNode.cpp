@@ -56,7 +56,9 @@ SkPath SkSVGNode::asPath(const SkSVGRenderContext& ctx) const {
 }
 
 SkRect SkSVGNode::objectBoundingBox(const SkSVGRenderContext& ctx) const {
-    return this->onObjectBoundingBox(ctx);
+    SkRect result = this->onObjectBoundingBox(ctx);
+    SkDebugf("SkSVGNode::objectBoundingBox: %f, %f, %f, %f\n", result.fLeft, result.fTop, result.fRight, result.fBottom);
+    return result;
 }
 
 bool SkSVGNode::onPrepareToRender(SkSVGRenderContext* ctx) const {

@@ -369,26 +369,21 @@ void SkSVGRenderContext::applyMask(const SkSVGFuncIRI& mask) {
     debugPaint.setStroke(true);
     debugPaint.setStrokeWidth(10.0);
     fCanvas->drawRect(mask_bounds, debugPaint);
-    SkDebugf("canvas scale (1): %f, %f\n", fCanvas->getTotalMatrix().getScaleX(), fCanvas->getTotalMatrix().getScaleY());
 
     // Isolation/mask layer.
     // When this line is not commented out, the embedded raster gets cropped, see also the line below
     fCanvas->saveLayer(mask_bounds, nullptr);
-    SkDebugf("canvas scale (2): %f, %f\n", fCanvas->getTotalMatrix().getScaleX(), fCanvas->getTotalMatrix().getScaleY());
 
     // Render and filter mask content.
     mask_node->renderMask(*this);
-    SkDebugf("canvas scale (3): %f, %f\n", fCanvas->getTotalMatrix().getScaleX(), fCanvas->getTotalMatrix().getScaleY());
 
     // Content layer
     SkPaint masking_paint;
     masking_paint.setBlendMode(SkBlendMode::kSrcIn);
     fCanvas->saveLayer(mask_bounds, &masking_paint);
-    SkDebugf("canvas scale (4): %f, %f\n", fCanvas->getTotalMatrix().getScaleX(), fCanvas->getTotalMatrix().getScaleY());
 
     // When this line is not commented out, the embedded raster gets cropped, see also the line above
     fCanvas->clipRect(mask_bounds, true);
-    SkDebugf("canvas scale (5): %f, %f\n", fCanvas->getTotalMatrix().getScaleX(), fCanvas->getTotalMatrix().getScaleY());
 
     // At this point we're set up for content rendering.
     // The pending layers are restored in the destructor (render context scope exit).
