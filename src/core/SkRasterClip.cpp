@@ -106,7 +106,6 @@ bool SkRasterClip::setRect(const SkIRect& rect) {
 /////////////////////////////////////////////////////////////////////////////////////
 
 bool SkRasterClip::op(const SkIRect& rect, SkClipOp op) {
-    SkDebugf("SkRasterClip::op (1)\n");
     AUTO_RASTERCLIP_VALIDATE(*this);
 
     if (fIsBW) {
@@ -118,7 +117,6 @@ bool SkRasterClip::op(const SkIRect& rect, SkClipOp op) {
 }
 
 bool SkRasterClip::op(const SkRegion& rgn, SkClipOp op) {
-    SkDebugf("SkRasterClip::op (2)\n");
     AUTO_RASTERCLIP_VALIDATE(*this);
 
     if (fIsBW) {
@@ -145,7 +143,6 @@ static bool nearly_integral(SkScalar x) {
 }
 
 bool SkRasterClip::op(const SkRect& localRect, const SkMatrix& matrix, SkClipOp op, bool doAA) {
-    SkDebugf("SkRasterClip::op (3)\n");
     AUTO_RASTERCLIP_VALIDATE(*this);
 
     const bool isScaleTrans = matrix.isScaleTranslate();
@@ -175,12 +172,11 @@ bool SkRasterClip::op(const SkRect& localRect, const SkMatrix& matrix, SkClipOp 
 }
 
 bool SkRasterClip::op(const SkRRect& rrect, const SkMatrix& matrix, SkClipOp op, bool doAA) {
-    SkDebugf("SkRasterClip::op (4)\n");
     return this->op(SkPath::RRect(rrect), matrix, op, doAA);
 }
 
 bool SkRasterClip::op(const SkPath& path, const SkMatrix& matrix, SkClipOp op, bool doAA) {
-    SkDebugf("SkRasterClip::op (5)\n");
+    SkDebugf("SkRasterClip::op\n");
     AUTO_RASTERCLIP_VALIDATE(*this);
 
     SkPath devPath;
@@ -189,25 +185,29 @@ bool SkRasterClip::op(const SkPath& path, const SkMatrix& matrix, SkClipOp op, b
     // Since op is either intersect or difference, the clip is always shrinking; that means we can
     // always use our current bounds as the limiting factor for region/aaclip operations.
     if (this->isRect() && op == SkClipOp::kIntersect) {
+        SkDebugf("SkRasterClip::op (1)\n");
         // However, in the relatively common case of intersecting a new path with a rectangular
         // clip, it's faster to convert the path into a region/aa-mask in place than evaluate the
         // actual intersection. See skbug.com/12398
         if (doAA && fIsBW) {
+            SkDebugf("SkRasterClip::op (2)\n");
             this->convertToAA();
         }
         if (fIsBW) {
+            SkDebugf("SkRasterClip::op (3)\n");
             fBW.setPath(devPath, SkRegion(this->getBounds()));
         } else {
+            SkDebugf("SkRasterClip::op (4)\n");
             fAA.setPath(devPath, this->getBounds(), doAA);
         }
         return this->updateCacheAndReturnNonEmpty();
     } else {
+        SkDebugf("SkRasterClip::op (5)\n");
         return this->op(SkRasterClip(devPath, this->getBounds(), doAA), op);
     }
 }
 
 bool SkRasterClip::op(sk_sp<SkShader> sh) {
-    SkDebugf("SkRasterClip::op (6)\n");
     AUTO_RASTERCLIP_VALIDATE(*this);
 
     if (!fShader) {
@@ -219,7 +219,6 @@ bool SkRasterClip::op(sk_sp<SkShader> sh) {
 }
 
 bool SkRasterClip::op(const SkRasterClip& clip, SkClipOp op) {
-    SkDebugf("SkRasterClip::op (7)\n");
     AUTO_RASTERCLIP_VALIDATE(*this);
     clip.validate();
 
