@@ -325,6 +325,7 @@ void SkSVGRenderContext::saveOnce() {
 }
 
 void SkSVGRenderContext::applyClip(const SkSVGFuncIRI& clip) {
+    SkDebugf("SkSVGRenderContext::applyClip\n");
     if (clip.type() != SkSVGFuncIRI::Type::kIRI) {
         return;
     }
