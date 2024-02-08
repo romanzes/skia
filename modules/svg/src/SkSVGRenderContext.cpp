@@ -346,7 +346,7 @@ void SkSVGRenderContext::applyClip(const SkSVGFuncIRI& clip) {
 
     this->saveOnce();
 
-    fCanvas->clipPath(clipPath, false);
+    fCanvas->clipPath(clipPath, true);
     fClipPath.set(clipPath);
 }
 
