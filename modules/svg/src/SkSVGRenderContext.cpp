@@ -254,15 +254,6 @@ void SkSVGRenderContext::applyPresentationAttributes(const SkSVGPresentationAttr
         this->applyMask(*attrs.fMask);
     }
 
-    SkSVGColorspace cs = *attrs.fColorInterpolationFilters;
-    if (cs == SkSVGColorspace::kAuto) {
-        SkDebugf("SkSVGRenderContext::applyPresentationAttributes: kAuto\n");
-    } else if (cs == SkSVGColorspace::kSRGB) {
-        SkDebugf("SkSVGRenderContext::applyPresentationAttributes: kSRGB\n");
-    } else if (cs == SkSVGColorspace::kLinearRGB) {
-        SkDebugf("SkSVGRenderContext::applyPresentationAttributes: kLinearRGB\n");
-    }
-
     // TODO: when both a filter and opacity are present, we can apply both with a single layer
     if (hasFilter) {
         this->applyFilter(*attrs.fFilter);
@@ -315,6 +306,14 @@ void SkSVGRenderContext::applyFilter(const SkSVGFuncIRI& filter) {
     }
 
     const SkSVGFilter* filterNode = reinterpret_cast<const SkSVGFilter*>(node.get());
+    SkSVGColorspace cs = *filterNode->getColorInterpolationFilters();
+    if (cs == SkSVGColorspace::kAuto) {
+        SkDebugf("SkSVGRenderContext::applyPresentationAttributes: kAuto\n");
+    } else if (cs == SkSVGColorspace::kSRGB) {
+        SkDebugf("SkSVGRenderContext::applyPresentationAttributes: kSRGB\n");
+    } else if (cs == SkSVGColorspace::kLinearRGB) {
+        SkDebugf("SkSVGRenderContext::applyPresentationAttributes: kLinearRGB\n");
+    }
     sk_sp<SkImageFilter> imageFilter = filterNode->buildFilterDAG(*this);
     if (imageFilter) {
         SkPaint filterPaint;
