@@ -36,6 +36,15 @@ sk_sp<SkImageFilter> SkSVGFilter::buildFilterDAG(const SkSVGRenderContext& ctx) 
         }
 
         const auto& feNode = static_cast<const SkSVGFe&>(*child);
+        SkSVGColorspace cs1 = feNode.resolveColorspace(ctx, fctx);
+        if (cs1 == SkSVGColorspace::kAuto) {
+            SkDebugf("SkSVGFilter::buildFilterDAG: before: kAuto\n");
+        } else if (cs1 == SkSVGColorspace::kSRGB) {
+            SkDebugf("SkSVGFilter::buildFilterDAG: before: kSRGB\n");
+        } else if (cs1 == SkSVGColorspace::kLinearRGB) {
+            SkDebugf("SkSVGFilter::buildFilterDAG: before: kLinearRGB\n");
+        }
+
         const auto& feResultType = feNode.getResult();
 
         // Propagate any inherited properties that may impact filter effect behavior (e.g.
@@ -48,6 +57,13 @@ sk_sp<SkImageFilter> SkSVGFilter::buildFilterDAG(const SkSVGRenderContext& ctx) 
         const SkRect filterSubregion = feNode.resolveFilterSubregion(localCtx, fctx);
         SkDebugf("SkSVGFilter::buildFilterDAG\n");
         cs = feNode.resolveColorspace(ctx, fctx);
+        if (cs == SkSVGColorspace::kAuto) {
+            SkDebugf("SkSVGFilter::buildFilterDAG: after: kAuto\n");
+        } else if (cs == SkSVGColorspace::kSRGB) {
+            SkDebugf("SkSVGFilter::buildFilterDAG: after: kSRGB\n");
+        } else if (cs == SkSVGColorspace::kLinearRGB) {
+            SkDebugf("SkSVGFilter::buildFilterDAG: after: kLinearRGB\n");
+        }
         filter = feNode.makeImageFilter(localCtx, fctx);
 
         if (!feResultType.isEmpty()) {
