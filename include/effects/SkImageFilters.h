@@ -212,6 +212,7 @@ public:
      *  @param sampling The sampling to use when drawing the image.
      */
     static sk_sp<SkImageFilter> Image(sk_sp<SkImage> image, const SkSamplingOptions& sampling) {
+        SkDebugf("SkImageFilters::Image (2)\n");
         if (image) {
             SkRect r = SkRect::Make(image->bounds());
             return Image(std::move(image), r, r, sampling);
@@ -292,6 +293,7 @@ public:
      */
     static sk_sp<SkImageFilter> Merge(sk_sp<SkImageFilter> first, sk_sp<SkImageFilter> second,
                                       const CropRect& cropRect = {}) {
+        SkDebugf("SkImageFilters::Merge (2)\n");
         sk_sp<SkImageFilter> array[] = { std::move(first), std::move(second) };
         return Merge(array, 2, cropRect);
     }

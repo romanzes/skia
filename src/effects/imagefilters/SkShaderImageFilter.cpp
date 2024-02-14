@@ -68,6 +68,7 @@ private:
 sk_sp<SkImageFilter> SkImageFilters::Shader(sk_sp<SkShader> shader,
                                             Dither dither,
                                             const CropRect& cropRect) {
+    SkDebugf("SkImageFilters::Shader\n");
     sk_sp<SkImageFilter> filter{new SkShaderImageFilter(std::move(shader), dither)};
     if (cropRect) {
         filter = SkMakeCropImageFilter(*cropRect, std::move(filter));

@@ -52,6 +52,7 @@ private:
 
 sk_sp<SkImageFilter> SkImageFilters::Merge(sk_sp<SkImageFilter>* const filters, int count,
                                            const CropRect& cropRect) {
+    SkDebugf("SkImageFilters::Merge\n");
     sk_sp<SkImageFilter> filter{new SkMergeImageFilter(filters, count)};
     if (cropRect) {
         filter = SkMakeCropImageFilter(*cropRect, std::move(filter));

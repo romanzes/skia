@@ -72,6 +72,7 @@ private:
 sk_sp<SkImageFilter> SkImageFilters::ColorFilter(sk_sp<SkColorFilter> cf,
                                                  sk_sp<SkImageFilter> input,
                                                  const CropRect& cropRect) {
+    SkDebugf("SkImageFilters::ColorFilter\n");
     if (cf) {
         SkColorFilter* inputCF;
         // This is an optimization, as it collapses the hierarchy by just combining the two

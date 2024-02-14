@@ -412,6 +412,7 @@ sk_sp<SkImageFilter> make_lighting(const Light& light,
 sk_sp<SkImageFilter> SkImageFilters::DistantLitDiffuse(
         const SkPoint3& direction, SkColor lightColor, SkScalar surfaceScale, SkScalar kd,
         sk_sp<SkImageFilter> input, const CropRect& cropRect) {
+    SkDebugf("SkImageFilters::DistantLitDiffuse\n");
     return make_lighting(Light::Distant(lightColor, direction),
                          Material::Diffuse(kd, surfaceScale),
                          std::move(input), cropRect);
@@ -420,6 +421,7 @@ sk_sp<SkImageFilter> SkImageFilters::DistantLitDiffuse(
 sk_sp<SkImageFilter> SkImageFilters::PointLitDiffuse(
         const SkPoint3& location, SkColor lightColor, SkScalar surfaceScale, SkScalar kd,
         sk_sp<SkImageFilter> input, const CropRect& cropRect) {
+    SkDebugf("SkImageFilters::PointLitDiffuse\n");
     return make_lighting(Light::Point(lightColor, location),
                          Material::Diffuse(kd, surfaceScale),
                          std::move(input), cropRect);
@@ -429,6 +431,7 @@ sk_sp<SkImageFilter> SkImageFilters::SpotLitDiffuse(
         const SkPoint3& location, const SkPoint3& target, SkScalar falloffExponent,
         SkScalar cutoffAngle, SkColor lightColor, SkScalar surfaceScale, SkScalar kd,
         sk_sp<SkImageFilter> input, const CropRect& cropRect) {
+    SkDebugf("SkImageFilters::SpotLitDiffuse\n");
     SkPoint3 dir = target - location;
     float cosCutoffAngle = SkScalarCos(SkDegreesToRadians(cutoffAngle));
     return make_lighting(Light::Spot(lightColor, location, dir, falloffExponent, cosCutoffAngle),
@@ -439,6 +442,7 @@ sk_sp<SkImageFilter> SkImageFilters::SpotLitDiffuse(
 sk_sp<SkImageFilter> SkImageFilters::DistantLitSpecular(
         const SkPoint3& direction, SkColor lightColor, SkScalar surfaceScale, SkScalar ks,
         SkScalar shininess, sk_sp<SkImageFilter> input, const CropRect& cropRect) {
+    SkDebugf("SkImageFilters::DistantLitSpecular\n");
     return make_lighting(Light::Distant(lightColor, direction),
                          Material::Specular(ks, shininess, surfaceScale),
                          std::move(input), cropRect);
@@ -447,6 +451,7 @@ sk_sp<SkImageFilter> SkImageFilters::DistantLitSpecular(
 sk_sp<SkImageFilter> SkImageFilters::PointLitSpecular(
         const SkPoint3& location, SkColor lightColor, SkScalar surfaceScale, SkScalar ks,
         SkScalar shininess, sk_sp<SkImageFilter> input, const CropRect& cropRect) {
+    SkDebugf("SkImageFilters::PointLitSpecular\n");
     return make_lighting(Light::Point(lightColor, location),
                          Material::Specular(ks, shininess, surfaceScale),
                          std::move(input), cropRect);
@@ -456,6 +461,7 @@ sk_sp<SkImageFilter> SkImageFilters::SpotLitSpecular(
         const SkPoint3& location, const SkPoint3& target, SkScalar falloffExponent,
         SkScalar cutoffAngle, SkColor lightColor, SkScalar surfaceScale, SkScalar ks,
         SkScalar shininess, sk_sp<SkImageFilter> input, const CropRect& cropRect) {
+    SkDebugf("SkImageFilters::SpotLitSpecular\n");
     SkPoint3 dir = target - location;
     float cosCutoffAngle = SkScalarCos(SkDegreesToRadians(cutoffAngle));
     return make_lighting(Light::Spot(lightColor, location, dir, falloffExponent, cosCutoffAngle),

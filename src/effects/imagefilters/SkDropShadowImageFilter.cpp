@@ -89,6 +89,7 @@ sk_sp<SkFlattenable> legacy_drop_shadow_create_proc(SkReadBuffer& buffer) {
 sk_sp<SkImageFilter> SkImageFilters::DropShadow(
         SkScalar dx, SkScalar dy, SkScalar sigmaX, SkScalar sigmaY, SkColor color,
         sk_sp<SkImageFilter> input, const CropRect& cropRect) {
+    SkDebugf("SkImageFilters::DropShadow\n");
     return make_drop_shadow_graph({dx, dy}, {sigmaX, sigmaY}, color, /*shadowOnly=*/false,
                                   std::move(input), cropRect);
 }
@@ -96,6 +97,7 @@ sk_sp<SkImageFilter> SkImageFilters::DropShadow(
 sk_sp<SkImageFilter> SkImageFilters::DropShadowOnly(
         SkScalar dx, SkScalar dy, SkScalar sigmaX, SkScalar sigmaY, SkColor color,
         sk_sp<SkImageFilter> input, const CropRect& cropRect) {
+    SkDebugf("SkImageFilters::DropShadowOnly\n");
     return make_drop_shadow_graph({dx, dy}, {sigmaX, sigmaY}, color, /*shadowOnly=*/true,
                                   std::move(input), cropRect);
 }

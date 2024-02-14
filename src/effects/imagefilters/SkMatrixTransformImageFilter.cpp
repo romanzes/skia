@@ -77,6 +77,7 @@ private:
 sk_sp<SkImageFilter> SkImageFilters::MatrixTransform(const SkMatrix& transform,
                                                      const SkSamplingOptions& sampling,
                                                      sk_sp<SkImageFilter> input) {
+    SkDebugf("SkImageFilters::MatrixTransform\n");
     return sk_sp<SkImageFilter>(new SkMatrixTransformImageFilter(transform,
                                                                  sampling,
                                                                  std::move(input)));
@@ -85,6 +86,7 @@ sk_sp<SkImageFilter> SkImageFilters::MatrixTransform(const SkMatrix& transform,
 sk_sp<SkImageFilter> SkImageFilters::Offset(SkScalar dx, SkScalar dy,
                                             sk_sp<SkImageFilter> input,
                                             const CropRect& cropRect) {
+    SkDebugf("SkImageFilters::Offset\n");
     // The legacy ::Offset() implementation rounded its offset vector to layer-space pixels, which
     // is roughly equivalent to using nearest-neighbor sampling with the translation matrix.
     sk_sp<SkImageFilter> offset = SkImageFilters::MatrixTransform(

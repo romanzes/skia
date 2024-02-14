@@ -87,6 +87,7 @@ sk_sp<SkImageFilter> SkImageFilters::Magnifier(const SkRect& lensBounds,
                                                const SkSamplingOptions& sampling,
                                                sk_sp<SkImageFilter> input,
                                                const CropRect& cropRect) {
+    SkDebugf("SkImageFilters::Magnifier\n");
     if (lensBounds.isEmpty() || !lensBounds.isFinite() ||
         zoomAmount <= 0.f || !SkScalarIsFinite(zoomAmount) ||
         inset < 0.f || !SkScalarIsFinite(inset)) {

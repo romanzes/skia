@@ -65,6 +65,7 @@ private:
 
 sk_sp<SkImageFilter> SkImageFilters::Compose(sk_sp<SkImageFilter> outer,
                                              sk_sp<SkImageFilter> inner) {
+    SkDebugf("SkImageFilters::Compose\n");
     if (!outer) {
         return inner;
     }

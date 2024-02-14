@@ -96,6 +96,7 @@ private:
 sk_sp<SkImageFilter> SkImageFilters::Blur(
         SkScalar sigmaX, SkScalar sigmaY, SkTileMode tileMode, sk_sp<SkImageFilter> input,
         const CropRect& cropRect) {
+    SkDebugf("SkImageFilters::Blur\n");
     if (sigmaX < SK_ScalarNearlyZero && sigmaY < SK_ScalarNearlyZero && !cropRect) {
         return input;
     }

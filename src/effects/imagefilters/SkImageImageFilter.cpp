@@ -78,6 +78,7 @@ sk_sp<SkImageFilter> SkImageFilters::Image(sk_sp<SkImage> image,
                                            const SkRect& srcRect,
                                            const SkRect& dstRect,
                                            const SkSamplingOptions& sampling) {
+    SkDebugf("SkImageFilters::Image\n");
     auto emptyFilter = []() {
         return sk_sp<SkImageFilter>(new SkImageImageFilter(
                 nullptr, SkRect::MakeEmpty(), SkRect::MakeEmpty(), {}));

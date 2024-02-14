@@ -309,6 +309,7 @@ SkRect SkDisplacementMapImageFilter::computeFastBounds(const SkRect& src) const 
 sk_sp<SkImageFilter> SkImageFilters::DisplacementMap(
         SkColorChannel xChannelSelector, SkColorChannel yChannelSelector, SkScalar scale,
         sk_sp<SkImageFilter> displacement, sk_sp<SkImageFilter> color, const CropRect& cropRect) {
+    SkDebugf("SkImageFilters::DisplacementMap\n");
     return cropRect ? SkMakeCropImageFilter(*cropRect, std::move(color)) : color;
 }
 

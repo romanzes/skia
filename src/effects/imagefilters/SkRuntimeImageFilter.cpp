@@ -101,6 +101,7 @@ sk_sp<SkImageFilter> SkImageFilters::RuntimeShader(const SkRuntimeShaderBuilder&
                                                    SkScalar sampleRadius,
                                                    std::string_view childShaderName,
                                                    sk_sp<SkImageFilter> input) {
+    SkDebugf("SkImageFilters::RuntimeShader (1)\n");
     // If no childShaderName is provided, check to see if we can implicitly assign it to the only
     // child in the effect.
     if (childShaderName.empty()) {
@@ -119,6 +120,7 @@ sk_sp<SkImageFilter> SkImageFilters::RuntimeShader(const SkRuntimeShaderBuilder&
                                                    std::string_view childShaderNames[],
                                                    const sk_sp<SkImageFilter> inputs[],
                                                    int inputCount) {
+    SkDebugf("SkImageFilters::RuntimeShader (2)\n");
     if (maxSampleRadius < 0.f) {
         return nullptr; // invalid sample radius
     }

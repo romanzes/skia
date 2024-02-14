@@ -102,6 +102,7 @@ sk_sp<SkImageFilter> SkMakeCropImageFilter(const SkRect& rect,
 sk_sp<SkImageFilter> SkImageFilters::Tile(const SkRect& src,
                                           const SkRect& dst,
                                           sk_sp<SkImageFilter> input) {
+    SkDebugf("SkImageFilters::Tile\n");
     // The Tile filter is simply a crop to 'src' with a kRepeat tile mode wrapped in a crop to 'dst'
     // with a kDecal tile mode.
     sk_sp<SkImageFilter> filter = SkMakeCropImageFilter(src, SkTileMode::kRepeat, std::move(input));

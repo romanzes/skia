@@ -251,12 +251,14 @@ skif::FilterResult morphology_pass(const skif::Context& ctx, const skif::FilterR
 sk_sp<SkImageFilter> SkImageFilters::Dilate(SkScalar radiusX, SkScalar radiusY,
                                             sk_sp<SkImageFilter> input,
                                             const CropRect& cropRect) {
+    SkDebugf("SkImageFilters::Dilate\n");
     return make_morphology(MorphType::kDilate, {radiusX, radiusY}, std::move(input), cropRect);
 }
 
 sk_sp<SkImageFilter> SkImageFilters::Erode(SkScalar radiusX, SkScalar radiusY,
                                            sk_sp<SkImageFilter> input,
                                            const CropRect& cropRect) {
+    SkDebugf("SkImageFilters::Erode\n");
     return make_morphology(MorphType::kErode, {radiusX, radiusY}, std::move(input), cropRect);
 }
 

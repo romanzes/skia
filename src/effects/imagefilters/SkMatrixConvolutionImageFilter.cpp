@@ -189,6 +189,7 @@ sk_sp<SkImageFilter> SkImageFilters::MatrixConvolution(const SkISize& kernelSize
                                                        bool convolveAlpha,
                                                        sk_sp<SkImageFilter> input,
                                                        const CropRect& cropRect) {
+    SkDebugf("SkImageFilters::MatrixConvolution\n");
     // We need to be able to read at most SK_MaxS32 bytes, so divide that
     // by the size of a scalar to know how many scalars we can read.
     static constexpr int32_t kMaxKernelSize = SK_MaxS32 / sizeof(SkScalar);

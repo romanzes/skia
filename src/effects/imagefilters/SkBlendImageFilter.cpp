@@ -135,6 +135,7 @@ sk_sp<SkImageFilter> SkImageFilters::Blend(SkBlendMode mode,
                                            sk_sp<SkImageFilter> background,
                                            sk_sp<SkImageFilter> foreground,
                                            const CropRect& cropRect) {
+    SkDebugf("SkImageFilters::Blend (1)\n");
     return make_blend(SkBlender::Mode(mode),
                       std::move(background),
                       std::move(foreground),
@@ -145,6 +146,7 @@ sk_sp<SkImageFilter> SkImageFilters::Blend(sk_sp<SkBlender> blender,
                                            sk_sp<SkImageFilter> background,
                                            sk_sp<SkImageFilter> foreground,
                                            const CropRect& cropRect) {
+    SkDebugf("SkImageFilters::Blend (2)\n");
     return make_blend(std::move(blender), std::move(background), std::move(foreground), cropRect);
 }
 
@@ -156,6 +158,7 @@ sk_sp<SkImageFilter> SkImageFilters::Arithmetic(SkScalar k1,
                                                 sk_sp<SkImageFilter> background,
                                                 sk_sp<SkImageFilter> foreground,
                                                 const CropRect& cropRect) {
+    SkDebugf("SkImageFilters::Arithmetic\n");
     auto blender = SkBlenders::Arithmetic(k1, k2, k3, k4, enforcePMColor);
     if (!blender) {
         // Arithmetic() returns null on an error, not to optimize src-over

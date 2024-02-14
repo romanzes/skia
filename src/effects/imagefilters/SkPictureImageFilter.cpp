@@ -64,6 +64,7 @@ private:
 } // end namespace
 
 sk_sp<SkImageFilter> SkImageFilters::Picture(sk_sp<SkPicture> pic, const SkRect& targetRect) {
+    SkDebugf("SkImageFilters::Picture\n");
     if (pic) {
         SkRect cullRect = pic->cullRect();
         if (cullRect.intersect(targetRect)) {
