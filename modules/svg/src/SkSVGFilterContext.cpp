@@ -89,15 +89,18 @@ std::tuple<sk_sp<SkImageFilter>, SkSVGColorspace> SkSVGFilterContext::getInput(
     sk_sp<SkImageFilter> result;
     switch (inputType.type()) {
         case SkSVGFeInputType::Type::kSourceAlpha: {
+            SkDebugf("SkSVGFeInputType::Type::kSourceAlpha\n");
             SkColorMatrix m;
             m.setScale(0, 0, 0, 1.0f);
             result = SkImageFilters::ColorFilter(SkColorFilters::Matrix(m), nullptr);
             break;
         }
         case SkSVGFeInputType::Type::kSourceGraphic:
+            SkDebugf("SkSVGFeInputType::Type::kSourceGraphic\n");
             // Do nothing.
             break;
         case SkSVGFeInputType::Type::kFillPaint: {
+            SkDebugf("SkSVGFeInputType::Type::kFillPaint\n");
             const auto& fillPaint = ctx.fillPaint();
             if (fillPaint.isValid()) {
                 auto dither = fillPaint->isDither() ? SkImageFilters::Dither::kYes
@@ -107,6 +110,7 @@ std::tuple<sk_sp<SkImageFilter>, SkSVGColorspace> SkSVGFilterContext::getInput(
             break;
         }
         case SkSVGFeInputType::Type::kStrokePaint: {
+            SkDebugf("SkSVGFeInputType::Type::kStrokePaint\n");
             // The paint filter doesn't apply fill/stroke styling, but use the paint settings
             // defined for strokes.
             const auto& strokePaint = ctx.strokePaint();
@@ -118,6 +122,7 @@ std::tuple<sk_sp<SkImageFilter>, SkSVGColorspace> SkSVGFilterContext::getInput(
             break;
         }
         case SkSVGFeInputType::Type::kFilterPrimitiveReference: {
+            SkDebugf("SkSVGFeInputType::Type::kFilterPrimitiveReference\n");
             const Result* res = findResultById(inputType.id());
             if (res) {
                 result = res->fImageFilter;
@@ -126,6 +131,7 @@ std::tuple<sk_sp<SkImageFilter>, SkSVGColorspace> SkSVGFilterContext::getInput(
             break;
         }
         case SkSVGFeInputType::Type::kUnspecified: {
+            SkDebugf("SkSVGFeInputType::Type::kUnspecified\n");
             result = fPreviousResult.fImageFilter;
             inputCS = fPreviousResult.fColorspace;
             break;
