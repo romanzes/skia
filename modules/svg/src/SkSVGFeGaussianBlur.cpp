@@ -23,6 +23,7 @@ sk_sp<SkImageFilter> SkSVGFeGaussianBlur::onMakeImageFilter(const SkSVGRenderCon
     const auto sigma = SkV2{fStdDeviation.fX, fStdDeviation.fY}
                      * ctx.transformForCurrentOBB(fctx.primitiveUnits()).scale;
 
+    SkDebugf("SkSVGFeGaussianBlur::resolveColorspace\n");
     return SkImageFilters::Blur(
             sigma.x, sigma.y,
             fctx.resolveInput(ctx, this->getIn(), this->resolveColorspace(ctx, fctx)),

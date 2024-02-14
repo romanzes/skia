@@ -27,6 +27,7 @@ bool SkSVGFeDisplacementMap::parseAndSetAttribute(const char* name, const char* 
 sk_sp<SkImageFilter> SkSVGFeDisplacementMap::onMakeImageFilter(
         const SkSVGRenderContext& ctx, const SkSVGFilterContext& fctx) const {
     const SkRect cropRect = this->resolveFilterSubregion(ctx, fctx);
+    SkDebugf("SkSVGFeDisplacementMap::onMakeImageFilter\n");
     const SkSVGColorspace colorspace = this->resolveColorspace(ctx, fctx);
 
     // According to spec https://www.w3.org/TR/SVG11/filters.html#feDisplacementMapElement,
@@ -48,6 +49,7 @@ sk_sp<SkImageFilter> SkSVGFeDisplacementMap::onMakeImageFilter(
 
 SkSVGColorspace SkSVGFeDisplacementMap::resolveColorspace(const SkSVGRenderContext& ctx,
                                                           const SkSVGFilterContext& fctx) const {
+    SkDebugf("SkSVGFeDisplacementMap::resolveColorspace\n");
     // According to spec https://www.w3.org/TR/SVG11/filters.html#feDisplacementMapElement,
     // the 'in' source image must remain in its current colorspace, which means the colorspace of
     // this FE node is the same as the input.

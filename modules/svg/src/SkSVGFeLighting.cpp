@@ -95,6 +95,7 @@ sk_sp<SkImageFilter> SkSVGFeSpecularLighting::makeDistantLight(
         const SkSVGFilterContext& fctx,
         const SkSVGFeDistantLight* light) const {
     const SkPoint3 dir = light->computeDirection();
+    SkDebugf("SkSVGFeSpecularLighting::makeDistantLight\n");
     return SkImageFilters::DistantLitSpecular(
             this->resolveXYZ(ctx, fctx, dir.fX, dir.fY, dir.fZ),
             this->resolveLightingColor(ctx),
@@ -108,6 +109,7 @@ sk_sp<SkImageFilter> SkSVGFeSpecularLighting::makeDistantLight(
 sk_sp<SkImageFilter> SkSVGFeSpecularLighting::makePointLight(const SkSVGRenderContext& ctx,
                                                              const SkSVGFilterContext& fctx,
                                                              const SkSVGFePointLight* light) const {
+    SkDebugf("SkSVGFeSpecularLighting::makePointLight\n");
     return SkImageFilters::PointLitSpecular(
             this->resolveXYZ(ctx, fctx, light->getX(), light->getY(), light->getZ()),
             this->resolveLightingColor(ctx),
@@ -121,6 +123,7 @@ sk_sp<SkImageFilter> SkSVGFeSpecularLighting::makePointLight(const SkSVGRenderCo
 sk_sp<SkImageFilter> SkSVGFeSpecularLighting::makeSpotLight(const SkSVGRenderContext& ctx,
                                                             const SkSVGFilterContext& fctx,
                                                             const SkSVGFeSpotLight* light) const {
+    SkDebugf("SkSVGFeSpecularLighting::makeSpotLight\n");
     const auto& limitingConeAngle = light->getLimitingConeAngle();
     const float cutoffAngle = limitingConeAngle.isValid() ? *limitingConeAngle : 180.f;
 
@@ -148,6 +151,7 @@ sk_sp<SkImageFilter> SkSVGFeDiffuseLighting::makeDistantLight(
         const SkSVGRenderContext& ctx,
         const SkSVGFilterContext& fctx,
         const SkSVGFeDistantLight* light) const {
+    SkDebugf("SkSVGFeSpecularLighting::makeDistantLight\n");
     const SkPoint3 dir = light->computeDirection();
     return SkImageFilters::DistantLitDiffuse(
             this->resolveXYZ(ctx, fctx, dir.fX, dir.fY, dir.fZ),
@@ -161,6 +165,7 @@ sk_sp<SkImageFilter> SkSVGFeDiffuseLighting::makeDistantLight(
 sk_sp<SkImageFilter> SkSVGFeDiffuseLighting::makePointLight(const SkSVGRenderContext& ctx,
                                                             const SkSVGFilterContext& fctx,
                                                             const SkSVGFePointLight* light) const {
+    SkDebugf("SkSVGFeSpecularLighting::makePointLight\n");
     return SkImageFilters::PointLitDiffuse(
             this->resolveXYZ(ctx, fctx, light->getX(), light->getY(), light->getZ()),
             this->resolveLightingColor(ctx),
@@ -173,6 +178,7 @@ sk_sp<SkImageFilter> SkSVGFeDiffuseLighting::makePointLight(const SkSVGRenderCon
 sk_sp<SkImageFilter> SkSVGFeDiffuseLighting::makeSpotLight(const SkSVGRenderContext& ctx,
                                                            const SkSVGFilterContext& fctx,
                                                            const SkSVGFeSpotLight* light) const {
+    SkDebugf("SkSVGFeSpecularLighting::makeSpotLight\n");
     const auto& limitingConeAngle = light->getLimitingConeAngle();
     const float cutoffAngle = limitingConeAngle.isValid() ? *limitingConeAngle : 180.f;
 

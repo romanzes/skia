@@ -46,6 +46,7 @@ sk_sp<SkImageFilter> SkSVGFilter::buildFilterDAG(const SkSVGRenderContext& ctx) 
         feNode.applyProperties(&localCtx);
 
         const SkRect filterSubregion = feNode.resolveFilterSubregion(localCtx, fctx);
+        SkDebugf("SkSVGFilter::buildFilterDAG\n");
         cs = feNode.resolveColorspace(ctx, fctx);
         filter = feNode.makeImageFilter(localCtx, fctx);
 
