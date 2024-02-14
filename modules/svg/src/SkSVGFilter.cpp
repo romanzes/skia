@@ -25,13 +25,17 @@ bool SkSVGFilter::parseAndSetAttribute(const char* name, const char* value) {
                    "primitiveUnits", name, value));
 }
 
+// NON-SKIA-UPSTREAMED CHANGE
+void SkSVGFilter::applyProperties(SkSVGRenderContext* ctx) const { this->onPrepareToRender(ctx); }
+// END OF NON-SKIA-UPSTREAMED CHANGE
+
 sk_sp<SkImageFilter> SkSVGFilter::buildFilterDAG(const SkSVGRenderContext& ctx) const {
     sk_sp<SkImageFilter> filter;
     SkSVGFilterContext fctx(ctx.resolveOBBRect(fX, fY, fWidth, fHeight, fFilterUnits),
                             fPrimitiveUnits);
     // NON-SKIA-UPSTREAMED CHANGE
     SkSVGRenderContext lctx(ctx);
-    this->onPrepareToRender(&lctx);
+    this->applyProperties(&lctx);
     // END OF NON-SKIA-UPSTREAMED CHANGE
     SkSVGColorspace cs = SkSVGColorspace::kSRGB;
     for (const auto& child : fChildren) {

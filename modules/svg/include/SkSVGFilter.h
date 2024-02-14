@@ -15,6 +15,11 @@ class SK_API SkSVGFilter final : public SkSVGHiddenContainer {
 public:
     static sk_sp<SkSVGFilter> Make() { return sk_sp<SkSVGFilter>(new SkSVGFilter()); }
 
+    // NON-SKIA-UPSTREAMED CHANGE
+    /** Propagates any inherited presentation attributes in the given context. */
+    void applyProperties(SkSVGRenderContext*) const;
+    // END OF NON-SKIA-UPSTREAMED CHANGE
+
     sk_sp<SkImageFilter> buildFilterDAG(const SkSVGRenderContext&) const;
 
     SVG_ATTR(X, SkSVGLength, SkSVGLength(-10, SkSVGLength::Unit::kPercentage))
