@@ -60,15 +60,14 @@ SkRect SkSVGNode::objectBoundingBox(const SkSVGRenderContext& ctx) const {
 }
 
 bool SkSVGNode::onPrepareToRender(SkSVGRenderContext* ctx) const {
-    SkDebugf("SkSVGNode::onPrepareToRender\n");
-//    const SkSVGColorspace cs1 = *ctx->presentationContext().fInherited.fColorInterpolationFilters;
-//    if (cs1 == SkSVGColorspace::kAuto) {
-//        SkDebugf("SkSVGNode::onPrepareToRender: before: kAuto\n");
-//    } else if (cs1 == SkSVGColorspace::kSRGB) {
-//        SkDebugf("SkSVGNode::onPrepareToRender: before: kSRGB\n");
-//    } else if (cs1 == SkSVGColorspace::kLinearRGB) {
-//        SkDebugf("SkSVGNode::onPrepareToRender: before: kLinearRGB\n");
-//    }
+    const SkSVGColorspace cs1 = *fPresentationAttributes.fColorInterpolationFilters;
+    if (cs1 == SkSVGColorspace::kAuto) {
+        SkDebugf("SkSVGNode::onPrepareToRender: kAuto\n");
+    } else if (cs1 == SkSVGColorspace::kSRGB) {
+        SkDebugf("SkSVGNode::onPrepareToRender: kSRGB\n");
+    } else if (cs1 == SkSVGColorspace::kLinearRGB) {
+        SkDebugf("SkSVGNode::onPrepareToRender: kLinearRGB\n");
+    }
     ctx->applyPresentationAttributes(fPresentationAttributes,
                                      this->hasChildren() ? 0 : SkSVGRenderContext::kLeaf);
 //    const SkSVGColorspace cs2 = *ctx->presentationContext().fInherited.fColorInterpolationFilters;
