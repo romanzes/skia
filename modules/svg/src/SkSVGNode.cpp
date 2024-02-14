@@ -60,8 +60,15 @@ SkRect SkSVGNode::objectBoundingBox(const SkSVGRenderContext& ctx) const {
 }
 
 bool SkSVGNode::onPrepareToRender(SkSVGRenderContext* ctx) const {
+    SkDebugf("SkSVGNode::onPrepareToRender\n");
+    if (ctx->presentationContext().fInherited.fColorInterpolationFilters == SkSVGColorspace::kLinearRGB) {
+        SkDebugf("SkSVGNode::onPrepareToRender: kLinearRGB\n");
+    }
     ctx->applyPresentationAttributes(fPresentationAttributes,
                                      this->hasChildren() ? 0 : SkSVGRenderContext::kLeaf);
+    if (ctx->presentationContext().fInherited.fColorInterpolationFilters == SkSVGColorspace::kLinearRGB) {
+        SkDebugf("SkSVGNode::onPrepareToRender: still kLinearRGB\n");
+    }
 
     // visibility:hidden and display:none disable rendering.
     // TODO: if display is not a value (true when display="inherit"), we currently
