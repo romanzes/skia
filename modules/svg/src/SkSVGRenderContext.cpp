@@ -306,7 +306,7 @@ void SkSVGRenderContext::applyFilter(const SkSVGFuncIRI& filter) {
     }
 
     const SkSVGFilter* filterNode = reinterpret_cast<const SkSVGFilter*>(node.get());
-    filterNode->onPrepareToRender(this);
+    filterNode->applyProperties(this);
     SkSVGColorspace cs = *filterNode->getColorInterpolationFilters();
     if (cs == SkSVGColorspace::kAuto) {
         SkDebugf("SkSVGRenderContext::applyFilter: kAuto\n");
