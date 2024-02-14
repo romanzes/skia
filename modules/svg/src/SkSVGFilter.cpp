@@ -58,7 +58,7 @@ sk_sp<SkImageFilter> SkSVGFilter::buildFilterDAG(const SkSVGRenderContext& ctx) 
     }
 
     // Convert to final destination colorspace
-    if (cs != SkSVGColorspace::kSRGB) {
+    if (cs == SkSVGColorspace::kLinearRGB) {
         SkDebugf("SkSVGFilter::buildFilterDAG\n");
         filter = SkImageFilters::ColorFilter(SkColorFilters::LinearToSRGBGamma(), filter);
     }
