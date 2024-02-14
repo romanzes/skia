@@ -1626,7 +1626,6 @@ void SkCanvas::drawPaint(const SkPaint& paint) {
 }
 
 void SkCanvas::drawRect(const SkRect& r, const SkPaint& paint) {
-    SkDebugf("SkCanvas::drawRect\n");
     TRACE_EVENT0("skia", TRACE_FUNC);
     // To avoid redundant logic in our culling code and various backends, we always sort rects
     // before passing them along.
@@ -1639,7 +1638,6 @@ void SkCanvas::drawClippedToSaveBehind(const SkPaint& paint) {
 }
 
 void SkCanvas::drawRegion(const SkRegion& region, const SkPaint& paint) {
-    SkDebugf("SkCanvas::drawRegion\n");
     TRACE_EVENT0("skia", TRACE_FUNC);
     if (region.isEmpty()) {
         return;
@@ -1660,7 +1658,6 @@ void SkCanvas::drawOval(const SkRect& r, const SkPaint& paint) {
 }
 
 void SkCanvas::drawRRect(const SkRRect& rrect, const SkPaint& paint) {
-    SkDebugf("SkCanvas::drawRRect\n");
     TRACE_EVENT0("skia", TRACE_FUNC);
     this->onDrawRRect(rrect, paint);
 }
