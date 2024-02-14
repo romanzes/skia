@@ -84,6 +84,7 @@ bool SkSVGFilterContext::previousResultIsSourceGraphic() const {
 // https://www.w3.org/TR/SVG11/filters.html#FilterPrimitiveInAttribute
 std::tuple<sk_sp<SkImageFilter>, SkSVGColorspace> SkSVGFilterContext::getInput(
         const SkSVGRenderContext& ctx, const SkSVGFeInputType& inputType) const {
+    SkDebugf("SkSVGFilterContext::getInput\n");
     SkSVGColorspace inputCS = SkSVGColorspace::kSRGB;
     sk_sp<SkImageFilter> result;
     switch (inputType.type()) {
@@ -144,12 +145,14 @@ SkSVGColorspace SkSVGFilterContext::resolveInputColorspace(
 
 sk_sp<SkImageFilter> SkSVGFilterContext::resolveInput(const SkSVGRenderContext& ctx,
                                                       const SkSVGFeInputType& inputType) const {
+    SkDebugf("SkSVGFilterContext::resolveInput (1)\n");
     return std::get<0>(this->getInput(ctx, inputType));
 }
 
 sk_sp<SkImageFilter> SkSVGFilterContext::resolveInput(const SkSVGRenderContext& ctx,
                                                       const SkSVGFeInputType& inputType,
                                                       SkSVGColorspace colorspace) const {
+    SkDebugf("SkSVGFilterContext::resolveInput (2)\n");
     auto [result, inputCS] = this->getInput(ctx, inputType);
     return ConvertFilterColorspace(std::move(result), inputCS, colorspace);
 }
