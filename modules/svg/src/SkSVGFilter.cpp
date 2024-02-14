@@ -47,6 +47,13 @@ sk_sp<SkImageFilter> SkSVGFilter::buildFilterDAG(const SkSVGRenderContext& ctx) 
 
         const SkRect filterSubregion = feNode.resolveFilterSubregion(localCtx, fctx);
         cs = feNode.resolveColorspace(ctx, fctx);
+        if (cs == SkSVGColorspace::kAuto) {
+            SkDebugf("SkSVGFilter::buildFilterDAG: SkSVGColorspace::kAuto\n");
+        } else if (cs == SkSVGColorspace::kSRGB) {
+            SkDebugf("SkSVGFilter::buildFilterDAG: SkSVGColorspace::kSRGB\n");
+        } else if (cs == SkSVGColorspace::kLinearRGB) {
+            SkDebugf("SkSVGFilter::buildFilterDAG: SkSVGColorspace::kLinearRGB\n");
+        }
         filter = feNode.makeImageFilter(localCtx, fctx);
 
         if (!feResultType.isEmpty()) {
@@ -58,8 +65,7 @@ sk_sp<SkImageFilter> SkSVGFilter::buildFilterDAG(const SkSVGRenderContext& ctx) 
     }
 
     // Convert to final destination colorspace
-    if (cs == SkSVGColorspace::kLinearRGB) {
-        SkDebugf("SkSVGFilter::buildFilterDAG\n");
+    if (cs != SkSVGColorspace::kSRGB) {
         filter = SkImageFilters::ColorFilter(SkColorFilters::LinearToSRGBGamma(), filter);
     }
 
