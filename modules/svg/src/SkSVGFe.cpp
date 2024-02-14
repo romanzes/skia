@@ -85,6 +85,13 @@ SkSVGColorspace SkSVGFe::resolveColorspace(const SkSVGRenderContext& ctx,
                                            const SkSVGFilterContext&) const {
     constexpr SkSVGColorspace kDefaultCS = SkSVGColorspace::kSRGB;
     const SkSVGColorspace cs = *ctx.presentationContext().fInherited.fColorInterpolationFilters;
+    if (cs == SkSVGColorspace::kAuto) {
+        SkDebugf("SkSVGFe::resolveColorspace: SkSVGColorspace::kAuto\n");
+    } else if (cs == SkSVGColorspace::kSRGB) {
+        SkDebugf("SkSVGFe::resolveColorspace: SkSVGColorspace::kSRGB\n");
+    } else if (cs == SkSVGColorspace::kLinearRGB) {
+        SkDebugf("SkSVGFe::resolveColorspace: SkSVGColorspace::kLinearRGB\n");
+    }
     return cs == SkSVGColorspace::kAuto ? kDefaultCS : cs;
 }
 
