@@ -103,6 +103,7 @@ DEFINE_FIELD_SET(Shader)
 void SkPaint::reset() { *this = SkPaint(); }
 
 void SkPaint::setStyle(Style style) {
+    SkDebugf("SkPaint::setStyle\n");
     if ((unsigned)style < kStyleCount) {
         fBitfields.fStyle = style;
     } else {
@@ -113,14 +114,17 @@ void SkPaint::setStyle(Style style) {
 }
 
 void SkPaint::setStroke(bool isStroke) {
+    SkDebugf("SkPaint::setStroke\n");
     fBitfields.fStyle = isStroke ? kStroke_Style : kFill_Style;
 }
 
 void SkPaint::setColor(SkColor color) {
+    SkDebugf("SkPaint::setColor (1)\n");
     fColor4f = SkColor4f::FromColor(color);
 }
 
 void SkPaint::setColor(const SkColor4f& color, SkColorSpace* colorSpace) {
+    SkDebugf("SkPaint::setColor (2)\n");
     SkColorSpaceXformSteps steps{colorSpace,          kUnpremul_SkAlphaType,
                                  sk_srgb_singleton(), kUnpremul_SkAlphaType};
     fColor4f = {color.fR, color.fG, color.fB, SkTPin(color.fA, 0.0f, 1.0f)};
@@ -128,10 +132,12 @@ void SkPaint::setColor(const SkColor4f& color, SkColorSpace* colorSpace) {
 }
 
 void SkPaint::setAlphaf(float a) {
+    SkDebugf("SkPaint::setAlphaf\n");
     fColor4f.fA = SkTPin(a, 0.0f, 1.0f);
 }
 
 void SkPaint::setARGB(U8CPU a, U8CPU r, U8CPU g, U8CPU b) {
+    SkDebugf("SkPaint::setARGB\n");
     this->setColor(SkColorSetARGB(a, r, g, b));
 }
 
@@ -149,14 +155,17 @@ bool SkPaint::isSrcOver() const {
 }
 
 void SkPaint::setBlendMode(SkBlendMode mode) {
+    SkDebugf("SkPaint::setBlendMode\n");
     this->setBlender(mode == SkBlendMode::kSrcOver ? nullptr : SkBlender::Mode(mode));
 }
 
 void SkPaint::setBlender(sk_sp<SkBlender> blender) {
+    SkDebugf("SkPaint::setBlender\n");
     fBlender = std::move(blender);
 }
 
 void SkPaint::setStrokeWidth(SkScalar width) {
+    SkDebugf("SkPaint::setStrokeWidth\n");
     if (width >= 0) {
         fWidth = width;
     } else {
@@ -167,6 +176,7 @@ void SkPaint::setStrokeWidth(SkScalar width) {
 }
 
 void SkPaint::setStrokeMiter(SkScalar limit) {
+    SkDebugf("SkPaint::setStrokeMiter\n");
     if (limit >= 0) {
         fMiterLimit = limit;
     } else {
@@ -177,6 +187,7 @@ void SkPaint::setStrokeMiter(SkScalar limit) {
 }
 
 void SkPaint::setStrokeCap(Cap ct) {
+    SkDebugf("SkPaint::setStrokeCap\n");
     if ((unsigned)ct < kCapCount) {
         fBitfields.fCapType = SkToU8(ct);
     } else {
@@ -187,6 +198,7 @@ void SkPaint::setStrokeCap(Cap ct) {
 }
 
 void SkPaint::setStrokeJoin(Join jt) {
+    SkDebugf("SkPaint::setStrokeJoin\n");
     if ((unsigned)jt < kJoinCount) {
         fBitfields.fJoinType = SkToU8(jt);
     } else {

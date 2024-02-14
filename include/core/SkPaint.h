@@ -167,7 +167,10 @@ public:
         partial transparency.
         @param aa  setting for antialiasing
     */
-    void setAntiAlias(bool aa) { fBitfields.fAntiAlias = static_cast<unsigned>(aa); }
+    void setAntiAlias(bool aa) {
+        SkDebugf("SkPaint::setAntiAlias\n");
+        fBitfields.fAntiAlias = static_cast<unsigned>(aa);
+    }
 
     /** Returns true if color error may be distributed to smooth color transition.
         @return  dithering state
@@ -179,7 +182,10 @@ public:
     /** Requests, but does not require, to distribute color error.
         @param dither  setting for ditering
     */
-    void setDither(bool dither) { fBitfields.fDither = static_cast<unsigned>(dither); }
+    void setDither(bool dither) {
+        SkDebugf("SkPaint::setDither\n");
+        fBitfields.fDither = static_cast<unsigned>(dither);
+    }
 
     /** \enum SkPaint::Style
         Set Style to fill, stroke, or both fill and stroke geometry.
@@ -251,6 +257,7 @@ public:
     void setColor(const SkColor4f& color, SkColorSpace* colorSpace = nullptr);
 
     void setColor4f(const SkColor4f& color, SkColorSpace* colorSpace = nullptr) {
+        SkDebugf("SkPaint::setColor4f\n");
         this->setColor(color, colorSpace);
     }
 
@@ -277,6 +284,7 @@ public:
 
     // Helper that accepts an int between 0 and 255, and divides it by 255.0
     void setAlpha(U8CPU a) {
+        SkDebugf("SkPaint::setAlpha\n");
         this->setAlphaf(a * (1.0f / 255));
     }
 
