@@ -61,12 +61,12 @@ SkRect SkSVGNode::objectBoundingBox(const SkSVGRenderContext& ctx) const {
 
 bool SkSVGNode::onPrepareToRender(SkSVGRenderContext* ctx) const {
     SkDebugf("SkSVGNode::onPrepareToRender\n");
-    if (ctx->presentationContext().fInherited.fColorInterpolationFilters == SkSVGColorspace::kLinearRGB) {
+    if (ctx->presentationContext().fInherited.fColorInterpolationFilters->type() == SkSVGColorspace::kLinearRGB) {
         SkDebugf("SkSVGNode::onPrepareToRender: kLinearRGB\n");
     }
     ctx->applyPresentationAttributes(fPresentationAttributes,
                                      this->hasChildren() ? 0 : SkSVGRenderContext::kLeaf);
-    if (ctx->presentationContext().fInherited.fColorInterpolationFilters == SkSVGColorspace::kLinearRGB) {
+    if (ctx->presentationContext().fInherited.fColorInterpolationFilters->type() == SkSVGColorspace::kLinearRGB) {
         SkDebugf("SkSVGNode::onPrepareToRender: still kLinearRGB\n");
     }
 
