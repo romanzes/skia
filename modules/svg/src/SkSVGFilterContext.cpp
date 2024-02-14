@@ -21,10 +21,13 @@ sk_sp<SkImageFilter> ConvertFilterColorspace(sk_sp<SkImageFilter>&& input,
                                              SkSVGColorspace src,
                                              SkSVGColorspace dst) {
     if (src == dst) {
+        SkDebugf("ConvertFilterColorspace: src == dst\n");
         return std::move(input);
     } else if (src == SkSVGColorspace::kSRGB && dst == SkSVGColorspace::kLinearRGB) {
+        SkDebugf("ConvertFilterColorspace: src == SkSVGColorspace::kSRGB && dst == SkSVGColorspace::kLinearRGB\n");
         return SkImageFilters::ColorFilter(SkColorFilters::SRGBToLinearGamma(), input);
     } else {
+        SkDebugf("ConvertFilterColorspace: src == SkSVGColorspace::kLinearRGB && dst == SkSVGColorspace::kSRGB\n");
         SkASSERT(src == SkSVGColorspace::kLinearRGB && dst == SkSVGColorspace::kSRGB);
         return SkImageFilters::ColorFilter(SkColorFilters::LinearToSRGBGamma(), input);
     }
@@ -74,6 +77,7 @@ void SkSVGFilterContext::registerResult(const SkSVGStringType& id,
 void SkSVGFilterContext::setPreviousResult(const sk_sp<SkImageFilter>& result,
                                            const SkRect& subregion,
                                            SkSVGColorspace resultColorspace) {
+    SkDebugf("SkSVGFilterContext::setPreviousResult\n");
     fPreviousResult = {result, subregion, resultColorspace};
 }
 
