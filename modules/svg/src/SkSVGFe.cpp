@@ -95,7 +95,10 @@ SkSVGColorspace SkSVGFe::resolveColorspace(const SkSVGRenderContext& ctx,
     return cs == SkSVGColorspace::kAuto ? kDefaultCS : cs;
 }
 
-void SkSVGFe::applyProperties(SkSVGRenderContext* ctx) const { this->onPrepareToRender(ctx); }
+void SkSVGFe::applyProperties(SkSVGRenderContext* ctx) const {
+    SkDebugf("SkSVGFe::applyProperties\n");
+    this->onPrepareToRender(ctx);
+}
 
 bool SkSVGFe::parseAndSetAttribute(const char* name, const char* value) {
     return INHERITED::parseAndSetAttribute(name, value) ||
