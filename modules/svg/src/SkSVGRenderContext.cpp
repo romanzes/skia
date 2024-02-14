@@ -308,11 +308,11 @@ void SkSVGRenderContext::applyFilter(const SkSVGFuncIRI& filter) {
     const SkSVGFilter* filterNode = reinterpret_cast<const SkSVGFilter*>(node.get());
     SkSVGColorspace cs = *filterNode->getColorInterpolationFilters();
     if (cs == SkSVGColorspace::kAuto) {
-        SkDebugf("SkSVGRenderContext::applyPresentationAttributes: kAuto\n");
+        SkDebugf("SkSVGRenderContext::applyFilter: kAuto\n");
     } else if (cs == SkSVGColorspace::kSRGB) {
-        SkDebugf("SkSVGRenderContext::applyPresentationAttributes: kSRGB\n");
+        SkDebugf("SkSVGRenderContext::applyFilter: kSRGB\n");
     } else if (cs == SkSVGColorspace::kLinearRGB) {
-        SkDebugf("SkSVGRenderContext::applyPresentationAttributes: kLinearRGB\n");
+        SkDebugf("SkSVGRenderContext::applyFilter: kLinearRGB\n");
     }
     sk_sp<SkImageFilter> imageFilter = filterNode->buildFilterDAG(*this);
     if (imageFilter) {
