@@ -60,7 +60,8 @@ SkRect SkSVGNode::objectBoundingBox(const SkSVGRenderContext& ctx) const {
 }
 
 bool SkSVGNode::onPrepareToRender(SkSVGRenderContext* ctx) const {
-    const SkSVGColorspace cs1 = *ctx->presentationContext().fInherited.fColorInterpolationFilters;
+    SkDebugf("SkSVGNode::onPrepareToRender\n");
+//    const SkSVGColorspace cs1 = *ctx->presentationContext().fInherited.fColorInterpolationFilters;
 //    if (cs1 == SkSVGColorspace::kAuto) {
 //        SkDebugf("SkSVGNode::onPrepareToRender: before: kAuto\n");
 //    } else if (cs1 == SkSVGColorspace::kSRGB) {
@@ -70,7 +71,7 @@ bool SkSVGNode::onPrepareToRender(SkSVGRenderContext* ctx) const {
 //    }
     ctx->applyPresentationAttributes(fPresentationAttributes,
                                      this->hasChildren() ? 0 : SkSVGRenderContext::kLeaf);
-    const SkSVGColorspace cs2 = *ctx->presentationContext().fInherited.fColorInterpolationFilters;
+//    const SkSVGColorspace cs2 = *ctx->presentationContext().fInherited.fColorInterpolationFilters;
 //    if (cs2 == SkSVGColorspace::kAuto) {
 //        SkDebugf("SkSVGNode::onPrepareToRender: after: kAuto\n");
 //    } else if (cs2 == SkSVGColorspace::kSRGB) {
