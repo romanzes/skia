@@ -7,49 +7,18 @@
 
 #include "src/gpu/graphite/dawn/DawnTexture.h"
 
+#include "include/core/SkTraceMemoryDump.h"
+#include "include/gpu/MutableTextureState.h"
 #include "include/gpu/graphite/dawn/DawnTypes.h"
-#include "include/private/gpu/graphite/DawnTypesPriv.h"
 #include "src/core/SkMipmap.h"
-#include "src/gpu/MutableTextureStateRef.h"
 #include "src/gpu/graphite/Log.h"
+#include "src/gpu/graphite/TextureUtils.h"
 #include "src/gpu/graphite/dawn/DawnCaps.h"
+#include "src/gpu/graphite/dawn/DawnGraphiteTypesPriv.h"
 #include "src/gpu/graphite/dawn/DawnGraphiteUtilsPriv.h"
 #include "src/gpu/graphite/dawn/DawnSharedContext.h"
 
 namespace skgpu::graphite {
-namespace {
-
-const char* texture_info_to_label(const TextureInfo& info,
-                                  const DawnTextureSpec& dawnSpec) {
-#ifdef SK_DEBUG
-    if (dawnSpec.fUsage & wgpu::TextureUsage::RenderAttachment) {
-        if (DawnFormatIsDepthOrStencil(dawnSpec.fFormat)) {
-            return "DepthStencil";
-        } else {
-            if (info.numSamples() > 1) {
-                if (dawnSpec.fUsage & wgpu::TextureUsage::TextureBinding) {
-                    return "MSAA SampledTexture-ColorAttachment";
-                } else {
-                    return "MSAA ColorAttachment";
-                }
-            } else {
-                if (dawnSpec.fUsage & wgpu::TextureUsage::TextureBinding) {
-                    return "SampledTexture-ColorAttachment";
-                } else {
-                    return "ColorAttachment";
-                }
-            }
-        }
-    } else {
-        SkASSERT(dawnSpec.fUsage & wgpu::TextureUsage::TextureBinding);
-        return "SampledTexture";
-    }
-#else
-    return nullptr;
-#endif
-}
-
-}
 
 wgpu::Texture DawnTexture::MakeDawnTexture(const DawnSharedContext* sharedContext,
                                            SkISize dimensions,
@@ -62,7 +31,7 @@ wgpu::Texture DawnTexture::MakeDawnTexture(const DawnSharedContext* sharedContex
         return {};
     }
 
-    const DawnTextureSpec& dawnSpec = info.dawnTextureSpec();
+    const DawnTextureSpec dawnSpec = TextureInfos::GetDawnTextureSpec(info);
 
     if (dawnSpec.fUsage & wgpu::TextureUsage::TextureBinding && !caps->isTexturable(info)) {
         return {};
@@ -77,13 +46,22 @@ wgpu::Texture DawnTexture::MakeDawnTexture(const DawnSharedContext* sharedContex
         return {};
     }
 
+#if !defined(__EMSCRIPTEN__)
+    // If a non-default YCbCr descriptor is provided, either the vkFormat or the externalFormat must
+    // be defined.
+    if (ycbcrUtils::DawnDescriptorIsValid(dawnSpec.fYcbcrVkDescriptor) &&
+        dawnSpec.fYcbcrVkDescriptor.vkFormat == 0 &&
+        dawnSpec.fYcbcrVkDescriptor.externalFormat == 0) {
+        return {};
+    }
+#endif
+
     int numMipLevels = 1;
     if (info.mipmapped() == Mipmapped::kYes) {
         numMipLevels = SkMipmap::ComputeLevelCount(dimensions.width(), dimensions.height()) + 1;
     }
 
     wgpu::TextureDescriptor desc;
-    desc.label                      = texture_info_to_label(info, dawnSpec);
     desc.usage                      = dawnSpec.fUsage;
     desc.dimension                  = wgpu::TextureDimension::e2D;
     desc.size.width                 = dimensions.width();
@@ -107,12 +85,61 @@ DawnTexture::DawnTexture(const DawnSharedContext* sharedContext,
                          SkISize dimensions,
                          const TextureInfo& info,
                          wgpu::Texture texture,
-                         wgpu::TextureView textureView,
+                         wgpu::TextureView sampleTextureView,
+                         wgpu::TextureView renderTextureView,
                          Ownership ownership,
                          skgpu::Budgeted budgeted)
-        : Texture(sharedContext, dimensions, info, /*mutableState=*/nullptr, ownership, budgeted)
+        : Texture(sharedContext,
+                  dimensions,
+                  info,
+                  /*mutableState=*/nullptr,
+                  ownership,
+                  budgeted)
         , fTexture(std::move(texture))
-        , fTextureView(std::move(textureView)) {}
+        , fSampleTextureView(std::move(sampleTextureView))
+        , fRenderTextureView(std::move(renderTextureView)) {}
+
+// static
+std::pair<wgpu::TextureView, wgpu::TextureView> DawnTexture::CreateTextureViews(
+        const wgpu::Texture& texture, const TextureInfo& info) {
+    const DawnTextureSpec dawnSpec = TextureInfos::GetDawnTextureSpec(info);
+    const auto aspect = dawnSpec.fAspect;
+    if (aspect == wgpu::TextureAspect::All) {
+        wgpu::TextureViewDescriptor viewDesc = {};
+        viewDesc.dimension = wgpu::TextureViewDimension::e2D;
+        viewDesc.baseArrayLayer = dawnSpec.fSlice;
+        viewDesc.arrayLayerCount = 1;
+        wgpu::TextureView sampleTextureView = texture.CreateView(&viewDesc);
+        wgpu::TextureView renderTextureView;
+        if (info.mipmapped() == Mipmapped::kYes) {
+            viewDesc.baseMipLevel = 0;
+            viewDesc.mipLevelCount = 1;
+            renderTextureView = texture.CreateView(&viewDesc);
+        } else {
+            renderTextureView = sampleTextureView;
+        }
+        return {sampleTextureView, renderTextureView};
+    }
+
+#if defined(__EMSCRIPTEN__)
+    SkASSERT(false);
+    return {};
+#else
+    SkASSERT(aspect == wgpu::TextureAspect::Plane0Only ||
+             aspect == wgpu::TextureAspect::Plane1Only ||
+             aspect == wgpu::TextureAspect::Plane2Only);
+    wgpu::TextureView planeTextureView;
+    wgpu::TextureViewDescriptor planeViewDesc = {};
+
+    planeViewDesc.format = dawnSpec.fViewFormat;
+    planeViewDesc.dimension = wgpu::TextureViewDimension::e2D;
+    planeViewDesc.aspect = aspect;
+    planeViewDesc.baseArrayLayer = dawnSpec.fSlice;
+    planeViewDesc.arrayLayerCount = 1;
+    planeTextureView = texture.CreateView(&planeViewDesc);
+    return {planeTextureView, planeTextureView};
+#endif
+}
 
 sk_sp<Texture> DawnTexture::Make(const DawnSharedContext* sharedContext,
                                  SkISize dimensions,
@@ -122,12 +149,13 @@ sk_sp<Texture> DawnTexture::Make(const DawnSharedContext* sharedContext,
     if (!texture) {
         return {};
     }
-    auto textureView = texture.CreateView();
+    auto [sampleTextureView, renderTextureView] = CreateTextureViews(texture, info);
     return sk_sp<Texture>(new DawnTexture(sharedContext,
                                           dimensions,
                                           info,
                                           std::move(texture),
-                                          std::move(textureView),
+                                          std::move(sampleTextureView),
+                                          std::move(renderTextureView),
                                           Ownership::kOwned,
                                           budgeted));
 }
@@ -140,12 +168,14 @@ sk_sp<Texture> DawnTexture::MakeWrapped(const DawnSharedContext* sharedContext,
         SKGPU_LOG_E("No valid texture passed into MakeWrapped\n");
         return {};
     }
-    auto textureView = texture.CreateView();
+
+    auto [sampleTextureView, renderTextureView] = CreateTextureViews(texture, info);
     return sk_sp<Texture>(new DawnTexture(sharedContext,
                                           dimensions,
                                           info,
                                           std::move(texture),
-                                          std::move(textureView),
+                                          std::move(sampleTextureView),
+                                          std::move(renderTextureView),
                                           Ownership::kWrapped,
                                           skgpu::Budgeted::kNo));
 }
@@ -153,23 +183,51 @@ sk_sp<Texture> DawnTexture::MakeWrapped(const DawnSharedContext* sharedContext,
 sk_sp<Texture> DawnTexture::MakeWrapped(const DawnSharedContext* sharedContext,
                                         SkISize dimensions,
                                         const TextureInfo& info,
-                                        wgpu::TextureView textureView) {
+                                        const wgpu::TextureView& textureView) {
     if (!textureView) {
-        SKGPU_LOG_E("No valid texture passed into MakeWrapped\n");
+        SKGPU_LOG_E("No valid texture view passed into MakeWrapped\n");
         return {};
     }
     return sk_sp<Texture>(new DawnTexture(sharedContext,
                                           dimensions,
                                           info,
-                                          nullptr,
-                                          std::move(textureView),
+                                          /*texture=*/nullptr,
+                                          /*sampleTextureView=*/textureView,
+                                          /*renderTextureView=*/textureView,
                                           Ownership::kWrapped,
                                           skgpu::Budgeted::kNo));
 }
 
 void DawnTexture::freeGpuData() {
+    if (this->ownership() != Ownership::kWrapped && fTexture) {
+        // Destroy the texture even if it is still referenced by other BindGroup or views.
+        // Graphite should already guarantee that all command buffers using this texture (indirectly
+        // via BindGroup or views) are already completed.
+        fTexture.Destroy();
+    }
     fTexture = nullptr;
-    fTextureView = nullptr;
+    fSampleTextureView = nullptr;
+    fRenderTextureView = nullptr;
+}
+
+void DawnTexture::setBackendLabel(char const* label) {
+    if (!sharedContext()->caps()->setBackendLabels()) {
+        return;
+    }
+    SkASSERT(label);
+    // Wrapped texture views won't have an associated texture here.
+    if (fTexture) {
+        fTexture.SetLabel(label);
+    }
+    // But we always have the texture views available.
+    SkASSERT(fSampleTextureView);
+    SkASSERT(fRenderTextureView);
+    if (fSampleTextureView.Get() == fRenderTextureView.Get()) {
+        fSampleTextureView.SetLabel(SkStringPrintf("%s_%s", label, "_TextureView").c_str());
+    } else {
+        fSampleTextureView.SetLabel(SkStringPrintf("%s_%s", label, "_SampleTextureView").c_str());
+        fRenderTextureView.SetLabel(SkStringPrintf("%s_%s", label, "_RenderTextureView").c_str());
+    }
 }
 
 } // namespace skgpu::graphite

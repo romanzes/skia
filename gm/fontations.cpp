@@ -15,6 +15,7 @@
 #include "include/ports/SkTypeface_fontations.h"
 #include "tools/Resources.h"
 
+
 namespace skiagm {
 
 namespace {
@@ -119,11 +120,11 @@ protected:
                 SkTypeface_Make_Fontations(GetResourceAsStream(kReportFontName), SkFontArguments());
     }
 
-    SkString onShortName() override {
+    SkString getName() const override {
         return SkStringPrintf("typeface_fontations_%s", fTestName.c_str());
     }
 
-    SkISize onISize() override { return SkISize::Make(400, 200); }
+    SkISize getISize() override { return SkISize::Make(400, 200); }
 
     DrawResult onDraw(SkCanvas* canvas, SkString* errorMsg) override {
         SkPaint paint;

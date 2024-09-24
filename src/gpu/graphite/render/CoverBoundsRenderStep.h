@@ -14,16 +14,15 @@ namespace skgpu::graphite {
 
 class CoverBoundsRenderStep final : public RenderStep {
 public:
-    CoverBoundsRenderStep(bool inverseFill);
+    CoverBoundsRenderStep(const char* tag, DepthStencilSettings dsSettings);
 
     ~CoverBoundsRenderStep() override;
 
     std::string vertexSkSL() const override;
-    void writeVertices(DrawWriter*, const DrawParams&, int ssboIndex) const override;
+    void writeVertices(DrawWriter*, const DrawParams&, skvx::ushort2 ssboIndices) const override;
     void writeUniformsAndTextures(const DrawParams&, PipelineDataGatherer*) const override;
 
 private:
-    const bool fInverseFill;
 };
 
 }  // namespace skgpu::graphite

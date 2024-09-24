@@ -14,6 +14,7 @@
 #include "include/core/SkRefCnt.h"
 #include "include/core/SkSamplingOptions.h"
 #include "include/core/SkScalar.h"
+#include "include/core/SkTypes.h"
 #include "include/private/base/SkNoncopyable.h"
 #include "include/private/base/SkTDArray.h"
 #include "include/utils/SkNoDrawCanvas.h"
@@ -106,7 +107,7 @@ public:
                         SkScalar x,
                         SkScalar y,
                         const SkPaint& paint) override;
-    void onDrawSlug(const sktext::gpu::Slug* slug) override;
+    void onDrawSlug(const sktext::gpu::Slug* slug, const SkPaint& paint) override;
     void onDrawGlyphRunList(
             const sktext::GlyphRunList& glyphRunList, const SkPaint& paint) override;
     void onDrawPatch(const SkPoint cubics[12], const SkColor colors[4],
@@ -133,9 +134,9 @@ public:
                      SkBlendMode, const SkSamplingOptions&, const SkRect*, const SkPaint*) override;
 
     void onDrawVerticesObject(const SkVertices*, SkBlendMode, const SkPaint&) override;
-#ifdef SK_ENABLE_SKSL
+
     void onDrawMesh(const SkMesh&, sk_sp<SkBlender>, const SkPaint&) override;
-#endif
+
     void onDrawShadowRec(const SkPath&, const SkDrawShadowRec&) override;
 
     void onClipRect(const SkRect& rect, SkClipOp, ClipEdgeStyle) override;

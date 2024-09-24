@@ -62,9 +62,8 @@ struct StyleBlock {
 };
 
 struct ResolvedFontDescriptor {
-
     ResolvedFontDescriptor(TextIndex index, SkFont font)
-        : fFont(font), fTextStart(index) { }
+            : fFont(std::move(font)), fTextStart(index) {}
     SkFont fFont;
     TextIndex fTextStart;
 };
@@ -95,14 +94,14 @@ public:
                   skia_private::TArray<Block, true> blocks,
                   skia_private::TArray<Placeholder, true> placeholders,
                   sk_sp<FontCollection> fonts,
-                  std::shared_ptr<SkUnicode> unicode);
+                  sk_sp<SkUnicode> unicode);
 
     ParagraphImpl(const std::u16string& utf16text,
                   ParagraphStyle style,
                   skia_private::TArray<Block, true> blocks,
                   skia_private::TArray<Placeholder, true> placeholders,
                   sk_sp<FontCollection> fonts,
-                  std::shared_ptr<SkUnicode> unicode);
+                  sk_sp<SkUnicode> unicode);
 
     ~ParagraphImpl() override;
 
@@ -216,13 +215,18 @@ public:
     bool containsEmoji(SkTextBlob* textBlob) override;
 
     int getLineNumberAt(TextIndex codeUnitIndex) const override;
+    int getLineNumberAtUTF16Offset(size_t codeUnitIndex) override;
     bool getLineMetricsAt(int lineNumber, LineMetrics* lineMetrics) const override;
     TextRange getActualTextRange(int lineNumber, bool includeSpaces) const override;
     bool getGlyphClusterAt(TextIndex codeUnitIndex, GlyphClusterInfo* glyphInfo) override;
     bool getClosestGlyphClusterAt(SkScalar dx,
                                   SkScalar dy,
                                   GlyphClusterInfo* glyphInfo) override;
+
+    bool getGlyphInfoAtUTF16Offset(size_t codeUnitIndex, GlyphInfo* graphemeInfo) override;
+    bool getClosestUTF16GlyphInfoAt(SkScalar dx, SkScalar dy, GlyphInfo* graphemeInfo) override;
     SkFont getFontAt(TextIndex codeUnitIndex) const override;
+    SkFont getFontAtUTF16Offset(size_t codeUnitIndex) override;
     std::vector<FontInfo> getFonts() const override;
 
     InternalLineMetrics getEmptyMetrics() const { return fEmptyMetrics; }
@@ -240,7 +244,7 @@ public:
         return (fCodeUnitProperties[index] & property) == property;
     }
 
-    SkUnicode* getUnicode() { return fUnicode.get(); }
+    sk_sp<SkUnicode> getUnicode() { return fUnicode; }
 
 private:
     friend class ParagraphBuilder;
@@ -292,7 +296,7 @@ private:
     SkScalar fOldHeight;
     SkScalar fMaxWidthWithTrailingSpaces;
 
-    std::shared_ptr<SkUnicode> fUnicode;
+    sk_sp<SkUnicode> fUnicode;
     bool fHasLineBreaks;
     bool fHasWhitespacesInside;
     TextIndex fTrailingSpaces;

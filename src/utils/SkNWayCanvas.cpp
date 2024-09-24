@@ -53,7 +53,7 @@ void SkNWayCanvas::addCanvas(SkCanvas* canvas) {
         // We are using the nway canvas as a wrapper for the originally added canvas, and the device
         // on the nway may contradict calls for the device on this canvas. So, to add a second
         // canvas, the devices on the first canvas, and the nway base device must be different.
-        SkASSERT(fList[0]->baseDevice() != this->baseDevice());
+        SkASSERT(fList[0]->rootDevice() != this->rootDevice());
     }
     if (canvas) {
         *fList.append() = canvas;
@@ -332,10 +332,10 @@ void SkNWayCanvas::onDrawTextBlob(const SkTextBlob* blob, SkScalar x, SkScalar y
     }
 }
 
-void SkNWayCanvas::onDrawSlug(const sktext::gpu::Slug* slug) {
+void SkNWayCanvas::onDrawSlug(const sktext::gpu::Slug* slug, const SkPaint& paint) {
     Iter iter(fList);
     while (iter.next()) {
-        iter->drawSlug(slug);
+        iter->drawSlug(slug, paint);
     }
 }
 

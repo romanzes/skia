@@ -6,9 +6,6 @@
  */
 
 #include "include/effects/SkImageFilters.h"
-#include "src/effects/imagefilters/SkCropImageFilter.h"
-
-#ifdef SK_ENABLE_SKSL
 
 #include "include/core/SkFlattenable.h"
 #include "include/core/SkImageFilter.h"
@@ -23,12 +20,13 @@
 #include "include/private/base/SkSpan_impl.h"
 #include "src/core/SkImageFilterTypes.h"
 #include "src/core/SkImageFilter_Base.h"
+#include "src/core/SkKnownRuntimeEffects.h"
 #include "src/core/SkReadBuffer.h"
-#include "src/core/SkRuntimeEffectPriv.h"
 #include "src/core/SkWriteBuffer.h"
 
 #include <algorithm>
 #include <cstdint>
+#include <optional>
 #include <utility>
 
 namespace {
@@ -44,7 +42,7 @@ enum class MorphDirection { kX, kY };
 class SkMorphologyImageFilter final : public SkImageFilter_Base {
 public:
     SkMorphologyImageFilter(MorphType type, SkSize radii, sk_sp<SkImageFilter> input)
-            : SkImageFilter_Base(&input, 1, nullptr)
+            : SkImageFilter_Base(&input, 1)
             , fType(type)
             , fRadii(radii) {}
 
@@ -63,11 +61,11 @@ private:
     skif::LayerSpace<SkIRect> onGetInputLayerBounds(
             const skif::Mapping& mapping,
             const skif::LayerSpace<SkIRect>& desiredOutput,
-            const skif::LayerSpace<SkIRect>& contentBounds) const override;
+            std::optional<skif::LayerSpace<SkIRect>> contentBounds) const override;
 
-    skif::LayerSpace<SkIRect> onGetOutputLayerBounds(
+    std::optional<skif::LayerSpace<SkIRect>> onGetOutputLayerBounds(
             const skif::Mapping& mapping,
-            const skif::LayerSpace<SkIRect>& contentBounds) const override;
+            std::optional<skif::LayerSpace<SkIRect>> contentBounds) const override;
 
     skif::LayerSpace<SkISize> radii(const skif::Mapping& mapping) const {
         skif::LayerSpace<SkISize> radii = mapping.paramToLayer(fRadii).round();
@@ -120,7 +118,7 @@ sk_sp<SkImageFilter> make_morphology(MorphType type,
     // we just need to apply the 'cropRect' to the 'input'.
 
     if (cropRect) {
-        filter = SkMakeCropImageFilter(*cropRect, std::move(filter));
+        filter = SkImageFilters::Crop(*cropRect, std::move(filter));
     }
     return filter;
 }
@@ -130,36 +128,21 @@ sk_sp<SkImageFilter> make_morphology(MorphType type,
 // room. The other tradeoff is that for R > kMaxLinearRadius, the sparse morphology kernel only
 // requires 2 samples to double the accumulated kernel size, but at the cost of another render
 // target.
-static constexpr int kMaxLinearRadius = 14;
+static constexpr int kMaxLinearRadius = 14; // KEEP IN SYNC WITH CONSTANT IN `sksl_rt_shader.sksl`
 sk_sp<SkShader> make_linear_morphology(sk_sp<SkShader> input,
                                        MorphType type,
                                        MorphDirection direction,
                                        int radius) {
     SkASSERT(radius <= kMaxLinearRadius);
-    static const SkRuntimeEffect* effect = SkMakeRuntimeEffect(SkRuntimeEffect::MakeForShader,
-            "const int kMaxLinearRadius = 14;" // KEEP IN SYNC WITH ABOVE DEFINITION
 
-            "uniform shader child;"
-            "uniform half2 offset;"
-            "uniform half flip;" // -1 converts the max() calls to min()
-            "uniform int radius;"
+    const SkRuntimeEffect* linearMorphologyEffect =
+            GetKnownRuntimeEffect(SkKnownRuntimeEffects::StableKey::kLinearMorphology);
 
-            "half4 main(float2 coord) {"
-                "half4 aggregate = flip*child.eval(coord);" // case 0 only samples once
-                "for (int i = 1; i <= kMaxLinearRadius; ++i) {"
-                    "if (i > radius) break;"
-                    "half2 delta = half(i) * offset;"
-                    "aggregate = max(aggregate, max(flip*child.eval(coord + delta),"
-                                                   "flip*child.eval(coord - delta)));"
-                "}"
-                "return flip*aggregate;"
-            "}");
-
-    SkRuntimeShaderBuilder builder(sk_ref_sp(effect));
+    SkRuntimeShaderBuilder builder(sk_ref_sp(linearMorphologyEffect));
     builder.child("child") = std::move(input);
     builder.uniform("offset") = direction == MorphDirection::kX ? SkV2{1.f, 0.f} : SkV2{0.f, 1.f};
     builder.uniform("flip") = (type == MorphType::kDilate) ? 1.f : -1.f;
-    builder.uniform("radius") = (int32_t) radius;
+    builder.uniform("radius") = (int32_t)radius;
 
     return builder.makeShader();
 }
@@ -172,18 +155,11 @@ sk_sp<SkShader> make_sparse_morphology(sk_sp<SkShader> input,
                                        MorphType type,
                                        MorphDirection direction,
                                        int radius) {
-    static const SkRuntimeEffect* effect = SkMakeRuntimeEffect(SkRuntimeEffect::MakeForShader,
-        "uniform shader child;"
-        "uniform half2 offset;"
-        "uniform half flip;"
 
-        "half4 main(float2 coord) {"
-            "half4 aggregate = max(flip*child.eval(coord + offset),"
-                                  "flip*child.eval(coord - offset));"
-            "return flip*aggregate;"
-        "}");
+    const SkRuntimeEffect* sparseMorphologyEffect =
+            GetKnownRuntimeEffect(SkKnownRuntimeEffects::StableKey::kSparseMorphology);
 
-    SkRuntimeShaderBuilder builder(sk_ref_sp(effect));
+    SkRuntimeShaderBuilder builder(sk_ref_sp(sparseMorphologyEffect));
     builder.child("child") = std::move(input);
     builder.uniform("offset") = direction == MorphDirection::kX ? SkV2{(float)radius, 0.f}
                                                                 : SkV2{0.f, (float)radius};
@@ -320,17 +296,20 @@ skif::FilterResult SkMorphologyImageFilter::onFilterImage(const skif::Context& c
 skif::LayerSpace<SkIRect> SkMorphologyImageFilter::onGetInputLayerBounds(
         const skif::Mapping& mapping,
         const skif::LayerSpace<SkIRect>& desiredOutput,
-        const skif::LayerSpace<SkIRect>& contentBounds) const {
+        std::optional<skif::LayerSpace<SkIRect>> contentBounds) const {
     skif::LayerSpace<SkIRect> requiredInput = this->requiredInput(mapping, desiredOutput);
     return this->getChildInputLayerBounds(0, mapping, requiredInput, contentBounds);
 }
 
-skif::LayerSpace<SkIRect> SkMorphologyImageFilter::onGetOutputLayerBounds(
+std::optional<skif::LayerSpace<SkIRect>> SkMorphologyImageFilter::onGetOutputLayerBounds(
         const skif::Mapping& mapping,
-        const skif::LayerSpace<SkIRect>& contentBounds) const {
-    skif::LayerSpace<SkIRect> childOutput =
-            this->getChildOutputLayerBounds(0, mapping, contentBounds);
-    return this->kernelOutputBounds(mapping, childOutput);
+        std::optional<skif::LayerSpace<SkIRect>> contentBounds) const {
+    auto childOutput = this->getChildOutputLayerBounds(0, mapping, contentBounds);
+    if (childOutput) {
+        return this->kernelOutputBounds(mapping, *childOutput);
+    } else {
+        return skif::LayerSpace<SkIRect>::Unbounded();
+    }
 }
 
 SkRect SkMorphologyImageFilter::computeFastBounds(const SkRect& src) const {
@@ -343,22 +322,3 @@ SkRect SkMorphologyImageFilter::computeFastBounds(const SkRect& src) const {
     }
     return bounds;
 }
-
-#else
-
-// The morphology effects requires SkSL, just return the input, possibly cropped
-sk_sp<SkImageFilter> SkImageFilters::Dilate(SkScalar radiusX, SkScalar radiusY,
-                                            sk_sp<SkImageFilter> input,
-                                            const CropRect& cropRect) {
-    return cropRect ? SkMakeCropImageFilter(*cropRect, std::move(input)) : input;
-}
-
-sk_sp<SkImageFilter> SkImageFilters::Erode(SkScalar radiusX, SkScalar radiusY,
-                                           sk_sp<SkImageFilter> input,
-                                           const CropRect& cropRect) {
-    return cropRect ? SkMakeCropImageFilter(*cropRect, std::move(input)) : input;
-}
-
-void SkRegisterMorphologyImageFilterFlattenables() {}
-
-#endif

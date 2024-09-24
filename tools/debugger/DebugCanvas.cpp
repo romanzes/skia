@@ -28,14 +28,11 @@
 #include "src/core/SkCanvasPriv.h"
 #include "src/core/SkRectPriv.h"
 #include "src/core/SkStringUtils.h"
-#include "src/gpu/ganesh/GrCanvas.h"
-#include "src/gpu/ganesh/GrRecordingContextPriv.h"
-#include "src/gpu/ganesh/GrRenderTargetProxy.h"
-#include "src/gpu/ganesh/GrSurfaceProxy.h"
 #include "src/utils/SkJSONWriter.h"
 #include "tools/debugger/DebugLayerManager.h"
 #include "tools/debugger/DrawCommand.h"
 
+#include <cstring>
 #include <string>
 #include <utility>
 
@@ -48,6 +45,10 @@ struct SkDrawShadowRec;
 
 #if defined(SK_GANESH)
 #include "src/gpu/ganesh/GrAuditTrail.h"
+#include "src/gpu/ganesh/GrCanvas.h"
+#include "src/gpu/ganesh/GrRecordingContextPriv.h"
+#include "src/gpu/ganesh/GrRenderTargetProxy.h"
+#include "src/gpu/ganesh/GrSurfaceProxy.h"
 #endif
 
 using namespace skia_private;

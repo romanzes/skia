@@ -19,10 +19,15 @@ import (
 
 var gniExportDescs = []exporter.GNIExportDesc{
 	{GNI: "gn/codec.gni", Vars: []exporter.GNIFileListExportDesc{
-		{Var: "skia_codec_core",
+		{Var: "skia_codec_public",
 			Rules: []string{
-				"//src/codec:core_hdrs",
-				"//src/codec:core_srcs",
+				"//include/codec:public_hdrs",
+			},
+		},
+		{Var: "skia_codec_shared",
+			Rules: []string{
+				"//src/codec:any_decoder",
+				"//include/codec:any_codec_hdrs",
 			},
 		},
 		{Var: "skia_codec_decode_bmp",
@@ -42,12 +47,17 @@ var gniExportDescs = []exporter.GNIExportDesc{
 				"//src/codec:jpeg_xmp_srcs",
 			},
 		},
+		{Var: "skia_codec_png",
+			Rules: []string{
+				"//src/codec:buffet_png_srcs",
+				"//src/codec:common_png_srcs",
+			},
+		},
 	}},
 	{GNI: "gn/core.gni", Vars: []exporter.GNIFileListExportDesc{
 		{Var: "skia_core_public",
 			Rules: []string{
 				"//include/core:public_hdrs",
-				"//include/core:legacy_draw_looper",
 			}},
 		{Var: "skia_core_sources",
 			Rules: []string{
@@ -59,13 +69,12 @@ var gniExportDescs = []exporter.GNIExportDesc{
 				"//src/base:private_hdrs",
 				"//src/base:skslc_srcs",
 				"//src/base:srcs",
-				"//src/core:core_hdrs",
+				"//src/core:legacy_core_hdrs",
+				"//src/core:legacy_core_srcs",
 				"//src/core:core_skslc_hdrs",
 				"//src/core:core_skslc_srcs",
-				"//src/core:core_srcs",
-				"//src/core:legacy_draw_looper",
-				"//src/image:core_hdrs",
-				"//src/image:core_srcs",
+				"//src/image:image_hdrs",
+				"//src/image:image_srcs",
 				"//src/lazy:lazy_hdrs",
 				"//src/lazy:lazy_srcs",
 				"//src/opts:private_hdrs",
@@ -74,27 +83,12 @@ var gniExportDescs = []exporter.GNIExportDesc{
 				"//src/text:text_hdrs",
 				"//src/text:text_srcs",
 			}},
-		{Var: "skia_needs_sksl_sources",
-			Rules: []string{
-				"//src/core:sksl_hdrs",
-				"//src/core:sksl_srcs",
-				"//src/shaders:sksl_hdrs",
-				"//src/shaders:sksl_srcs",
-			}},
 		{Var: "skia_pathops_public",
 			Rules: []string{"//include/pathops:public_hdrs"}},
 		{Var: "skia_pathops_sources",
 			Rules: []string{
-				"//src/pathops:pathops_hdrs",
-				"//src/pathops:pathops_srcs",
-			}},
-		{Var: "skia_skpicture_public",
-			Rules: []string{"//include/core:skpicture_public_hdrs"}},
-		{Var: "skia_skpicture_sources",
-			Rules: []string{
-				"//src/core:skpicture_hdrs",
-				"//src/core:skpicture_srcs",
-				"//src/shaders:skpicture_srcs",
+				"//src/pathops:legacy_pathops_hdrs",
+				"//src/pathops:legacy_pathops_srcs",
 			}},
 		{Var: "skia_encode_public",
 			Rules: []string{"//include/encode:encode_hdrs"}},
@@ -128,7 +122,7 @@ var gniExportDescs = []exporter.GNIExportDesc{
 		{Var: "skia_discardable_memory_chromium",
 			Rules: []string{"//include/private/chromium:discardable_memory_hdrs"}},
 		{Var: "skia_no_slug_srcs",
-			Rules: []string{"//src/text:no_slug_srcs"}},
+			Rules: []string{}},
 	},
 	},
 	{GNI: "gn/effects.gni", Vars: []exporter.GNIFileListExportDesc{
@@ -140,7 +134,6 @@ var gniExportDescs = []exporter.GNIExportDesc{
 			Rules: []string{
 				"//src/effects:effects_hdrs",
 				"//src/effects:effects_srcs",
-				"//src/effects:legacy_draw_looper",
 				"//src/shaders/gradients:gradient_hdrs",
 				"//src/shaders/gradients:gradient_srcs",
 			}},
@@ -148,14 +141,6 @@ var gniExportDescs = []exporter.GNIExportDesc{
 			Rules: []string{
 				"//src/effects/colorfilters:colorfilter_srcs",
 				"//src/effects/colorfilters:colorfilter_hdrs",
-			}},
-		{Var: "skia_colorfilters_sksl_sources",
-			Rules: []string{
-				"//src/effects/colorfilters:sksl_srcs",
-			}},
-		{Var: "skia_colorfilters_nosksl_sources",
-			Rules: []string{
-				"//src/effects/colorfilters:no_sksl_srcs",
 			}},
 	}},
 	{GNI: "gn/effects_imagefilters.gni", Vars: []exporter.GNIFileListExportDesc{
@@ -165,16 +150,130 @@ var gniExportDescs = []exporter.GNIExportDesc{
 			}},
 		{Var: "skia_effects_imagefilter_sources",
 			Rules: []string{
-				"//src/effects/imagefilters:imagefilters_srcs",
+				"//src/effects/imagefilters:srcs",
 			}}},
 	},
+	{GNI: "gn/ports.gni", Vars: []exporter.GNIFileListExportDesc{
+		{Var: "skia_ports_sources",
+			Rules: []string{
+				"//src/ports:global_init",
+				"//src/ports:osfile",
+			}},
+		{Var: "skia_ports_freetype_sources",
+			Rules: []string{
+				"//src/ports:typeface_freetype",
+				"//src/ports:typeface_freetype_hdrs",
+			}},
+		{Var: "skia_ports_fontmgr_android_public",
+			Rules: []string{
+				"//include/ports:android_fontmgr_hdrs",
+			}},
+		{Var: "skia_ports_fontmgr_android_sources",
+			Rules: []string{
+				"//src/ports:fontmgr_android_hdrs",
+				"//src/ports:fontmgr_android_srcs",
+			}},
+		{Var: "skia_ports_fontmgr_custom_sources",
+			Rules: []string{
+				"//src/ports:fontmgr_custom_hdrs",
+				"//src/ports:fontmgr_custom_srcs",
+			}},
+		{Var: "skia_ports_fontmgr_coretext_public",
+			Rules: []string{
+				"//include/ports:mac_typeface",
+				"//include/ports:coretext_fontmgr_hdrs",
+			}},
+		{Var: "skia_ports_fontmgr_coretext_sources",
+			Rules: []string{
+				"//src/ports:fontmgr_coretext_srcs",
+				"//src/ports:typeface_mac_srcs",
+				"//src/ports:typeface_mac_hdrs",
+			}},
+		{Var: "skia_ports_fontmgr_directory_public",
+			Rules: []string{
+				"//include/ports:directory_fontmgr_hdrs",
+			}},
+		{Var: "skia_ports_fontmgr_directory_sources",
+			Rules: []string{
+				"//src/ports:fontmgr_custom_directory",
+			}},
+		{Var: "skia_ports_fontmgr_embedded_public",
+			Rules: []string{
+				"//include/ports:data_fontmgr_hdrs",
+			}},
+		{Var: "skia_ports_fontmgr_embedded_sources",
+			Rules: []string{
+				"//src/ports:fontmgr_custom_embedded",
+			}},
+		{Var: "skia_ports_fontmgr_empty_public",
+			Rules: []string{
+				"//include/ports:empty_fontmgr_hdrs",
+			}},
+		{Var: "skia_ports_fontmgr_empty_sources",
+			Rules: []string{
+				"//src/ports:fontmgr_custom_empty",
+			}},
+		{Var: "skia_ports_fontmgr_fontconfig_public",
+			Rules: []string{
+				"//include/ports:fontconfig_fontmgr_hdrs",
+			}},
+		{Var: "skia_ports_fontmgr_fontconfig_sources",
+			Rules: []string{
+				"//src/ports:legacy_fontmgr_fontconfig",
+			}},
+		{Var: "skia_ports_fontmgr_fontations_public",
+			Rules: []string{
+				"//include/ports:fontmgr_fontations_hdrs",
+			}},
+		{Var: "skia_ports_fontmgr_fontations_sources",
+			Rules: []string{
+				"//src/ports:fontmgr_fontations_empty_srcs",
+			}},
+		{Var: "skia_ports_fontmgr_fuchsia_public",
+			Rules: []string{
+				"//include/ports:fuchsia_fontmgr_hdrs",
+			}},
+		{Var: "skia_ports_fontmgr_fuchsia_sources",
+			Rules: []string{
+				"//src/ports:fontmgr_fuchsia_srcs",
+			}},
+		{Var: "skia_ports_typeface_fontations_sources",
+			Rules: []string{
+				"//src/ports:typeface_fontations_hdrs",
+				"//src/ports:typeface_fontations_srcs",
+			}},
+		{Var: "skia_ports_windows_sources",
+			Rules: []string{
+				"//src/ports:osfile_win",
+			}},
+		{Var: "skia_ports_windows_fonts_public",
+			Rules: []string{
+				"//include/ports:typeface_windows_hdrs",
+			}},
+		{Var: "skia_ports_windows_fonts_sources",
+			Rules: []string{
+				"//src/ports:windows_fonts_srcs",
+			}},
+		{Var: "skia_ports_fci_public",
+			Rules: []string{
+				"//include/ports:fci_fontmgr_hdrs",
+			}},
+		{Var: "skia_ports_fci_sources",
+			Rules: []string{
+				"//src/ports:fontconfig_interface_srcs",
+			}},
+		{Var: "skia_ports_fonthost_win_sources",
+			Rules: []string{
+				"//src/ports:fonthost_win_srcs",
+			}},
+	}},
 	{GNI: "gn/pdf.gni", Vars: []exporter.GNIFileListExportDesc{
 		{Var: "skia_pdf_public",
 			Rules: []string{"//include/docs:public_hdrs"}},
 		{Var: "skia_pdf_sources",
 			Rules: []string{
-				"//src/pdf:pdf_hdrs",
-				"//src/pdf:pdf_srcs",
+				"//src/pdf:_pdf_hdrs",
+				"//src/pdf:_pdf_srcs",
 			}},
 		{Var: "skia_pdf_jpeginfo_lib",
 			Rules: []string{"//src/pdf:jpeg_info_libjpeg"}},
@@ -182,7 +281,7 @@ var gniExportDescs = []exporter.GNIExportDesc{
 			Rules: []string{"//src/pdf:jpeg_info_none"}},
 	}},
 	{GNI: "gn/sksl.gni", Vars: []exporter.GNIFileListExportDesc{
-		{Var: "skia_sksl_sources",
+		{Var: "skia_sksl_core_sources",
 			Rules: []string{
 				"//include/private:sksl_private_hdrs",
 				"//include/sksl:public_hdrs",
@@ -197,35 +296,76 @@ var gniExportDescs = []exporter.GNIExportDesc{
 				"//src/sksl/tracing:srcs",
 				"//src/sksl/transform:transform_hdrs",
 				"//src/sksl/transform:transform_srcs",
-				"//src/sksl:core_hdrs",
-				"//src/sksl:core_srcs",
+				"//src/sksl:sksl_hdrs",
+				"//src/sksl:sksl_srcs",
+			}},
+		// TODO(kjlubick) remove this group after clients are migrated
+		// onto core and/or graphite
+		{Var: "skia_sksl_default_module_sources",
+			Rules: []string{
+				"//src/sksl:sksl_default_module_srcs",
+				"//src/sksl:sksl_graphite_modules_hdrs",
+				"//src/sksl:sksl_graphite_modules_srcs",
+			}},
+		{Var: "skia_sksl_core_module_sources",
+			Rules: []string{
+				"//src/sksl:sksl_default_module_srcs",
+				"//src/sksl:sksl_graphite_modules_hdrs",
+			}},
+		{Var: "skia_sksl_graphite_modules_sources",
+			Rules: []string{
+				"//src/sksl:sksl_graphite_modules_srcs",
+				"//src/sksl:sksl_graphite_modules_hdrs",
 			}},
 		{Var: "skia_sksl_tracing_sources",
 			Rules: []string{
 				"//src/sksl/tracing:enabled_hdrs",
 				"//src/sksl/tracing:enabled_srcs",
 			}},
-		{Var: "skia_sksl_gpu_sources",
+		{Var: "skia_sksl_pipeline_sources",
 			Rules: []string{
-				"//src/sksl/codegen:gpu_hdrs",
-				"//src/sksl/codegen:gpu_srcs",
+				"//src/sksl/codegen:gpu",
+			}},
+		{Var: "skia_sksl_codegen_sources",
+			Rules: []string{
+				"//src/sksl/codegen:glsl",
+				"//src/sksl/codegen:metal",
+				"//src/sksl/codegen:spirv",
+				"//src/sksl/codegen:wgsl",
+			}},
+		{Var: "skia_sksl_hlsl_sources",
+			Rules: []string{
+				"//src/sksl/codegen:hlsl",
+			}},
+		{Var: "skia_sksl_validate_spirv_sources",
+			Rules: []string{
+				"//src/sksl/codegen:spirv_validator",
+			}},
+		{Var: "skia_sksl_validate_wgsl_sources",
+			Rules: []string{
+				"//src/sksl/codegen:wgsl_validator",
 			}},
 		{Var: "skslc_deps",
 			Rules: []string{
 				"//src/base:skslc_srcs",
+				"//src/core:core_skslc_hdrs",
 				"//src/core:core_skslc_srcs",
+				"//src/gpu/ganesh:core_skslc_hdrs",
 				"//src/gpu/ganesh:core_skslc_srcs",
 				"//src/ports:malloc",
 				"//src/ports:osfile",
-				"//src/utils:core_skslc_srcs",
+				"//src/sksl:sksl_skslc_module_srcs",
+				"//src/utils:utils_skslc_hdrs",
+				"//src/utils:utils_skslc_srcs",
 				"//src/utils:json_srcs",
-				"//src/utils:sksl_srcs",
 			}}},
 	},
 	{GNI: "gn/sksl_tests.gni", Vars: []exporter.GNIFileListExportDesc{
 		// This order was the order the original file was in. It could be alphabetized if we like.
 		{Var: "sksl_error_tests", Rules: []string{"//resources/sksl:sksl_error_tests"}},
 		{Var: "sksl_glsl_tests", Rules: []string{"//resources/sksl:sksl_glsl_tests"}},
+		{Var: "sksl_mesh_tests", Rules: []string{"//resources/sksl:sksl_mesh_tests"}},
+		{Var: "sksl_mesh_error_tests", Rules: []string{"//resources/sksl:sksl_mesh_error_tests"}},
 		{Var: "sksl_metal_tests", Rules: []string{"//resources/sksl:sksl_metal_tests"}},
 		{Var: "sksl_spirv_tests", Rules: []string{"//resources/sksl:sksl_spirv_tests"}},
 		{Var: "sksl_wgsl_tests", Rules: []string{"//resources/sksl:sksl_wgsl_tests"}},
@@ -245,17 +385,16 @@ var gniExportDescs = []exporter.GNIExportDesc{
 				"//include/utils/mac:public_hdrs"}},
 		{Var: "skia_utils_chromium",
 			Rules: []string{
-				"//src/utils:chromium_hdrs"}},
+				"//include/docs:multi_picture_document_hdrs",
+			}},
 		{Var: "skia_utils_private",
 			Rules: []string{
-				"//src/utils:core_hdrs",
-				"//src/utils:core_skslc_hdrs",
-				"//src/utils:core_skslc_srcs",
-				"//src/utils:core_srcs",
+				"//src/utils:utils_hdrs",
+				"//src/utils:utils_skslc_hdrs",
+				"//src/utils:utils_skslc_srcs",
+				"//src/utils:utils_srcs",
 				"//src/utils:json_hdrs",
 				"//src/utils:json_srcs",
-				"//src/utils:sksl_hdrs",
-				"//src/utils:sksl_srcs",
 				"//src/utils/mac:core_hdrs",
 				"//src/utils/mac:core_srcs",
 				"//src/utils/win:core_hdrs",
@@ -280,8 +419,8 @@ var gniExportDescs = []exporter.GNIExportDesc{
 	{GNI: "gn/xml.gni", Vars: []exporter.GNIFileListExportDesc{
 		{Var: "skia_xml_sources",
 			Rules: []string{
-				"//src/xml:xml_hdrs",
-				"//src/xml:xml_srcs",
+				"//src/xml:_xml_hdrs",
+				"//src/xml:_xml_srcs",
 			}}},
 	},
 	{GNI: "gn/gpu.gni", Vars: []exporter.GNIFileListExportDesc{
@@ -290,12 +429,11 @@ var gniExportDescs = []exporter.GNIExportDesc{
 				"//include/gpu/mock:public_hdrs",
 				"//include/gpu:public_hdrs",
 				"//include/gpu:shared_public_hdrs",
-				"//include/gpu/ganesh:public_hdrs",
+				"//include/gpu/ganesh:ganesh_hdrs",
 			}},
 		{Var: "skia_ganesh_private",
 			Rules: []string{
 				"//include/private/gpu/ganesh:private_hdrs",
-				"//include/private/gpu/ganesh:gl_private_hdrs",
 				"//src/gpu/ganesh/effects:effects_hdrs",
 				"//src/gpu/ganesh/effects:effects_srcs",
 				"//src/gpu/ganesh/geometry:geometry_hdrs",
@@ -312,7 +450,6 @@ var gniExportDescs = []exporter.GNIExportDesc{
 				"//src/gpu/ganesh/ops:ops_srcs",
 				"//src/gpu/ganesh/surface:surface_srcs",
 				"//src/gpu/ganesh/surface:surface_srcs",
-				"//src/gpu/ganesh/surface:android_srcs",
 				"//src/gpu/ganesh/tessellate:tessellate_hdrs",
 				"//src/gpu/ganesh/tessellate:tessellate_srcs",
 				"//src/gpu/ganesh/text:private_hdrs",
@@ -321,6 +458,11 @@ var gniExportDescs = []exporter.GNIExportDesc{
 				"//src/gpu/ganesh:core_skslc_hdrs",
 				"//src/gpu/ganesh:core_skslc_srcs",
 				"//src/gpu/ganesh:core_srcs",
+			}},
+		{Var: "skia_gpu_android_private",
+			Rules: []string{
+				"//src/gpu/ganesh/surface:android_srcs",
+				"//src/gpu/ganesh:android_srcs",
 				"//src/image:android_srcs",
 			}},
 		{Var: "skia_gpu_chromium_public",
@@ -339,6 +481,10 @@ var gniExportDescs = []exporter.GNIExportDesc{
 				"//src/gpu/ganesh/gl/builders:builder_hdrs",
 				"//src/gpu/ganesh/gl/builders:builder_srcs",
 			}},
+		{Var: "skia_android_gl_sources",
+			Rules: []string{
+				"//src/gpu/ganesh/gl:android_srcs",
+			}},
 		{Var: "skia_null_gpu_sources",
 			Rules: []string{
 				"//src/gpu/ganesh/gl:native_interface_none",
@@ -350,7 +496,9 @@ var gniExportDescs = []exporter.GNIExportDesc{
 			}},
 		{Var: "skia_gpu_vk_public",
 			Rules: []string{
-				"//include/gpu/vk:public_hdrs",
+				"//include/gpu/vk:ganesh_public_hdrs",
+				"//include/gpu/vk:shared_public_hdrs",
+				"//include/gpu/ganesh/vk:public_hdrs",
 			}},
 		{Var: "skia_gpu_vk_chromium_public",
 			Rules: []string{
@@ -358,9 +506,12 @@ var gniExportDescs = []exporter.GNIExportDesc{
 			}},
 		{Var: "skia_gpu_vk_private",
 			Rules: []string{
-				"//include/private/gpu/ganesh:vk_private_hdrs",
 				"//src/gpu/ganesh/vk:vk_hdrs",
 				"//src/gpu/ganesh/vk:vk_srcs",
+			}},
+		{Var: "skia_gpu_vk_android_private",
+			Rules: []string{
+				"//src/gpu/ganesh/vk:android_srcs",
 			}},
 		{Var: "skia_gpu_vk_chromium_private",
 			Rules: []string{
@@ -373,23 +524,12 @@ var gniExportDescs = []exporter.GNIExportDesc{
 				"//src/gpu/ganesh/d3d:d3d_hdrs",
 				"//src/gpu/ganesh/d3d:d3d_srcs",
 			}},
-		{Var: "skia_gpu_dawn_public",
-			Rules: []string{
-				"//include/gpu/dawn:public_hdrs",
-			}},
-		{Var: "skia_gpu_dawn_private",
-			Rules: []string{
-				"//include/private/gpu/ganesh:dawn_private_hdrs",
-				"//src/gpu/ganesh/dawn:dawn_hdrs",
-				"//src/gpu/ganesh/dawn:dawn_srcs",
-			}},
 		{Var: "skia_gpu_metal_public",
 			Rules: []string{
-				"//include/gpu/mtl:public_hdrs",
+				"//include/gpu/ganesh/mtl:public_hdrs",
 			}},
 		{Var: "skia_gpu_metal_private",
 			Rules: []string{
-				"//include/private/gpu/ganesh:mtl_private_hdrs",
 				"//src/gpu/ganesh/surface:mtl_objc_srcs",
 				"//src/gpu/ganesh/mtl:mtl_hdrs",
 				"//src/gpu/ganesh/mtl:mtl_srcs",
@@ -401,9 +541,14 @@ var gniExportDescs = []exporter.GNIExportDesc{
 		{Var: "skia_native_gpu_sources",
 			Rules: []string{
 				"//include/gpu/gl/egl:public_hdrs",
+				"//include/gpu/gl/epoxy:public_hdrs",
 				"//include/gpu/gl/glx:public_hdrs",
+				"//include/gpu/ganesh/gl/egl:public_hdrs",
+				"//include/gpu/ganesh/gl/epoxy:public_hdrs",
+				"//include/gpu/ganesh/gl/glx:public_hdrs",
 				"//src/gpu/ganesh/gl/android:srcs",
 				"//src/gpu/ganesh/gl/egl:srcs",
+				"//src/gpu/ganesh/gl/epoxy:srcs",
 				"//src/gpu/ganesh/gl/glx:srcs",
 				"//src/gpu/ganesh/gl/iOS:srcs",
 				"//src/gpu/ganesh/gl/mac:srcs",
@@ -423,22 +568,24 @@ var gniExportDescs = []exporter.GNIExportDesc{
 				"//src/text/gpu:gpu_hdrs",
 				"//src/text/gpu:gpu_srcs",
 			}},
-		{Var: "skia_shared_dawn_sources",
-			Rules: []string{
-				"//src/gpu/dawn:dawn_hdrs",
-				"//src/gpu/dawn:dawn_srcs",
-			}},
 		{Var: "skia_shared_vk_sources",
 			Rules: []string{
-				"//include/gpu/vk:shared_public_hdrs",
 				"//include/private/gpu/vk:private_hdrs",
-				"//src/gpu/vk:vk_hdrs",
-				"//src/gpu/vk:vk_srcs"}},
+				"//src/gpu/vk:_vk_hdrs",
+				"//src/gpu/vk:_vk_srcs"}},
+		{Var: "skia_vma_sources",
+			Rules: []string{
+				"//src/gpu/vk/vulkanmemoryallocator:vma_srcs",
+				"//src/gpu/vk/vulkanmemoryallocator:vma_hdrs"}},
 		{Var: "skia_shared_mtl_sources",
 			Rules: []string{
-				"//include/gpu/mtl:shared_public_hdrs",
+				"//include/gpu/mtl:public_hdrs",
 				"//src/gpu/mtl:mtl_hdrs",
 				"//src/gpu/mtl:mtl_srcs",
+			}},
+		{Var: "skia_shared_android_sources",
+			Rules: []string{
+				"//src/gpu/android:shared_android_srcs",
 			}},
 	}},
 	{GNI: "modules/svg/svg.gni", Vars: []exporter.GNIFileListExportDesc{
@@ -448,6 +595,20 @@ var gniExportDescs = []exporter.GNIExportDesc{
 			Rules: []string{
 				"//modules/svg/src:private_hdrs",
 				"//modules/svg/src:srcs",
+			}},
+	}},
+	{GNI: "modules/bentleyottmann/bentleyottmann.gni", Vars: []exporter.GNIFileListExportDesc{
+		{Var: "bentleyottmann_public",
+			Rules: []string{
+				"//modules/bentleyottmann/include:hdrs",
+			}},
+		{Var: "bentleyottmann_sources",
+			Rules: []string{
+				"//modules/bentleyottmann/src:srcs",
+			}},
+		{Var: "bentleyottmann_tests",
+			Rules: []string{
+				"//modules/bentleyottmann/tests:tests",
 			}},
 	}},
 	{GNI: "modules/skparagraph/skparagraph.gni", Vars: []exporter.GNIFileListExportDesc{
@@ -478,11 +639,15 @@ var gniExportDescs = []exporter.GNIExportDesc{
 	}},
 	{GNI: "modules/skshaper/skshaper.gni", Vars: []exporter.GNIFileListExportDesc{
 		{Var: "skia_shaper_public",
-			Rules: []string{"//modules/skshaper/include:hdrs"}},
+			Rules: []string{"//modules/skshaper/include:hdrs",
+				"//modules/skshaper/utils:core_hdrs",
+			}},
 		{Var: "skia_shaper_primitive_sources",
 			Rules: []string{"//modules/skshaper/src:base_srcs"}},
 		{Var: "skia_shaper_harfbuzz_sources",
 			Rules: []string{"//modules/skshaper/src:harfbuzz_srcs"}},
+		{Var: "skia_shaper_skunicode_sources",
+			Rules: []string{"//modules/skshaper/src:skunicode_srcs"}},
 		{Var: "skia_shaper_coretext_sources",
 			Rules: []string{"//modules/skshaper/src:coretext_srcs"}},
 		{Var: "skia_shaper_tests",
@@ -495,6 +660,14 @@ var gniExportDescs = []exporter.GNIExportDesc{
 			Rules: []string{"//modules/skunicode/src:srcs"}},
 		{Var: "skia_unicode_icu_sources",
 			Rules: []string{"//modules/skunicode/src:icu_srcs"}},
+		{Var: "skia_unicode_icu_bidi_sources",
+			Rules: []string{"//modules/skunicode/src:icu_bidi_srcs"}},
+		{Var: "skia_unicode_bidi_full_sources",
+			Rules: []string{"//modules/skunicode/src:bidi_full_srcs"}},
+		{Var: "skia_unicode_bidi_subset_sources",
+			Rules: []string{"//modules/skunicode/src:bidi_subset_srcs"}},
+		{Var: "skia_unicode_icu4x_sources",
+			Rules: []string{"//modules/skunicode/src:icu4x_srcs"}},
 		{Var: "skia_unicode_client_icu_sources",
 			Rules: []string{"//modules/skunicode/src:client_srcs"}},
 		{Var: "skia_unicode_builtin_icu_sources",
@@ -515,21 +688,43 @@ var gniExportDescs = []exporter.GNIExportDesc{
 			Rules: []string{"//modules/skottie/include:hdrs"}},
 		{Var: "skia_skottie_sources",
 			Rules: []string{
-				"//modules/skottie/src:srcs",
+				"//modules/skottie/src:core_hdrs",
+				"//modules/skottie/src:core_srcs",
 				"//modules/skottie/src/animator:srcs",
 				"//modules/skottie/src/effects:srcs",
 				"//modules/skottie/src/layers:srcs",
 				"//modules/skottie/src/layers/shapelayer:srcs",
-				"//modules/skottie/src/text:srcs",
+				"//modules/skottie/src/text:text_hdrs",
+				"//modules/skottie/src/text:text_srcs",
+				"//modules/skottie/src/text:text_shaper_srcs",
 			}},
 	}},
 	{GNI: "modules/skcms/skcms.gni", Vars: []exporter.GNIFileListExportDesc{
 		{Var: "skcms_public_headers",
 			Rules: []string{"//modules/skcms:public_hdrs"}},
+
+		// TODO(b/310927123): Replace external dependencies on skcms_sources with the more fine-
+		// grained dependencies (skcms_public + skcms_Transform*) below, and remove skcms_sources.
 		{Var: "skcms_sources",
 			Rules: []string{
 				"//modules/skcms:srcs",
 				"//modules/skcms:textual_hdrs",
+			}},
+		{Var: "skcms_public",
+			Rules: []string{
+				"//modules/skcms:skcms_public",
+			}},
+		{Var: "skcms_TransformBaseline",
+			Rules: []string{
+				"//modules/skcms:skcms_TransformBaseline",
+			}},
+		{Var: "skcms_TransformHsw",
+			Rules: []string{
+				"//modules/skcms:skcms_TransformHsw",
+			}},
+		{Var: "skcms_TransformSkx",
+			Rules: []string{
+				"//modules/skcms:skcms_TransformSkx",
 			}},
 	}},
 }

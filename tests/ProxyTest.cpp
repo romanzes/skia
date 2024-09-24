@@ -127,17 +127,20 @@ DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(DeferredProxyTest,
                                        reporter,
                                        ctxInfo,
                                        CtsEnforcement::kApiLevel_T) {
+    using namespace skgpu;
+
     auto direct = ctxInfo.directContext();
     GrProxyProvider* proxyProvider = direct->priv().proxyProvider();
     GrResourceProvider* resourceProvider = direct->priv().resourceProvider();
     const GrCaps& caps = *direct->priv().caps();
 
+    Protected isProtected = Protected(caps.supportsProtectedContent());
 
     for (auto widthHeight : {100, 128, 1048576}) {
         for (auto ct : {GrColorType::kAlpha_8, GrColorType::kBGR_565, GrColorType::kRGBA_8888,
                         GrColorType::kRGBA_1010102}) {
             for (auto fit : {SkBackingFit::kExact, SkBackingFit::kApprox}) {
-                for (auto budgeted : {skgpu::Budgeted::kYes, skgpu::Budgeted::kNo}) {
+                for (auto budgeted : { Budgeted::kYes, Budgeted::kNo }) {
                     for (auto numSamples : {1, 4, 16, 128}) {
                         SkISize dims = {widthHeight, widthHeight};
 
@@ -155,7 +158,7 @@ DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(DeferredProxyTest,
                                                                             GrTextureType::k2D,
                                                                             GrRenderable::kYes,
                                                                             numSamples,
-                                                                            GrProtected::kNo,
+                                                                            isProtected,
                                                                             /*label=*/{});
                             } else {
                                 tex = resourceProvider->createTexture(dims,
@@ -163,15 +166,22 @@ DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(DeferredProxyTest,
                                                                       GrTextureType::k2D,
                                                                       GrRenderable::kYes,
                                                                       numSamples,
-                                                                      GrMipmapped::kNo,
+                                                                      Mipmapped::kNo,
                                                                       budgeted,
-                                                                      GrProtected::kNo,
+                                                                      isProtected,
                                                                       /*label=*/{});
                             }
 
-                            sk_sp<GrTextureProxy> proxy = proxyProvider->createProxy(
-                                    format, dims, GrRenderable::kYes, numSamples, GrMipmapped::kNo,
-                                    fit, budgeted, GrProtected::kNo, /*label=*/{});
+                            sk_sp<GrTextureProxy> proxy =
+                                    proxyProvider->createProxy(format,
+                                                               dims,
+                                                               GrRenderable::kYes,
+                                                               numSamples,
+                                                               Mipmapped::kNo,
+                                                               fit,
+                                                               budgeted,
+                                                               isProtected,
+                                                               /*label=*/{});
                             REPORTER_ASSERT(reporter, SkToBool(tex) == SkToBool(proxy));
                             if (proxy) {
                                 REPORTER_ASSERT(reporter, proxy->asRenderTargetProxy());
@@ -201,7 +211,7 @@ DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(DeferredProxyTest,
                                                                             GrTextureType::k2D,
                                                                             GrRenderable::kNo,
                                                                             numSamples,
-                                                                            GrProtected::kNo,
+                                                                            isProtected,
                                                                             /*label=*/{});
                             } else {
                                 tex = resourceProvider->createTexture(dims,
@@ -209,15 +219,22 @@ DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(DeferredProxyTest,
                                                                       GrTextureType::k2D,
                                                                       GrRenderable::kNo,
                                                                       numSamples,
-                                                                      GrMipmapped::kNo,
+                                                                      Mipmapped::kNo,
                                                                       budgeted,
-                                                                      GrProtected::kNo,
+                                                                      isProtected,
                                                                       /*label=*/{});
                             }
 
-                            sk_sp<GrTextureProxy> proxy(proxyProvider->createProxy(
-                                    format, dims, GrRenderable::kNo, numSamples, GrMipmapped::kNo,
-                                    fit, budgeted, GrProtected::kNo, /*label=*/{}));
+                            sk_sp<GrTextureProxy> proxy(
+                                    proxyProvider->createProxy(format,
+                                                               dims,
+                                                               GrRenderable::kNo,
+                                                               numSamples,
+                                                               Mipmapped::kNo,
+                                                               fit,
+                                                               budgeted,
+                                                               isProtected,
+                                                               /*label=*/{}));
                             REPORTER_ASSERT(reporter, SkToBool(tex) == SkToBool(proxy));
                             if (proxy) {
                                 // This forces the proxy to compute and cache its
@@ -244,11 +261,15 @@ DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(WrappedProxyTest,
                                        reporter,
                                        ctxInfo,
                                        CtsEnforcement::kApiLevel_T) {
+    using namespace skgpu;
+
     auto direct = ctxInfo.directContext();
     GrProxyProvider* proxyProvider = direct->priv().proxyProvider();
     GrResourceProvider* resourceProvider = direct->priv().resourceProvider();
     GrGpu* gpu = direct->priv().getGpu();
     const GrCaps& caps = *direct->priv().caps();
+
+    Protected isProtected = Protected(caps.supportsProtectedContent());
 
     static const int kWidthHeight = 100;
 
@@ -262,10 +283,10 @@ DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(WrappedProxyTest,
         // sample counts :(.
         if (direct->colorTypeSupportedAsSurface(colorType)) {
             GrBackendRenderTarget backendRT = gpu->createTestingOnlyBackendRenderTarget(
-                    {kWidthHeight, kWidthHeight}, grColorType);
+                    {kWidthHeight, kWidthHeight}, grColorType, /* sampleCount= */ 1, isProtected);
             sk_sp<GrSurfaceProxy> sProxy(
                     proxyProvider->wrapBackendRenderTarget(backendRT, nullptr));
-            check_surface(reporter, sProxy.get(), kWidthHeight, kWidthHeight, skgpu::Budgeted::kNo);
+            check_surface(reporter, sProxy.get(), kWidthHeight, kWidthHeight, Budgeted::kNo);
             static constexpr int kExpectedNumSamples = 1;
             check_rendertarget(reporter, caps, resourceProvider, sProxy->asRenderTargetProxy(),
                                kExpectedNumSamples, SkBackingFit::kExact,
@@ -287,7 +308,7 @@ DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(WrappedProxyTest,
                 GrGLFramebufferInfo fboInfo;
                 fboInfo.fFBOID = 0;
                 fboInfo.fFormat = GrBackendFormats::AsGLFormatEnum(beFormat);
-                fboInfo.fProtected = skgpu::Protected::kNo;
+                fboInfo.fProtected = isProtected;
                 SkASSERT(fboInfo.fFormat);
                 static constexpr int kStencilBits = 8;
                 GrBackendRenderTarget backendRT = GrBackendRenderTargets::MakeGL(
@@ -295,7 +316,7 @@ DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(WrappedProxyTest,
                 sk_sp<GrSurfaceProxy> sProxy(
                         proxyProvider->wrapBackendRenderTarget(backendRT, nullptr));
                 check_surface(
-                        reporter, sProxy.get(), kWidthHeight, kWidthHeight, skgpu::Budgeted::kNo);
+                        reporter, sProxy.get(), kWidthHeight, kWidthHeight, Budgeted::kNo);
                 check_rendertarget(reporter, caps, resourceProvider, sProxy->asRenderTargetProxy(),
                                    supportedNumSamples, SkBackingFit::kExact, 0);
             }
@@ -303,12 +324,14 @@ DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(WrappedProxyTest,
 
             // Tests wrapBackendTexture that is only renderable
             {
-                auto mbet = sk_gpu_test::ManagedBackendTexture::MakeWithoutData(direct,
-                                                                                kWidthHeight,
-                                                                                kWidthHeight,
-                                                                                colorType,
-                                                                                GrMipmapped::kNo,
-                                                                                GrRenderable::kYes);
+                auto mbet =
+                        sk_gpu_test::ManagedBackendTexture::MakeWithoutData(direct,
+                                                                            kWidthHeight,
+                                                                            kWidthHeight,
+                                                                            colorType,
+                                                                            Mipmapped::kNo,
+                                                                            GrRenderable::kYes,
+                                                                            isProtected);
                 if (!mbet) {
                     ERRORF(reporter,
                            "Could not create renderable backend texture of color type %d",
@@ -324,7 +347,7 @@ DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(WrappedProxyTest,
                 }
 
                 check_surface(
-                        reporter, sProxy.get(), kWidthHeight, kWidthHeight, skgpu::Budgeted::kNo);
+                        reporter, sProxy.get(), kWidthHeight, kWidthHeight, Budgeted::kNo);
                 check_rendertarget(reporter, caps, resourceProvider, sProxy->asRenderTargetProxy(),
                                    supportedNumSamples, SkBackingFit::kExact,
                                    caps.maxWindowRectangles());
@@ -332,12 +355,14 @@ DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(WrappedProxyTest,
 
             {
                 // Tests wrapBackendTexture that is only textureable
-                auto mbet = sk_gpu_test::ManagedBackendTexture::MakeWithoutData(direct,
-                                                                                kWidthHeight,
-                                                                                kWidthHeight,
-                                                                                colorType,
-                                                                                GrMipmapped::kNo,
-                                                                                GrRenderable::kNo);
+                auto mbet =
+                        sk_gpu_test::ManagedBackendTexture::MakeWithoutData(direct,
+                                                                            kWidthHeight,
+                                                                            kWidthHeight,
+                                                                            colorType,
+                                                                            Mipmapped::kNo,
+                                                                            GrRenderable::kNo,
+                                                                            isProtected);
                 if (!mbet) {
                     ERRORF(reporter,
                            "Could not create non-renderable backend texture of color type %d",
@@ -353,7 +378,7 @@ DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(WrappedProxyTest,
                 }
 
                 check_surface(
-                        reporter, sProxy.get(), kWidthHeight, kWidthHeight, skgpu::Budgeted::kNo);
+                        reporter, sProxy.get(), kWidthHeight, kWidthHeight, Budgeted::kNo);
                 check_texture(reporter, resourceProvider, sProxy->asTextureProxy(),
                               SkBackingFit::kExact);
             }
@@ -385,7 +410,7 @@ DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(ZeroSizedProxyTest,
                                                                         {width, height},
                                                                         renderable,
                                                                         1,
-                                                                        GrMipmapped::kNo,
+                                                                        skgpu::Mipmapped::kNo,
                                                                         fit,
                                                                         skgpu::Budgeted::kNo,
                                                                         GrProtected::kNo,

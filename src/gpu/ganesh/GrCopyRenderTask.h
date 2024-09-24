@@ -8,8 +8,20 @@
 #ifndef GrCopyRenderTask_DEFINED
 #define GrCopyRenderTask_DEFINED
 
+#include "include/core/SkRect.h"
+#include "include/core/SkRefCnt.h"
+#include "include/gpu/GpuTypes.h"
+#include "include/private/base/SkDebug.h"
+#include "include/private/gpu/ganesh/GrTypesPriv.h"
 #include "src/gpu/ganesh/GrRenderTask.h"
 #include "src/gpu/ganesh/GrSamplerState.h"
+#include "src/gpu/ganesh/GrSurfaceProxy.h"
+
+class GrDrawingManager;
+class GrOpFlushState;
+class GrRecordingContext;
+class GrResourceAllocator;
+enum GrSurfaceOrigin : int;
 
 class GrCopyRenderTask final : public GrRenderTask {
 public:
@@ -41,12 +53,12 @@ private:
     ExpectedOutcome onMakeClosed(GrRecordingContext*, SkIRect* targetUpdateBounds) override;
     bool onExecute(GrOpFlushState*) override;
 
-#if GR_TEST_UTILS
+#if defined(GPU_TEST_UTILS)
     const char* name() const final { return "Copy"; }
 #endif
 #ifdef SK_DEBUG
     void visitProxies_debugOnly(const GrVisitProxyFunc& func) const override {
-        func(fSrc.get(), GrMipmapped::kNo);
+        func(fSrc.get(), skgpu::Mipmapped::kNo);
     }
 #endif
 

@@ -7,18 +7,26 @@
 
 #include "src/pdf/SkPDFMetadata.h"
 
+#include "include/core/SkStream.h"
+#include "include/core/SkString.h"
+#include "include/docs/SkPDFDocument.h"
+#include "include/private/base/SkAssert.h"
 #include "include/private/base/SkTemplates.h"
 #include "include/private/base/SkTo.h"
-#include "src/base/SkUTF.h"
+#include "src/base/SkTime.h"
 #include "src/base/SkUtils.h"
 #include "src/core/SkMD5.h"
 #include "src/pdf/SkPDFTypes.h"
+#include "src/pdf/SkPDFUtils.h"
 
+#include <cstdint>
+#include <cstring>
 #include <utility>
+class SkPDFDocument;
 
-static constexpr SkTime::DateTime kZeroTime = {0, 0, 0, 0, 0, 0, 0, 0};
+static constexpr SkPDF::DateTime kZeroTime = {0, 0, 0, 0, 0, 0, 0, 0};
 
-static bool operator!=(const SkTime::DateTime& u, const SkTime::DateTime& v) {
+static bool operator!=(const SkPDF::DateTime& u, const SkPDF::DateTime& v) {
     return u.fTimeZoneMinutes != v.fTimeZoneMinutes ||
            u.fYear != v.fYear ||
            u.fMonth != v.fMonth ||
@@ -29,7 +37,7 @@ static bool operator!=(const SkTime::DateTime& u, const SkTime::DateTime& v) {
            u.fSecond != v.fSecond;
 }
 
-static SkString pdf_date(const SkTime::DateTime& dt) {
+static SkString pdf_date(const SkPDF::DateTime& dt) {
     int timeZoneMinutes = SkToInt(dt.fTimeZoneMinutes);
     char timezoneSign = timeZoneMinutes >= 0 ? '+' : '-';
     int timeZoneHours = SkTAbs(timeZoneMinutes) / 60;
@@ -83,8 +91,8 @@ SkUUID SkPDFMetadata::CreateUUID(const SkPDF::Metadata& metadata) {
     md5.writeText(uuidNamespace);
     double msec = SkTime::GetMSecs();
     md5.write(&msec, sizeof(msec));
-    SkTime::DateTime dateTime;
-    SkTime::GetDateTime(&dateTime);
+    SkPDF::DateTime dateTime;
+    SkPDFUtils::GetDateTime(&dateTime);
     md5.write(&dateTime, sizeof(dateTime));
     md5.write(&metadata.fCreation, sizeof(metadata.fCreation));
     md5.write(&metadata.fModified, sizeof(metadata.fModified));

@@ -22,13 +22,14 @@
 #include "include/effects/SkGradientShader.h"
 #include "src/base/SkRandom.h"
 #include "tools/ToolUtils.h"
+#include "tools/fonts/FontToolUtils.h"
 
 // https://bug.skia.org/1316 shows that this cubic, when slightly clipped, creates big
 // (incorrect) changes to its control points.
 class ClippedCubicGM : public skiagm::GM {
-    SkString onShortName() override { return SkString("clippedcubic"); }
+    SkString getName() const override { return SkString("clippedcubic"); }
 
-    SkISize onISize() override { return {1240, 390}; }
+    SkISize getISize() override { return {1240, 390}; }
 
     void onDraw(SkCanvas* canvas) override {
         SkPath path;
@@ -57,9 +58,9 @@ class ClippedCubicGM : public skiagm::GM {
 
 
 class ClippedCubic2GM : public skiagm::GM {
-    SkString onShortName() override { return SkString("clippedcubic2"); }
+    SkString getName() const override { return SkString("clippedcubic2"); }
 
-    SkISize onISize() override { return {1240, 390}; }
+    SkISize getISize() override { return {1240, 390}; }
 
     void onDraw(SkCanvas* canvas) override {
         canvas->save();
@@ -119,9 +120,9 @@ private:
 };
 
 class CubicPathGM : public skiagm::GM {
-    SkString onShortName() override { return SkString("cubicpath"); }
+    SkString getName() const override { return SkString("cubicpath"); }
 
-    SkISize onISize() override { return {1240, 390}; }
+    SkISize getISize() override { return {1240, 390}; }
 
     void drawPath(SkPath& path,SkCanvas* canvas,SkColor color,
                   const SkRect& clip,SkPaint::Cap cap, SkPaint::Join join,
@@ -184,7 +185,7 @@ class CubicPathGM : public skiagm::GM {
         SkPaint titlePaint;
         titlePaint.setColor(SK_ColorBLACK);
         titlePaint.setAntiAlias(true);
-        SkFont     font(ToolUtils::create_portable_typeface(), 15);
+        SkFont     font(ToolUtils::DefaultPortableTypeface(), 15);
         const char title[] = "Cubic Drawn Into Rectangle Clips With "
                              "Indicated Style, Fill and Linecaps, with stroke width 10";
         canvas->drawString(title, 20, 20, font, titlePaint);
@@ -238,9 +239,9 @@ class CubicPathGM : public skiagm::GM {
 };
 
 class CubicClosePathGM : public skiagm::GM {
-    SkString onShortName() override { return SkString("cubicclosepath"); }
+    SkString getName() const override { return SkString("cubicclosepath"); }
 
-    SkISize onISize() override { return {1240, 390}; }
+    SkISize getISize() override { return {1240, 390}; }
 
     void drawPath(SkPath& path,SkCanvas* canvas,SkColor color,
                   const SkRect& clip,SkPaint::Cap cap, SkPaint::Join join,
@@ -304,7 +305,7 @@ class CubicClosePathGM : public skiagm::GM {
         SkPaint titlePaint;
         titlePaint.setColor(SK_ColorBLACK);
         titlePaint.setAntiAlias(true);
-        SkFont     font(ToolUtils::create_portable_typeface(), 15);
+        SkFont     font(ToolUtils::DefaultPortableTypeface(), 15);
         const char title[] = "Cubic Closed Drawn Into Rectangle Clips With "
                              "Indicated Style, Fill and Linecaps, with stroke width 10";
         canvas->drawString(title, 20, 20, font, titlePaint);
@@ -359,9 +360,9 @@ class CubicClosePathGM : public skiagm::GM {
 };
 
 class CubicPathShaderGM : public skiagm::GM {
-    SkString onShortName() override { return SkString("cubicpath_shader"); }
+    SkString getName() const override { return SkString("cubicpath_shader"); }
 
-    SkISize onISize() override { return {1240, 390}; }
+    SkISize getISize() override { return {1240, 390}; }
 
     void drawPath(SkPath& path,SkCanvas* canvas,
                   const SkRect& clip,SkPaint::Cap cap, SkPaint::Join join,
@@ -431,7 +432,7 @@ class CubicPathShaderGM : public skiagm::GM {
         SkPaint titlePaint;
         titlePaint.setColor(SK_ColorBLACK);
         titlePaint.setAntiAlias(true);
-        SkFont     font(ToolUtils::create_portable_typeface(), 15);
+        SkFont     font(ToolUtils::DefaultPortableTypeface(), 15);
         const char title[] = "Cubic Drawn Into Rectangle Clips With "
                              "Indicated Style, Fill and Linecaps, with stroke width 10";
         canvas->drawString(title, 20, 20, font, titlePaint);

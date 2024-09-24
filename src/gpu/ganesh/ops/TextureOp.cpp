@@ -4,31 +4,50 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
+#include "src/gpu/ganesh/ops/TextureOp.h"
 
-#include <new>
-
+#include "include/core/SkAlphaType.h"
+#include "include/core/SkBlendMode.h"
+#include "include/core/SkColor.h"
+#include "include/core/SkMatrix.h"
 #include "include/core/SkPoint.h"
-#include "include/core/SkPoint3.h"
+#include "include/core/SkRect.h"
+#include "include/core/SkSamplingOptions.h"
+#include "include/core/SkScalar.h"
+#include "include/core/SkSize.h"
+#include "include/core/SkString.h"
+#include "include/gpu/GpuTypes.h"
+#include "include/gpu/GrBackendSurface.h"
 #include "include/gpu/GrRecordingContext.h"
-#include "include/private/base/SkFloatingPoint.h"
+#include "include/gpu/GrTypes.h"
+#include "include/private/base/SkAssert.h"
+#include "include/private/base/SkDebug.h"
 #include "include/private/base/SkTo.h"
-#include "src/base/SkMathPriv.h"
-#include "src/core/SkBlendModePriv.h"
-#include "src/core/SkMatrixPriv.h"
+#include "include/private/gpu/ganesh/GrTypesPriv.h"
+#include "src/base/SkArenaAlloc.h"
+#include "src/base/SkVx.h"
 #include "src/core/SkRectPriv.h"
+#include "src/core/SkTraceEvent.h"
+#include "src/gpu/SkBackingFit.h"
+#include "src/gpu/Swizzle.h"
 #include "src/gpu/ganesh/GrAppliedClip.h"
+#include "src/gpu/ganesh/GrBuffer.h"
 #include "src/gpu/ganesh/GrCaps.h"
+#include "src/gpu/ganesh/GrColorSpaceXform.h"
 #include "src/gpu/ganesh/GrDrawOpTest.h"
+#include "src/gpu/ganesh/GrFragmentProcessor.h"
 #include "src/gpu/ganesh/GrGeometryProcessor.h"
-#include "src/gpu/ganesh/GrGpu.h"
-#include "src/gpu/ganesh/GrMemoryPool.h"
+#include "src/gpu/ganesh/GrMeshDrawTarget.h"
 #include "src/gpu/ganesh/GrOpFlushState.h"
 #include "src/gpu/ganesh/GrOpsTypes.h"
+#include "src/gpu/ganesh/GrPaint.h"
+#include "src/gpu/ganesh/GrPipeline.h"
+#include "src/gpu/ganesh/GrProcessorSet.h"
+#include "src/gpu/ganesh/GrProgramInfo.h"
 #include "src/gpu/ganesh/GrRecordingContextPriv.h"
 #include "src/gpu/ganesh/GrResourceProvider.h"
-#include "src/gpu/ganesh/GrResourceProviderPriv.h"
-#include "src/gpu/ganesh/GrShaderCaps.h"
-#include "src/gpu/ganesh/GrTexture.h"
+#include "src/gpu/ganesh/GrSurfaceProxy.h"
+#include "src/gpu/ganesh/GrSurfaceProxyView.h"
 #include "src/gpu/ganesh/GrTextureProxy.h"
 #include "src/gpu/ganesh/GrXferProcessor.h"
 #include "src/gpu/ganesh/SkGr.h"
@@ -39,16 +58,26 @@
 #include "src/gpu/ganesh/geometry/GrQuadBuffer.h"
 #include "src/gpu/ganesh/geometry/GrQuadUtils.h"
 #include "src/gpu/ganesh/geometry/GrRect.h"
-#include "src/gpu/ganesh/glsl/GrGLSLVarying.h"
 #include "src/gpu/ganesh/ops/FillRectOp.h"
 #include "src/gpu/ganesh/ops/GrMeshDrawOp.h"
 #include "src/gpu/ganesh/ops/GrSimpleMeshDrawOpHelper.h"
 #include "src/gpu/ganesh/ops/QuadPerEdgeAA.h"
-#include "src/gpu/ganesh/ops/TextureOp.h"
 
-#if GR_TEST_UTILS
+#if defined(GPU_TEST_UTILS)
+#include "src/base/SkRandom.h"
 #include "src/gpu/ganesh/GrProxyProvider.h"
+#include "src/gpu/ganesh/GrTestUtils.h"
 #endif
+
+#include <algorithm>
+#include <cmath>
+#include <cstring>
+#include <limits>
+#include <memory>
+#include <new>
+#include <utility>
+
+class GrDstProxyView;
 
 using namespace skgpu::ganesh;
 
@@ -63,47 +92,9 @@ using ColorType = skgpu::ganesh::QuadPerEdgeAA::ColorType;
 SkSize axis_aligned_quad_size(const GrQuad& quad) {
     SkASSERT(quad.quadType() == GrQuad::Type::kAxisAligned);
     // Simplification of regular edge length equation, since it's axis aligned and can avoid sqrt
-    float dw = sk_float_abs(quad.x(2) - quad.x(0)) + sk_float_abs(quad.y(2) - quad.y(0));
-    float dh = sk_float_abs(quad.x(1) - quad.x(0)) + sk_float_abs(quad.y(1) - quad.y(0));
+    float dw = std::fabs(quad.x(2) - quad.x(0)) + std::fabs(quad.y(2) - quad.y(0));
+    float dh = std::fabs(quad.x(1) - quad.x(0)) + std::fabs(quad.y(1) - quad.y(0));
     return {dw, dh};
-}
-
-std::tuple<bool /* filter */,
-           bool /* mipmap */>
-filter_and_mm_have_effect(const GrQuad& srcQuad, const GrQuad& dstQuad) {
-    // If not axis-aligned in src or dst, then always say it has an effect
-    if (srcQuad.quadType() != GrQuad::Type::kAxisAligned ||
-        dstQuad.quadType() != GrQuad::Type::kAxisAligned) {
-        return {true, true};
-    }
-
-    SkRect srcRect;
-    SkRect dstRect;
-    if (srcQuad.asRect(&srcRect) && dstQuad.asRect(&dstRect)) {
-        // Disable filtering when there is no scaling (width and height are the same), and the
-        // top-left corners have the same fraction (so src and dst snap to the pixel grid
-        // identically).
-        SkASSERT(srcRect.isSorted());
-        bool filter = srcRect.width() != dstRect.width() || srcRect.height() != dstRect.height() ||
-                      SkScalarFraction(srcRect.fLeft) != SkScalarFraction(dstRect.fLeft) ||
-                      SkScalarFraction(srcRect.fTop)  != SkScalarFraction(dstRect.fTop);
-        bool mm = srcRect.width() > dstRect.width() || srcRect.height() > dstRect.height();
-        return {filter, mm};
-    }
-    // Extract edge lengths
-    SkSize srcSize = axis_aligned_quad_size(srcQuad);
-    SkSize dstSize = axis_aligned_quad_size(dstQuad);
-    // Although the quads are axis-aligned, the local coordinate system is transformed such
-    // that fractionally-aligned sample centers will not align with the device coordinate system
-    // So disable filtering when edges are the same length and both srcQuad and dstQuad
-    // 0th vertex is integer aligned.
-    bool filter = srcSize != dstSize ||
-                  !SkScalarIsInt(srcQuad.x(0)) ||
-                  !SkScalarIsInt(srcQuad.y(0)) ||
-                  !SkScalarIsInt(dstQuad.x(0)) ||
-                  !SkScalarIsInt(dstQuad.y(0));
-    bool mm = srcSize.fWidth > dstSize.fWidth || srcSize.fHeight > dstSize.fHeight;
-    return {filter, mm};
 }
 
 // Describes function for normalizing src coords: [x * iw, y * ih + yOffset] can represent
@@ -157,7 +148,8 @@ SkRect normalize_and_inset_subset(GrSamplerState::Filter filter,
         ltrb = skvx::floor(ltrb*flipHi)*flipHi;
     }
     // Inset with pin to the rect center.
-    ltrb += skvx::Vec<4, float>({.5f, .5f, -.5f, -.5f});
+    ltrb += skvx::Vec<4, float>({ GrTextureEffect::kLinearInset,  GrTextureEffect::kLinearInset,
+                                 -GrTextureEffect::kLinearInset, -GrTextureEffect::kLinearInset});
     auto mid = (skvx::shuffle<2, 3, 0, 1>(ltrb) + ltrb)*0.5f;
     ltrb = skvx::min(ltrb*flipHi, mid*flipHi)*flipHi;
 
@@ -218,7 +210,9 @@ bool safe_to_ignore_subset_rect(GrAAType aaType, GrSamplerState::Filter filter,
 
     // If the local quad is inset by at least 0.5 pixels into the subset rect's bounds, the
     // sampler shouldn't overshoot, even when antialiasing and filtering is taken into account.
-    if (subsetRect.makeInset(0.5f, 0.5f).contains(localBounds)) {
+    if (subsetRect.makeInset(GrTextureEffect::kLinearInset,
+                             GrTextureEffect::kLinearInset)
+                  .contains(localBounds)) {
         return true;
     }
 
@@ -279,7 +273,7 @@ public:
     void visitProxies(const GrVisitProxyFunc& func) const override {
         bool mipped = (fMetadata.mipmapMode() != GrSamplerState::MipmapMode::kNone);
         for (unsigned p = 0; p <  fMetadata.fProxyCount; ++p) {
-            func(fViewCountPairs[p].fProxy.get(), GrMipmapped(mipped));
+            func(fViewCountPairs[p].fProxy.get(), skgpu::Mipmapped(mipped));
         }
         if (fDesc && fDesc->fProgramInfo) {
             fDesc->fProgramInfo->visitFPProxies(func);
@@ -527,7 +521,7 @@ private:
         for (int q = 0; q < cnt; ++q) {
             SkASSERT(mm == GrSamplerState::MipmapMode::kNone ||
                      (set[0].fProxyView.proxy()->asTextureProxy()->mipmapped() ==
-                      GrMipmapped::kYes));
+                      skgpu::Mipmapped::kYes));
             if (q == 0) {
                 // We do not placement new the first ViewCountPair since that one is allocated and
                 // initialized as part of the TextureOp creation.
@@ -575,7 +569,7 @@ private:
                          (netFilter == GrSamplerState::Filter::kNearest && filter > netFilter));
                 SkASSERT(mm == netMM ||
                          (netMM == GrSamplerState::MipmapMode::kNone && mm > netMM));
-                auto [mustFilter, mustMM] = filter_and_mm_have_effect(quad.fLocal, quad.fDevice);
+                auto [mustFilter, mustMM] = FilterAndMipmapHaveNoEffect(quad.fLocal, quad.fDevice);
                 if (filter != GrSamplerState::Filter::kNearest) {
                     if (mustFilter) {
                         netFilter = filter; // upgrade batch to higher filter level
@@ -812,7 +806,7 @@ private:
 
 #endif
 
-#if GR_TEST_UTILS
+#if defined(GPU_TEST_UTILS)
     int numQuads() const final { return this->totNumQuads(); }
 #endif
 
@@ -1090,7 +1084,7 @@ private:
         return CombineResult::kMerged;
     }
 
-#if GR_TEST_UTILS
+#if defined(GPU_TEST_UTILS)
     SkString onDumpInfo() const override {
         SkString str = SkStringPrintf("# draws: %d\n", fQuads.count());
         auto iter = fQuads.iterator();
@@ -1140,11 +1134,46 @@ private:
 
 namespace skgpu::ganesh {
 
-#if GR_TEST_UTILS
+#if defined(GPU_TEST_UTILS)
 uint32_t TextureOp::ClassID() {
     return TextureOpImpl::ClassID();
 }
 #endif
+
+std::tuple<bool /* filter */, bool /* mipmap */> FilterAndMipmapHaveNoEffect(
+        const GrQuad& srcQuad, const GrQuad& dstQuad) {
+    // If not axis-aligned in src or dst, then always say it has an effect
+    if (srcQuad.quadType() != GrQuad::Type::kAxisAligned ||
+        dstQuad.quadType() != GrQuad::Type::kAxisAligned) {
+        return {true, true};
+    }
+
+    SkRect srcRect;
+    SkRect dstRect;
+    if (srcQuad.asRect(&srcRect) && dstQuad.asRect(&dstRect)) {
+        // Disable filtering when there is no scaling (width and height are the same), and the
+        // top-left corners have the same fraction (so src and dst snap to the pixel grid
+        // identically).
+        SkASSERT(srcRect.isSorted());
+        bool filter = srcRect.width() != dstRect.width() || srcRect.height() != dstRect.height() ||
+                      SkScalarFraction(srcRect.fLeft) != SkScalarFraction(dstRect.fLeft) ||
+                      SkScalarFraction(srcRect.fTop) != SkScalarFraction(dstRect.fTop);
+        bool mm = srcRect.width() > dstRect.width() || srcRect.height() > dstRect.height();
+        return {filter, mm};
+    }
+    // Extract edge lengths
+    SkSize srcSize = axis_aligned_quad_size(srcQuad);
+    SkSize dstSize = axis_aligned_quad_size(dstQuad);
+    // Although the quads are axis-aligned, the local coordinate system is transformed such
+    // that fractionally-aligned sample centers will not align with the device coordinate system
+    // So disable filtering when edges are the same length and both srcQuad and dstQuad
+    // 0th vertex is integer aligned.
+    bool filter = srcSize != dstSize || !SkScalarIsInt(srcQuad.x(0)) ||
+                  !SkScalarIsInt(srcQuad.y(0)) || !SkScalarIsInt(dstQuad.x(0)) ||
+                  !SkScalarIsInt(dstQuad.y(0));
+    bool mm = srcSize.fWidth > dstSize.fWidth || srcSize.fHeight > dstSize.fHeight;
+    return {filter, mm};
+}
 
 GrOp::Owner TextureOp::Make(GrRecordingContext* context,
                             GrSurfaceProxyView proxyView,
@@ -1165,7 +1194,7 @@ GrOp::Owner TextureOp::Make(GrRecordingContext* context,
     }
 
     if (filter != GrSamplerState::Filter::kNearest || mm != GrSamplerState::MipmapMode::kNone) {
-        auto [mustFilter, mustMM] = filter_and_mm_have_effect(quad->fLocal, quad->fDevice);
+        auto [mustFilter, mustMM] = FilterAndMipmapHaveNoEffect(quad->fLocal, quad->fDevice);
         if (!mustFilter) {
             filter = GrSamplerState::Filter::kNearest;
         }
@@ -1402,15 +1431,16 @@ void TextureOp::AddTextureSetOps(ganesh::SurfaceDrawContext* sdc,
 
 } // namespace skgpu::ganesh
 
-#if GR_TEST_UTILS
+#if defined(GPU_TEST_UTILS)
 GR_DRAW_OP_TEST_DEFINE(TextureOpImpl) {
     SkISize dims;
     dims.fHeight = random->nextULessThan(90) + 10;
     dims.fWidth = random->nextULessThan(90) + 10;
     auto origin = random->nextBool() ? kTopLeft_GrSurfaceOrigin : kBottomLeft_GrSurfaceOrigin;
-    GrMipmapped mipmapped = random->nextBool() ? GrMipmapped::kYes : GrMipmapped::kNo;
+    skgpu::Mipmapped mipmapped =
+            random->nextBool() ? skgpu::Mipmapped::kYes : skgpu::Mipmapped::kNo;
     SkBackingFit fit = SkBackingFit::kExact;
-    if (mipmapped == GrMipmapped::kNo) {
+    if (mipmapped == skgpu::Mipmapped::kNo) {
         fit = random->nextBool() ? SkBackingFit::kApprox : SkBackingFit::kExact;
     }
     const GrBackendFormat format =
@@ -1439,7 +1469,7 @@ GR_DRAW_OP_TEST_DEFINE(TextureOpImpl) {
     GrSamplerState::Filter filter = (GrSamplerState::Filter)random->nextULessThan(
             static_cast<uint32_t>(GrSamplerState::Filter::kLast) + 1);
     GrSamplerState::MipmapMode mm = GrSamplerState::MipmapMode::kNone;
-    if (mipmapped == GrMipmapped::kYes) {
+    if (mipmapped == skgpu::Mipmapped::kYes) {
         mm = (GrSamplerState::MipmapMode)random->nextULessThan(
                 static_cast<uint32_t>(GrSamplerState::MipmapMode::kLast) + 1);
     }
@@ -1470,4 +1500,4 @@ GR_DRAW_OP_TEST_DEFINE(TextureOpImpl) {
                            useSubset ? &srcRect : nullptr);
 }
 
-#endif // GR_TEST_UTILS
+#endif // defined(GPU_TEST_UTILS)

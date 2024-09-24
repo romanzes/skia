@@ -43,10 +43,9 @@ static GrSurfaceProxyView create_view(GrDirectContext* dContext,
         }
 
         sk_sp<GrTextureProxy> proxy = GrProxyProvider::MakeFullyLazyProxy(
-                [src](GrResourceProvider* rp,
-                      const GrSurfaceProxy::LazySurfaceDesc& desc)
-                            -> GrSurfaceProxy::LazyCallbackResult {
-                    SkASSERT(desc.fMipmapped == GrMipmapped::kNo);
+                [src](GrResourceProvider* rp, const GrSurfaceProxy::LazySurfaceDesc& desc)
+                        -> GrSurfaceProxy::LazyCallbackResult {
+                    SkASSERT(desc.fMipmapped == skgpu::Mipmapped::kNo);
                     GrMipLevel mipLevel = {src.getPixels(), src.rowBytes(), nullptr};
                     auto colorType = SkColorTypeToGrColorType(src.colorType());
 
@@ -62,7 +61,11 @@ static GrSurfaceProxyView create_view(GrDirectContext* dContext,
                                              mipLevel,
                                              desc.fLabel);
                 },
-                format, GrRenderable::kNo, 1, GrProtected::kNo, *dContext->priv().caps(),
+                format,
+                GrRenderable::kNo,
+                1,
+                GrProtected::kNo,
+                *dContext->priv().caps(),
                 GrSurfaceProxy::UseAllocator::kYes);
 
         if (!proxy) {
@@ -182,16 +185,13 @@ public:
     }
 
 protected:
-
-    SkString onShortName() override {
+    SkString getName() const override {
         return SkStringPrintf("lazytiling_%s", fOrigin == kTopLeft_GrSurfaceOrigin ? "tl" : "bl");
     }
 
-    SkISize onISize() override {
-        return SkISize::Make(kTotalWidth, kTotalHeight);
-    }
+    SkISize getISize() override { return SkISize::Make(kTotalWidth, kTotalHeight); }
 
-    DrawResult onGpuSetup(SkCanvas* canvas, SkString* errorMsg) override {
+    DrawResult onGpuSetup(SkCanvas* canvas, SkString* errorMsg, GraphiteTestContext*) override {
         auto dContext = GrAsDirectContext(canvas->recordingContext());
         if (!dContext || dContext->abandoned()) {
             return DrawResult::kSkip;

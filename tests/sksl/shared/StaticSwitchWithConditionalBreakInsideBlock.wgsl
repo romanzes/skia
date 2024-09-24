@@ -1,7 +1,5 @@
 diagnostic(off, derivative_uniformity);
-struct FSIn {
-  @builtin(front_facing) sk_Clockwise: bool,
-};
+diagnostic(off, chromium.unreachable_code);
 struct FSOut {
   @location(0) sk_FragColor: vec4<f32>,
 };
@@ -9,7 +7,7 @@ struct _GlobalUniforms {
   unknownInput: f32,
 };
 @binding(0) @group(0) var<uniform> _globalUniforms: _GlobalUniforms;
-fn main(_stageOut: ptr<function, FSOut>) {
+fn _skslMain(_stageOut: ptr<function, FSOut>) {
   {
     var value: f32 = 0.0;
     switch 0 {
@@ -31,8 +29,8 @@ fn main(_stageOut: ptr<function, FSOut>) {
     }
   }
 }
-@fragment fn fragmentMain(_stageIn: FSIn) -> FSOut {
+@fragment fn main() -> FSOut {
   var _stageOut: FSOut;
-  main(&_stageOut);
+  _skslMain(&_stageOut);
   return _stageOut;
 }

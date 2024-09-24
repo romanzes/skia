@@ -182,7 +182,7 @@ sk_sp<GrPromiseImageTexture> DDLFuzzer::fulfillPromiseImage(PromiseImageInfo& pr
                                            kPromiseImageSize.height(),
                                            kRGBA_8888_SkColorType,
                                            SkColors::kRed,
-                                           GrMipmapped::kNo,
+                                           skgpu::Mipmapped::kNo,
                                            GrRenderable::kYes,
                                            GrProtected::kNo,
                                            markFinished,
@@ -242,7 +242,7 @@ void DDLFuzzer::initPromiseImage(int index) {
     promiseImage.fImage = SkImages::PromiseTextureFrom(fContext->threadSafeProxy(),
                                                        backendFmt,
                                                        kPromiseImageSize,
-                                                       GrMipmapped::kNo,
+                                                       skgpu::Mipmapped::kNo,
                                                        kTopLeft_GrSurfaceOrigin,
                                                        kRGBA_8888_SkColorType,
                                                        kUnpremul_SkAlphaType,
@@ -266,7 +266,7 @@ void DDLFuzzer::recordAndPlayDDL() {
         canvas->drawImage(fPromiseImages[j].fImage, xOffset, 0);
     }
     sk_sp<GrDeferredDisplayList> ddl = recorder.detach();
-    fGpuTaskGroup.add([=, ddl{std::move(ddl)}]{
+    fGpuTaskGroup.add([ddl{std::move(ddl)}, this] {
         bool success = skgpu::ganesh::DrawDDL(fSurface, std::move(ddl));
         if (!success) {
             fFuzz->signalBug();
@@ -278,16 +278,14 @@ void DDLFuzzer::run() {
     if (!fSurface) {
         return;
     }
-    fRecordingTaskGroup.batch(kIterationCount, [=](int i) {
-        this->recordAndPlayDDL();
-    });
+    fRecordingTaskGroup.batch(kIterationCount, [this](int i) { this->recordAndPlayDDL(); });
     fRecordingTaskGroup.wait();
 
-    fGpuTaskGroup.add([=] { fContext->flushAndSubmit(fSurface, /* syncCpu= */ true); });
+    fGpuTaskGroup.add([this] { fContext->flushAndSubmit(fSurface.get(), GrSyncCpu::kYes); });
 
     fGpuTaskGroup.wait();
 
-    fGpuTaskGroup.add([=] {
+    fGpuTaskGroup.add([this] {
         while (!fReusableTextures.empty()) {
             sk_sp<GrPromiseImageTexture> gpuTexture = std::move(fReusableTextures.front());
             fContext->deleteBackendTexture(gpuTexture->backendTexture());
@@ -301,5 +299,5 @@ void DDLFuzzer::run() {
 }
 
 DEF_FUZZ(DDLThreadingGL, fuzz) {
-    DDLFuzzer(fuzz, ContextType::kGL_ContextType).run();
+    DDLFuzzer(fuzz, skgpu::ContextType::kGL).run();
 }

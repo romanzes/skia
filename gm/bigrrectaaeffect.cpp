@@ -23,6 +23,7 @@
 #include "src/gpu/ganesh/GrCaps.h"
 #include "src/gpu/ganesh/GrFragmentProcessor.h"
 #include "src/gpu/ganesh/GrPaint.h"
+#include "src/gpu/ganesh/GrRecordingContextPriv.h"
 #include "src/gpu/ganesh/SurfaceDrawContext.h"
 #include "src/gpu/ganesh/effects/GrPorterDuffXferProcessor.h"
 #include "src/gpu/ganesh/effects/GrRRectEffect.h"
@@ -58,13 +59,13 @@ public:
     }
 
 protected:
-    SkString onShortName() override {
+    SkString getName() const override {
         SkString name;
         name.printf("big_rrect_%s_aa_effect", fName);
         return name;
     }
 
-    SkISize onISize() override { return SkISize::Make(fWidth, fHeight); }
+    SkISize getISize() override { return SkISize::Make(fWidth, fHeight); }
 
     DrawResult onDraw(GrRecordingContext* rContext, SkCanvas* canvas, SkString* errorMsg) override {
         auto sdc = skgpu::ganesh::TopDeviceSurfaceDrawContext(canvas);

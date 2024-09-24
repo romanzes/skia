@@ -26,11 +26,7 @@
 #include <climits>
 #include <cstdint>
 
-#if defined(SK_GANESH) || defined(SK_GRAPHITE)
-#  if !defined(SK_ENABLE_SKSL)
-#    define SK_ENABLE_SKSL
-#  endif
-#else
+#if !defined(SK_GANESH) && !defined(SK_GRAPHITE)
 #  undef SK_GL
 #  undef SK_VULKAN
 #  undef SK_METAL
@@ -90,10 +86,13 @@
     #define SK_GAMMA_EXPONENT (0.0f)  // SRGB
 #endif
 
-#ifndef GR_TEST_UTILS
-#  define GR_TEST_UTILS 0
+#if !defined(SK_GAMMA_CONTRAST)
+    // A value of 0.5 for SK_GAMMA_CONTRAST appears to be a good compromise.
+    // With lower values small text appears washed out (though correctly so).
+    // With higher values lcd fringing is worse and the smoothing effect of
+    // partial coverage is diminished.
+    #define SK_GAMMA_CONTRAST (0.5f)
 #endif
-
 
 #if defined(SK_HISTOGRAM_ENUMERATION)  || \
     defined(SK_HISTOGRAM_BOOLEAN)      || \
@@ -142,7 +141,8 @@
 #endif
 
 /**
- *  Gr defines are set to 0 or 1, rather than being undefined or defined
+ *  These defines are set to 0 or 1, rather than being undefined or defined
+ *  TODO: consider updating these for consistency
  */
 
 #if !defined(GR_CACHE_STATS)
@@ -154,7 +154,7 @@
 #endif
 
 #if !defined(GR_GPU_STATS)
-  #if defined(SK_DEBUG) || defined(SK_DUMP_STATS) || GR_TEST_UTILS
+  #if defined(SK_DEBUG) || defined(SK_DUMP_STATS) || defined(GPU_TEST_UTILS)
       #define GR_GPU_STATS    1
   #else
       #define GR_GPU_STATS    0

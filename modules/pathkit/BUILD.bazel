@@ -1,9 +1,11 @@
-load("//bazel:macros.bzl", "exports_files_legacy", "wasm_cc_binary")
 load("@skia_user_config//:copts.bzl", "DEFAULT_COPTS")
+load("//bazel:macros.bzl", "wasm_cc_binary")
+
+package(
+    default_applicable_licenses = ["//:license"],
+)
 
 licenses(["notice"])
-
-exports_files_legacy()
 
 BASE_LINKOPTS = [
     #"-flto",  # https://github.com/emscripten-core/emsdk/issues/807
@@ -101,7 +103,8 @@ cc_binary(
     # emscripten headers etc. Therefore, we hide it from wildcards.
     tags = ["manual"],
     deps = [
-        "//:skia_public",
+        "//:core",
+        "//:pathops",
     ],
 )
 
@@ -110,4 +113,7 @@ wasm_cc_binary(
     # Whatever is before the dot will be the name of the output js and wasm, aka "the stem".
     # https://github.com/emscripten-core/emsdk/blob/4a48a752e6a8bef6f222622f2b4926d5eb3bdeb3/bazel/emscripten_toolchain/wasm_cc_binary.bzl#L179
     cc_target = ":pathkit.build",
+    visibility = [
+        "//infra/jsfiddle:__pkg__",
+    ],
 )

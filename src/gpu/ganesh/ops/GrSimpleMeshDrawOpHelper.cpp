@@ -4,15 +4,22 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
-
 #include "src/gpu/ganesh/ops/GrSimpleMeshDrawOpHelper.h"
 
+#include "include/private/base/SkTo.h"
+#include "src/base/SkArenaAlloc.h"
+#include "src/gpu/Swizzle.h"
 #include "src/gpu/ganesh/GrAppliedClip.h"
+#include "src/gpu/ganesh/GrDstProxyView.h"
+#include "src/gpu/ganesh/GrOpFlushState.h"
+#include "src/gpu/ganesh/GrProcessorAnalysis.h"
 #include "src/gpu/ganesh/GrProcessorSet.h"
 #include "src/gpu/ganesh/GrProgramInfo.h"
-#include "src/gpu/ganesh/GrUserStencilSettings.h"
-#include "src/gpu/ganesh/SkGr.h"
-#include "src/gpu/ganesh/geometry/GrRect.h"
+#include "src/gpu/ganesh/GrSurfaceProxyView.h"
+#include "src/gpu/ganesh/ops/GrMeshDrawOp.h"
+
+enum class GrXferBarrierFlags;
+struct SkRect;
 
 GrSimpleMeshDrawOpHelper::GrSimpleMeshDrawOpHelper(GrProcessorSet* processorSet,
                                                    GrAAType aaType,
@@ -104,14 +111,13 @@ GrProcessorSet::Analysis GrSimpleMeshDrawOpHelper::finalizeProcessors(
     return analysis;
 }
 
-const GrPipeline* GrSimpleMeshDrawOpHelper::CreatePipeline(
-                                                const GrCaps* caps,
-                                                SkArenaAlloc* arena,
-                                                skgpu::Swizzle writeViewSwizzle,
-                                                GrAppliedClip&& appliedClip,
-                                                const GrDstProxyView& dstProxyView,
-                                                GrProcessorSet&& processorSet,
-                                                GrPipeline::InputFlags pipelineFlags) {
+const GrPipeline* GrSimpleMeshDrawOpHelper::CreatePipeline(const GrCaps* caps,
+                                                           SkArenaAlloc* arena,
+                                                           skgpu::Swizzle writeViewSwizzle,
+                                                           GrAppliedClip&& appliedClip,
+                                                           const GrDstProxyView& dstProxyView,
+                                                           GrProcessorSet&& processorSet,
+                                                           GrPipeline::InputFlags pipelineFlags) {
     GrPipeline::InitArgs pipelineArgs;
 
     pipelineArgs.fInputFlags = pipelineFlags;
@@ -124,10 +130,9 @@ const GrPipeline* GrSimpleMeshDrawOpHelper::CreatePipeline(
                                    std::move(appliedClip));
 }
 
-const GrPipeline* GrSimpleMeshDrawOpHelper::CreatePipeline(
-                                                GrOpFlushState* flushState,
-                                                GrProcessorSet&& processorSet,
-                                                GrPipeline::InputFlags pipelineFlags) {
+const GrPipeline* GrSimpleMeshDrawOpHelper::CreatePipeline(GrOpFlushState* flushState,
+                                                           GrProcessorSet&& processorSet,
+                                                           GrPipeline::InputFlags pipelineFlags) {
     return CreatePipeline(&flushState->caps(),
                           flushState->allocator(),
                           flushState->writeView().swizzle(),
@@ -147,12 +152,11 @@ const GrPipeline* GrSimpleMeshDrawOpHelper::createPipeline(GrOpFlushState* flush
                           this->pipelineFlags());
 }
 
-const GrPipeline* GrSimpleMeshDrawOpHelper::createPipeline(
-        const GrCaps* caps,
-        SkArenaAlloc* arena,
-        skgpu::Swizzle writeViewSwizzle,
-        GrAppliedClip&& appliedClip,
-        const GrDstProxyView& dstProxyView) {
+const GrPipeline* GrSimpleMeshDrawOpHelper::createPipeline(const GrCaps* caps,
+                                                           SkArenaAlloc* arena,
+                                                           skgpu::Swizzle writeViewSwizzle,
+                                                           GrAppliedClip&& appliedClip,
+                                                           const GrDstProxyView& dstProxyView) {
     return GrSimpleMeshDrawOpHelper::CreatePipeline(caps,
                                                     arena,
                                                     writeViewSwizzle,
@@ -235,7 +239,7 @@ GrProgramInfo* GrSimpleMeshDrawOpHelper::createProgramInfo(
                              this->pipelineFlags());
 }
 
-#if GR_TEST_UTILS
+#if defined(GPU_TEST_UTILS)
 static void dump_pipeline_flags(GrPipeline::InputFlags flags, SkString* result) {
     if (GrPipeline::InputFlags::kNone != flags) {
         if (flags & GrPipeline::InputFlags::kSnapVerticesToPixelCenters) {

@@ -1,9 +1,11 @@
-load("//bazel:skia_rules.bzl", "exports_files_legacy", "select_multi", "skia_cc_deps", "skia_filegroup", "split_srcs_and_hdrs")
 load("//bazel:flags.bzl", "bool_flag", "selects", "string_flag_with_values")
+load("//bazel:skia_rules.bzl", "generate_cpp_files_for_headers", "select_multi", "skia_cc_deps", "skia_cc_library", "skia_filegroup", "split_srcs_and_hdrs")
+
+package(
+    default_applicable_licenses = ["//:license"],
+)
 
 licenses(["notice"])
-
-exports_files_legacy()
 
 # In own group for exporting to //gn/gpu.gni:skia_shared_gpu_sources.
 SHARED_FILES = [
@@ -14,14 +16,18 @@ SHARED_FILES = [
     "Blend.h",
     "BlendFormula.cpp",
     "BlendFormula.h",
+    "BlurUtils.cpp",
+    "BlurUtils.h",
     "BufferWriter.h",
+    "DataUtils.cpp",
+    "DataUtils.h",
     "DitherUtils.cpp",
     "DitherUtils.h",
+    "GpuRefCnt.h",
     "GpuTypesPriv.h",
     "KeyBuilder.h",
-    "MutableTextureStateRef.h",
-    "PipelineUtils.cpp",
-    "PipelineUtils.h",
+    "MutableTextureStatePriv.h",
+    "MutableTextureState.cpp",
     "Rectanizer.h",
     "RectanizerPow2.cpp",
     "RectanizerPow2.h",
@@ -30,9 +36,13 @@ SHARED_FILES = [
     "RefCntedCallback.h",
     "ResourceKey.cpp",
     "ResourceKey.h",
+    "SkBackingFit.cpp",
     "SkBackingFit.h",
+    "SkSLToBackend.cpp",
+    "SkSLToBackend.h",
     "Swizzle.cpp",
     "Swizzle.h",
+    "SwizzlePriv.h",
     "TiledTextureUtils.cpp",
     "TiledTextureUtils.h",
 ]
@@ -56,7 +66,6 @@ string_flag_with_values(
     name = "gpu_backend",
     multiple = True,
     values = [
-        "dawn_ganesh",
         "gl_ganesh",
         "metal_ganesh",
         "vulkan_ganesh",
@@ -78,7 +87,6 @@ string_flag_with_values(
 selects.config_setting_group(
     name = "has_ganesh_backend",
     match_any = [
-        ":dawn_ganesh",
         ":gl_ganesh",
         ":metal_ganesh",
         ":vulkan_ganesh",
@@ -106,9 +114,9 @@ selects.config_setting_group(
 )
 
 bool_flag(
+    # Users should use :vulkan_with_vma directly
     name = "use_vulkan_memory_allocator",
     default = True,
-    public = False,  # Users should use :vulkan_with_vma
 )
 
 bool_flag(
@@ -119,7 +127,6 @@ bool_flag(
 selects.config_setting_group(
     name = "has_dawn",
     match_any = [
-        ":dawn_ganesh",
         ":dawn_graphite",
     ],
 )
@@ -147,10 +154,11 @@ skia_filegroup(
         ":shared_srcs",
         "//src/gpu/ganesh:srcs",
         "//src/gpu/tessellate:srcs",
-    ] + select_multi(
+    ] + select(
         {
-            ":has_dawn": ["//src/gpu/dawn:srcs"],
             ":has_vulkan": ["//src/gpu/vk:srcs"],
+            "@platforms//os:android": ["//src/gpu/android:shared_android_srcs"],
+            "//conditions:default": [],
         },
     ),
     visibility = ["//src:__pkg__"],
@@ -174,7 +182,6 @@ skia_filegroup(
         "//src/gpu/tessellate:private_hdrs",
     ] + select_multi(
         {
-            ":has_dawn": ["//src/gpu/dawn:private_hdrs"],
             ":has_vulkan": ["//src/gpu/vk:private_hdrs"],
             ":has_metal": ["//src/gpu/mtl:private_hdrs"],
         },
@@ -192,4 +199,44 @@ skia_cc_deps(
             ":has_vulkan": ["//src/gpu/vk:deps"],
         },
     ),
+)
+
+skia_cc_library(
+    name = "gpu",
+    srcs = [
+        ":core_srcs",
+        ":shared_srcs",
+        "//src/gpu/tessellate:private_hdrs",
+        "//src/gpu/tessellate:srcs",
+        "//src/utils:shader_utils_srcs",
+    ],
+    hdrs = [
+        ":core_hdrs",
+        ":shared_hdrs",
+        "//include/gpu:shared_gpu_hdrs",
+        "//src/utils:shader_utils_hdrs",
+    ],
+    visibility = [
+        "//src/gpu:__subpackages__",
+        "//src/sksl/codegen:__pkg__",
+    ],
+    deps = [
+        "//:core",
+        "//src/base",
+        "//src/core:core_priv",
+    ],
+)
+
+generate_cpp_files_for_headers(
+    name = "headers_to_compile",
+    headers = [
+        "AsyncReadTypes.h",
+        "BufferWriter.h",
+        "GpuRefCnt.h",
+        "GpuTypesPriv.h",
+        "KeyBuilder.h",
+        "MutableTextureStatePriv.h",
+        "SkRenderEngineAbortf.h",
+        "SwizzlePriv.h",
+    ],
 )

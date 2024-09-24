@@ -5,23 +5,48 @@
  * found in the LICENSE file.
  */
 
-#include "src/gpu/ganesh/Device.h"
-
-#include "include/core/SkBitmap.h"
+#include "include/core/SkBlendMode.h"
+#include "include/core/SkCanvas.h"
+#include "include/core/SkColor.h"
 #include "include/core/SkColorSpace.h"
+#include "include/core/SkImage.h"
+#include "include/core/SkImageInfo.h"
+#include "include/core/SkMatrix.h"
+#include "include/core/SkPaint.h"
+#include "include/core/SkPath.h"
+#include "include/core/SkRect.h"
+#include "include/core/SkRefCnt.h"
+#include "include/core/SkSamplingOptions.h"
+#include "include/core/SkScalar.h"
+#include "include/core/SkSize.h"
+#include "include/core/SkTileMode.h"
+#include "include/gpu/GpuTypes.h"
 #include "include/gpu/GrRecordingContext.h"
+#include "include/private/SkColorData.h"
+#include "include/private/base/SkAssert.h"
+#include "include/private/base/SkPoint_impl.h"
 #include "include/private/base/SkTPin.h"
-#include "src/core/SkDraw.h"
-#include "src/core/SkMaskFilterBase.h"
-#include "src/core/SkSamplingPriv.h"
+#include "include/private/base/SkTemplates.h"
+#include "include/private/gpu/ganesh/GrImageContext.h"
+#include "include/private/gpu/ganesh/GrTypesPriv.h"
+#include "src/base/SkTLazy.h"
 #include "src/core/SkSpecialImage.h"
+#include "src/gpu/Swizzle.h"
 #include "src/gpu/TiledTextureUtils.h"
+#include "src/gpu/ganesh/Device.h"
 #include "src/gpu/ganesh/GrBlurUtils.h"
+#include "src/gpu/ganesh/GrColorInfo.h"
 #include "src/gpu/ganesh/GrColorSpaceXform.h"
 #include "src/gpu/ganesh/GrFPArgs.h"
+#include "src/gpu/ganesh/GrFragmentProcessor.h"
 #include "src/gpu/ganesh/GrFragmentProcessors.h"
 #include "src/gpu/ganesh/GrOpsTypes.h"
-#include "src/gpu/ganesh/GrStyle.h"
+#include "src/gpu/ganesh/GrPaint.h"
+#include "src/gpu/ganesh/GrSamplerState.h"
+#include "src/gpu/ganesh/GrSurfaceProxy.h"
+#include "src/gpu/ganesh/GrSurfaceProxyPriv.h"
+#include "src/gpu/ganesh/GrSurfaceProxyView.h"
+#include "src/gpu/ganesh/GrTextureProxy.h"
 #include "src/gpu/ganesh/SkGr.h"
 #include "src/gpu/ganesh/SurfaceDrawContext.h"
 #include "src/gpu/ganesh/effects/GrBlendFragmentProcessor.h"
@@ -32,6 +57,14 @@
 #include "src/gpu/ganesh/image/SkImage_Ganesh.h"
 #include "src/gpu/ganesh/image/SkSpecialImage_Ganesh.h"
 #include "src/image/SkImage_Base.h"
+#include "src/shaders/SkShaderBase.h"
+
+#include <memory>
+#include <tuple>
+#include <utility>
+
+class GrClip;
+class SkMaskFilter;
 
 using namespace skia_private;
 
@@ -151,7 +184,7 @@ void draw_texture(skgpu::ganesh::SurfaceDrawContext* sdc,
         // Conservative estimate of how much a coord could be outset from src rect:
         // 1/2 pixel for AA and 1/2 pixel for linear filtering
         float buffer = 0.5f * (aaFlags != GrQuadAAFlags::kNone) +
-                       0.5f * (filter == GrSamplerState::Filter::kLinear);
+                       GrTextureEffect::kLinearInset * (filter == GrSamplerState::Filter::kLinear);
         SkRect safeBounds = proxy->getBoundsRect();
         safeBounds.inset(buffer, buffer);
         if (!safeBounds.contains(srcRect)) {
@@ -232,7 +265,7 @@ void Device::drawEdgeAAImage(const SkImage* image,
     if (tm == SkTileMode::kClamp && !ib->isYUVA() && can_use_draw_texture(paint, sampling)) {
         // We've done enough checks above to allow us to pass ClampNearest() and not check for
         // scaling adjustments.
-        auto [view, ct] = skgpu::ganesh::AsView(rContext, image, GrMipmapped::kNo);
+        auto [view, ct] = skgpu::ganesh::AsView(rContext, image, skgpu::Mipmapped::kNo);
         if (!view) {
             return;
         }
@@ -304,10 +337,12 @@ void Device::drawEdgeAAImage(const SkImage* image,
             std::move(fp), image->imageInfo().colorInfo(), sdc->colorInfo());
     if (image->isAlphaOnly()) {
         if (const auto* shader = as_SB(paint.getShader())) {
-            auto shaderFP = GrFragmentProcessors::Make(
-                    shader,
-                    GrFPArgs(rContext, &sdc->colorInfo(), sdc->surfaceProps()),
-                    localToDevice);
+            auto shaderFP = GrFragmentProcessors::Make(shader,
+                                                       GrFPArgs(rContext,
+                                                                &sdc->colorInfo(),
+                                                                sdc->surfaceProps(),
+                                                                GrFPArgs::Scope::kDefault),
+                                                       localToDevice);
             if (!shaderFP) {
                 return;
             }
@@ -369,7 +404,8 @@ void Device::drawEdgeAAImage(const SkImage* image,
 void Device::drawSpecial(SkSpecialImage* special,
                          const SkMatrix& localToDevice,
                          const SkSamplingOptions& origSampling,
-                         const SkPaint& paint) {
+                         const SkPaint& paint,
+                         SkCanvas::SrcRectConstraint constraint) {
     SkASSERT(!paint.getMaskFilter() && !paint.getImageFilter());
     SkASSERT(special->isGaneshBacked());
 
@@ -383,6 +419,21 @@ void Device::drawSpecial(SkSpecialImage* special,
                                                        : SkCanvas::kNone_QuadAAFlags;
 
     GrSurfaceProxyView view = SkSpecialImages::AsView(this->recordingContext(), special);
+    if (!view) {
+        // This shouldn't happen since we shouldn't be mixing SkSpecialImage subclasses but
+        // returning early should avoid problems in release builds.
+        SkASSERT(false);
+        return;
+    }
+
+    if (constraint == SkCanvas::kFast_SrcRectConstraint) {
+        // If 'fast' was requested, we assume the caller has done sufficient analysis to know the
+        // logical dimensions are safe (which is true for FilterResult, the only current caller that
+        // passes in 'fast'). Without exactify'ing the proxy, GrTextureEffect would re-introduce
+        // subset clamping.
+        view.proxy()->priv().exactify();
+    }
+
     SkImage_Ganesh image(sk_ref_sp(special->getContext()),
                          special->uniqueID(),
                          std::move(view),
@@ -397,7 +448,7 @@ void Device::drawSpecial(SkSpecialImage* special,
                           localToDevice,
                           sampling,
                           paint,
-                          SkCanvas::kStrict_SrcRectConstraint,
+                          constraint,
                           srcToDst,
                           SkTileMode::kClamp);
 }
@@ -522,7 +573,7 @@ void Device::drawEdgeAAImageSet(const SkCanvas::ImageSetEntry set[], int count,
         const SkPoint* clip = set[i].fHasClip ? dstClips + dstClipIndex : nullptr;
         dstClipIndex += 4 * set[i].fHasClip;
 
-        // The default SkBaseDevice implementation is based on drawImageRect which does not allow
+        // The default SkDevice implementation is based on drawImageRect which does not allow
         // non-sorted src rects. TODO: Decide this is OK or make sure we handle it.
         if (!set[i].fSrcRect.isSorted()) {
             draw(i + 1);
@@ -535,7 +586,7 @@ void Device::drawEdgeAAImageSet(const SkCanvas::ImageSetEntry set[], int count,
         // drawImageQuad and the proper effect to dynamically sample their planes.
         if (!image->isYUVA()) {
             std::tie(view, std::ignore) =
-                    skgpu::ganesh::AsView(this->recordingContext(), image, GrMipmapped::kNo);
+                    skgpu::ganesh::AsView(this->recordingContext(), image, skgpu::Mipmapped::kNo);
             if (image->isAlphaOnly()) {
                 skgpu::Swizzle swizzle = skgpu::Swizzle::Concat(view.swizzle(),
                                                                 skgpu::Swizzle("aaaa"));

@@ -1,8 +1,5 @@
 diagnostic(off, derivative_uniformity);
-struct FSIn {
-  @builtin(front_facing) sk_Clockwise: bool,
-  @builtin(position) sk_FragCoord: vec4<f32>,
-};
+diagnostic(off, chromium.unreachable_code);
 struct FSOut {
   @location(0) sk_FragColor: vec4<f32>,
 };
@@ -18,31 +15,26 @@ struct S {
 };
 var<private> globalVar: vec4<f32>;
 var<private> globalStruct: S;
-fn keepAlive_vh(_skParam0: ptr<function, f32>) {
-  let h = _skParam0;
+fn keepAlive_vh(h: ptr<function, f32>) {
   {
   }
 }
-fn keepAlive_vf(_skParam0: ptr<function, f32>) {
-  let f = _skParam0;
+fn keepAlive_vf(f: ptr<function, f32>) {
   {
   }
 }
-fn keepAlive_vi(_skParam0: ptr<function, i32>) {
-  let i = _skParam0;
+fn keepAlive_vi(i: ptr<function, i32>) {
   {
   }
 }
-fn assignToFunctionParameter_vif(_skParam0: i32, _skParam1: ptr<function, f32>) {
+fn assignToFunctionParameter_vif(_skParam0: i32, y: ptr<function, f32>) {
   var x = _skParam0;
-  let y = _skParam1;
   {
     x = 1;
     (*y) = 1.0;
   }
 }
-fn main(_skParam0: vec2<f32>) -> vec4<f32> {
-  let coords = _skParam0;
+fn _skslMain(coords: vec2<f32>) -> vec4<f32> {
   {
     var i: i32 = 0;
     var i4: vec4<i32> = vec4<i32>(1, 2, 3, 4);
@@ -63,7 +55,7 @@ fn main(_skParam0: vec2<f32>) -> vec4<f32> {
     s.f = 0.0;
     s.af[1] = 0.0;
     s.h4 = vec4<f32>((vec3<f32>(9.0)), s.h4.w).yzxw;
-    s.ah4[2] = vec4<f32>((vec2<f32>(5.0)), s.ah4[2].xz).zxwy;
+    s.ah4[2] = vec4<f32>(s.ah4[2].xz, (vec2<f32>(5.0))).xzyw;
     globalVar = vec4<f32>(0.0);
     globalStruct.f = 0.0;
     var _skTemp0: f32 = f3x3[0].x;
@@ -115,8 +107,8 @@ fn main(_skParam0: vec2<f32>) -> vec4<f32> {
     return _globalUniforms.colorGreen;
   }
 }
-@fragment fn fragmentMain(_stageIn: FSIn) -> FSOut {
+@fragment fn main() -> FSOut {
   var _stageOut: FSOut;
-  _stageOut.sk_FragColor = main(_stageIn.sk_FragCoord.xy);
+  _stageOut.sk_FragColor = _skslMain(/*fragcoord*/ vec2<f32>());
   return _stageOut;
 }

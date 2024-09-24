@@ -6,9 +6,6 @@
  */
 
 #include "include/effects/SkImageFilters.h"
-#include "src/effects/imagefilters/SkCropImageFilter.h"
-
-#ifdef SK_ENABLE_SKSL
 
 #include "include/core/SkColor.h"
 #include "include/core/SkFlattenable.h"
@@ -26,10 +23,11 @@
 #include "include/private/base/SkSpan_impl.h"
 #include "src/core/SkImageFilterTypes.h"
 #include "src/core/SkImageFilter_Base.h"
+#include "src/core/SkKnownRuntimeEffects.h"
 #include "src/core/SkReadBuffer.h"
-#include "src/core/SkRuntimeEffectPriv.h"
 #include "src/core/SkWriteBuffer.h"
 
+#include <optional>
 #include <utility>
 
 namespace {
@@ -46,7 +44,7 @@ class SkDisplacementMapImageFilter final : public SkImageFilter_Base {
 public:
     SkDisplacementMapImageFilter(SkColorChannel xChannel, SkColorChannel yChannel,
                                  SkScalar scale, sk_sp<SkImageFilter> inputs[2])
-            : SkImageFilter_Base(inputs, 2, nullptr)
+            : SkImageFilter_Base(inputs, 2)
             , fXChannel(xChannel)
             , fYChannel(yChannel)
             , fScale(scale) {}
@@ -65,11 +63,11 @@ private:
     skif::LayerSpace<SkIRect> onGetInputLayerBounds(
             const skif::Mapping& mapping,
             const skif::LayerSpace<SkIRect>& desiredOutput,
-            const skif::LayerSpace<SkIRect>& contentBounds) const override;
+            std::optional<skif::LayerSpace<SkIRect>> contentBounds) const override;
 
-    skif::LayerSpace<SkIRect> onGetOutputLayerBounds(
+    std::optional<skif::LayerSpace<SkIRect>> onGetOutputLayerBounds(
             const skif::Mapping& mapping,
-            const skif::LayerSpace<SkIRect>& contentBounds) const override;
+            std::optional<skif::LayerSpace<SkIRect>> contentBounds) const override;
 
     skif::LayerSpace<SkIRect> outsetByMaxDisplacement(const skif::Mapping& mapping,
                                                       skif::LayerSpace<SkIRect> bounds) const {
@@ -119,22 +117,8 @@ sk_sp<SkShader> make_displacement_shader(
         displacement = SkShaders::Color(SK_ColorTRANSPARENT);
     }
 
-    // NOTE: This uses dot product selection to work on all GLES2 hardware (enforced by public
-    // runtime effect restrictions). Otherwise, this would use a "uniform ivec2" and component
-    // indexing to convert the displacement color into a vector.
-    static const SkRuntimeEffect* effect = SkMakeRuntimeEffect(SkRuntimeEffect::MakeForShader,
-        "uniform shader displMap;"
-        "uniform shader colorMap;"
-        "uniform half2 scale;"
-        "uniform half4 xSelect;" // Only one of RGBA will be 1, the rest are 0
-        "uniform half4 ySelect;"
-
-        "half4 main(float2 coord) {"
-            "half4 displColor = unpremul(displMap.eval(coord));"
-            "half2 displ = half2(dot(displColor, xSelect), dot(displColor, ySelect));"
-            "displ = scale * (displ - 0.5);"
-            "return colorMap.eval(coord + displ);"
-        "}");
+    const SkRuntimeEffect* displacementEffect =
+            GetKnownRuntimeEffect(SkKnownRuntimeEffects::StableKey::kDisplacement);
 
     auto channelSelector = [](SkColorChannel c) {
         return SkV4{c == SkColorChannel::kR ? 1.f : 0.f,
@@ -143,7 +127,7 @@ sk_sp<SkShader> make_displacement_shader(
                     c == SkColorChannel::kA ? 1.f : 0.f};
     };
 
-    SkRuntimeShaderBuilder builder(sk_ref_sp(effect));
+    SkRuntimeShaderBuilder builder(sk_ref_sp(displacementEffect));
     builder.child("displMap") = std::move(displacement);
     builder.child("colorMap") = std::move(color);
     builder.uniform("scale") = SkV2{scale.x(), scale.y()};
@@ -169,7 +153,7 @@ sk_sp<SkImageFilter> SkImageFilters::DisplacementMap(
     sk_sp<SkImageFilter> filter(new SkDisplacementMapImageFilter(xChannelSelector, yChannelSelector,
                                                                  scale, inputs));
     if (cropRect) {
-        filter = SkMakeCropImageFilter(*cropRect, std::move(filter));
+        filter = SkImageFilters::Crop(*cropRect, std::move(filter));
     }
     return filter;
 }
@@ -275,7 +259,7 @@ skif::FilterResult SkDisplacementMapImageFilter::onFilterImage(const skif::Conte
 skif::LayerSpace<SkIRect> SkDisplacementMapImageFilter::onGetInputLayerBounds(
         const skif::Mapping& mapping,
         const skif::LayerSpace<SkIRect>& desiredOutput,
-        const skif::LayerSpace<SkIRect>& contentBounds) const {
+        std::optional<skif::LayerSpace<SkIRect>> contentBounds) const {
     // Pixels up to the maximum displacement away from 'desiredOutput' can be moved into those
     // bounds, depending on how the displacement map renders. To ensure those colors are defined,
     // we require that outset buffer around 'desiredOutput' from the color map.
@@ -288,12 +272,15 @@ skif::LayerSpace<SkIRect> SkDisplacementMapImageFilter::onGetInputLayerBounds(
     return requiredInput;
 }
 
-skif::LayerSpace<SkIRect> SkDisplacementMapImageFilter::onGetOutputLayerBounds(
+std::optional<skif::LayerSpace<SkIRect>> SkDisplacementMapImageFilter::onGetOutputLayerBounds(
         const skif::Mapping& mapping,
-        const skif::LayerSpace<SkIRect>& contentBounds) const {
-    skif::LayerSpace<SkIRect> colorOutput =
-            this->getChildOutputLayerBounds(kColor, mapping, contentBounds);
-    return this->outsetByMaxDisplacement(mapping, colorOutput);
+        std::optional<skif::LayerSpace<SkIRect>> contentBounds) const {
+    auto colorOutput = this->getChildOutputLayerBounds(kColor, mapping, contentBounds);
+    if (colorOutput) {
+        return this->outsetByMaxDisplacement(mapping, *colorOutput);
+    } else {
+        return skif::LayerSpace<SkIRect>::Unbounded();
+    }
 }
 
 SkRect SkDisplacementMapImageFilter::computeFastBounds(const SkRect& src) const {
@@ -302,16 +289,3 @@ SkRect SkDisplacementMapImageFilter::computeFastBounds(const SkRect& src) const 
     float maxDisplacement = 0.5f * SkScalarAbs(fScale);
     return colorBounds.makeOutset(maxDisplacement, maxDisplacement);
 }
-
-#else
-
-// The displacement map effect requires SkSL, just return the color input, possibly cropped
-sk_sp<SkImageFilter> SkImageFilters::DisplacementMap(
-        SkColorChannel xChannelSelector, SkColorChannel yChannelSelector, SkScalar scale,
-        sk_sp<SkImageFilter> displacement, sk_sp<SkImageFilter> color, const CropRect& cropRect) {
-    return cropRect ? SkMakeCropImageFilter(*cropRect, std::move(color)) : color;
-}
-
-void SkRegisterDisplacementMapImageFilterFlattenable() {}
-
-#endif

@@ -26,19 +26,19 @@
 #include "include/gpu/ganesh/SkSurfaceGanesh.h"
 #include "include/gpu/ganesh/gl/GrGLBackendSurface.h"
 #include "include/gpu/gl/GrGLTypes.h"
-#include "include/private/gpu/ganesh/GrGLTypesPriv.h"
 #include "src/gpu/ganesh/GrDirectContextPriv.h"
 #include "src/gpu/ganesh/GrSurfaceProxy.h"
 #include "src/gpu/ganesh/GrTextureProxy.h"
 #include "src/gpu/ganesh/gl/GrGLCaps.h"
 #include "src/gpu/ganesh/gl/GrGLTexture.h"
+#include "src/gpu/ganesh/gl/GrGLTypesPriv.h"
 #include "tests/CtsEnforcement.h"
 #include "tests/Test.h"
 #include "tools/gpu/ProxyUtils.h"
 struct GrContextOptions;
 
 static bool sampler_params_invalid(const GrGLTextureParameters& parameters) {
-    return SkScalarIsNaN(parameters.samplerOverriddenState().fMaxLOD);
+    return SkIsNaN(parameters.samplerOverriddenState().fMaxLOD);
 }
 
 static bool nonsampler_params_invalid(const GrGLTextureParameters& parameters) {
@@ -63,17 +63,17 @@ static bool params_valid(const GrGLTextureParameters& parameters, const GrGLCaps
     return caps->useSamplerObjects() == sampler_params_invalid(parameters);
 }
 
-DEF_GANESH_TEST_FOR_ALL_GL_CONTEXTS(GLTextureParameters,
-                                    reporter,
-                                    ctxInfo,
-                                    CtsEnforcement::kApiLevel_T) {
+DEF_GANESH_TEST_FOR_GL_CONTEXT(GLTextureParameters,
+                               reporter,
+                               ctxInfo,
+                               CtsEnforcement::kApiLevel_T) {
     auto dContext = ctxInfo.directContext();
     auto caps = static_cast<const GrGLCaps*>(dContext->priv().caps());
 
     GrBackendTexture backendTex = dContext->createBackendTexture(1,
                                                                  1,
                                                                  kRGBA_8888_SkColorType,
-                                                                 GrMipmapped::kNo,
+                                                                 skgpu::Mipmapped::kNo,
                                                                  GrRenderable::kNo,
                                                                  GrProtected::kNo);
     REPORTER_ASSERT(reporter, backendTex.isValid());
@@ -118,7 +118,7 @@ DEF_GANESH_TEST_FOR_ALL_GL_CONTEXTS(GLTextureParameters,
 
     REPORTER_ASSERT(reporter, surf);
     surf->getCanvas()->drawImage(wrappedImage, 0, 0);
-    dContext->flushAndSubmit(surf);
+    dContext->flushAndSubmit(surf.get(), GrSyncCpu::kNo);
     REPORTER_ASSERT(reporter, params_valid(*parameters, caps));
 
     // Test invalidating from the copy.
@@ -150,7 +150,7 @@ DEF_GANESH_TEST_FOR_ALL_GL_CONTEXTS(GLTextureParameters,
 
     wrappedImage.reset();
     dContext->flush();
-    dContext->submit(true);
+    dContext->submit(GrSyncCpu::kYes);
     dContext->deleteBackendTexture(backendTex);
 }
 #endif

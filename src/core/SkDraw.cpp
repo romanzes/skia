@@ -18,6 +18,7 @@
 #include "include/private/base/SkAssert.h"
 #include "include/private/base/SkDebug.h"
 #include "include/private/base/SkFixed.h"
+#include "include/private/base/SkFloatingPoint.h"
 #include "include/private/base/SkTemplates.h"
 #include "include/private/base/SkTo.h"
 #include "src/base/SkArenaAlloc.h"
@@ -235,7 +236,7 @@ PtProcRec::Proc PtProcRec::chooseProc(SkBlitter** blitterPtr) {
 
 void SkDraw::drawPoints(SkCanvas::PointMode mode, size_t count,
                         const SkPoint pts[], const SkPaint& paint,
-                        SkBaseDevice* device) const {
+                        SkDevice* device) const {
     // if we're in lines mode, force count to be even
     if (SkCanvas::kLines_PointMode == mode) {
         count &= ~(size_t)1;
@@ -265,7 +266,7 @@ void SkDraw::drawPoints(SkCanvas::PointMode mode, size_t count,
                 n = MAX_DEV_PTS;
             }
             fCTM->mapPoints(devPts, pts, n);
-            if (!SkScalarsAreFinite(&devPts[0].fX, n * 2)) {
+            if (!SkIsFinite(&devPts[0].fX, n * 2)) {
                 return;
             }
             proc(rec, devPts, n, bltr);
@@ -536,4 +537,3 @@ void SkDraw::drawBitmapAsMask(const SkBitmap& bitmap, const SkSamplingOptions& s
     }
 }
 #endif
-

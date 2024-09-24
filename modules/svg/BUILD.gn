@@ -23,6 +23,7 @@ if (skia_enable_svg && skia_use_expat) {
       "../..:skia",
       "../skresources",
       "../skshaper",
+      "../skunicode",
     ]
   }
 
@@ -38,6 +39,7 @@ if (skia_enable_svg && skia_use_expat) {
         deps = [
           "../..:flags",
           "../..:skia",
+          "../..:tool_utils",
         ]
 
         public_deps = [ ":svg" ]
@@ -57,6 +59,7 @@ if (skia_enable_svg && skia_use_expat) {
         ":svg",
         "../..:skia",
         "../..:test",
+        "../skshaper",
       ]
     }
   }

@@ -1,12 +1,15 @@
 #include <metal_stdlib>
 #include <simd/simd.h>
+#ifdef __clang__
+#pragma clang diagnostic ignored "-Wall"
+#endif
 using namespace metal;
 struct SomeData {
     float4 a;
     float2 b;
 };
 struct Inputs {
-    int bufferIndex  [[user(locn2)]];
+    int bufferIndex [[user(locn2) flat]];
 };
 struct Outputs {
     half4 sk_FragColor [[color(0)]];

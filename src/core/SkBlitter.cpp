@@ -29,7 +29,7 @@
 #include "src/core/SkCoreBlitters.h"
 #include "src/core/SkMask.h"
 #include "src/core/SkMaskFilterBase.h"
-#include "src/core/SkOpts.h"
+#include "src/core/SkMemset.h"
 #include "src/core/SkPaintPriv.h"
 #include "src/core/SkRegionPriv.h"
 #include "src/shaders/SkShaderBase.h"
@@ -376,8 +376,11 @@ void SkRectClipBlitter::blitH(int left, int y, int width) {
     }
 }
 
-void SkRectClipBlitter::blitAntiH(int left, int y, const SkAlpha aa[],
-                                  const int16_t runs[]) {
+void SkRectClipBlitter::blitAntiH(int left, int y, const SkAlpha const_aa[],
+                                  const int16_t const_runs[]) {
+    SkAlpha* aa = const_cast<SkAlpha*>(const_aa);
+    int16_t* runs = const_cast<int16_t*>(const_runs);
+
     if (!y_in_rect(y, fClipRect) || left >= fClipRect.fRight) {
         return;
     }
@@ -495,8 +498,11 @@ void SkRgnClipBlitter::blitH(int x, int y, int width) {
     }
 }
 
-void SkRgnClipBlitter::blitAntiH(int x, int y, const SkAlpha aa[],
-                                 const int16_t runs[]) {
+void SkRgnClipBlitter::blitAntiH(int x, int y, const SkAlpha const_aa[],
+                                 const int16_t const_runs[]) {
+    SkAlpha* aa = const_cast<SkAlpha*>(const_aa);
+    int16_t* runs = const_cast<int16_t*>(const_runs);
+
     int width = compute_anti_width(runs);
     SkRegion::Spanerator span(*fRgn, y, x, x + width);
     int left, right;

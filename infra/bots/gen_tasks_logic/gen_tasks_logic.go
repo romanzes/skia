@@ -25,6 +25,7 @@ import (
 	"go.skia.org/infra/go/cas/rbe"
 	"go.skia.org/infra/go/cipd"
 	"go.skia.org/infra/task_scheduler/go/specs"
+	"go.skia.org/skia/bazel/device_specific_configs"
 )
 
 const (
@@ -41,7 +42,6 @@ const (
 	CAS_RECIPES       = "recipes"
 	CAS_RECREATE_SKPS = "recreate-skps"
 	CAS_SKOTTIE_WASM  = "skottie-wasm"
-	CAS_SKPBENCH      = "skpbench"
 	CAS_TASK_DRIVERS  = "task-drivers"
 	CAS_TEST          = "test"
 	CAS_WASM_GM       = "wasm-gm"
@@ -64,7 +64,7 @@ const (
 	OLD_OS_LINUX_GCE               = "Debian-9.8"
 	COMPILE_TASK_NAME_OS_LINUX     = "Debian10"
 	COMPILE_TASK_NAME_OS_LINUX_OLD = "Debian9"
-	DEFAULT_OS_MAC                 = "Mac-10.15.7"
+	DEFAULT_OS_MAC                 = "Mac-14.5"
 	DEFAULT_OS_WIN                 = "Windows-Server-17763"
 
 	// Small is a 2-core machine.
@@ -91,6 +91,20 @@ const (
 	// src/core/SkPicturePriv.h
 	// See the comment in that file on how to find the version to use here.
 	oldestSupportedSkpVersion = 293
+
+	// bazelCacheDirOnGCELinux is the path where Bazel should write its cache on Linux GCE machines.
+	// The Bazel cache can grow large (>10GB), so this should be in a partition with enough free
+	// space. On Linux GCE machines, the partition mounted at /mnt/pd0 is significantly larger than
+	// the partition mounted at /.
+	bazelCacheDirOnGCELinux = "/mnt/pd0/bazel_cache"
+
+	// bazelCacheDirOnSkoloLinux is like bazelCacheDirOnGCELinux for Skolo Linux machines. Unlike GCE
+	// Linux machines, the partition mounted at / on Skolo Linux machines is large enough. While
+	// using the default Bazel cache path would work, our Bazel task drivers demand an explicit path.
+	// We store the Bazel cache at /home/chrome-bot/bazel_cache rather than on the default location
+	// of /home/chrome-bot/cache/.bazel to make it obvious to someone examining a Skolo machine that
+	// we are overriding the default location.
+	bazelCacheDirOnSkoloLinux = "/home/chrome-bot/bazel_cache"
 )
 
 var (
@@ -149,7 +163,7 @@ var (
 	CAS_SPEC_LOTTIE_CI = &specs.CasSpec{
 		Root: "..",
 		Paths: []string{
-			"skia/.vpython",
+			"skia/.vpython3",
 			"skia/infra/bots/run_recipe.py",
 			"skia/infra/lottiecap",
 			"skia/tools/lottie-web-perf",
@@ -180,7 +194,7 @@ var (
 			Path: "mac_toolchain",
 			// When this is updated, also update
 			// https://skia.googlesource.com/skcms.git/+/f1e2b45d18facbae2dece3aca673fe1603077846/infra/bots/gen_tasks.go#56
-			Version: "git_revision:796d2b92cff93fc2059623ce0a66284373ceea0a",
+			Version: "git_revision:e018acef6f136ec8bbf378a026a910b40ba3a7a9",
 		},
 	}
 
@@ -413,26 +427,31 @@ func GenTasks(cfg *Config) {
 	b.MustAddCasSpec(CAS_BAZEL, &specs.CasSpec{
 		Root: "..",
 		Paths: []string{
-			// source code
+			// Source code.
 			"skia/example",
-			"skia/experimental/bazel_test",
 			"skia/include",
 			"skia/modules",
 			"skia/src",
 			"skia/tests",
 			"skia/third_party",
 			"skia/tools",
-			// needed for tests
-			"skia/gm", // Needed to run GMs with Bazel.
-			"skia/gn", // some Python scripts still live here
+			// Needed for tests.
+			"skia/bench", // Needed to run benchmark tests with Bazel.
+			"skia/gm",    // Needed to run GMs with Bazel.
+			"skia/gn",    // Some Python scripts still live here.
 			"skia/resources",
 			"skia/package.json",
 			"skia/package-lock.json",
-			"skia/DEPS", // needed to check generation
-			// Needed to run bazel
+			"skia/DEPS",   // Needed to check generation.
+			"skia/infra",  // Many Go tests and Bazel tools live here.
+			"skia/go.mod", // Needed by Gazelle.
+			"skia/go.sum", // Needed by Gazelle.
+			// Needed to run Bazel.
+			"skia/.bazelignore",
 			"skia/.bazelrc",
 			"skia/.bazelversion",
 			"skia/BUILD.bazel",
+			"skia/LICENSE", // Referred to by default_applicable_licenses
 			"skia/WORKSPACE.bazel",
 			"skia/bazel",
 			"skia/defines.bzl",
@@ -448,7 +467,7 @@ func GenTasks(cfg *Config) {
 	b.MustAddCasSpec(CAS_CANVASKIT, &specs.CasSpec{
 		Root: "..",
 		Paths: []string{
-			"skia/.vpython",
+			"skia/.vpython3",
 			"skia/infra/bots/run_recipe.py",
 			"skia/infra/canvaskit",
 			"skia/modules/canvaskit",
@@ -462,7 +481,7 @@ func GenTasks(cfg *Config) {
 	b.MustAddCasSpec(CAS_LOTTIE_WEB, &specs.CasSpec{
 		Root: "..",
 		Paths: []string{
-			"skia/.vpython",
+			"skia/.vpython3",
 			"skia/infra/bots/run_recipe.py",
 			"skia/tools/lottie-web-perf",
 		},
@@ -471,7 +490,7 @@ func GenTasks(cfg *Config) {
 	b.MustAddCasSpec(CAS_PATHKIT, &specs.CasSpec{
 		Root: "..",
 		Paths: []string{
-			"skia/.vpython",
+			"skia/.vpython3",
 			"skia/infra/bots/run_recipe.py",
 			"skia/infra/pathkit",
 			"skia/modules/pathkit",
@@ -481,7 +500,7 @@ func GenTasks(cfg *Config) {
 	b.MustAddCasSpec(CAS_PERF, &specs.CasSpec{
 		Root: "..",
 		Paths: []string{
-			"skia/.vpython",
+			"skia/.vpython3",
 			"skia/infra/bots/assets",
 			"skia/infra/bots/run_recipe.py",
 			"skia/platform_tools/ios/bin",
@@ -493,7 +512,7 @@ func GenTasks(cfg *Config) {
 	b.MustAddCasSpec(CAS_PUPPETEER, &specs.CasSpec{
 		Root: "../skia", // Needed for other repos.
 		Paths: []string{
-			".vpython",
+			".vpython3",
 			"tools/perf-canvaskit-puppeteer",
 		},
 		Excludes: []string{rbe.ExcludeGitDir},
@@ -501,6 +520,7 @@ func GenTasks(cfg *Config) {
 	b.MustAddCasSpec(CAS_RECIPES, &specs.CasSpec{
 		Root: "..",
 		Paths: []string{
+			"skia/.vpython3",
 			"skia/infra/config/recipes.cfg",
 			"skia/infra/bots/bundle_recipes.sh",
 			"skia/infra/bots/README.recipes.md",
@@ -513,7 +533,7 @@ func GenTasks(cfg *Config) {
 	b.MustAddCasSpec(CAS_RUN_RECIPE, &specs.CasSpec{
 		Root: "..",
 		Paths: []string{
-			"skia/.vpython",
+			"skia/.vpython3",
 			"skia/infra/bots/run_recipe.py",
 		},
 		Excludes: []string{rbe.ExcludeGitDir},
@@ -521,20 +541,9 @@ func GenTasks(cfg *Config) {
 	b.MustAddCasSpec(CAS_SKOTTIE_WASM, &specs.CasSpec{
 		Root: "..",
 		Paths: []string{
-			"skia/.vpython",
+			"skia/.vpython3",
 			"skia/infra/bots/run_recipe.py",
 			"skia/tools/skottie-wasm-perf",
-		},
-		Excludes: []string{rbe.ExcludeGitDir},
-	})
-	b.MustAddCasSpec(CAS_SKPBENCH, &specs.CasSpec{
-		Root: "..",
-		Paths: []string{
-			"skia/.vpython",
-			"skia/infra/bots/assets",
-			"skia/infra/bots/run_recipe.py",
-			"skia/tools/skpbench",
-			"skia/tools/valgrind.supp",
 		},
 		Excludes: []string{rbe.ExcludeGitDir},
 	})
@@ -545,8 +554,10 @@ func GenTasks(cfg *Config) {
 			"skia/.bazelrc",
 			"skia/.bazelversion",
 			"skia/BUILD.bazel",
+			"skia/LICENSE",
 			"skia/WORKSPACE.bazel",
 			"skia/bazel",
+			"skia/defines.bzl",
 			"skia/go_repositories.bzl",
 			"skia/include/config", // There's a WORKSPACE.bazel in here
 			"skia/requirements.txt",
@@ -561,7 +572,7 @@ func GenTasks(cfg *Config) {
 	b.MustAddCasSpec(CAS_TEST, &specs.CasSpec{
 		Root: "..",
 		Paths: []string{
-			"skia/.vpython",
+			"skia/.vpython3",
 			"skia/infra/bots/assets",
 			"skia/infra/bots/run_recipe.py",
 			"skia/platform_tools/ios/bin",
@@ -573,7 +584,7 @@ func GenTasks(cfg *Config) {
 	b.MustAddCasSpec(CAS_WASM_GM, &specs.CasSpec{
 		Root: "../skia", // Needed for other repos.
 		Paths: []string{
-			".vpython",
+			".vpython3",
 			"resources",
 			"tools/run-wasm-gm-tests",
 		},
@@ -583,12 +594,11 @@ func GenTasks(cfg *Config) {
 	b.MustAddCasSpec(CAS_RECREATE_SKPS, &specs.CasSpec{
 		Root: "..",
 		Paths: []string{
-			"skia/.vpython",
+			"skia/.vpython3",
 			"skia/DEPS",
 			"skia/bin/fetch-sk",
 			"skia/infra/bots/assets/skp",
 			"skia/infra/bots/utils.py",
-			"skia/infra/config/recipes.cfg",
 			"skia/tools/skp",
 		},
 		Excludes: []string{rbe.ExcludeGitDir},
@@ -644,7 +654,7 @@ func (b *taskBuilder) kitchenTaskNoBundle(recipe string, outputDir string) {
 	b.cipd(CIPD_PKG_LUCI_AUTH)
 	b.cipd(cipd.MustGetPackage("infra/tools/luci/kitchen/${platform}"))
 	b.env("RECIPES_USE_PY3", "true")
-	b.envPrefixes("VPYTHON_DEFAULT_SPEC", "skia/.vpython")
+	b.envPrefixes("VPYTHON_DEFAULT_SPEC", "skia/.vpython3")
 	b.usesPython()
 	b.recipeProp("swarm_out_dir", outputDir)
 	if outputDir != OUTPUT_NONE {
@@ -709,13 +719,13 @@ func (b *jobBuilder) deriveCompileTaskName() string {
 		if val := b.parts["extra_config"]; val != "" {
 			ec = strings.Split(val, "_")
 			ignore := []string{
-				"Skpbench", "AbandonGpuContext", "PreAbandonGpuContext", "Valgrind",
-				"FailFlushTimeCallbacks", "ReleaseAndAbandonGpuContext", "FSAA", "FAAA", "FDAA",
+				"AbandonGpuContext", "PreAbandonGpuContext", "Valgrind",
+				"FailFlushTimeCallbacks", "ReleaseAndAbandonGpuContext",
 				"NativeFonts", "GDI", "NoGPUThreads", "DDL1", "DDL3",
-				"DDLTotal", "DDLRecord", "9x9", "BonusConfigs", "ColorSpaces", "GL",
-				"SkottieTracing", "SkottieWASM", "GpuTess", "DMSAAStats", "Mskp", "Docker", "PDF",
+				"DDLRecord", "BonusConfigs", "ColorSpaces", "GL",
+				"SkottieTracing", "SkottieWASM", "GpuTess", "DMSAAStats", "Docker", "PDF",
 				"Puppeteer", "SkottieFrames", "RenderSKP", "CanvasPerf", "AllPathsVolatile",
-				"WebGL2", "i5", "OldestSupportedSkpVersion"}
+				"WebGL2", "i5", "OldestSupportedSkpVersion", "FakeWGPU", "Protected"}
 			keep := make([]string, 0, len(ec))
 			for _, part := range ec {
 				if !In(part, ignore) {
@@ -734,7 +744,11 @@ func (b *jobBuilder) deriveCompileTaskName() string {
 			task_os = COMPILE_TASK_NAME_OS_LINUX
 		} else if b.os("iOS") {
 			ec = append([]string{task_os}, ec...)
-			task_os = "Mac"
+			if b.parts["compiler"] == "Xcode11.4.1" {
+				task_os = "Mac10.15.7"
+			} else {
+				task_os = "Mac"
+			}
 		} else if b.matchOs("Win") {
 			task_os = "Win"
 		} else if b.compiler("GCC") {
@@ -799,12 +813,17 @@ func (b *taskBuilder) swarmDimensions() {
 	b.defaultSwarmDimensions()
 }
 
+// androidDeviceInfo maps Android models (as in the "model" part of a task) to the device_type and
+// device_os Swarming dimensions.
 var androidDeviceInfos = map[string][]string{
 	"AndroidOne":      {"sprout", "MOB30Q"},
 	"GalaxyS7_G930FD": {"herolte", "R16NW_G930FXXS2ERH6"}, // This is Oreo.
 	"GalaxyS9":        {"starlte", "QP1A.190711.020"},     // This is Android10.
 	"GalaxyS20":       {"exynos990", "QP1A.190711.020"},
+	"GalaxyS24":       {"pineapple", "UP1A.231005.007"},
 	"JioNext":         {"msm8937", "RKQ1.210602.002"},
+	"Mokey":           {"mokey", "UDC_11161052"},
+	"MokeyGo32":       {"mokey_go32", "UQ1A.240105.003.A1_11159138"},
 	"Nexus5":          {"hammerhead", "M4B30Z_3437181"},
 	"Nexus7":          {"grouper", "LMY47V_1836172"}, // 2012 Nexus 7
 	"P30":             {"HWELE", "HUAWEIELE-L29"},
@@ -835,14 +854,13 @@ func (b *taskBuilder) defaultSwarmDimensions() {
 			"Debian10":   DEFAULT_OS_LINUX_GCE,
 			"Debian11":   DEBIAN_11_OS,
 			"Mac":        DEFAULT_OS_MAC,
-			"Mac10.12":   "Mac-10.12",
-			"Mac10.13":   "Mac-10.13.6",
-			"Mac10.14":   "Mac-10.14",
 			"Mac10.15.1": "Mac-10.15.1",
-			"Mac10.15.7": "Mac-10.15.7", // Same as 'Mac', but explicit.
+			"Mac10.15.7": "Mac-10.15.7",
 			"Mac11":      "Mac-11.4",
 			"Mac12":      "Mac-12",
 			"Mac13":      "Mac-13",
+			"Mokey":      "Android",
+			"MokeyGo32":  "Android",
 			"Ubuntu18":   "Ubuntu-18.04",
 			"Win":        DEFAULT_OS_WIN,
 			"Win10":      "Windows-10-19045",
@@ -856,8 +874,8 @@ func (b *taskBuilder) defaultSwarmDimensions() {
 			d["os"] = DEFAULT_OS_LINUX_GCE
 		}
 		if os == "Win10" && b.parts["model"] == "Golo" {
-			// ChOps-owned machines have Windows 10 21h1.
-			d["os"] = "Windows-10-19043"
+			// ChOps-owned machines have Windows 10 22H2.
+			d["os"] = "Windows-10-19045"
 		}
 		if b.parts["model"] == "iPhone11" {
 			d["os"] = "iOS-13.6"
@@ -918,6 +936,9 @@ func (b *taskBuilder) defaultSwarmDimensions() {
 				"AppleM1": {
 					"MacMini9.1": "arm64-64-Apple_M1",
 				},
+				"AppleIntel": {
+					"MacBookPro16.2": "x86-64",
+				},
 				"AVX": {
 					"VMware7.1": "x86-64",
 				},
@@ -928,11 +949,11 @@ func (b *taskBuilder) defaultSwarmDimensions() {
 					"MacMini7.1":     "x86-64-i5-4278U",
 					"NUC5i7RYH":      "x86-64-i7-5557U",
 					"NUC9i7QN":       "x86-64-i7-9750H",
-					"NUC11TZi5":      "x86-64-avx2",
+					"NUC11TZi5":      "x86-64-i5-1135G7",
 				},
 				"AVX512": {
-					"GCE":            "x86-64-Skylake_GCE",
-					"Golo":           "Intel64_Family_6_Model_85_Stepping_7__GenuineIntel",
+					"GCE":  "x86-64-Skylake_GCE",
+					"Golo": "Intel64_Family_6_Model_85_Stepping_7__GenuineIntel",
 				},
 				"Rome": {
 					"GCE": "x86-64-AMD_Rome_GCE",
@@ -961,17 +982,17 @@ func (b *taskBuilder) defaultSwarmDimensions() {
 				gpu, ok := map[string]string{
 					// At some point this might use the device ID, but for now it's like Chromebooks.
 					"GTX660":        "10de:11c0-26.21.14.4120",
-					"GTX960":        "10de:1401-31.0.15.3667",
+					"GTX960":        "10de:1401-31.0.15.3699",
 					"IntelHD4400":   "8086:0a16-20.19.15.4963",
 					"IntelIris540":  "8086:1926-31.0.101.2115",
 					"IntelIris6100": "8086:162b-20.19.15.4963",
 					"IntelIris655":  "8086:3ea5-26.20.100.7463",
-					"IntelIrisXe":   "8086:9a49-31.0.101.4338",
+					"IntelIrisXe":   "8086:9a49-31.0.101.5186",
 					"RadeonHD7770":  "1002:683d-26.20.13031.18002",
 					"RadeonR9M470X": "1002:6646-26.20.13031.18002",
-					"QuadroP400":    "10de:1cb3-30.0.15.1179",
+					"QuadroP400":    "10de:1cb3-31.0.15.5222",
 					"RadeonVega6":   "1002:1636-31.0.14057.5006",
-					"RTX3060":       "10de:2489-31.0.15.3667",
+					"RTX3060":       "10de:2489-31.0.15.3699",
 				}[b.parts["cpu_or_gpu_value"]]
 				if !ok {
 					log.Fatalf("Entry %q not found in Win GPU mapping.", b.parts["cpu_or_gpu_value"])
@@ -980,14 +1001,13 @@ func (b *taskBuilder) defaultSwarmDimensions() {
 			} else if b.isLinux() {
 				gpu, ok := map[string]string{
 					// Intel drivers come from CIPD, so no need to specify the version here.
-					"IntelBayTrail": "8086:0f31",
-					"IntelHD2000":   "8086:0102",
-					"IntelHD405":    "8086:22b1",
-					"IntelIris640":  "8086:5926",
-					"QuadroP400":    "10de:1cb3-510.60.02",
-					"RTX3060":       "10de:2489-470.182.03",
-					"IntelIrisXe":   "8086:9a49",
-					"RadeonVega6":   "1002:1636",
+					"IntelHD2000":  "8086:0102",
+					"IntelHD405":   "8086:22b1",
+					"IntelIris640": "8086:5926",
+					"QuadroP400":   "10de:1cb3-510.60.02",
+					"RTX3060":      "10de:2489-470.182.03",
+					"IntelIrisXe":  "8086:9a49",
+					"RadeonVega6":  "1002:1636",
 				}[b.parts["cpu_or_gpu_value"]]
 				if !ok {
 					log.Fatalf("Entry %q not found in Ubuntu GPU mapping.", b.parts["cpu_or_gpu_value"])
@@ -1076,7 +1096,7 @@ func (b *taskBuilder) defaultSwarmDimensions() {
 			d["cpu"] = "x86-64-Haswell_GCE"
 			// Use many-core machines for Build tasks.
 			d["machine_type"] = MACHINE_TYPE_LARGE
-		} else if d["os"] == DEFAULT_OS_MAC {
+		} else if d["os"] == DEFAULT_OS_MAC || d["os"] == "Mac-10.15.7" {
 			// Mac CPU bots are no longer VMs.
 			d["cpu"] = "x86-64"
 			d["cores"] = "12"
@@ -1186,6 +1206,7 @@ func (b *jobBuilder) createPushAppsFromSkiaDockerImage() {
 			"--patch_issue", specs.PLACEHOLDER_ISSUE,
 			"--patch_set", specs.PLACEHOLDER_PATCHSET,
 			"--patch_server", specs.PLACEHOLDER_CODEREVIEW_SERVER,
+			"--bazel_cache_dir", bazelCacheDirOnGCELinux,
 		)
 		b.dep(b.buildTaskDrivers("linux", "amd64"))
 		b.dep(b.createDockerImage(false))
@@ -1208,12 +1229,12 @@ func (b *jobBuilder) createPushBazelAppsFromWASMDockerImage() {
 		// TODO(borenet): Make this task not use Git.
 		b.usesGit()
 		b.cmd(
-			"./push_bazel_apps_from_wasm_image",
 			"--project_id", "skia-swarming-bots",
 			"--task_id", specs.PLACEHOLDER_TASK_ID,
 			"--task_name", b.Name,
 			"--workdir", ".",
 			"--skia_revision", specs.PLACEHOLDER_REVISION,
+			"--bazel_cache_dir", bazelCacheDirOnGCELinux,
 		)
 		b.dep(b.buildTaskDrivers("linux", "amd64"))
 		b.dep(b.createDockerImage(true))
@@ -1265,7 +1286,7 @@ func (b *jobBuilder) compile() string {
 		b.addTask(name, func(b *taskBuilder) {
 			recipe := "compile"
 			casSpec := CAS_COMPILE
-			if b.extraConfig("NoDEPS", "CMake", "Flutter", "NoPatch", "Vello") {
+			if b.extraConfig("NoDEPS", "CMake", "Flutter", "NoPatch", "Vello", "Fontations") {
 				recipe = "sync_and_compile"
 				casSpec = CAS_RUN_RECIPE
 				b.recipeProps(EXTRA_PROPS)
@@ -1321,6 +1342,10 @@ func (b *jobBuilder) compile() string {
 				}
 				b.asset("ccache_linux")
 				b.usesCCache()
+				if b.extraConfig("Vello") || b.extraConfig("Fontations") {
+					b.usesBazel("linux_x64")
+					b.attempts(1)
+				}
 			} else if b.matchOs("Win") {
 				b.asset("win_toolchain")
 				if b.compiler("Clang") {
@@ -1340,7 +1365,7 @@ func (b *jobBuilder) compile() string {
 				if b.extraConfig("iOS") {
 					b.asset("provisioning_profile_ios")
 				}
-				if b.extraConfig("Vello") {
+				if b.extraConfig("Vello") || b.extraConfig("Fontations") {
 					// All of our current Mac compile machines are x64 Mac only.
 					b.usesBazel("mac_x64")
 					b.attempts(1)
@@ -1395,8 +1420,8 @@ func (b *jobBuilder) recreateSKPs() {
 	})
 }
 
-// checkGeneratedFiles verifies that no generated SKSL files have been edited
-// by hand.
+// checkGeneratedFiles verifies that no generated SKSL files have been edited by hand, and that
+// we do not get any diffs after regenerating all files (go generate, Gazelle, etc.).
 func (b *jobBuilder) checkGeneratedFiles() {
 	b.addTask(b.Name, func(b *taskBuilder) {
 		b.cas(CAS_BAZEL)
@@ -1407,6 +1432,30 @@ func (b *jobBuilder) checkGeneratedFiles() {
 			"--project_id", "skia-swarming-bots",
 			"--task_id", specs.PLACEHOLDER_TASK_ID,
 			"--task_name", b.Name,
+			"--bazel_cache_dir", bazelCacheDirOnGCELinux,
+			"--bazel_arg=--config=for_linux_x64_with_rbe",
+			"--bazel_arg=--jobs=100",
+		)
+		b.cipd(specs.CIPD_PKGS_GIT_LINUX_AMD64...)
+		b.usesBazel("linux_x64")
+		b.linuxGceDimensions(MACHINE_TYPE_MEDIUM)
+		b.serviceAccount(b.cfg.ServiceAccountHousekeeper)
+	})
+}
+
+// goLinters runs various Go linters (gofmt, errcheck, etc.) and fails if there are any errors or
+// diffs.
+func (b *jobBuilder) goLinters() {
+	b.addTask(b.Name, func(b *taskBuilder) {
+		b.cas(CAS_BAZEL)
+		b.dep(b.buildTaskDrivers("linux", "amd64"))
+		b.cmd("./go_linters",
+			"--local=false",
+			"--git_path=cipd_bin_packages/git",
+			"--project_id", "skia-swarming-bots",
+			"--task_id", specs.PLACEHOLDER_TASK_ID,
+			"--task_name", b.Name,
+			"--bazel_cache_dir", bazelCacheDirOnGCELinux,
 			"--bazel_arg=--config=for_linux_x64_with_rbe",
 			"--bazel_arg=--jobs=100",
 		)
@@ -1580,7 +1629,7 @@ func (b *jobBuilder) codesize() {
 		if strings.Contains(compileTaskName, "Android") {
 			b.asset("android_ndk_linux")
 			cmd = append(cmd, "--strip_binary",
-				"android_ndk_linux/toolchains/arm-linux-androideabi-4.9/prebuilt/linux-x86_64/bin/arm-linux-androideabi-strip")
+				"android_ndk_linux/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-strip")
 		} else {
 			b.asset("binutils_linux_x64")
 			cmd = append(cmd, "--strip_binary", "binutils_linux_x64/strip")
@@ -1616,10 +1665,7 @@ func (b *taskBuilder) commonTestPerfAssets() {
 	if b.extraConfig("CanvasKit", "PathKit") || (b.role("Test") && b.extraConfig("LottieWeb")) {
 		return
 	}
-	if b.extraConfig("Skpbench") {
-		// Skpbench only needs skps
-		b.asset("skp", "mskp")
-	} else if b.os("Android", "ChromeOS", "iOS") {
+	if b.os("Android", "ChromeOS", "iOS") {
 		b.asset("skp", "svg", "skimage")
 	} else if b.extraConfig("OldestSupportedSkpVersion") {
 		b.assetWithVersion("skp", oldestSupportedSkpVersion)
@@ -1731,6 +1777,13 @@ func (b *jobBuilder) dm() {
 		if b.extraConfig("NativeFonts") && !b.matchOs("Android") {
 			b.needsFontsForParagraphTests()
 		}
+		if b.extraConfig("Fontations") {
+			b.cipd(&specs.CipdPackage{
+				Name:    "chromium/third_party/googlefonts_testdata",
+				Path:    "googlefonts_testdata",
+				Version: "version:20230913",
+			})
+		}
 		b.commonTestPerfAssets()
 		if b.matchExtraConfig("Lottie") {
 			b.asset("lottie-samples")
@@ -1750,6 +1803,8 @@ func (b *jobBuilder) dm() {
 		} else if b.arch("x86") && b.debug() {
 			// skia:6737
 			b.timeout(6 * time.Hour)
+		} else if b.matchOs("Mac11") {
+			b.timeout(30 * time.Minute)
 		}
 		b.maybeAddIosDevImage()
 	})
@@ -1909,10 +1964,7 @@ func (b *jobBuilder) perf() {
 	b.addTask(b.Name, func(b *taskBuilder) {
 		recipe := "perf"
 		cas := CAS_PERF
-		if b.extraConfig("Skpbench") {
-			recipe = "skpbench"
-			cas = CAS_SKPBENCH
-		} else if b.extraConfig("PathKit") {
+		if b.extraConfig("PathKit") {
 			cas = CAS_PATHKIT
 			recipe = "perf_pathkit"
 		} else if b.extraConfig("CanvasKit") {
@@ -1930,8 +1982,6 @@ func (b *jobBuilder) perf() {
 		b.recipeProps(EXTRA_PROPS)
 		if recipe == "perf" {
 			b.nanobenchFlags(doUpload)
-		} else if recipe == "skpbench" {
-			b.skpbenchFlags()
 		}
 		b.kitchenTask(recipe, OUTPUT_PERF)
 		b.cas(cas)
@@ -1958,7 +2008,11 @@ func (b *jobBuilder) perf() {
 		} else if b.parts["arch"] == "x86" && b.parts["configuration"] == "Debug" {
 			// skia:6737
 			b.timeout(6 * time.Hour)
-		} else if b.extraConfig("LottieWeb", "SkottieWASM") {
+		} else if b.matchOs("Mac11") {
+			b.timeout(30 * time.Minute)
+		}
+
+		if b.extraConfig("LottieWeb", "SkottieWASM") {
 			b.asset("node", "lottie-samples")
 		} else if b.matchExtraConfig("SkottieTracing") {
 			b.needsLottiesWithAssets()
@@ -2020,7 +2074,7 @@ func (b *jobBuilder) presubmit() {
 		b.cipd(&specs.CipdPackage{
 			Name:    "infra/recipe_bundles/chromium.googlesource.com/chromium/tools/build",
 			Path:    "recipe_bundle",
-			Version: "git_revision:1a28cb094add070f4beefd052725223930d8c27a",
+			Version: "git_revision:bb122cd16700ab80bfcbd494b605dd11d4f5902d",
 		})
 	})
 }
@@ -2115,24 +2169,59 @@ type labelAndSavedOutputDir struct {
 // label or "target pattern" https://bazel.build/docs/build#specifying-build-targets
 // The reason we need this mapping is because Buildbucket build names cannot have / or : in them.
 var shorthandToLabel = map[string]labelAndSavedOutputDir{
-	"base":                           {"//src:base", ""},
-	"example_hello_world_dawn":       {"//example:hello_world_dawn", ""},
-	"example_hello_world_gl":         {"//example:hello_world_gl", ""},
-	"example_hello_world_vulkan":     {"//example:hello_world_vulkan", ""},
-	"modules_canvaskit":              {"//modules/canvaskit:canvaskit", ""},
-	"modules_canvaskit_js_tests":     {"//modules/canvaskit:canvaskit_js_tests", ""},
-	"skia_public":                    {"//:skia_public", ""},
-	"skottie_tool_gpu":               {"//modules/skottie:skottie_tool_gpu", ""},
-	"tests":                          {"//tests:linux_rbe_build", ""},
-	"experimental_bazel_test_client": {"//experimental/bazel_test/client:client_lib", ""},
+	"all_tests":                  {"//tests:linux_rbe_tests", ""},
+	"core":                       {"//:core", ""},
+	"cpu_8888_benchmark_test":    {"//bench:cpu_8888_test", ""},
+	"cpu_gms":                    {"//gm:cpu_gm_tests", ""},
+	"full_library":               {"//tools:full_build", ""},
+	"ganesh_gl":                  {"//:ganesh_gl", ""},
+	"hello_bazel_world_test":     {"//gm:hello_bazel_world_test", ""},
+	"modules_canvaskit":          {"//modules/canvaskit:canvaskit", ""},
+	"modules_canvaskit_js_tests": {"//modules/canvaskit:canvaskit_js_tests", ""},
+	"skottie_tool_gpu":           {"//modules/skottie:skottie_tool_gpu", ""},
+	"viewer":                     {"//tools/viewer:viewer", ""},
+
+	// Note: these paths are relative to the WORKSPACE in //example/external_client
+	"decode_everything":          {"//:decode_everything", ""},
+	"path_combiner":              {"//:path_combiner", ""},
+	"png_decoder":                {"//:png_decoder", ""},
+	"shape_text":                 {"//:shape_text", ""},
+	"svg_with_harfbuzz":          {"//:svg_with_harfbuzz", ""},
+	"svg_with_primitive":         {"//:svg_with_primitive", ""},
+	"use_ganesh_gl":              {"//:use_ganesh_gl", ""},
+	"use_ganesh_vulkan":          {"//:use_ganesh_vulkan", ""},
+	"use_graphite_native_vulkan": {"//:use_graphite_native_vulkan", ""},
+	"use_skresources":            {"//:use_skresources", ""},
+	"write_text_to_png":          {"//:write_text_to_png", ""},
+	"write_to_pdf":               {"//:write_to_pdf", ""},
+
+	// Currently there is no way to tell Bazel "only test go_test targets", so we must group them
+	// under a test_suite.
+	//
+	// Alternatives:
+	//
+	// - Use --test_lang_filters, which currently does not work for non-native rules. See
+	//   https://github.com/bazelbuild/bazel/issues/12618.
+	//
+	// - As suggested in the same GitHub issue, "bazel query 'kind(go_test, //...)'" would normally
+	//   return the list of labels. However, this fails due to BUILD.bazel files in
+	//   //third_party/externals and //bazel/external/vello. We could try either fixing those files
+	//   when possible, or adding them to //.bazelignore (either permanently or temporarily inside a
+	//   specialized task driver just for Go tests).
+	//
+	// - Have Gazelle add a tag to all Go tests: go_test(name = "foo_test", tag = "go", ... ). Then,
+	//   we can use a wildcard label such as //... and tell Bazel to only test those targets with
+	//   said tag, e.g. "bazel test //... --test_tag_filters=go"
+	//   (https://bazel.build/reference/command-line-reference#flag--test_tag_filters). Today this
+	//   does not work due to the third party and external BUILD.bazel files mentioned in the
+	//   previous bullet point.
+	"all_go_tests": {"//:all_go_tests", ""},
 
 	// Android tests that run on a device. We store the //bazel-bin/tests directory into CAS for use
 	// by subsequent CI tasks.
-	"android_codec_test":              {"//tests:android_codec_test", "tests"},
-	"android_ganesh_test":             {"//tests:android_ganesh_test", "tests"},
-	"android_pathops_test":            {"//tests:android_pathops_test", "tests"},
-	"android_cpu_only_test":           {"//tests:android_cpu_only_test", "tests"},
-	"android_discardable_memory_test": {"//tests:android_discardable_memory_test", "tests"},
+	"android_math_test":               {"//tests:android_math_test", "tests"},
+	"hello_bazel_world_android_test":  {"//gm:hello_bazel_world_android_test", "gm"},
+	"cpu_8888_benchmark_android_test": {"//bench:cpu_8888_android_test", "bench"},
 }
 
 // bazelBuild adds a task which builds the specified single-target label (//foo:bar) or
@@ -2140,7 +2229,7 @@ var shorthandToLabel = map[string]labelAndSavedOutputDir{
 // specify additional Bazel args to build faster. Optionally, a subset of the //bazel-bin directory
 // will be stored into CAS for use by subsequent tasks.
 func (b *jobBuilder) bazelBuild() {
-	shorthand, config, host, cross := b.parts.bazelBuildParts()
+	shorthand, config, host := b.parts.bazelBuildParts()
 	labelAndSavedOutputDir, ok := shorthandToLabel[shorthand]
 	if !ok {
 		panic("unsupported Bazel label shorthand " + shorthand)
@@ -2148,14 +2237,13 @@ func (b *jobBuilder) bazelBuild() {
 
 	b.addTask(b.Name, func(b *taskBuilder) {
 		cmd := []string{
-			// TODO(lovisolo): Uncomment after publishing a new CIPD package.
-			// "bazel_build_task_driver/bazel_build",
-			"./bazel_build", // TODO(lovisolo): Delete.
+			"bazel_build_task_driver/bazel_build",
 			"--project_id=skia-swarming-bots",
 			"--task_id=" + specs.PLACEHOLDER_TASK_ID,
 			"--task_name=" + b.Name,
-			"--label=" + labelAndSavedOutputDir.label,
-			"--config=" + config,
+			"--bazel_label=" + labelAndSavedOutputDir.label,
+			"--bazel_config=" + config,
+			"--bazel_cache_dir=" + bazelCacheDirOnGCELinux,
 			"--workdir=.",
 		}
 
@@ -2167,12 +2255,6 @@ func (b *jobBuilder) bazelBuild() {
 			)
 		}
 
-		if cross != "" {
-			// The cross (and host) platform is expected to be defined in
-			// //bazel/common_config_settings/BUILD.bazel
-			cross = "//bazel/common_config_settings:" + cross
-			cmd = append(cmd, "--cross="+cross)
-		}
 		if host == "linux_x64" {
 			b.linuxGceDimensions(MACHINE_TYPE_MEDIUM)
 			b.usesBazel("linux_x64")
@@ -2182,8 +2264,9 @@ func (b *jobBuilder) bazelBuild() {
 			// TODO(kjlubick) For now, this only has the linux version. We could build the task
 			//   driver for all hosts that we support running Bazel from in this CIPD package
 			//   if/when needed.
-			// TODO(lovisolo): Uncomment after publishing a new CIPD package.
-			// b.cipd(b.MustGetCipdPackageFromAsset("bazel_build_task_driver"))
+			// TODO(kjlubick,lovisolo) Could we get our task drivers built automatically
+			// into CIPD instead of this being a manual process?
+			b.cipd(b.MustGetCipdPackageFromAsset("bazel_build_task_driver"))
 
 			if labelAndSavedOutputDir.savedOutputDir != "" {
 				// We assume that builds which require storing a subset of //bazel-bin to CAS are Android
@@ -2204,8 +2287,6 @@ func (b *jobBuilder) bazelBuild() {
 			panic("unsupported Bazel host " + host)
 		}
 		b.cmd(cmd...)
-		// TODO(lovisolo): Delete after publishing a new CIPD package.
-		b.dep(b.buildTaskDrivers("linux", "amd64"))
 
 		b.idempotent()
 		b.cas(CAS_BAZEL)
@@ -2217,16 +2298,55 @@ func (b *jobBuilder) bazelBuild() {
 	})
 }
 
+type precompiledBazelTestKind int
+
+const (
+	precompiledBazelTestNone precompiledBazelTestKind = iota
+	precompiledBenchmarkTest
+	precompiledGMTest
+	precompiledUnitTest
+)
+
 func (b *jobBuilder) bazelTest() {
-	taskdriverName, shorthand, config, host, cross := b.parts.bazelTestParts()
+	taskdriverName, shorthand, buildConfig, host, testConfig := b.parts.bazelTestParts()
 	labelAndSavedOutputDir, ok := shorthandToLabel[shorthand]
 	if !ok {
 		panic("unsupported Bazel label shorthand " + shorthand)
 	}
 
 	// Expand task driver name to keep task names short.
-	if taskdriverName == "precompiled" {
+	precompiledKind := precompiledBazelTestNone
+	if taskdriverName == "precompiled_benchmark" {
 		taskdriverName = "bazel_test_precompiled"
+		precompiledKind = precompiledBenchmarkTest
+	}
+	if taskdriverName == "precompiled_gm" {
+		taskdriverName = "bazel_test_precompiled"
+		precompiledKind = precompiledGMTest
+	}
+	if taskdriverName == "precompiled_test" {
+		taskdriverName = "bazel_test_precompiled"
+		precompiledKind = precompiledUnitTest
+	}
+	if taskdriverName == "gm" {
+		taskdriverName = "bazel_test_gm"
+	}
+	if taskdriverName == "benchmark" {
+		taskdriverName = "bazel_test_benchmark"
+	}
+
+	var deviceSpecificBazelConfig *device_specific_configs.Config
+	if testConfig != "" {
+		if config, ok := device_specific_configs.Configs[testConfig]; ok {
+			deviceSpecificBazelConfig = &config
+		} else {
+			panic(fmt.Sprintf("Unknown device-specific Bazel config: %q", testConfig))
+		}
+	}
+
+	bazelCacheDir := bazelCacheDirOnGCELinux
+	if deviceSpecificBazelConfig != nil && deviceSpecificBazelConfig.Keys["model"] != "GCE" {
+		bazelCacheDir = bazelCacheDirOnSkoloLinux
 	}
 
 	b.addTask(b.Name, func(b *taskBuilder) {
@@ -2240,18 +2360,16 @@ func (b *jobBuilder) bazelTest() {
 		switch taskdriverName {
 		case "canvaskit_gold":
 			cmd = append(cmd,
-				"--test_label="+labelAndSavedOutputDir.label,
-				"--test_config="+config,
+				"--bazel_label="+labelAndSavedOutputDir.label,
+				"--bazel_config="+buildConfig,
+				"--bazel_cache_dir="+bazelCacheDir,
 				"--goldctl_path=./cipd_bin_packages/goldctl",
 				"--git_commit="+specs.PLACEHOLDER_REVISION,
 				"--changelist_id="+specs.PLACEHOLDER_ISSUE,
 				"--patchset_order="+specs.PLACEHOLDER_PATCHSET,
-				"--tryjob_id="+specs.PLACEHOLDER_BUILDBUCKET_BUILD_ID,
-				// It is unclear why this is needed, but it helps resolve issues like
-				// Middleman ...tests-runfiles failed: missing input file 'external/npm/node_modules/karma-chrome-launcher/...'
-				"--expunge_cache")
+				"--tryjob_id="+specs.PLACEHOLDER_BUILDBUCKET_BUILD_ID)
 			b.cipd(CIPD_PKGS_GOLDCTL)
-			switch config {
+			switch buildConfig {
 			case "ck_full_cpu_release_chrome":
 				cmd = append(cmd, "--cpu_or_gpu=CPU", "--cpu_or_gpu_value=CPU",
 					"--compilation_mode=Release", "--browser=Chrome")
@@ -2259,49 +2377,103 @@ func (b *jobBuilder) bazelTest() {
 				cmd = append(cmd, "--cpu_or_gpu=GPU", "--cpu_or_gpu_value=WebGL2",
 					"--compilation_mode=Release", "--browser=Chrome")
 			default:
-				panic("Gold keys not specified for config " + config)
+				panic("Gold keys not specified for config " + buildConfig)
 			}
 
 		case "cpu_tests":
 			cmd = append(cmd,
-				"--test_label="+labelAndSavedOutputDir.label,
-				"--test_config="+config)
+				"--bazel_label="+labelAndSavedOutputDir.label,
+				"--bazel_config="+buildConfig,
+				"--bazel_cache_dir="+bazelCacheDir)
 
 		case "toolchain_layering_check":
 			cmd = append(cmd,
-				"--test_label="+labelAndSavedOutputDir.label,
-				"--test_config="+config)
+				"--bazel_label="+labelAndSavedOutputDir.label,
+				"--bazel_config="+buildConfig,
+				"--bazel_cache_dir="+bazelCacheDir)
 
 		case "bazel_test_precompiled":
 			// Compute the file name of the test based on its Bazel label. The file name will be relative to
 			// the bazel-bin directory, which we receive a subset of as a CAS input.
 			command := strings.ReplaceAll(labelAndSavedOutputDir.label, "//", "")
 			command = strings.ReplaceAll(command, ":", "/")
-			command = filepath.Join(OUTPUT_BAZEL, command)
+			command = path.Join(OUTPUT_BAZEL, command)
 
 			// The test's working directory will be its runfiles directory, which simulates the behavior of
 			// the "bazel run" command.
-			commandWorkDir := filepath.Join(command+".runfiles", "skia")
+			commandWorkDir := path.Join(command+".runfiles", "skia")
 
 			cmd = append(cmd,
 				"--command="+command,
 				"--command_workdir="+commandWorkDir)
 
+			switch precompiledKind {
+			case precompiledBenchmarkTest:
+				cmd = append(cmd,
+					"--kind=benchmark",
+					"--git_commit="+specs.PLACEHOLDER_REVISION,
+					"--changelist_id="+specs.PLACEHOLDER_ISSUE,
+					"--patchset_order="+specs.PLACEHOLDER_PATCHSET)
+
+			case precompiledGMTest:
+				cmd = append(cmd,
+					"--kind=gm",
+					"--bazel_label="+labelAndSavedOutputDir.label,
+					"--goldctl_path=./cipd_bin_packages/goldctl",
+					"--git_commit="+specs.PLACEHOLDER_REVISION,
+					"--changelist_id="+specs.PLACEHOLDER_ISSUE,
+					"--patchset_order="+specs.PLACEHOLDER_PATCHSET,
+					"--tryjob_id="+specs.PLACEHOLDER_BUILDBUCKET_BUILD_ID)
+				b.cipd(CIPD_PKGS_GOLDCTL)
+
+			case precompiledUnitTest:
+				cmd = append(cmd, "--kind=unit")
+
+			default:
+				panic(fmt.Sprintf("Unknown precompiled test kind: %v", precompiledKind))
+			}
+
+		case "bazel_test_gm":
+			cmd = append(cmd,
+				"--bazel_label="+labelAndSavedOutputDir.label,
+				"--bazel_config="+buildConfig,
+				"--bazel_cache_dir="+bazelCacheDir,
+				"--goldctl_path=./cipd_bin_packages/goldctl",
+				"--git_commit="+specs.PLACEHOLDER_REVISION,
+				"--changelist_id="+specs.PLACEHOLDER_ISSUE,
+				"--patchset_order="+specs.PLACEHOLDER_PATCHSET,
+				"--tryjob_id="+specs.PLACEHOLDER_BUILDBUCKET_BUILD_ID)
+			b.cipd(CIPD_PKGS_GOLDCTL)
+
+		case "bazel_test_benchmark":
+			// Note that these tasks run on Skolo machines.
+			cmd = append(cmd,
+				"--bazel_label="+labelAndSavedOutputDir.label,
+				"--bazel_config="+buildConfig,
+				"--bazel_cache_dir="+bazelCacheDirOnSkoloLinux,
+				"--git_commit="+specs.PLACEHOLDER_REVISION,
+				"--changelist_id="+specs.PLACEHOLDER_ISSUE,
+				"--patchset_order="+specs.PLACEHOLDER_PATCHSET)
+
+		case "external_client":
+			cmd = append(cmd,
+				"--bazel_label="+labelAndSavedOutputDir.label,
+				"--path_in_skia=example/external_client",
+				"--bazel_cache_dir="+bazelCacheDir)
+			b.usesDocker()
+
 		default:
 			panic("Unsupported Bazel taskdriver " + taskdriverName)
 		}
 
-		if cross != "" {
-			// The cross (and host) platform is expected to be defined in
-			// //bazel/common_config_settings/BUILD.bazel
-			cross = "//bazel/common_config_settings:" + cross
-			cmd = append(cmd, "--cross="+cross)
+		if deviceSpecificBazelConfig != nil {
+			cmd = append(cmd, "--device_specific_bazel_config="+deviceSpecificBazelConfig.Name)
 		}
 
 		if host == "linux_x64" {
 			b.dep(b.buildTaskDrivers("linux", "amd64"))
 			b.usesBazel("linux_x64")
-		} else if host == "linux_arm64" {
+		} else if host == "linux_arm64" || host == "on_rpi" {
 			b.dep(b.buildTaskDrivers("linux", "arm64"))
 			// The RPIs do not run Bazel directly, they have precompiled binary
 			// to run instead.
@@ -2309,40 +2481,28 @@ func (b *jobBuilder) bazelTest() {
 			panic("unsupported Bazel host " + host)
 		}
 
-		if taskdriverName == "bazel_test_precompiled" {
-			// This task precompiles the test and stores it to CAS.
-			b.dep(fmt.Sprintf("BazelBuild-%s-%s-linux_x64", shorthand, config))
-
-			// Normalize device name in the format used by the androidDeviceInfos map.
-			normalizedDeviceNameFromConfig, ok := map[string]string{
-				// TODO(lovisolo): Add more devices.
-				"pixel_5": "Pixel5",
-				"pixel_7": "Pixel7",
-			}[config]
-			if !ok {
-				log.Fatalf("Unknown device name derived from config %q.", config)
-			}
-
-			// Look up device type and OS.
-			deviceInfo, ok := androidDeviceInfos[normalizedDeviceNameFromConfig]
-			if !ok {
-				log.Fatalf("Entry %q not found in Android mapping.", normalizedDeviceNameFromConfig)
-			}
-			deviceType := deviceInfo[0]
-			deviceOS := deviceInfo[1]
-
-			// We have more Pixel 5 devices running Android 12 than Android 11.
-			if normalizedDeviceNameFromConfig == "Pixel5" {
-				deviceOS = "SP2A.220305.012"
+		if taskdriverName == "bazel_test_gm" ||
+			taskdriverName == "bazel_test_benchmark" ||
+			taskdriverName == "bazel_test_precompiled" {
+			if taskdriverName == "bazel_test_precompiled" {
+				// This task precompiles the test and stores it to CAS.
+				b.dep(fmt.Sprintf("BazelBuild-%s-%s-linux_x64", shorthand, buildConfig))
 			}
 
 			// Set dimensions.
-			b.dimension(
-				"os:Android",
-				fmt.Sprintf("device_type:%s", deviceType),
-				fmt.Sprintf("device_os:%s", deviceOS),
-				fmt.Sprintf("pool:%s", b.cfg.Pool),
-			)
+			if deviceSpecificBazelConfig == nil {
+				log.Fatalf("While processing job %q: task driver %q requires a device-specific Bazel config.", b.Name, taskdriverName)
+			}
+			if len(deviceSpecificBazelConfig.SwarmingDimensions) == 0 {
+				log.Fatalf("While processing job %q: device-specific Bazel config %q does not provide Swarming dimensions.", b.Name, deviceSpecificBazelConfig.Name)
+			}
+			var dimensions []string
+			for name, value := range deviceSpecificBazelConfig.SwarmingDimensions {
+				dimensions = append(dimensions, fmt.Sprintf("%s:%s", name, value))
+			}
+			dimensions = append(dimensions, fmt.Sprintf("pool:%s", b.cfg.Pool))
+			sort.Strings(dimensions)
+			b.dimension(dimensions...)
 		} else {
 			b.linuxGceDimensions(MACHINE_TYPE_MEDIUM)
 		}

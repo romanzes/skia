@@ -1,24 +1,9 @@
-### Compilation failed:
-
-error: :5:1 error: structures must have at least one member
-struct FSOut {
-^^^^^^
-
-
 diagnostic(off, derivative_uniformity);
-struct FSIn {
-  @builtin(front_facing) sk_Clockwise: bool,
-};
-struct FSOut {
-};
-fn main() {
+diagnostic(off, chromium.unreachable_code);
+fn _skslMain() {
   {
   }
 }
-@fragment fn fragmentMain(_stageIn: FSIn) -> FSOut {
-  var _stageOut: FSOut;
-  main();
-  return _stageOut;
+@fragment fn main() {
+  _skslMain();
 }
-
-1 error

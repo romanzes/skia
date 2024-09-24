@@ -8,11 +8,11 @@
 #include "tests/Test.h"
 
 #include "include/core/SkString.h"
-#include "include/core/SkTime.h"
+#include "src/base/SkTime.h"
 #include "tools/flags/CommandLineFlags.h"
 
 #include <cstdlib>
-#include <string>
+#include <cstring>
 
 static DEFINE_string2(tmpDir, t, nullptr, "Temp directory to use.");
 
@@ -22,6 +22,7 @@ bool skiatest::Reporter::allowExtendedTest() const { return false; }
 
 bool skiatest::Reporter::verbose() const { return false; }
 
+template skiatest::TestRegistry* skiatest::TestRegistry::gHead;
 
 void skiatest::Reporter::reportFailedWithContext(const skiatest::Failure& f) {
     SkString fullMessage = f.message;

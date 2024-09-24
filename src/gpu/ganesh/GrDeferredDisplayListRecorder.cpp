@@ -8,15 +8,13 @@
 #include "include/private/chromium/GrDeferredDisplayListRecorder.h"
 
 #include "include/core/SkCanvas.h"
-#include "include/core/SkColorSpace.h"
-#include "include/core/SkImage.h"
 #include "include/core/SkSurface.h"
 #include "include/gpu/GpuTypes.h"
 #include "include/gpu/GrRecordingContext.h"
+#include "include/gpu/GrTypes.h"
 #include "include/private/base/SkTo.h"
 #include "include/private/chromium/GrDeferredDisplayList.h"
 #include "include/private/chromium/GrSurfaceCharacterization.h"
-#include "include/private/chromium/SkImageChromium.h"
 #include "include/private/gpu/ganesh/GrTypesPriv.h"
 #include "src/gpu/SkBackingFit.h"
 #include "src/gpu/ganesh/Device.h"
@@ -121,8 +119,9 @@ bool GrDeferredDisplayListRecorder::init() {
         surfaceFlags |= GrInternalSurfaceFlags::kVkRTSupportsInputAttachment;
     }
 
-    // FIXME: Why do we use GrMipmapped::kNo instead of GrSurfaceCharacterization::fIsMipMapped?
-    static constexpr GrProxyProvider::TextureInfo kTextureInfo{GrMipmapped::kNo,
+    // FIXME: Why do we use skgpu::Mipmapped::kNo instead of
+    // GrSurfaceCharacterization::fIsMipMapped?
+    static constexpr GrProxyProvider::TextureInfo kTextureInfo{skgpu::Mipmapped::kNo,
                                                                GrTextureType::k2D};
     const GrProxyProvider::TextureInfo* optionalTextureInfo = nullptr;
     if (fCharacterization.isTextureable()) {
@@ -204,50 +203,3 @@ sk_sp<GrDeferredDisplayList> GrDeferredDisplayListRecorder::detach() {
     fSurface = nullptr;
     return ddl;
 }
-
-#ifndef SK_MAKE_PROMISE_TEXTURE_DISABLE_LEGACY_API
-sk_sp<SkImage> GrDeferredDisplayListRecorder::makePromiseTexture(
-        const GrBackendFormat& backendFormat,
-        int width,
-        int height,
-        GrMipmapped mipmapped,
-        GrSurfaceOrigin origin,
-        SkColorType colorType,
-        SkAlphaType alphaType,
-        sk_sp<SkColorSpace> colorSpace,
-        PromiseImageTextureFulfillProc textureFulfillProc,
-        PromiseImageTextureReleaseProc textureReleaseProc,
-        PromiseImageTextureContext textureContext) {
-    if (!fContext) {
-        return nullptr;
-    }
-    return SkImages::PromiseTextureFrom(fContext->threadSafeProxy(),
-                                        backendFormat,
-                                        {width, height},
-                                        mipmapped,
-                                        origin,
-                                        colorType,
-                                        alphaType,
-                                        std::move(colorSpace),
-                                        textureFulfillProc,
-                                        textureReleaseProc,
-                                        textureContext);
-}
-
-sk_sp<SkImage> GrDeferredDisplayListRecorder::makeYUVAPromiseTexture(
-        const GrYUVABackendTextureInfo& backendTextureInfo,
-        sk_sp<SkColorSpace> imageColorSpace,
-        PromiseImageTextureFulfillProc textureFulfillProc,
-        PromiseImageTextureReleaseProc textureReleaseProc,
-        PromiseImageTextureContext textureContexts[]) {
-    if (!fContext) {
-        return nullptr;
-    }
-    return SkImages::PromiseTextureFromYUVA(fContext->threadSafeProxy(),
-                                            backendTextureInfo,
-                                            std::move(imageColorSpace),
-                                            textureFulfillProc,
-                                            textureReleaseProc,
-                                            textureContexts);
-}
-#endif // !SK_MAKE_PROMISE_TEXTURE_DISABLE_LEGACY_API

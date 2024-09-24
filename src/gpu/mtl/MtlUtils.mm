@@ -9,21 +9,20 @@
 
 #include "include/gpu/ShaderErrorHandler.h"
 #include "src/core/SkImageInfoPriv.h"
-#include "src/gpu/PipelineUtils.h"
 #include "src/sksl/SkSLCompiler.h"
 #include "src/sksl/SkSLProgramSettings.h"
 #include "src/utils/SkShaderUtils.h"
-
-#ifdef SK_BUILD_FOR_IOS
-#import <UIKit/UIApplication.h>
-#endif
 
 namespace skgpu {
 
 bool MtlFormatIsDepthOrStencil(MTLPixelFormat format) {
     switch (format) {
         case MTLPixelFormatStencil8: // fallthrough
+        case MTLPixelFormatDepth16Unorm:
         case MTLPixelFormatDepth32Float:
+#if defined(SK_BUILD_FOR_MAC)
+        case MTLPixelFormatDepth24Unorm_Stencil8:
+#endif
         case MTLPixelFormatDepth32Float_Stencil8:
             return true;
         default:
@@ -33,7 +32,11 @@ bool MtlFormatIsDepthOrStencil(MTLPixelFormat format) {
 
 bool MtlFormatIsDepth(MTLPixelFormat format) {
     switch (format) {
+        case MTLPixelFormatDepth16Unorm:
         case MTLPixelFormatDepth32Float:
+#if defined(SK_BUILD_FOR_MAC)
+        case MTLPixelFormatDepth24Unorm_Stencil8:
+#endif
         case MTLPixelFormatDepth32Float_Stencil8:
             return true;
         default:
@@ -44,6 +47,9 @@ bool MtlFormatIsDepth(MTLPixelFormat format) {
 bool MtlFormatIsStencil(MTLPixelFormat format) {
     switch (format) {
         case MTLPixelFormatStencil8: // fallthrough
+#if defined(SK_BUILD_FOR_MAC)
+        case MTLPixelFormatDepth24Unorm_Stencil8:
+#endif
         case MTLPixelFormatDepth32Float_Stencil8:
             return true;
         default:
@@ -150,46 +156,14 @@ size_t MtlFormatBytesPerBlock(MTLPixelFormat mtlFormat) {
     }
 }
 
-bool SkSLToMSL(SkSL::Compiler* compiler,
-               const std::string& sksl,
-               SkSL::ProgramKind programKind,
-               const SkSL::ProgramSettings& settings,
-               std::string* msl,
-               SkSL::Program::Interface* outInterface,
-               ShaderErrorHandler* errorHandler) {
-#ifdef SK_DEBUG
-    std::string src = SkShaderUtils::PrettyPrint(sksl);
-#else
-    const std::string& src = sksl;
+SkTextureCompressionType MtlFormatToCompressionType(MTLPixelFormat mtlFormat) {
+    switch (mtlFormat) {
+        case MTLPixelFormatETC2_RGB8: return SkTextureCompressionType::kETC2_RGB8_UNORM;
+#ifdef SK_BUILD_FOR_MAC
+        case MTLPixelFormatBC1_RGBA:  return SkTextureCompressionType::kBC1_RGBA8_UNORM;
 #endif
-    std::unique_ptr<SkSL::Program> program = compiler->convertProgram(programKind,
-                                                                      src,
-                                                                      settings);
-    if (!program || !compiler->toMetal(*program, msl)) {
-        errorHandler->compileError(src.c_str(), compiler->errorText().c_str());
-        return false;
+        default:                      return SkTextureCompressionType::kNone;
     }
-
-    if (gPrintSKSL || gPrintBackendSL) {
-        SkShaderUtils::PrintShaderBanner(programKind);
-        if (gPrintSKSL) {
-            SkDebugf("SKSL:\n");
-            SkShaderUtils::PrintLineByLine(SkShaderUtils::PrettyPrint(sksl));
-        }
-        if (gPrintBackendSL) {
-            SkDebugf("MSL:\n");
-            SkShaderUtils::PrintLineByLine(SkShaderUtils::PrettyPrint(*msl));
-        }
-    }
-
-    *outInterface = program->fInterface;
-    return true;
 }
 
-#ifdef SK_BUILD_FOR_IOS
-bool MtlIsAppInBackground() {
-    return [NSThread isMainThread] &&
-           ([UIApplication sharedApplication].applicationState == UIApplicationStateBackground);
-}
-#endif
 } // namespace skgpu

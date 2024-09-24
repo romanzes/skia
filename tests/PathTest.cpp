@@ -33,7 +33,6 @@
 #include "include/pathops/SkPathOps.h"
 #include "include/private/SkIDChangeListener.h"
 #include "include/private/SkPathRef.h"
-#include "include/private/base/SkFloatBits.h"
 #include "include/private/base/SkFloatingPoint.h"
 #include "include/private/base/SkMalloc.h"
 #include "include/private/base/SkTo.h"
@@ -41,6 +40,7 @@
 #include "include/utils/SkParse.h"
 #include "include/utils/SkParsePath.h"
 #include "src/base/SkAutoMalloc.h"
+#include "src/base/SkFloatBits.h"
 #include "src/base/SkRandom.h"
 #include "src/core/SkGeometry.h"
 #include "src/core/SkPathEnums.h"
@@ -48,6 +48,7 @@
 #include "src/core/SkReadBuffer.h"
 #include "src/core/SkWriteBuffer.h"
 #include "tests/Test.h"
+#include "tools/fonts/FontToolUtils.h"
 
 #include <algorithm>
 #include <cfloat>
@@ -1562,6 +1563,45 @@ static void test_convexity_doubleback(skiatest::Reporter* reporter) {
     check_convexity(reporter, doubleback, true);
     doubleback.quadTo(1, 0, 0, 0);
     check_convexity(reporter, doubleback, true);
+
+    doubleback.reset();
+    doubleback.lineTo(1, 0);
+    doubleback.lineTo(1, 0);
+    doubleback.lineTo(1, 1);
+    doubleback.lineTo(1, 1);
+    doubleback.lineTo(1, 0);
+    check_convexity(reporter, doubleback, false);
+
+    doubleback.reset();
+    doubleback.lineTo(-1, 0);
+    doubleback.lineTo(-1, 1);
+    doubleback.lineTo(-1, 0);
+    check_convexity(reporter, doubleback, false);
+
+    for (int i = 0; i < 4; ++i) {
+        doubleback.reset();
+        doubleback.moveTo(0, 0);
+        if (i == 0) {
+            doubleback.lineTo(-1, -1);
+            doubleback.lineTo(0, 0);
+        }
+        doubleback.lineTo(0, 1);
+        if (i == 1) {
+            doubleback.lineTo(0, 2);
+            doubleback.lineTo(0, 1);
+        }
+        doubleback.lineTo(1, 1);
+        if (i == 2) {
+            doubleback.lineTo(2, 2);
+            doubleback.lineTo(1, 1);
+        }
+        doubleback.lineTo(0, 0);
+        if (i == 3) {
+            doubleback.lineTo(-1, -1);
+            doubleback.lineTo(0, 0);
+        }
+        check_convexity(reporter, doubleback, false);
+    }
 }
 
 static void check_convex_bounds(skiatest::Reporter* reporter, const SkPath& p,
@@ -2055,6 +2095,20 @@ static void test_conservativelyContains(skiatest::Reporter* reporter) {
     // contains an empty rectangle. However, since it is a conservative test it is ok to
     // return false.
     path.reset();
+    REPORTER_ASSERT(reporter, !path.conservativelyContainsRect(SkRect::MakeWH(1,1)));
+    REPORTER_ASSERT(reporter, !path.conservativelyContainsRect(SkRect::MakeWH(0,0)));
+
+    path.reset();
+    path.moveTo(50, 50);
+    path.cubicTo(0, 0, 100, 0, 50, 50);
+    REPORTER_ASSERT(reporter, !path.conservativelyContainsRect(SkRect::MakeWH(100, 100)));
+    REPORTER_ASSERT(reporter, !path.conservativelyContainsRect(SkRect::MakeWH(30, 30)));
+    REPORTER_ASSERT(reporter, !path.conservativelyContainsRect(SkRect::MakeWH(1,1)));
+    REPORTER_ASSERT(reporter, !path.conservativelyContainsRect(SkRect::MakeWH(0,0)));
+
+    path.reset();
+    path.moveTo(50, 50);
+    path.quadTo(100, 100, 50, 50);
     REPORTER_ASSERT(reporter, !path.conservativelyContainsRect(SkRect::MakeWH(1,1)));
     REPORTER_ASSERT(reporter, !path.conservativelyContainsRect(SkRect::MakeWH(0,0)));
 }
@@ -2624,7 +2678,7 @@ static void test_isNestedFillRects(skiatest::Reporter* reporter) {
 
 static void write_and_read_back(skiatest::Reporter* reporter,
                                 const SkPath& p) {
-    SkBinaryWriteBuffer writer;
+    SkBinaryWriteBuffer writer({});
     writer.writePath(p);
     size_t size = writer.bytesWritten();
     SkAutoMalloc storage(size);
@@ -5660,11 +5714,11 @@ DEF_TEST(path_last_move_to_index, r) {
     constexpr size_t len = sizeof(text) - 1;
     SkGlyphID glyphs[len];
 
-    SkFont font;
+    SkFont font = ToolUtils::DefaultFont();
     font.textToGlyphs(text, len, SkTextEncoding::kUTF8, glyphs, len);
 
     SkPath copyPath;
-    SkFont().getPaths(glyphs, len, [](const SkPath* src, const SkMatrix& mx, void* ctx) {
+    font.getPaths(glyphs, len, [](const SkPath* src, const SkMatrix& mx, void* ctx) {
         if (src) {
             ((SkPath*)ctx)->addPath(*src, mx);
         }

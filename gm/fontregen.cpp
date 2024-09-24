@@ -35,6 +35,7 @@
 #include "include/private/gpu/ganesh/GrTypesPriv.h"
 #include "src/gpu/ganesh/GrDirectContextPriv.h"
 #include "tools/ToolUtils.h"
+#include "tools/fonts/FontToolUtils.h"
 
 #if defined(SK_GRAPHITE)
 #include "include/gpu/graphite/ContextOptions.h"
@@ -63,18 +64,18 @@ class FontRegenGM : public skiagm::GM {
 #if defined(SK_GRAPHITE)
     void modifyGraphiteContextOptions(skgpu::graphite::ContextOptions* options) const override {
         options->fGlyphCacheTextureMaximumBytes = 0;
-        options->fAllowMultipleGlyphCacheTextures = false;
+        options->fAllowMultipleAtlasTextures = false;
     }
 #endif
 
-    SkString onShortName() override { return SkString("fontregen"); }
+    SkString getName() const override { return SkString("fontregen"); }
 
-    SkISize onISize() override { return {kSize, kSize}; }
+    SkISize getISize() override { return {kSize, kSize}; }
 
     void onOnceBeforeDraw() override {
         this->setBGColor(SK_ColorLTGRAY);
 
-        auto tf = ToolUtils::create_portable_typeface("sans-serif", SkFontStyle::Normal());
+        auto tf = ToolUtils::CreatePortableTypeface("sans-serif", SkFontStyle::Normal());
 
         static const SkString kTexts[] = {
             SkString("abcdefghijklmnopqrstuvwxyz"),
@@ -135,21 +136,20 @@ DEF_GM(return new FontRegenGM())
 ///////////////////////////////////////////////////////////////////////////////
 
 class BadAppleGM : public skiagm::GM {
+    SkString getName() const override { return SkString("badapple"); }
 
-    SkString onShortName() override { return SkString("badapple"); }
-
-    SkISize onISize() override { return {kSize, kSize}; }
+    SkISize getISize() override { return {kSize, kSize}; }
 
     void onOnceBeforeDraw() override {
         this->setBGColor(SK_ColorWHITE);
-        auto fm = SkFontMgr::RefDefault();
+        auto fm = ToolUtils::TestFontMgr();
 
         static const SkString kTexts[] = {
                 SkString("Meet"),
                 SkString("iPad Pro"),
         };
 
-        SkFont font;
+        SkFont font = ToolUtils::DefaultPortableFont();
         font.setEdging(SkFont::Edging::kSubpixelAntiAlias);
         font.setSubpixel(true);
         font.setSize(256);

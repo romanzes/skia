@@ -25,18 +25,14 @@ bool SkSVGFilter::parseAndSetAttribute(const char* name, const char* value) {
                    "primitiveUnits", name, value));
 }
 
-// NON-SKIA-UPSTREAMED CHANGE
 void SkSVGFilter::applyProperties(SkSVGRenderContext* ctx) const { this->onPrepareToRender(ctx); }
-// END OF NON-SKIA-UPSTREAMED CHANGE
 
 sk_sp<SkImageFilter> SkSVGFilter::buildFilterDAG(const SkSVGRenderContext& ctx) const {
     sk_sp<SkImageFilter> filter;
     SkSVGFilterContext fctx(ctx.resolveOBBRect(fX, fY, fWidth, fHeight, fFilterUnits),
                             fPrimitiveUnits);
-    // NON-SKIA-UPSTREAMED CHANGE
-    SkSVGRenderContext lctx(ctx);
-    this->applyProperties(&lctx);
-    // END OF NON-SKIA-UPSTREAMED CHANGE
+    SkSVGRenderContext localCtx(ctx);
+    this->applyProperties(&localCtx);
     SkSVGColorspace cs = SkSVGColorspace::kSRGB;
     for (const auto& child : fChildren) {
         if (!SkSVGFe::IsFilterEffect(child)) {
@@ -50,18 +46,12 @@ sk_sp<SkImageFilter> SkSVGFilter::buildFilterDAG(const SkSVGRenderContext& ctx) 
         // color-interpolation-filters). We call this explicitly here because the SkSVGFe
         // nodes do not participate in the normal onRender path, which is when property
         // propagation currently occurs.
-        // NON-SKIA-UPSTREAMED CHANGE
-        // SkSVGRenderContext localCtx(ctx);
-        SkSVGRenderContext localCtx(lctx);
-        // END OF NON-SKIA-UPSTREAMED CHANGE
-        feNode.applyProperties(&localCtx);
+        SkSVGRenderContext localChildCtx(localCtx);
+        feNode.applyProperties(&localChildCtx);
 
-        const SkRect filterSubregion = feNode.resolveFilterSubregion(localCtx, fctx);
-        // NON-SKIA-UPSTREAMED CHANGE
-        // cs = feNode.resolveColorspace(ctx, fctx);
-        cs = feNode.resolveColorspace(localCtx, fctx);
-        // END OF NON-SKIA-UPSTREAMED CHANGE
-        filter = feNode.makeImageFilter(localCtx, fctx);
+        const SkRect filterSubregion = feNode.resolveFilterSubregion(localChildCtx, fctx);
+        cs = feNode.resolveColorspace(localChildCtx, fctx);
+        filter = feNode.makeImageFilter(localChildCtx, fctx);
 
         if (!feResultType.isEmpty()) {
             fctx.registerResult(feResultType, filter, filterSubregion, cs);

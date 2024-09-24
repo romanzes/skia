@@ -16,16 +16,22 @@
 #include "include/core/SkPixmap.h"
 #include "include/core/SkRect.h"
 #include "include/core/SkSize.h"
+#include "include/core/SkSurface.h"
 #include "include/core/SkTypes.h"
 #include "include/gpu/GpuTypes.h"
 #include "include/gpu/GrBackendSurface.h"
 #include "include/gpu/GrDirectContext.h"
 #include "include/gpu/GrRecordingContext.h"
+#include "include/gpu/GrTypes.h"
 #include "include/gpu/ganesh/SkImageGanesh.h"
+#include "include/gpu/ganesh/SkSurfaceGanesh.h"
 #include "include/private/chromium/GrPromiseImageTexture.h"
+#include "include/private/chromium/SkImageChromium.h"
 #include "include/private/gpu/ganesh/GrTypesPriv.h"
 #include "src/core/SkBitmapCache.h"
 #include "src/core/SkColorSpacePriv.h"
+#include "src/core/SkImageFilterTypes.h"
+#include "src/core/SkImageFilter_Base.h"
 #include "src/core/SkImageInfoPriv.h"
 #include "src/gpu/RefCntedCallback.h"
 #include "src/gpu/SkBackingFit.h"
@@ -51,6 +57,8 @@
 #include <utility>
 
 class GrContextThreadSafeProxy;
+class SkImageFilter;
+struct SkIPoint;
 
 SkImage_GaneshBase::SkImage_GaneshBase(sk_sp<GrImageContext> context,
                                        SkImageInfo info,
@@ -221,6 +229,17 @@ sk_sp<SkImage> SkImage_GaneshBase::makeColorTypeAndColorSpace(skgpu::graphite::R
                                                               sk_sp<SkColorSpace>,
                                                               RequiredProperties) const {
     SkDEBUGFAIL("Cannot convert Ganesh-backed image to Graphite");
+    return nullptr;
+}
+
+sk_sp<SkSurface> SkImage_GaneshBase::onMakeSurface(skgpu::graphite::Recorder*,
+                                                   const SkImageInfo& info) const {
+    if (auto ictx = this->context()) {
+        if (auto rctx = ictx->priv().asRecordingContext()) {
+            auto isBudgeted = skgpu::Budgeted::kNo;  // Assuming we're a one-shot surface
+            return SkSurfaces::RenderTarget(rctx, isBudgeted, info);
+        }
+    }
     return nullptr;
 }
 
@@ -412,4 +431,39 @@ sk_sp<SkImage> SubsetTextureFrom(GrDirectContext* context,
     return SkImages::TextureFromImage(context, subsetImg.get());
 }
 
+sk_sp<SkImage> MakeWithFilter(GrRecordingContext* rContext,
+                              sk_sp<SkImage> src,
+                              const SkImageFilter* filter,
+                              const SkIRect& subset,
+                              const SkIRect& clipBounds,
+                              SkIRect* outSubset,
+                              SkIPoint* offset) {
+    if (!rContext || !src || !filter) {
+        return nullptr;
+    }
+
+    GrSurfaceOrigin origin = kTopLeft_GrSurfaceOrigin;
+    if (as_IB(src)->isGaneshBacked()) {
+        SkImage_GaneshBase* base = static_cast<SkImage_GaneshBase*>(src.get());
+        origin = base->origin();
+    }
+
+    sk_sp<skif::Backend> backend =
+            skif::MakeGaneshBackend(sk_ref_sp(rContext), origin, {}, src->colorType());
+    return as_IFB(filter)->makeImageWithFilter(std::move(backend),
+                                               std::move(src),
+                                               subset,
+                                               clipBounds,
+                                               outSubset,
+                                               offset);
 }
+
+GrDirectContext* GetContext(const SkImage* src) {
+    if (!src || !as_IB(src)->isGaneshBacked()) {
+        return nullptr;
+    }
+    return as_IB(src)->directContext();
+}
+
+
+} // namespace SkImages

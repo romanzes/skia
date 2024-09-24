@@ -1,8 +1,10 @@
-load("//bazel:skia_rules.bzl", "exports_files_legacy", "skia_filegroup", "split_srcs_and_hdrs")
+load("//bazel:skia_rules.bzl", "skia_filegroup", "split_srcs_and_hdrs")
+
+package(
+    default_applicable_licenses = ["//:license"],
+)
 
 licenses(["notice"])
-
-exports_files_legacy()
 
 TRANSFORM_FILES = [
     "SkSLAddConstToVarModifiers.cpp",
@@ -10,14 +12,18 @@ TRANSFORM_FILES = [
     "SkSLEliminateDeadGlobalVariables.cpp",
     "SkSLEliminateDeadLocalVariables.cpp",
     "SkSLEliminateEmptyStatements.cpp",
+    "SkSLEliminateUnnecessaryBraces.cpp",
     "SkSLEliminateUnreachableCode.cpp",
     "SkSLFindAndDeclareBuiltinFunctions.cpp",
+    "SkSLFindAndDeclareBuiltinStructs.cpp",
     "SkSLFindAndDeclareBuiltinVariables.cpp",
     "SkSLHoistSwitchVarDeclarationsAtTopLevel.cpp",
     "SkSLProgramWriter.h",
     "SkSLRenamePrivateSymbols.cpp",
     "SkSLReplaceConstVarsWithLiterals.cpp",
+    "SkSLReplaceSplatCastsWithSwizzles.cpp",
     "SkSLRewriteIndexedSwizzle.cpp",
+    "SkSLTransform.cpp",
     "SkSLTransform.h",
 ]
 

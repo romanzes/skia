@@ -9,21 +9,37 @@
 #ifndef GrGLCaps_DEFINED
 #define GrGLCaps_DEFINED
 
+#include "include/gpu/GrBackendSurface.h"
 #include "include/gpu/ganesh/gl/GrGLBackendSurface.h"
+#include "include/gpu/gl/GrGLTypes.h"
+#include "include/private/base/SkAssert.h"
 #include "include/private/base/SkTArray.h"
-#include "include/private/gpu/ganesh/GrGLTypesPriv.h"
-#include "src/core/SkChecksum.h"
-#include "src/core/SkTHash.h"
+#include "include/private/base/SkTDArray.h"
+#include "include/private/gpu/ganesh/GrTypesPriv.h"
 #include "src/gpu/Swizzle.h"
 #include "src/gpu/ganesh/GrCaps.h"
-#include "src/gpu/ganesh/gl/GrGLAttachment.h"
-#include "src/gpu/ganesh/gl/GrGLUtil.h"
+#include "src/gpu/ganesh/GrProgramDesc.h"
+#include "src/gpu/ganesh/gl/GrGLTypesPriv.h"
 
-#include <functional>
+#include <cstdint>
+#include <memory>
+#include <vector>
 
 class GrGLContextInfo;
-class GrGLRenderTarget;
+class GrProgramInfo;
+class GrRenderTarget;
+class GrRenderTargetProxy;
+class GrSurface;
+class GrSurfaceProxy;
+class SkJSONWriter;
 enum class SkTextureCompressionType;
+struct GrContextOptions;
+struct GrGLInterface;
+struct GrShaderCaps;
+struct SkIRect;
+struct SkRect;
+
+namespace GrTest { struct TestFormatColorTypeCombination; }
 
 /**
  * Stores some capabilities of a GL context. Most are determined by the GL
@@ -312,7 +328,10 @@ public:
     /// What type of transfer buffer is supported?
     TransferBufferType transferBufferType() const { return fTransferBufferType; }
 
-    /// How are GrFences implemented?
+    /** Supports using GrGLsync. */
+    bool fenceSyncSupport() const { return fFenceSyncSupport; }
+
+    /// How is GrGLsync implemented?
     FenceType fenceType() const { return fFenceType; }
 
     /// How are multi draws implemented (if at all)?
@@ -494,8 +513,6 @@ public:
      */
     bool skipErrorChecks() const { return fSkipErrorChecks; }
 
-    bool supportsProtected() const { return fSupportsProtected; }
-
     bool clientCanDisableMultisample() const { return fClientCanDisableMultisample; }
 
     GrBackendFormat getBackendFormatFromCompressionType(SkTextureCompressionType) const override;
@@ -508,7 +525,7 @@ public:
                            const GrProgramInfo&,
                            ProgramDescOverrideFlags) const override;
 
-#if GR_TEST_UTILS
+#if defined(GPU_TEST_UTILS)
     GrGLStandard standard() const { return fStandard; }
 
     std::vector<GrTest::TestFormatColorTypeCombination> getTestingCombinations() const override;
@@ -608,11 +625,11 @@ private:
     bool fUseSamplerObjects : 1;
     bool fTextureSwizzleSupport : 1;
     bool fTiledRenderingSupport : 1;
+    bool fFenceSyncSupport : 1;
     bool fFBFetchRequiresEnablePerSample : 1;
     bool fSRGBWriteControl : 1;
     bool fSkipErrorChecks : 1;
     bool fClientCanDisableMultisample : 1;
-    bool fSupportsProtected : 1;
 
     // Driver workarounds
     bool fDoManualMipmapping : 1;
@@ -625,12 +642,14 @@ private:
     bool fNeverDisableColorWrites : 1;
     bool fMustSetAnyTexParameterToEnableMipmapping : 1;
     bool fAllowBGRA8CopyTexSubImage : 1;
+    bool fAllowSRGBCopyTexSubImage : 1;
     bool fDisallowDynamicMSAA : 1;
     bool fMustResetBlendFuncBetweenDualSourceAndDisable : 1;
     bool fBindTexture0WhenChangingTextureFBOMultisampleCount : 1;
     bool fRebindColorAttachmentAfterCheckFramebufferStatus : 1;
     bool fFlushBeforeWritePixels : 1;
     bool fDisableScalingCopyAsDraws : 1;
+    bool fPadRG88TransferAlignment : 1;
     int fMaxInstancesPerDrawWithoutCrashing = 0;
 
     uint32_t fBlitFramebufferFlags = kNoSupport_BlitFramebufferFlag;
@@ -783,12 +802,10 @@ private:
 
         bool fHaveQueriedImplementationReadSupport = false;
 
-        enum {
-            // This indicates that a stencil format has not yet been determined for the config.
-            kUnknown_StencilIndex = -1,
-            // This indicates that there is no supported stencil format for the config.
-            kUnsupported_StencilFormatIndex = -2
-        };
+        // This indicates that a stencil format has not yet been determined for the config.
+        static constexpr int kUnknown_StencilIndex = -1;
+        // This indicates that there is no supported stencil format for the config.
+        static constexpr int kUnsupported_StencilFormatIndex = -2;
 
         // Index fStencilFormats.
         int fStencilFormatIndex = kUnknown_StencilIndex;

@@ -60,7 +60,7 @@ struct GrContextOptions;
 
 // skbug.com/5932
 static void test_basic_draw_as_src(skiatest::Reporter* reporter, GrDirectContext* dContext,
-                                   GrSurfaceProxyView rectView, GrColorType colorType,
+                                   const GrSurfaceProxyView& rectView, GrColorType colorType,
                                    SkAlphaType alphaType, uint32_t expectedPixelValues[]) {
     auto sfc = dContext->priv().makeSFC(
             {colorType, kPremul_SkAlphaType, nullptr, rectView.dimensions()}, /*label=*/{});
@@ -152,10 +152,7 @@ static void test_copy_to_surface(skiatest::Reporter* reporter,
     }
 }
 
-DEF_GANESH_TEST_FOR_GL_RENDERING_CONTEXTS(RectangleTexture,
-                                          reporter,
-                                          ctxInfo,
-                                          CtsEnforcement::kApiLevel_T) {
+DEF_GANESH_TEST_FOR_GL_CONTEXT(RectangleTexture, reporter, ctxInfo, CtsEnforcement::kApiLevel_T) {
     auto dContext = ctxInfo.directContext();
 
     GrProxyProvider* proxyProvider = dContext->priv().proxyProvider();
@@ -174,7 +171,7 @@ DEF_GANESH_TEST_FOR_GL_RENDERING_CONTEXTS(RectangleTexture,
     for (auto origin : { kBottomLeft_GrSurfaceOrigin, kTopLeft_GrSurfaceOrigin }) {
         auto format = GrBackendFormats::MakeGL(GR_GL_RGBA8, GR_GL_TEXTURE_RECTANGLE);
         GrBackendTexture rectangleTex = dContext->createBackendTexture(
-                kWidth, kHeight, format, GrMipmapped::kNo, GrRenderable::kYes);
+                kWidth, kHeight, format, skgpu::Mipmapped::kNo, GrRenderable::kYes);
         if (!rectangleTex.isValid()) {
             continue;
         }
@@ -198,8 +195,8 @@ DEF_GANESH_TEST_FOR_GL_RENDERING_CONTEXTS(RectangleTexture,
             continue;
         }
 
-        SkASSERT(rectProxy->mipmapped() == GrMipmapped::kNo);
-        SkASSERT(rectProxy->peekTexture()->mipmapped() == GrMipmapped::kNo);
+        SkASSERT(rectProxy->mipmapped() == skgpu::Mipmapped::kNo);
+        SkASSERT(rectProxy->peekTexture()->mipmapped() == skgpu::Mipmapped::kNo);
 
         SkASSERT(rectProxy->textureType() == GrTextureType::kRectangle);
         SkASSERT(rectProxy->peekTexture()->textureType() == GrTextureType::kRectangle);

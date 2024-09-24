@@ -19,11 +19,10 @@
 #include "src/sksl/SkSLProgramKind.h"
 #include "src/sksl/SkSLProgramSettings.h"
 #include "src/sksl/SkSLString.h"
-#include "src/sksl/SkSLThreadContext.h"
 #include "src/sksl/ir/SkSLLayout.h"
 #include "src/sksl/ir/SkSLModifierFlags.h"
 #include "src/sksl/ir/SkSLModifiers.h"
-#include "src/sksl/ir/SkSLSymbolTable.h"  // IWYU pragma: keep
+#include "src/sksl/ir/SkSLSymbolTable.h"
 #include "src/sksl/ir/SkSLType.h"
 
 #include <string_view>
@@ -35,91 +34,50 @@ static bool check_valid_uniform_type(Position pos,
                                      const Type* t,
                                      const Context& context,
                                      bool topLevel = true) {
-    const Type& ct = t->componentType();
+    auto reportError = [&]() {
+        context.fErrors->error(pos, "variables of type '" + t->displayName() +
+                                    "' may not be uniform");
+    };
 
-    // In RuntimeEffects we only allow a restricted set of types, namely shader/blender/colorFilter,
-    // 32-bit signed integers, 16-bit and 32-bit floats, and their composites.
-    {
-        bool error = false;
-        if (ProgramConfig::IsRuntimeEffect(context.fConfig->fKind)) {
-            // `shader`, `blender`, `colorFilter`
-            if (t->isEffectChild()) {
-                return true;
-            }
-
-            // `int`, `int2`, `int3`, `int4`
-            if (ct.isSigned() && ct.bitWidth() == 32 && (t->isScalar() || t->isVector())) {
-                return true;
-            }
-
-            // `float`, `float2`, `float3`, `float4`, `float2x2`, `float3x3`, `float4x4`
-            // `half`, `half2`, `half3`, `half4`, `half2x2`, `half3x3`, `half4x4`
-            if (ct.isFloat() &&
-                (t->isScalar() || t->isVector() || (t->isMatrix() && t->rows() == t->columns()))) {
-                return true;
-            }
-
-            // Everything else is an error.
-            error = true;
+    // In Runtime Effects we only allow a restricted set of types: shader, blender, colorFilter,
+    // 32-bit signed integers, 16-bit and 32-bit floats, and their vector/square-matrix composites.
+    if (ProgramConfig::IsRuntimeEffect(context.fConfig->fKind)) {
+        // `shader`, `blender`, `colorFilter`
+        if (t->isEffectChild()) {
+            return true;
         }
 
-        // We disallow boolean uniforms in SkSL since they are not well supported by backend
-        // platforms and drivers. We disallow atomic variables in uniforms as that doesn't map
-        // cleanly to all backends.
-        if (error || (ct.isBoolean() && (t->isScalar() || t->isVector())) || ct.isAtomic()) {
-            context.fErrors->error(
-                    pos, "variables of type '" + t->displayName() + "' may not be uniform");
-            return false;
+        // `int`, `int2`, `int3`, `int4`
+        const Type& ct = t->componentType();
+        if (ct.isSigned() && ct.bitWidth() == 32 && (t->isScalar() || t->isVector())) {
+            return true;
         }
+
+        // `float`, `float2`, `float3`, `float4`, `float2x2`, `float3x3`, `float4x4`
+        // `half`, `half2`, `half3`, `half4`, `half2x2`, `half3x3`, `half4x4`
+        if (ct.isFloat() &&
+            (t->isScalar() || t->isVector() || (t->isMatrix() && t->rows() == t->columns()))) {
+            return true;
+        }
+
+        // Everything else is an error.
+        reportError();
+        return false;
     }
 
-    // In non-RTE SkSL we allow structs and interface blocks to be uniforms but we must make sure
-    // their fields are allowed.
-    if (t->isStruct()) {
-        for (const Field& field : t->fields()) {
-            if (!check_valid_uniform_type(
-                        field.fPosition, field.fType, context, /*topLevel=*/false)) {
-                // Emit a "caused by" line only for the top-level uniform type and not for any
-                // nested structs.
-                if (topLevel) {
-                    context.fErrors->error(pos, "caused by:");
-                }
-                return false;
-            }
+    Position errorPosition = {};
+    if (!t->isAllowedInUniform(&errorPosition)) {
+        reportError();
+        if (errorPosition.valid()) {
+            context.fErrors->error(errorPosition, "caused by:");
         }
+        return false;
     }
+
     return true;
 }
 
 }  // namespace
-
-std::unique_ptr<Statement> VarDeclaration::clone() const {
-    // Cloning a VarDeclaration is inherently problematic, as we normally expect a one-to-one
-    // mapping between Variables and VarDeclarations and a straightforward clone would violate this
-    // assumption. We could of course theoretically clone the Variable as well, but that would
-    // require additional context and tracking, since for the whole process to work we would also
-    // have to fixup any subsequent VariableReference clones to point to the newly cloned Variables
-    // instead of the originals.
-    //
-    // Since the only reason we ever clone VarDeclarations is to support tests of clone() and we do
-    // not expect to ever need to do so otherwise, a full solution to this issue is unnecessary at
-    // the moment. We instead just keep track of whether a VarDeclaration is a clone so we can
-    // handle its cleanup properly. This allows clone() to work in the simple case that a
-    // VarDeclaration's clone does not outlive the original, which is adequate for testing. Since
-    // this leaves a sharp edge in place - destroying the original could cause a use-after-free in
-    // some circumstances - we also disable cloning altogether unless the
-    // fAllowVarDeclarationCloneForTesting ProgramSetting is enabled.
-    if (ThreadContext::Context().fConfig->fSettings.fAllowVarDeclarationCloneForTesting) {
-        return std::make_unique<VarDeclaration>(this->var(),
-                                                &this->baseType(),
-                                                fArraySize,
-                                                this->value() ? this->value()->clone() : nullptr,
-                                                /*isClone=*/true);
-    } else {
-        SkDEBUGFAIL("VarDeclaration::clone() is unsupported");
-        return nullptr;
-    }
-}
 
 std::string VarDeclaration::description() const {
     std::string result = this->var()->layout().paddedDescription() +
@@ -177,12 +135,11 @@ void VarDeclaration::ErrorCheck(const Context& context,
         check_valid_uniform_type(pos, baseType, context);
     }
     if (baseType->isEffectChild() && !modifierFlags.isUniform()) {
-        context.fErrors->error(pos,
-                "variables of type '" + baseType->displayName() + "' must be uniform");
+        context.fErrors->error(pos, "variables of type '" + baseType->displayName() +
+                                    "' must be uniform");
     }
-    if (baseType->isEffectChild() && (context.fConfig->fKind == ProgramKind::kMeshVertex ||
-                                      context.fConfig->fKind == ProgramKind::kMeshFragment)) {
-        context.fErrors->error(pos, "effects are not permitted in custom mesh shaders");
+    if (baseType->isEffectChild() && context.fConfig->fKind == ProgramKind::kMeshVertex) {
+        context.fErrors->error(pos, "effects are not permitted in mesh vertex shaders");
     }
     if (baseType->isOrContainsAtomic()) {
         // An atomic variable (or a struct or an array that contains an atomic member) must be
@@ -258,6 +215,11 @@ void VarDeclaration::ErrorCheck(const Context& context,
                 // Only non-opaque types allow `in` and `out`.
                 permitted |= ModifierFlag::kIn | ModifierFlag::kOut;
             }
+            if (ProgramConfig::IsFragment(context.fConfig->fKind) && baseType->isStruct() &&
+                !baseType->isInterfaceBlock()) {
+                // Only structs in fragment shaders allow `pixel_local`.
+                permitted |= ModifierFlag::kPixelLocal;
+            }
             if (ProgramConfig::IsCompute(context.fConfig->fKind)) {
                 // Only compute shaders allow `workgroup`.
                 if (!baseType->isOpaque() || baseType->isAtomic()) {
@@ -271,6 +233,15 @@ void VarDeclaration::ErrorCheck(const Context& context,
     }
 
     LayoutFlags permittedLayoutFlags = LayoutFlag::kAll;
+
+    // Pixel format modifiers are required on storage textures, and forbidden on other types.
+    if (baseType->isStorageTexture()) {
+        if (!(layout.fFlags & LayoutFlag::kAllPixelFormats)) {
+            context.fErrors->error(pos, "storage textures must declare a pixel format");
+        }
+    } else {
+        permittedLayoutFlags &= ~LayoutFlag::kAllPixelFormats;
+    }
 
     // The `texture` and `sampler` modifiers can be present respectively on a texture and sampler or
     // simultaneously on a combined image-sampler but they are not permitted on any other type.
@@ -300,9 +271,7 @@ void VarDeclaration::ErrorCheck(const Context& context,
                                                   !permitBindingAndSet)) {
         permittedLayoutFlags &= ~LayoutFlag::kBinding;
         permittedLayoutFlags &= ~LayoutFlag::kSet;
-        permittedLayoutFlags &= ~LayoutFlag::kSPIRV;
-        permittedLayoutFlags &= ~LayoutFlag::kMetal;
-        permittedLayoutFlags &= ~LayoutFlag::kWGSL;
+        permittedLayoutFlags &= ~LayoutFlag::kAllBackends;
     }
     if (ProgramConfig::IsRuntimeEffect(context.fConfig->fKind)) {
         // Disallow all layout flags except 'color' in runtime effects
@@ -313,6 +282,10 @@ void VarDeclaration::ErrorCheck(const Context& context,
     if ((layout.fFlags & (LayoutFlag::kSet | LayoutFlag::kBinding)) ||
         (modifierFlags & (ModifierFlag::kIn | ModifierFlag::kOut))) {
         permittedLayoutFlags &= ~LayoutFlag::kPushConstant;
+    }
+    // The `builtin` layout flag is only allowed in modules.
+    if (!context.fConfig->isBuiltinCode()) {
+        permittedLayoutFlags &= ~LayoutFlag::kBuiltin;
     }
 
     modifierFlags.checkPermittedFlags(context, modifiersPosition, permitted);
@@ -335,7 +308,7 @@ bool VarDeclaration::ErrorCheckAndCoerce(const Context& context,
     ErrorCheck(context, var.fPosition, var.modifiersPosition(), var.layout(), var.modifierFlags(),
                &var.type(), baseType, var.storage());
     if (value) {
-        if (var.type().isOpaque()) {
+        if (var.type().isOpaque() || var.type().isOrContainsAtomic()) {
             context.fErrors->error(value->fPosition, "opaque type '" + var.type().displayName() +
                                                      "' cannot use initializer expressions");
             return false;
@@ -379,7 +352,7 @@ bool VarDeclaration::ErrorCheckAndCoerce(const Context& context,
     if (var.storage() == Variable::Storage::kInterfaceBlock) {
         if (var.type().isOpaque()) {
             context.fErrors->error(var.fPosition, "opaque type '" + var.type().displayName() +
-                    "' is not permitted in an interface block");
+                                                  "' is not permitted in an interface block");
             return false;
         }
     }
@@ -448,20 +421,14 @@ std::unique_ptr<VarDeclaration> VarDeclaration::Convert(const Context& context,
 
         // `sk_RTAdjust` is special, and makes the IR generator emit position-fixup expressions.
         if (var->name() == Compiler::RTADJUST_NAME) {
-            if (ThreadContext::RTAdjustState().fVar ||
-                ThreadContext::RTAdjustState().fInterfaceBlock) {
-                context.fErrors->error(var->fPosition, "duplicate definition of 'sk_RTAdjust'");
-                return nullptr;
-            }
             if (!var->type().matches(*context.fTypes.fFloat4)) {
                 context.fErrors->error(var->fPosition, "sk_RTAdjust must have type 'float4'");
                 return nullptr;
             }
-            ThreadContext::RTAdjustState().fVar = var.get();
         }
     }
 
-    context.fSymbolTable->add(std::move(var));
+    context.fSymbolTable->add(context, std::move(var));
     return varDecl;
 }
 

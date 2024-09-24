@@ -19,6 +19,7 @@
 #include "include/core/SkSurface.h"
 #include "include/core/SkVertices.h"
 #include "include/effects/SkRuntimeEffect.h"
+#include "tools/DecodeUtils.h"
 #include "tools/Resources.h"
 
 #include <stddef.h>
@@ -90,16 +91,12 @@ public:
     RuntimeColorFilterGM() = default;
 
 protected:
-    SkString onShortName() override {
-        return SkString("runtimecolorfilter");
-    }
+    SkString getName() const override { return SkString("runtimecolorfilter"); }
 
-    SkISize onISize() override {
-        return SkISize::Make(256 * 3, 256 * 2);
-    }
+    SkISize getISize() override { return SkISize::Make(256 * 3, 256 * 2); }
 
     void onOnceBeforeDraw() override {
-        fImg = GetResourceAsImage("images/mandrill_256.png");
+        fImg = ToolUtils::GetResourceAsImage("images/mandrill_256.png");
     }
 
     void onDraw(SkCanvas* canvas) override {

@@ -1,7 +1,7 @@
 cbuffer _UniformBuffer : register(b0, space0)
 {
-    float4 _17_src : packoffset(c0);
-    float4 _17_dst : packoffset(c1);
+    float4 _16_src : packoffset(c0);
+    float4 _16_dst : packoffset(c1);
 };
 
 
@@ -14,39 +14,41 @@ struct SPIRV_Cross_Output
 
 static float _kGuardedDivideEpsilon = 0.0f;
 
-float color_dodge_component_Qhh2h2(float2 _23, float2 _24)
+float guarded_divide_Qhhh(float _21, float _22)
 {
-    if (_24.x == 0.0f)
+    return _21 / (_22 + _kGuardedDivideEpsilon);
+}
+
+float color_dodge_component_Qhh2h2(float2 _32, float2 _33)
+{
+    float _43 = float((_33.x == 0.0f) ? 0 : 1);
+    float dxScale = _43;
+    float _56 = 0.0f;
+    if (abs(_32.y - _32.x) >= 6.103515625e-05f)
     {
-        return _23.x * (1.0f - _24.y);
+        float _65 = _33.x * _32.y;
+        float _71 = _32.y - _32.x;
+        _56 = guarded_divide_Qhhh(_65, _71);
     }
     else
     {
-        float _45 = _23.y - _23.x;
-        float delta = _45;
-        if (_45 == 0.0f)
-        {
-            return ((_23.y * _24.y) + (_23.x * (1.0f - _24.y))) + (_24.x * (1.0f - _23.y));
-        }
-        else
-        {
-            float _69 = min(_24.y, (_24.x * _23.y) / (_45 + _kGuardedDivideEpsilon));
-            delta = _69;
-            return ((_69 * _23.y) + (_23.x * (1.0f - _24.y))) + (_24.x * (1.0f - _23.y));
-        }
+        _56 = _33.y;
     }
+    float _76 = _43 * min(_33.y, _56);
+    float delta = _76;
+    return ((_76 * _32.y) + (_32.x * (1.0f - _33.y))) + (_33.x * (1.0f - _32.y));
 }
 
 void frag_main()
 {
     _kGuardedDivideEpsilon = false ? 9.9999999392252902907785028219223e-09f : 0.0f;
-    float2 _106 = _17_src.xw;
-    float2 _111 = _17_dst.xw;
-    float2 _116 = _17_src.yw;
-    float2 _120 = _17_dst.yw;
-    float2 _125 = _17_src.zw;
-    float2 _129 = _17_dst.zw;
-    sk_FragColor = float4(color_dodge_component_Qhh2h2(_106, _111), color_dodge_component_Qhh2h2(_116, _120), color_dodge_component_Qhh2h2(_125, _129), _17_src.w + ((1.0f - _17_src.w) * _17_dst.w));
+    float2 _102 = _16_src.xw;
+    float2 _106 = _16_dst.xw;
+    float2 _111 = _16_src.yw;
+    float2 _115 = _16_dst.yw;
+    float2 _120 = _16_src.zw;
+    float2 _124 = _16_dst.zw;
+    sk_FragColor = float4(color_dodge_component_Qhh2h2(_102, _106), color_dodge_component_Qhh2h2(_111, _115), color_dodge_component_Qhh2h2(_120, _124), _16_src.w + ((1.0f - _16_src.w) * _16_dst.w));
 }
 
 SPIRV_Cross_Output main()

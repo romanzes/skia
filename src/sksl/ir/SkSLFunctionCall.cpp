@@ -29,6 +29,7 @@
 #include "src/sksl/ir/SkSLConstructorCompound.h"
 #include "src/sksl/ir/SkSLFunctionDeclaration.h"
 #include "src/sksl/ir/SkSLFunctionReference.h"
+#include "src/sksl/ir/SkSLLayout.h"
 #include "src/sksl/ir/SkSLLiteral.h"
 #include "src/sksl/ir/SkSLMethodReference.h"
 #include "src/sksl/ir/SkSLModifierFlags.h"
@@ -1003,7 +1004,7 @@ static std::unique_ptr<Expression> optimize_intrinsic_call(const Context& contex
 
 std::unique_ptr<Expression> FunctionCall::clone(Position pos) const {
     return std::make_unique<FunctionCall>(pos, &this->type(), &this->function(),
-                                          this->arguments().clone());
+                                          this->arguments().clone(), this->stablePointer());
 }
 
 std::string FunctionCall::description(OperatorPrecedence) const {
@@ -1017,25 +1018,66 @@ std::string FunctionCall::description(OperatorPrecedence) const {
     return result;
 }
 
+static bool argument_and_parameter_flags_match(const Expression& argument,
+                                               const Variable& parameter) {
+    // If the function parameter has a pixel format, the argument being passed in must have a
+    // matching pixel format.
+    LayoutFlags paramPixelFormat = parameter.layout().fFlags & LayoutFlag::kAllPixelFormats;
+    if (paramPixelFormat != LayoutFlag::kNone) {
+        // The only SkSL type that supports pixel-format qualifiers is a storage texture.
+        if (parameter.type().isStorageTexture()) {
+            // Storage textures are opaquely typed, so there's no way to specify one other than by
+            // directly accessing a variable.
+            if (!argument.is<VariableReference>()) {
+                return false;
+            }
+
+            // The variable's pixel-format flags must match. (Only one pixel-format bit can be set.)
+            const Variable& var = *argument.as<VariableReference>().variable();
+            if ((var.layout().fFlags & LayoutFlag::kAllPixelFormats) != paramPixelFormat) {
+                return false;
+            }
+        }
+    }
+
+    // The only other supported parameter flags are `const` and `in/out`, which do not allow
+    // multiple overloads.
+    return true;
+}
+
 /**
- * Determines the cost of coercing the arguments of a function to the required types. Cost has no
- * particular meaning other than "lower costs are preferred". Returns CoercionCost::Impossible() if
- * the call is not valid.
+ * Used to determine the best overload for a function call by calculating the cost of coercing the
+ * arguments of the function to the required types. Cost has no particular meaning other than "lower
+ * costs are preferred". Returns CoercionCost::Impossible() if the call is not valid. This is never
+ * called for functions with only one definition.
  */
 static CoercionCost call_cost(const Context& context,
                               const FunctionDeclaration& function,
                               const ExpressionArray& arguments) {
+    // Strict-ES2 programs can never call an `$es3` function.
     if (context.fConfig->strictES2Mode() && function.modifierFlags().isES3()) {
         return CoercionCost::Impossible();
     }
+    // Functions with the wrong number of parameters are never a match.
     if (function.parameters().size() != SkToSizeT(arguments.size())) {
         return CoercionCost::Impossible();
     }
+    // If the arguments cannot be coerced to the parameter types, the function is never a match.
     FunctionDeclaration::ParamTypes types;
     const Type* ignored;
     if (!function.determineFinalTypes(arguments, &types, &ignored)) {
         return CoercionCost::Impossible();
     }
+    // If the arguments do not match the parameter types due to mismatched modifiers, the function
+    // is never a match.
+    for (int i = 0; i < arguments.size(); i++) {
+        const Expression& arg = *arguments[i];
+        const Variable& param = *function.parameters()[i];
+        if (!argument_and_parameter_flags_match(arg, param)) {
+            return CoercionCost::Impossible();
+        }
+    }
+    // Return the sum of coercion costs of each argument.
     CoercionCost total = CoercionCost::Free();
     for (int i = 0; i < arguments.size(); i++) {
         total = total + arguments[i]->coercionCost(*types[i]);
@@ -1141,6 +1183,20 @@ std::unique_ptr<Expression> FunctionCall::Convert(const Context& context,
         return nullptr;
     }
 
+    // If the arguments do not match the parameter types due to mismatched modifiers, reject the
+    // function call.
+    for (int i = 0; i < arguments.size(); i++) {
+        const Expression& arg = *arguments[i];
+        const Variable& param = *function.parameters()[i];
+        if (!argument_and_parameter_flags_match(arg, param)) {
+            context.fErrors->error(arg.position(), "expected argument of type '" +
+                                                   param.layout().paddedDescription() +
+                                                   param.modifierFlags().paddedDescription() +
+                                                   param.type().description() + "'");
+            return nullptr;
+        }
+    }
+
     // Resolve generic types.
     FunctionDeclaration::ParamTypes types;
     const Type* returnType;
@@ -1167,8 +1223,6 @@ std::unique_ptr<Expression> FunctionCall::Convert(const Context& context,
                 return nullptr;
             }
         }
-        // TODO(skia:13609): Make sure that we don't pass writeonly objects to readonly parameters,
-        // or vice-versa.
     }
 
     if (function.isMain()) {
@@ -1207,7 +1261,8 @@ std::unique_ptr<Expression> FunctionCall::Make(const Context& context,
         }
     }
 
-    return std::make_unique<FunctionCall>(pos, returnType, &function, std::move(arguments));
+    return std::make_unique<FunctionCall>(pos, returnType, &function, std::move(arguments),
+                                          /*stablePointer=*/nullptr);
 }
 
 }  // namespace SkSL
