@@ -9,6 +9,7 @@
 #define SkImageFilters_DEFINED
 
 #include "include/core/SkColor.h"
+#include "include/core/SkColorSpace.h"
 #include "include/core/SkImage.h"
 #include "include/core/SkImageFilter.h"
 #include "include/core/SkPicture.h"
@@ -19,10 +20,8 @@
 #include "include/core/SkTileMode.h"
 #include "include/core/SkTypes.h"
 
-// TODO(kjlubick) remove after cl/548357677 lands
-#include "include/core/SkData.h"  // IWYU pragma: keep
-
 #include <cstddef>
+#include <optional>
 #include <string_view>
 #include <utility>
 
@@ -36,35 +35,43 @@ struct SkISize;
 struct SkPoint3;
 struct SkSamplingOptions;
 
-namespace skif {
-  static constexpr SkRect kNoCropRect = {SK_ScalarNegativeInfinity, SK_ScalarNegativeInfinity,
-                                         SK_ScalarInfinity, SK_ScalarInfinity};
-}
-
 // A set of factory functions providing useful SkImageFilter effects. For image filters that take an
 // input filter, providing nullptr means it will automatically use the dynamic source image. This
 // source depends on how the filter is applied, but is either the contents of a saved layer when
-// drawing with SkCanvas, or an explicit SkImage if using SkImage::makeWithFilter.
+// drawing with SkCanvas, or an explicit SkImage if using one of the SkImages::MakeWithFilter
+// factories.
 class SK_API SkImageFilters {
 public:
     // This is just a convenience type to allow passing SkIRects, SkRects, and optional pointers
     // to those types as a crop rect for the image filter factories. It's not intended to be used
     // directly.
-    struct CropRect {
-        CropRect() : fCropRect(skif::kNoCropRect) {}
+    struct CropRect : public std::optional<SkRect> {
+        CropRect() {}
         // Intentionally not explicit so callers don't have to use this type but can use SkIRect or
         // SkRect as desired.
-        CropRect(std::nullptr_t) : fCropRect(skif::kNoCropRect) {}
-        CropRect(const SkIRect& crop) : fCropRect(SkRect::Make(crop)) {}
-        CropRect(const SkRect& crop) : fCropRect(crop) {}
-        CropRect(const SkIRect* optionalCrop) : fCropRect(optionalCrop ? SkRect::Make(*optionalCrop)
-                                                                       : skif::kNoCropRect) {}
-        CropRect(const SkRect* optionalCrop) : fCropRect(optionalCrop ? *optionalCrop
-                                                                      : skif::kNoCropRect) {}
+        CropRect(const SkIRect& crop) : std::optional<SkRect>(SkRect::Make(crop)) {}
+        CropRect(const SkRect& crop) : std::optional<SkRect>(crop) {}
+        CropRect(const std::optional<SkRect>& crop) : std::optional<SkRect>(crop) {}
+        CropRect(const std::nullopt_t&) : std::optional<SkRect>() {}
 
-        operator const SkRect*() const { return fCropRect == skif::kNoCropRect ? nullptr : &fCropRect; }
+        // Backwards compatibility for when the APIs used to explicitly accept "const SkRect*"
+        CropRect(std::nullptr_t) {}
+        CropRect(const SkIRect* optionalCrop) {
+            if (optionalCrop) {
+                *this = SkRect::Make(*optionalCrop);
+            }
+        }
+        CropRect(const SkRect* optionalCrop) {
+            if (optionalCrop) {
+                *this = *optionalCrop;
+            }
+        }
 
-        SkRect fCropRect;
+        // std::optional doesn't define == when comparing to another optional...
+        bool operator==(const CropRect& o) const {
+            return this->has_value() == o.has_value() &&
+                   (!this->has_value() || this->value() == *o);
+        }
     };
 
     /**
@@ -140,6 +147,27 @@ public:
     static sk_sp<SkImageFilter> Compose(sk_sp<SkImageFilter> outer, sk_sp<SkImageFilter> inner);
 
     /**
+     *  Create a filter that applies a crop to the result of the 'input' filter. Pixels within the
+     *  crop rectangle are unmodified from what 'input' produced. Pixels outside of crop match the
+     *  provided SkTileMode (defaulting to kDecal).
+     *
+     *  NOTE: The optional CropRect argument for many of the factories is equivalent to creating the
+     *  filter without a CropRect and then wrapping it in ::Crop(rect, kDecal). Explicitly adding
+     *  Crop filters lets you control their tiling and use different geometry for the input and the
+     *  output of another filter.
+     *
+     *  @param rect     The cropping geometry
+     *  @param tileMode The tilemode applied to pixels *outside* of 'crop'
+     *  @param input    The input filter that is cropped, uses source image if this is null
+    */
+    static sk_sp<SkImageFilter> Crop(const SkRect& rect,
+                                     SkTileMode tileMode,
+                                     sk_sp<SkImageFilter> input);
+    static sk_sp<SkImageFilter> Crop(const SkRect& rect, sk_sp<SkImageFilter> input) {
+        return Crop(rect, SkTileMode::kDecal, std::move(input));
+    }
+
+    /**
      *  Create a filter that moves each pixel in its color input based on an (x,y) vector encoded
      *  in its displacement input filter. Two color components of the displacement image are
      *  mapped into a vector as scale * (color[xChannel], color[yChannel]), where the channel
@@ -161,34 +189,64 @@ public:
     /**
      *  Create a filter that draws a drop shadow under the input content. This filter produces an
      *  image that includes the inputs' content.
-     *  @param dx       The X offset of the shadow.
-     *  @param dy       The Y offset of the shadow.
-     *  @param sigmaX   The blur radius for the shadow, along the X axis.
-     *  @param sigmaY   The blur radius for the shadow, along the Y axis.
-     *  @param color    The color of the drop shadow.
-     *  @param input    The input filter, or will use the source bitmap if this is null.
-     *  @param cropRect Optional rectangle that crops the input and output.
+     *  @param dx         X offset of the shadow.
+     *  @param dy         Y offset of the shadow.
+     *  @param sigmaX     blur radius for the shadow, along the X axis.
+     *  @param sigmaY     blur radius for the shadow, along the Y axis.
+     *  @param color      color of the drop shadow.
+     *  @param colorSpace The color space of the drop shadow color.
+     *  @param input      The input filter, or will use the source bitmap if this is null.
+     *  @param cropRect   Optional rectangle that crops the input and output.
      */
     static sk_sp<SkImageFilter> DropShadow(SkScalar dx, SkScalar dy,
                                            SkScalar sigmaX, SkScalar sigmaY,
-                                           SkColor color, sk_sp<SkImageFilter> input,
+                                           SkColor4f color, sk_sp<SkColorSpace> colorSpace,
+                                           sk_sp<SkImageFilter> input,
                                            const CropRect& cropRect = {});
+    static sk_sp<SkImageFilter> DropShadow(SkScalar dx, SkScalar dy,
+                                           SkScalar sigmaX, SkScalar sigmaY,
+                                           SkColor color, sk_sp<SkImageFilter> input,
+                                           const CropRect& cropRect = {}) {
+        return DropShadow(dx, dy,
+                          sigmaX, sigmaY,
+                          SkColor4f::FromColor(color), /*colorSpace=*/nullptr,
+                          std::move(input),
+                          cropRect);
+    }
+
     /**
      *  Create a filter that renders a drop shadow, in exactly the same manner as ::DropShadow,
      *  except that the resulting image does not include the input content. This allows the shadow
      *  and input to be composed by a filter DAG in a more flexible manner.
-     *  @param dx       The X offset of the shadow.
-     *  @param dy       The Y offset of the shadow.
-     *  @param sigmaX   The blur radius for the shadow, along the X axis.
-     *  @param sigmaY   The blur radius for the shadow, along the Y axis.
-     *  @param color    The color of the drop shadow.
-     *  @param input    The input filter, or will use the source bitmap if this is null.
-     *  @param cropRect Optional rectangle that crops the input and output.
+     *  @param dx         The X offset of the shadow.
+     *  @param dy         The Y offset of the shadow.
+     *  @param sigmaX     The blur radius for the shadow, along the X axis.
+     *  @param sigmaY     The blur radius for the shadow, along the Y axis.
+     *  @param color      The color of the drop shadow.
+     *  @param colorSpace The color space of the drop shadow color.
+     *  @param input      The input filter, or will use the source bitmap if this is null.
+     *  @param cropRect   Optional rectangle that crops the input and output.
      */
     static sk_sp<SkImageFilter> DropShadowOnly(SkScalar dx, SkScalar dy,
                                                SkScalar sigmaX, SkScalar sigmaY,
-                                               SkColor color, sk_sp<SkImageFilter> input,
+                                               SkColor4f color, sk_sp<SkColorSpace>,
+                                               sk_sp<SkImageFilter> input,
                                                const CropRect& cropRect = {});
+    static sk_sp<SkImageFilter> DropShadowOnly(SkScalar dx, SkScalar dy,
+                                               SkScalar sigmaX, SkScalar sigmaY,
+                                               SkColor color, sk_sp<SkImageFilter> input,
+                                               const CropRect& cropRect = {}) {
+        return DropShadowOnly(dx, dy,
+                              sigmaX, sigmaY,
+                              SkColor4f::FromColor(color), /*colorSpace=*/nullptr,
+                              std::move(input),
+                              cropRect);
+    }
+
+    /**
+     * Create a filter that always produces transparent black.
+     */
+    static sk_sp<SkImageFilter> Empty();
 
     /**
      *  Create a filter that draws the 'srcRect' portion of image into 'dstRect' using the given

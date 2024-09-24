@@ -12,6 +12,7 @@
 #include "include/core/SkBlendMode.h"
 #include "include/core/SkCanvas.h"
 #include "include/core/SkData.h"
+#include "include/core/SkImage.h"
 #include "include/core/SkPathBuilder.h"
 #include "include/core/SkPathTypes.h"
 #include "include/core/SkPicture.h"
@@ -75,11 +76,9 @@ public:
     {}
     ~AnimatedImageGM() override = default;
 
-    SkString onShortName() override {
-        return SkStringPrintf("%s_animated_image", fName);
-    }
+    SkString getName() const override { return SkStringPrintf("%s_animated_image", fName); }
 
-    SkISize onISize() override {
+    SkISize getISize() override {
         this->init();
         return fSize;
     }

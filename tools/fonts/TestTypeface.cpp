@@ -117,7 +117,8 @@ void SkTestFont::init(const SkScalar* pts, const unsigned char* verbs) {
                 case SkPath::kClose_Verb:
                     b.close();
                     break;
-                default: SkDEBUGFAIL("bad verb"); return;
+                default:
+                    SK_ABORT("bad verb");
             }
         }
         fPaths[index] = b.detach();
@@ -142,6 +143,7 @@ SkPath TestTypeface::getPath(SkGlyphID glyphID) {
 }
 
 void TestTypeface::onFilterRec(SkScalerContextRec* rec) const {
+    rec->useStrokeForFakeBold();
     rec->setHinting(SkFontHinting::kNone);
 }
 
@@ -154,7 +156,7 @@ void TestTypeface::getGlyphToUnicodeMap(SkUnichar* glyphToUnicode) const {
 
 std::unique_ptr<SkAdvancedTypefaceMetrics> TestTypeface::onGetAdvancedMetrics() const {  // pdf only
     std::unique_ptr<SkAdvancedTypefaceMetrics>info(new SkAdvancedTypefaceMetrics);
-    info->fFontName.set(fTestFont->fName);
+    info->fPostScriptName.set(fTestFont->fName);
     return info;
 }
 

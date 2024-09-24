@@ -10,10 +10,10 @@
 #include "include/core/SkMatrix.h"
 #include "include/core/SkPoint.h"
 #include "include/core/SkRect.h"
+#include "include/core/SkSerialProcs.h"
 #include "include/private/base/SkAssert.h"
 #include "include/private/chromium/Slug.h"
 #include "src/core/SkDevice.h"
-#include "src/core/SkPaintPriv.h"
 #include "src/core/SkReadBuffer.h"
 #include "src/core/SkWriteBuffer.h"
 #include "src/text/GlyphRun.h"
@@ -30,17 +30,14 @@ namespace sktext::gpu {
 SlugImpl::SlugImpl(SubRunAllocator&& alloc,
                    gpu::SubRunContainerOwner subRuns,
                    SkRect sourceBounds,
-                   const SkPaint& paint,
                    SkPoint origin)
         : fAlloc {std::move(alloc)}
         , fSubRuns(std::move(subRuns))
         , fSourceBounds{sourceBounds}
-        , fInitialPaint{paint}
         , fOrigin{origin} {}
 
 void SlugImpl::doFlatten(SkWriteBuffer& buffer) const {
     buffer.writeRect(fSourceBounds);
-    SkPaintPriv::Flatten(fInitialPaint, buffer);
     buffer.writePoint(fOrigin);
     fSubRuns->flattenAllocSizeHint(buffer);
     fSubRuns->flattenRuns(buffer);
@@ -48,23 +45,25 @@ void SlugImpl::doFlatten(SkWriteBuffer& buffer) const {
 
 sk_sp<Slug> SlugImpl::MakeFromBuffer(SkReadBuffer& buffer, const SkStrikeClient* client) {
     SkRect sourceBounds = buffer.readRect();
-    SkASSERT(!sourceBounds.isEmpty());
-    if (!buffer.validate(!sourceBounds.isEmpty())) { return nullptr; }
-    SkPaint paint = buffer.readPaint();
+    if (!buffer.validate(!sourceBounds.isEmpty())) {
+        return nullptr;
+    }
     SkPoint origin = buffer.readPoint();
     int allocSizeHint = gpu::SubRunContainer::AllocSizeHintFromBuffer(buffer);
 
     auto [initializer, _, alloc] =
             SubRunAllocator::AllocateClassMemoryAndArena<SlugImpl>(allocSizeHint);
 
-    gpu::SubRunContainerOwner container = gpu::SubRunContainer::MakeFromBufferInAlloc(buffer, client, &alloc);
+    gpu::SubRunContainerOwner container =
+            gpu::SubRunContainer::MakeFromBufferInAlloc(buffer, client, &alloc);
 
     // Something went wrong while reading.
-    SkASSERT(buffer.isValid());
-    if (!buffer.isValid()) { return nullptr;}
+    if (!buffer.isValid()) {
+        return nullptr;
+    }
 
-    return sk_sp<SlugImpl>(initializer.initialize(
-            std::move(alloc), std::move(container), sourceBounds, paint, origin));
+    return sk_sp<SlugImpl>(
+            initializer.initialize(std::move(alloc), std::move(container), sourceBounds, origin));
 }
 
 SkMatrix position_matrix(const SkMatrix& drawMatrix, SkPoint drawOrigin) {
@@ -74,8 +73,7 @@ SkMatrix position_matrix(const SkMatrix& drawMatrix, SkPoint drawOrigin) {
 
 sk_sp<SlugImpl> SlugImpl::Make(const SkMatrix& viewMatrix,
                                const sktext::GlyphRunList& glyphRunList,
-                               const SkPaint& initialPaint,
-                               const SkPaint& drawingPaint,
+                               const SkPaint& paint,
                                SkStrikeDeviceInfo strikeDeviceInfo,
                                sktext::StrikeForGPUCacheInterface* strikeCache) {
     size_t subRunSizeHint = gpu::SubRunContainer::EstimateAllocSize(glyphRunList);
@@ -85,20 +83,18 @@ sk_sp<SlugImpl> SlugImpl::Make(const SkMatrix& viewMatrix,
     const SkMatrix positionMatrix = position_matrix(viewMatrix, glyphRunList.origin());
 
     auto subRuns = gpu::SubRunContainer::MakeInAlloc(glyphRunList,
-                                                positionMatrix,
-                                                drawingPaint,
-                                                strikeDeviceInfo,
-                                                strikeCache,
-                                                &alloc,
-                                                gpu::SubRunContainer::kAddSubRuns,
-                                                "Make Slug");
+                                                     positionMatrix,
+                                                     paint,
+                                                     strikeDeviceInfo,
+                                                     strikeCache,
+                                                     &alloc,
+                                                     gpu::SubRunContainer::kAddSubRuns,
+                                                     "Make Slug");
 
-    sk_sp<SlugImpl> slug = sk_sp<SlugImpl>(initializer.initialize(
-            std::move(alloc),
-            std::move(subRuns),
-            glyphRunList.sourceBounds(),
-            initialPaint,
-            glyphRunList.origin()));
+    sk_sp<SlugImpl> slug = sk_sp<SlugImpl>(initializer.initialize(std::move(alloc),
+                                                                  std::move(subRuns),
+                                                                  glyphRunList.sourceBounds(),
+                                                                  glyphRunList.origin()));
 
     // There is nothing to draw here. This is particularly a problem with RSX form blobs where a
     // single space becomes a run with no glyphs.
@@ -107,8 +103,13 @@ sk_sp<SlugImpl> SlugImpl::Make(const SkMatrix& viewMatrix,
     return slug;
 }
 
-sk_sp<Slug> SkMakeSlugFromBuffer(SkReadBuffer& buffer, const SkStrikeClient* client) {
-    return SlugImpl::MakeFromBuffer(buffer, client);
+void Slug::AddDeserialProcs(SkDeserialProcs* procs, const SkStrikeClient* client) {
+    SkASSERT(procs);
+    procs->fSlugCtx = const_cast<SkStrikeClient*>(client);
+    procs->fSlugProc = [](SkReadBuffer& buffer, void* ctx) -> sk_sp<Slug> {
+        auto client = static_cast<const SkStrikeClient*>(ctx);
+        return SlugImpl::MakeFromBuffer(buffer, client);
+    };
 }
 
 }  // namespace sktext::gpu

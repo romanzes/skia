@@ -41,23 +41,8 @@ std::unique_ptr<Context> MakeMetal(const MtlBackendContext& backendContext,
 
 } // namespace ContextFactory
 
-MTLPixelFormat MtlDepthStencilFlagsToFormat(SkEnumBitMask<DepthStencilFlags> mask) {
-    // TODO: Decide if we want to change this to always return a combined depth and stencil format
-    // to allow more sharing of depth stencil allocations.
-    if (mask == DepthStencilFlags::kDepth) {
-        // MTLPixelFormatDepth16Unorm is also a universally supported option here
-        return MTLPixelFormatDepth32Float;
-    } else if (mask == DepthStencilFlags::kStencil) {
-        return MTLPixelFormatStencil8;
-    } else if (mask == DepthStencilFlags::kDepthStencil) {
-        // MTLPixelFormatDepth24Unorm_Stencil8 is supported on Mac family GPUs.
-        return MTLPixelFormatDepth32Float_Stencil8;
-    }
-    SkASSERT(false);
-    return MTLPixelFormatInvalid;
-}
-
 sk_cfp<id<MTLLibrary>> MtlCompileShaderLibrary(const MtlSharedContext* sharedContext,
+                                               std::string_view label,
                                                std::string_view msl,
                                                ShaderErrorHandler* errorHandler) {
     TRACE_EVENT0("skia.shaders", "driver_compile_shader");
@@ -71,15 +56,15 @@ sk_cfp<id<MTLLibrary>> MtlCompileShaderLibrary(const MtlSharedContext* sharedCon
     MTLCompileOptions* options = [[MTLCompileOptions alloc] init];
 
     // Framebuffer fetch is supported in MSL 2.3 in MacOS 11+.
-    if (@available(macOS 11.0, iOS 14.0, *)) {
+    if (@available(macOS 11.0, iOS 14.0, tvOS 14.0, *)) {
         options.languageVersion = MTLLanguageVersion2_3;
 
     // array<> is supported in MSL 2.0 on MacOS 10.13+ and iOS 11+,
     // and in MSL 1.2 on iOS 10+ (but not MacOS).
-    } else if (@available(macOS 10.13, iOS 11.0, *)) {
+    } else if (@available(macOS 10.13, iOS 11.0, tvOS 11.0, *)) {
         options.languageVersion = MTLLanguageVersion2_0;
 #if defined(SK_BUILD_FOR_IOS)
-    } else if (@available(macOS 10.12, iOS 10.0, *)) {
+    } else if (@available(macOS 10.12, iOS 10.0, tvOS 10.0, *)) {
         options.languageVersion = MTLLanguageVersion1_2;
 #endif
     }
@@ -92,15 +77,17 @@ sk_cfp<id<MTLLibrary>> MtlCompileShaderLibrary(const MtlSharedContext* sharedCon
                                                     error:&error]);
     if (!compiledLibrary) {
         std::string mslStr(msl);
-        errorHandler->compileError(mslStr.c_str(), error.debugDescription.UTF8String);
+        errorHandler->compileError(
+                mslStr.c_str(), error.debugDescription.UTF8String, /*shaderWasCached=*/false);
         return nil;
     }
 
+    NSString* nsLabel = [[NSString alloc] initWithBytesNoCopy:const_cast<char*>(label.data())
+                                                       length:label.size()
+                                                     encoding:NSUTF8StringEncoding
+                                                 freeWhenDone:NO];
+    compiledLibrary.get().label = nsLabel;
     return compiledLibrary;
-}
-
-size_t MtlFormatBytesPerBlock(MtlPixelFormat format) {
-    return skgpu::MtlFormatBytesPerBlock((MTLPixelFormat) format);
 }
 
 } // namespace skgpu::graphite

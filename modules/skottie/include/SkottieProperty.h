@@ -14,13 +14,20 @@
 #include "include/core/SkPoint.h"
 #include "include/core/SkRect.h"
 #include "include/core/SkRefCnt.h"
+#include "include/core/SkScalar.h"
 #include "include/core/SkSpan.h"
+#include "include/core/SkString.h"
 #include "include/core/SkTypeface.h"
+#include "include/private/base/SkAPI.h"
 #include "include/utils/SkTextUtils.h"
-#include "modules/skottie/src/text/SkottieShaper.h"
+#include "modules/skottie/include/TextShaper.h"
 
+#include <cstddef>
+#include <cstdint>
 #include <functional>
-#include <vector>
+#include <limits>
+#include <memory>
+#include <utility>
 
 class SkCanvas;
 
@@ -85,6 +92,14 @@ struct TextPropertyValue {
     bool                    fHasFill        = false,
                             fHasStroke      = false;
     sk_sp<GlyphDecorator>   fDecorator;
+                            // The locale to be used for text shaping, in BCP47 form.  This includes
+                            // support for RFC6067 extensions, so one can e.g. select strict line
+                            // breaking rules for certain scripts: ja-u-lb-strict.
+                            // Pass an empty string to use the system locale.
+    SkString                fLocale;
+                            // Optional font family name, to be passed to the font manager for
+                            // fallback.
+    SkString                fFontFamily;
 
     bool operator==(const TextPropertyValue& other) const;
     bool operator!=(const TextPropertyValue& other) const;
@@ -116,6 +131,8 @@ public:
         : fNode(std::move(node))
         , fRevalidator(std::move(revalidator)) {}
     ~PropertyHandle();
+
+    PropertyHandle(const PropertyHandle&);
 
     ValueT get() const;
     void set(const ValueT&);

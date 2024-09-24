@@ -36,10 +36,11 @@ public:
     inline static constexpr unsigned int kPaintUniformBufferIndex = 2;
     inline static constexpr unsigned int kVertexBufferIndex = 3;
     inline static constexpr unsigned int kInstanceBufferIndex = 4;
+    inline static constexpr unsigned int kGradientBufferIndex = 5;
 
     using MSLFunction = std::pair<id<MTLLibrary>, std::string>;
     static sk_sp<MtlGraphicsPipeline> Make(const MtlSharedContext*,
-                                           std::string label,
+                                           const std::string& label,
                                            MSLFunction vertexMain,
                                            SkSpan<const Attribute> vertexAttrs,
                                            SkSpan<const Attribute> instanceAttrs,
@@ -48,7 +49,7 @@ public:
                                            uint32_t stencilRefValue,
                                            const BlendInfo& blendInfo,
                                            const RenderPassDesc&,
-                                           Shaders* pipelineShaders);
+                                           PipelineInfo* pipelineInfo);
 
     ~MtlGraphicsPipeline() override {}
 
@@ -58,7 +59,7 @@ public:
 
 private:
     MtlGraphicsPipeline(const skgpu::graphite::SharedContext* sharedContext,
-                        Shaders* pipelineShaders,
+                        PipelineInfo* pipelineInfo,
                         sk_cfp<id<MTLRenderPipelineState>> pso,
                         sk_cfp<id<MTLDepthStencilState>> dss,
                         uint32_t refValue);

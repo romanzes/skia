@@ -4,18 +4,26 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
-
 #ifndef GrSurface_DEFINED
 #define GrSurface_DEFINED
 
-#include "include/core/SkImageInfo.h"
 #include "include/core/SkRect.h"
+#include "include/core/SkRefCnt.h"
+#include "include/core/SkSize.h"
 #include "include/gpu/GpuTypes.h"
+#include "include/private/base/SkAssert.h"
+#include "include/private/gpu/ganesh/GrTypesPriv.h"
 #include "src/gpu/RefCntedCallback.h"
 #include "src/gpu/ganesh/GrGpuResource.h"
+#include "src/gpu/ganesh/GrGpuResourceCacheAccess.h"
+#include "src/gpu/ganesh/GrGpuResourcePriv.h"
+
+#include <cstddef>
+#include <string_view>
 
 class GrBackendFormat;
 class GrDirectContext;
+class GrGpu;
 class GrRenderTarget;
 class GrTexture;
 
@@ -67,8 +75,11 @@ public:
 
     GrInternalSurfaceFlags flags() const { return fSurfaceFlags; }
 
-    static size_t ComputeSize(const GrBackendFormat&, SkISize dimensions, int colorSamplesPerPixel,
-                              GrMipmapped, bool binSize = false);
+    static size_t ComputeSize(const GrBackendFormat&,
+                              SkISize dimensions,
+                              int colorSamplesPerPixel,
+                              skgpu::Mipmapped,
+                              bool binSize = false);
 
     /**
      * The pixel values of this surface cannot be modified (e.g. doesn't support write pixels or
@@ -100,7 +111,7 @@ public:
         sk_sp<GrDirectContext> fDirectContext;
     };
 
-#if GR_TEST_UTILS
+#if defined(GPU_TEST_UTILS)
     const GrSurface* asSurface() const override { return this; }
 #endif
 
@@ -156,6 +167,8 @@ private:
 
     // Unmanaged backends (e.g. Vulkan) may want to specially handle the release proc in order to
     // ensure it isn't called until GPU work related to the resource is completed.
+
+    // NOLINTNEXTLINE(performance-unnecessary-value-param)
     virtual void onSetRelease(sk_sp<RefCntedReleaseProc>) {}
 
     void invokeReleaseProc() {

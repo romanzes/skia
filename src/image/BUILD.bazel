@@ -1,10 +1,12 @@
-load("//bazel:skia_rules.bzl", "exports_files_legacy", "skia_filegroup", "split_srcs_and_hdrs")
+load("//bazel:skia_rules.bzl", "generate_cpp_files_for_headers", "skia_filegroup", "split_srcs_and_hdrs")
+
+package(
+    default_applicable_licenses = ["//:license"],
+)
 
 licenses(["notice"])
 
-exports_files_legacy()
-
-CORE_FILES = [
+IMAGE_FILES = [
     "SkImage.cpp",
     "SkImageGeneratorPriv.h",
     "SkImage_Base.cpp",
@@ -31,8 +33,8 @@ CORE_FILES = [
 ]
 
 split_srcs_and_hdrs(
-    name = "core",
-    files = CORE_FILES,
+    name = "image",
+    files = IMAGE_FILES,
 )
 
 skia_filegroup(
@@ -43,12 +45,39 @@ skia_filegroup(
 
 skia_filegroup(
     name = "srcs",
-    srcs = [":core_srcs"],
-    visibility = ["//src:__pkg__"],
+    srcs = [":image_srcs"],
+    visibility = [
+        "//src:__pkg__",
+    ],
 )
 
 skia_filegroup(
     name = "private_hdrs",
-    srcs = [":core_hdrs"],
-    visibility = ["//src:__pkg__"],
+    srcs = [":image_hdrs"],
+    visibility = [
+        "//src:__pkg__",
+    ],
+)
+
+skia_filegroup(
+    name = "core_priv_hdrs",
+    srcs = [":image_hdrs"],
+    visibility = [
+        "//src/core:__pkg__",
+    ],
+)
+
+skia_filegroup(
+    name = "core_srcs",
+    srcs = [":image_srcs"],
+    visibility = [
+        "//src/core:__pkg__",
+    ],
+)
+
+generate_cpp_files_for_headers(
+    name = "headers_to_compile",
+    headers = [
+        "SkImageGeneratorPriv.h",
+    ],
 )

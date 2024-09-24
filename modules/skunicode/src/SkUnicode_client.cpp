@@ -1,16 +1,18 @@
-                                           /*
+/*
 * Copyright 2022 Google Inc.
 *
 * Use of this source code is governed by a BSD-style license that can be
 * found in the LICENSE file.
 */
+#include "modules/skunicode/include/SkUnicode_client.h"
+
 #include "include/core/SkSpan.h"
 #include "include/core/SkString.h"
 #include "include/core/SkTypes.h"
 #include "include/private/base/SkTArray.h"
 #include "include/private/base/SkTo.h"
 #include "modules/skunicode/include/SkUnicode.h"
-#include "modules/skunicode/src/SkUnicode_client.h"
+#include "modules/skunicode/src/SkBidiFactory_icu_subset.h"
 #include "modules/skunicode/src/SkUnicode_hardcoded.h"
 #include "modules/skunicode/src/SkUnicode_icu_bidi.h"
 #include "src/base/SkBitmaskEnum.h"
@@ -33,41 +35,6 @@
 #include <unicode/utypes.h>
 
 using namespace skia_private;
-
-#ifndef SK_UNICODE_ICU_IMPLEMENTATION
-
-const char* SkUnicode_IcuBidi::errorName(UErrorCode status) {
-    return u_errorName_skia(status);
-}
-void SkUnicode_IcuBidi::bidi_close(UBiDi* bidi) {
-    ubidi_close_skia(bidi);
-}
-UBiDiDirection SkUnicode_IcuBidi::bidi_getDirection(const UBiDi* bidi) {
-    return ubidi_getDirection_skia(bidi);
-}
-SkBidiIterator::Position SkUnicode_IcuBidi::bidi_getLength(const UBiDi* bidi) {
-    return ubidi_getLength_skia(bidi);
-}
-SkBidiIterator::Level SkUnicode_IcuBidi::bidi_getLevelAt(const UBiDi* bidi, int pos) {
-    return ubidi_getLevelAt_skia(bidi, pos);
-}
-UBiDi* SkUnicode_IcuBidi::bidi_openSized(int32_t maxLength, int32_t maxRunCount, UErrorCode* pErrorCode) {
-    return ubidi_openSized_skia(maxLength, maxRunCount, pErrorCode);
-}
-void SkUnicode_IcuBidi::bidi_setPara(UBiDi* bidi,
-                         const UChar* text,
-                         int32_t length,
-                         UBiDiLevel paraLevel,
-                         UBiDiLevel* embeddingLevels,
-                         UErrorCode* status) {
-    return ubidi_setPara_skia(bidi, text, length, paraLevel, embeddingLevels, status);
-}
-void SkUnicode_IcuBidi::bidi_reorderVisual(const SkUnicode::BidiLevel runLevels[],
-                               int levelsCount,
-                               int32_t logicalFromVisual[]) {
-    ubidi_reorderVisual_skia(runLevels, levelsCount, logicalFromVisual);
-}
-#endif
 
 class SkUnicode_client : public SkUnicodeHardCodedCharProperties {
 public:
@@ -104,13 +71,6 @@ public:
                                            std::move(words),
                                            std::move(graphemeBreaks),
                                            std::move(lineBreaks))) { }
-    SkUnicode_client(const SkUnicode_client* origin)
-            : fData(origin->fData) {}
-
-
-    std::unique_ptr<SkUnicode> copy() override {
-        return std::make_unique<SkUnicode_client>(this);
-    }
 
     ~SkUnicode_client() override = default;
 
@@ -129,7 +89,23 @@ public:
                         int utf8Units,
                         TextDirection dir,
                         std::vector<BidiRegion>* results) override {
-        return SkUnicode::extractBidi(utf8, utf8Units, dir, results);
+        return fBidiFact->ExtractBidi(utf8, utf8Units, dir, results);
+    }
+
+    bool getUtf8Words(const char utf8[],
+                      int utf8Units,
+                      const char* locale,
+                      std::vector<Position>* results) override {
+        SkDEBUGF("Method 'getUtf8Words' is not implemented\n");
+        return false;
+    }
+
+    bool getSentences(const char utf8[],
+                      int utf8Units,
+                      const char* locale,
+                      std::vector<SkUnicode::Position>* results) override {
+        SkDEBUGF("Method 'getSentences' is not implemented\n");
+        return false;
     }
 
     bool computeCodeUnitFlags(char utf8[],
@@ -198,19 +174,23 @@ public:
     }
 
     SkString toUpper(const SkString& str) override {
-        SkASSERT(false);
+        return this->toUpper(str, nullptr);
+    }
+
+    SkString toUpper(const SkString& str, const char* locale) override {
         return SkString(fData->fText8.data(), fData->fText8.size());
     }
 
     void reorderVisual(const BidiLevel runLevels[],
                        int levelsCount,
                        int32_t logicalFromVisual[]) override {
-        SkUnicode_IcuBidi::bidi_reorderVisual(runLevels, levelsCount, logicalFromVisual);
+        fBidiFact->bidi_reorderVisual(runLevels, levelsCount, logicalFromVisual);
     }
 private:
     friend class SkBreakIterator_client;
 
     std::shared_ptr<Data> fData;
+    sk_sp<SkBidiFactory> fBidiFact = sk_make_sp<SkBidiSubsetFactory>();
 };
 
 class SkBreakIterator_client: public SkBreakIterator {
@@ -252,12 +232,12 @@ public:
 };
 std::unique_ptr<SkBidiIterator> SkUnicode_client::makeBidiIterator(const uint16_t text[], int count,
                                                  SkBidiIterator::Direction dir) {
-    return SkUnicode::makeBidiIterator(text, count, dir);
+    return fBidiFact->MakeIterator(text, count, dir);
 }
 std::unique_ptr<SkBidiIterator> SkUnicode_client::makeBidiIterator(const char text[],
                                                  int count,
                                                  SkBidiIterator::Direction dir) {
-    return SkUnicode::makeBidiIterator(text, count, dir);
+    return fBidiFact->MakeIterator(text, count, dir);
 }
 std::unique_ptr<SkBreakIterator> SkUnicode_client::makeBreakIterator(const char locale[],
                                                    BreakType breakType) {
@@ -267,11 +247,17 @@ std::unique_ptr<SkBreakIterator> SkUnicode_client::makeBreakIterator(BreakType b
     return std::make_unique<SkBreakIterator_client>(fData);
 }
 
-std::unique_ptr<SkUnicode> SkUnicode::MakeClientBasedUnicode(
+namespace SkUnicodes::Client {
+sk_sp<SkUnicode> Make(
         SkSpan<char> text,
         std::vector<SkUnicode::Position> words,
         std::vector<SkUnicode::Position> graphemeBreaks,
         std::vector<SkUnicode::LineBreakBefore> lineBreaks) {
-    return std::make_unique<SkUnicode_client>(text, words, graphemeBreaks, lineBreaks);
+    return sk_make_sp<SkUnicode_client>(text,
+                                        std::move(words),
+                                        std::move(graphemeBreaks),
+                                        std::move(lineBreaks));
 }
+}
+
 

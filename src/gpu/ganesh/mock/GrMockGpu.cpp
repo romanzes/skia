@@ -4,10 +4,16 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
-
 #include "src/gpu/ganesh/mock/GrMockGpu.h"
 
-#include "src/gpu/ganesh/GrThreadSafePipelineBuilder.h"
+#include "include/gpu/GpuTypes.h"
+#include "include/private/base/SkDebug.h"
+#include "include/private/base/SkMath.h"
+#include "src/gpu/ganesh/GrCaps.h"
+#include "src/gpu/ganesh/GrGpuBuffer.h"
+#include "src/gpu/ganesh/GrRenderTarget.h"
+#include "src/gpu/ganesh/GrTexture.h"
+#include "src/gpu/ganesh/GrThreadSafePipelineBuilder.h"  // IWYU pragma: keep
 #include "src/gpu/ganesh/mock/GrMockAttachment.h"
 #include "src/gpu/ganesh/mock/GrMockBuffer.h"
 #include "src/gpu/ganesh/mock/GrMockCaps.h"
@@ -48,13 +54,14 @@ int GrMockGpu::NextExternalRenderTargetID() {
     return nextID.fetch_add(1, std::memory_order_relaxed);
 }
 
-sk_sp<GrGpu> GrMockGpu::Make(const GrMockOptions* mockOptions,
-                             const GrContextOptions& contextOptions, GrDirectContext* direct) {
+std::unique_ptr<GrGpu> GrMockGpu::Make(const GrMockOptions* mockOptions,
+                                       const GrContextOptions& contextOptions,
+                                       GrDirectContext* direct) {
     static const GrMockOptions kDefaultOptions = GrMockOptions();
     if (!mockOptions) {
         mockOptions = &kDefaultOptions;
     }
-    return sk_sp<GrGpu>(new GrMockGpu(direct, *mockOptions, contextOptions));
+    return std::unique_ptr<GrGpu>(new GrMockGpu(direct, *mockOptions, contextOptions));
 }
 
 GrOpsRenderPass* GrMockGpu::onGetOpsRenderPass(GrRenderTarget* rt,
@@ -80,7 +87,7 @@ GrMockGpu::GrMockGpu(GrDirectContext* direct, const GrMockOptions& options,
                      const GrContextOptions& contextOptions)
         : INHERITED(direct)
         , fMockOptions(options) {
-    this->initCapsAndCompiler(sk_make_sp<GrMockCaps>(contextOptions, options));
+    this->initCaps(sk_make_sp<GrMockCaps>(contextOptions, options));
 }
 
 GrMockGpu::~GrMockGpu() {}
@@ -133,7 +140,7 @@ sk_sp<GrTexture> GrMockGpu::onCreateTexture(SkISize dimensions,
 sk_sp<GrTexture> GrMockGpu::onCreateCompressedTexture(SkISize dimensions,
                                                       const GrBackendFormat& format,
                                                       skgpu::Budgeted budgeted,
-                                                      GrMipmapped mipmapped,
+                                                      skgpu::Mipmapped mipmapped,
                                                       GrProtected isProtected,
                                                       const void* data,
                                                       size_t dataSize) {
@@ -147,9 +154,9 @@ sk_sp<GrTexture> GrMockGpu::onCreateCompressedTexture(SkISize dimensions,
     SkASSERT(compression != SkTextureCompressionType::kNone);
 #endif
 
-    GrMipmapStatus mipmapStatus = (mipmapped == GrMipmapped::kYes)
-                                                                ? GrMipmapStatus::kValid
-                                                                : GrMipmapStatus::kNotAllocated;
+    GrMipmapStatus mipmapStatus = (mipmapped == skgpu::Mipmapped::kYes)
+                                          ? GrMipmapStatus::kValid
+                                          : GrMipmapStatus::kNotAllocated;
     GrMockTextureInfo texInfo(GrColorType::kUnknown,
                               format.asMockCompressionType(),
                               NextInternalTextureID(),
@@ -249,7 +256,7 @@ sk_sp<GrAttachment> GrMockGpu::makeStencilAttachment(const GrBackendFormat& /*co
 GrBackendTexture GrMockGpu::onCreateBackendTexture(SkISize dimensions,
                                                    const GrBackendFormat& format,
                                                    GrRenderable,
-                                                   GrMipmapped mipmapped,
+                                                   skgpu::Mipmapped mipmapped,
                                                    GrProtected isProtected,
                                                    std::string_view label) {
     SkTextureCompressionType compression = format.asMockCompressionType();
@@ -269,9 +276,10 @@ GrBackendTexture GrMockGpu::onCreateBackendTexture(SkISize dimensions,
     return GrBackendTexture(dimensions.width(), dimensions.height(), mipmapped, info);
 }
 
-GrBackendTexture GrMockGpu::onCreateCompressedBackendTexture(
-        SkISize dimensions, const GrBackendFormat& format, GrMipmapped mipmapped,
-         GrProtected isProtected) {
+GrBackendTexture GrMockGpu::onCreateCompressedBackendTexture(SkISize dimensions,
+                                                             const GrBackendFormat& format,
+                                                             skgpu::Mipmapped mipmapped,
+                                                             GrProtected isProtected) {
     SkTextureCompressionType compression = format.asMockCompressionType();
     if (compression == SkTextureCompressionType::kNone) {
         return {}; // should go through onCreateBackendTexture
@@ -297,7 +305,7 @@ void GrMockGpu::deleteBackendTexture(const GrBackendTexture& tex) {
     }
 }
 
-#if GR_TEST_UTILS
+#if defined(GPU_TEST_UTILS)
 bool GrMockGpu::isTestingOnlyBackendTexture(const GrBackendTexture& tex) const {
     SkASSERT(GrBackendApi::kMock == tex.backend());
 

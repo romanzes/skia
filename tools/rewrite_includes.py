@@ -24,7 +24,6 @@ roots = [
   'bench',
   'dm',
   'docs',
-  'example',
   'experimental',
   'fuzz',
   'gm',
@@ -46,13 +45,15 @@ ignorelist = [
   # Some node_modules/ files (used by CanvasKit et al) have c++ code which we should ignore.
   'node_modules',
   'include/third_party/skcms',
+  'src/gpu/vk/vulkanmemoryallocator',
   # Used by Jetski and Graphite
   'Surface.h',
   # Used by Ganesh and Graphite
   'Device.h',
   # Temporary shims
-  'SkEncodedImageFormat.h',
-  'SkICC.h',
+  'GrGLMakeEGLInterface.h',
+  'GrGLMakeEpoxyEGLInterface.h',
+  'GrGLMakeGLXInterface.h',
   # Transitional
   'tools/window',
 ]
@@ -95,6 +96,7 @@ for file_path in to_rewrite():
       'jetski' in file_path or
       'tools/window' in file_path or
       file_path.startswith('bazel/rbe') or
+      'example/external_client/' in file_path or
       # We intentionally list SkUserConfig.h not from the root in this file.
       file_path == 'include/private/base/SkLoadUserConfig.h'):
     continue

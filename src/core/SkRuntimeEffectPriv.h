@@ -8,13 +8,16 @@
 #ifndef SkRuntimeEffectPriv_DEFINED
 #define SkRuntimeEffectPriv_DEFINED
 
+#include "include/core/SkColor.h"
 #include "include/core/SkRefCnt.h"
 #include "include/core/SkString.h"
 #include "include/effects/SkRuntimeEffect.h"
 #include "include/private/SkSLSampleUsage.h"
 #include "include/private/base/SkAssert.h"
+#include "include/private/base/SkDebug.h"
 #include "include/private/base/SkSpan_impl.h"
 #include "include/private/base/SkTArray.h"
+#include "src/core/SkEffectPriv.h"
 #include "src/sksl/codegen/SkSLRasterPipelineBuilder.h"
 
 #include <cstddef>
@@ -33,7 +36,6 @@ class SkReadBuffer;
 class SkShader;
 class SkWriteBuffer;
 struct SkColorSpaceXformSteps;
-struct SkStageRec;
 
 namespace SkShaders {
 class MatrixRec;
@@ -77,6 +79,10 @@ public:
         return effect.hash();
     }
 
+    static uint32_t StableKey(const SkRuntimeEffect& effect) {
+        return effect.fStableKey;
+    }
+
     static const SkSL::Program& Program(const SkRuntimeEffect& effect) {
         return *effect.fBaseProgram;
     }
@@ -91,9 +97,18 @@ public:
         options->allowPrivateAccess = true;
     }
 
+    static void SetStableKey(SkRuntimeEffect::Options* options, uint32_t stableKey) {
+        options->fStableKey = stableKey;
+    }
+
     static SkRuntimeEffect::Uniform VarAsUniform(const SkSL::Variable&,
                                                  const SkSL::Context&,
                                                  size_t* offset);
+
+    static SkRuntimeEffect::Child VarAsChild(const SkSL::Variable& var,
+                                             int index);
+
+    static const char* ChildTypeToStr(SkRuntimeEffect::ChildType type);
 
     // If there are layout(color) uniforms then this performs color space transformation on the
     // color values and returns a new SkData. Otherwise, the original data is returned.
@@ -118,6 +133,10 @@ public:
                                  skia_private::TArray<SkRuntimeEffect::ChildPtr>* children);
     static void WriteChildEffects(SkWriteBuffer& buffer,
                                   SkSpan<const SkRuntimeEffect::ChildPtr> children);
+
+    static bool UsesColorTransform(const SkRuntimeEffect* effect) {
+        return effect->usesColorTransform();
+    }
 };
 
 // These internal APIs for creating runtime effects vary from the public API in two ways:
@@ -162,11 +181,22 @@ inline SkRuntimeEffect* SkMakeRuntimeEffect(
 
 class RuntimeEffectRPCallbacks : public SkSL::RP::Callbacks {
 public:
+    // SkStageRec::fPaintColor is used (strictly) to tint alpha-only image shaders with the paint
+    // color. We want to suppress that behavior when they're sampled from runtime effects, so we
+    // just override the paint color here. See also: SkImageShader::appendStages.
     RuntimeEffectRPCallbacks(const SkStageRec& s,
                              const SkShaders::MatrixRec& m,
                              SkSpan<const SkRuntimeEffect::ChildPtr> c,
                              SkSpan<const SkSL::SampleUsage> u)
-            : fStage(s), fMatrix(m), fChildren(c), fSampleUsages(u) {}
+            : fStage{s.fPipeline,
+                     s.fAlloc,
+                     s.fDstColorType,
+                     s.fDstCS,
+                     SkColors::kTransparent,
+                     s.fSurfaceProps}
+            , fMatrix(m)
+            , fChildren(c)
+            , fSampleUsages(u) {}
 
     bool appendShader(int index) override;
     bool appendColorFilter(int index) override;
@@ -181,7 +211,7 @@ public:
 private:
     void applyColorSpaceXform(const SkColorSpaceXformSteps& tempXform, const void* color);
 
-    const SkStageRec& fStage;
+    const SkStageRec fStage;
     const SkShaders::MatrixRec& fMatrix;
     SkSpan<const SkRuntimeEffect::ChildPtr> fChildren;
     SkSpan<const SkSL::SampleUsage> fSampleUsages;

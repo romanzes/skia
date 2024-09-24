@@ -27,6 +27,7 @@
 #include "include/core/SkTypes.h"
 #include "include/effects/SkGradientShader.h"
 #include "include/gpu/GrDirectContext.h"
+#include "tools/GpuToolUtils.h"
 #include "tools/ToolUtils.h"
 
 #include <algorithm>
@@ -106,8 +107,8 @@ namespace skiagm {
 
 class DrawImageSetGM : public GM {
 private:
-    SkString onShortName() override { return SkString("draw_image_set"); }
-    SkISize onISize() override { return {1000, 725}; }
+    SkString getName() const override { return SkString("draw_image_set"); }
+    SkISize getISize() override { return {1000, 725}; }
     void onOnceBeforeDraw() override {
         static constexpr SkColor kColors[] = {SK_ColorCYAN,    SK_ColorBLACK,
                                               SK_ColorMAGENTA, SK_ColorBLACK};
@@ -209,8 +210,8 @@ private:
 // incorrectly disabled.
 class DrawImageSetRectToRectGM : public GM {
 private:
-    SkString onShortName() override { return SkString("draw_image_set_rect_to_rect"); }
-    SkISize onISize() override { return {1250, 850}; }
+    SkString getName() const override { return SkString("draw_image_set_rect_to_rect"); }
+    SkISize getISize() override { return {1250, 850}; }
     void onOnceBeforeDraw() override {
         static constexpr SkColor kColors[] = {SK_ColorBLUE, SK_ColorWHITE,
                                               SK_ColorRED,  SK_ColorWHITE};
@@ -294,10 +295,10 @@ private:
 // This GM exercises alpha-only and color textures being combined correctly with the paint's color.
 class DrawImageSetAlphaOnlyGM : public GM {
 private:
-    SkString onShortName() override { return SkString("draw_image_set_alpha_only"); }
-    SkISize onISize() override { return {kM*kTileW, 2*kN*kTileH}; }
+    SkString getName() const override { return SkString("draw_image_set_alpha_only"); }
+    SkISize getISize() override { return {kM * kTileW, 2 * kN * kTileH}; }
 
-    DrawResult onGpuSetup(SkCanvas* canvas, SkString*) override {
+    DrawResult onGpuSetup(SkCanvas* canvas, SkString*, GraphiteTestContext*) override {
         auto direct = GrAsDirectContext(canvas->recordingContext());
 #if defined(SK_GRAPHITE)
         auto recorder = canvas->recorder();

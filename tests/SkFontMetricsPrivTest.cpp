@@ -8,17 +8,19 @@
 #include "src/core/SkFontMetricsPriv.h"
 
 #include "include/core/SkFont.h"
+#include "include/core/SkFontMetrics.h"
 #include "include/core/SkTypeface.h"
 #include "src/core/SkReadBuffer.h"
 #include "src/core/SkScalerContext.h"
 #include "src/core/SkStrikeSpec.h"
 #include "src/core/SkWriteBuffer.h"
 #include "tests/Test.h"
+#include "tools/fonts/FontToolUtils.h"
 
 #include <optional>
 
 DEF_TEST(SkFontMetricsPriv_Basic, reporter) {
-    auto typeface = SkTypeface::MakeFromName("monospace", SkFontStyle());
+    auto typeface = ToolUtils::CreateTestTypeface("monospace", SkFontStyle());
     SkFont font{typeface};
     SkStrikeSpec spec = SkStrikeSpec::MakeWithNoDevice(font);
     auto context = spec.createScalerContext();
@@ -27,7 +29,7 @@ DEF_TEST(SkFontMetricsPriv_Basic, reporter) {
     // Check that font metrics round-trip.
     context->getFontMetrics(&srcMetrics);
 
-    SkBinaryWriteBuffer writeBuffer;
+    SkBinaryWriteBuffer writeBuffer({});
     SkFontMetricsPriv::Flatten(writeBuffer, srcMetrics);
 
     auto data = writeBuffer.snapshotAsData();

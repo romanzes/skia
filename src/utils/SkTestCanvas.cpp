@@ -28,7 +28,7 @@
 class SkPaint;
 
 SkTestCanvas<SkSlugTestKey>::SkTestCanvas(SkCanvas* canvas)
-        : SkCanvas(sk_ref_sp(canvas->baseDevice())) {}
+        : SkCanvas(sk_ref_sp(canvas->rootDevice())) {}
 
 void SkTestCanvas<SkSlugTestKey>::onDrawGlyphRunList(
         const sktext::GlyphRunList& glyphRunList, const SkPaint& paint) {
@@ -36,19 +36,19 @@ void SkTestCanvas<SkSlugTestKey>::onDrawGlyphRunList(
     if (this->internalQuickReject(bounds, paint)) {
         return;
     }
-    auto layer = this->aboutToDraw(this, paint, &bounds);
+    auto layer = this->aboutToDraw(paint, &bounds);
     if (layer) {
         if (glyphRunList.hasRSXForm()) {
             this->SkCanvas::onDrawGlyphRunList(glyphRunList, layer->paint());
         } else {
             auto slug = this->onConvertGlyphRunListToSlug(glyphRunList, layer->paint());
-            this->drawSlug(slug.get());
+            this->drawSlug(slug.get(), layer->paint());
         }
     }
 }
 
 SkTestCanvas<SkSerializeSlugTestKey>::SkTestCanvas(SkCanvas* canvas)
-        : SkCanvas(sk_ref_sp(canvas->baseDevice())) {}
+        : SkCanvas(sk_ref_sp(canvas->rootDevice())) {}
 
 void SkTestCanvas<SkSerializeSlugTestKey>::onDrawGlyphRunList(
         const sktext::GlyphRunList& glyphRunList, const SkPaint& paint) {
@@ -56,7 +56,7 @@ void SkTestCanvas<SkSerializeSlugTestKey>::onDrawGlyphRunList(
     if (this->internalQuickReject(bounds, paint)) {
         return;
     }
-    auto layer = this->aboutToDraw(this, paint, &bounds);
+    auto layer = this->aboutToDraw(paint, &bounds);
     if (layer) {
         if (glyphRunList.hasRSXForm()) {
             this->SkCanvas::onDrawGlyphRunList(glyphRunList, layer->paint());
@@ -71,7 +71,7 @@ void SkTestCanvas<SkSerializeSlugTestKey>::onDrawGlyphRunList(
             {
                 if (bytes != nullptr) {
                     auto slug = sktext::gpu::Slug::Deserialize(bytes->data(), bytes->size());
-                    this->drawSlug(slug.get());
+                    this->drawSlug(slug.get(), layer->paint());
                 }
             }
         }
@@ -124,7 +124,7 @@ private:
 };
 
 SkTestCanvas<SkRemoteSlugTestKey>::SkTestCanvas(SkCanvas* canvas)
-        : SkCanvas(sk_ref_sp(canvas->baseDevice()))
+        : SkCanvas(sk_ref_sp(canvas->rootDevice()))
         , fServerHandleManager(new ServerHandleManager{})
         , fClientHandleManager(new ClientHandleManager{})
         , fStrikeServer(fServerHandleManager.get())
@@ -141,7 +141,7 @@ void SkTestCanvas<SkRemoteSlugTestKey>::onDrawGlyphRunList(
     if (this->internalQuickReject(bounds, paint)) {
         return;
     }
-    auto layer = this->aboutToDraw(this, paint, &bounds);
+    auto layer = this->aboutToDraw(paint, &bounds);
     if (layer) {
         if (glyphRunList.hasRSXForm()) {
             this->SkCanvas::onDrawGlyphRunList(glyphRunList, layer->paint());
@@ -175,7 +175,7 @@ void SkTestCanvas<SkRemoteSlugTestKey>::onDrawGlyphRunList(
                 if (slugBytes != nullptr) {
                     auto slug = sktext::gpu::Slug::Deserialize(
                             slugBytes->data(), slugBytes->size(), &fStrikeClient);
-                    this->drawSlug(slug.get());
+                    this->drawSlug(slug.get(), layer->paint());
                 }
             }
         }

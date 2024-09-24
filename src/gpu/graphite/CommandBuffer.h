@@ -12,10 +12,11 @@
 #include "include/core/SkRect.h"
 #include "include/core/SkRefCnt.h"
 #include "include/private/base/SkTArray.h"
-#include "src/gpu/graphite/AttachmentTypes.h"
+#include "src/gpu/GpuRefCnt.h"
 #include "src/gpu/graphite/CommandTypes.h"
 #include "src/gpu/graphite/DrawTypes.h"
 #include "src/gpu/graphite/DrawWriter.h"
+#include "src/gpu/graphite/Resource.h"
 
 namespace skgpu {
 class RefCntedCallback;
@@ -29,7 +30,7 @@ class DispatchGroup;
 class DrawPass;
 class SharedContext;
 class GraphicsPipeline;
-class Resource;
+struct RenderPassDesc;
 class Sampler;
 class Texture;
 class TextureProxy;
@@ -37,7 +38,7 @@ class TextureProxy;
 class CommandBuffer {
 public:
     using DrawPassList = skia_private::TArray<std::unique_ptr<DrawPass>>;
-    using DispatchGroupList = skia_private::TArray<std::unique_ptr<DispatchGroup>>;
+    using DispatchGroupSpan = SkSpan<const std::unique_ptr<DispatchGroup>>;
 
     virtual ~CommandBuffer();
 
@@ -45,7 +46,14 @@ public:
     bool hasWork() { return fHasWork; }
 #endif
 
+    // Takes a Usage ref on the Resource that will be released when the command buffer has finished
+    // execution.
     void trackResource(sk_sp<Resource> resource);
+    // Takes a CommandBuffer ref on the Resource that will be released when the command buffer has
+    // finished execution. This allows a Resource to be returned to ResourceCache for reuse while
+    // the CommandBuffer is still executing on the GPU. This is most commonly used for Textures or
+    // Buffers which are only accessed via commands on a command buffer.
+    void trackCommandBufferResource(sk_sp<Resource> resource);
     // Release all tracked Resources
     void resetCommandBuffer();
 
@@ -62,6 +70,9 @@ public:
     virtual void prepareSurfaceForStateUpdate(SkSurface* targetSurface,
                                               const MutableTextureState* newState) {}
 
+    void addBuffersToAsyncMapOnSubmit(SkSpan<const sk_sp<Buffer>>);
+    SkSpan<const sk_sp<Buffer>> buffersToAsyncMapOnSubmit() const;
+
     bool addRenderPass(const RenderPassDesc&,
                        sk_sp<Texture> colorTexture,
                        sk_sp<Texture> resolveTexture,
@@ -69,12 +80,12 @@ public:
                        SkRect viewport,
                        const DrawPassList& drawPasses);
 
-    bool addComputePass(const DispatchGroupList& dispatchGroups);
+    bool addComputePass(DispatchGroupSpan dispatchGroups);
 
     //---------------------------------------------------------------
     // Can only be used outside renderpasses
     //---------------------------------------------------------------
-    bool copyBufferToBuffer(sk_sp<Buffer> srcBuffer,
+    bool copyBufferToBuffer(const Buffer* srcBuffer,
                             size_t srcOffset,
                             sk_sp<Buffer> dstBuffer,
                             size_t dstOffset,
@@ -91,7 +102,8 @@ public:
     bool copyTextureToTexture(sk_sp<Texture> src,
                               SkIRect srcRect,
                               sk_sp<Texture> dst,
-                              SkIPoint dstPoint);
+                              SkIPoint dstPoint,
+                              int mipLevel);
     bool synchronizeBufferToCpu(sk_sp<Buffer>);
     bool clearBuffer(const Buffer* buffer, size_t offset, size_t size);
 
@@ -103,7 +115,7 @@ public:
 protected:
     CommandBuffer();
 
-    SkISize fRenderPassSize;
+    SkISize fColorAttachmentSize;
     SkIVector fReplayTranslation;
 
 private:
@@ -113,13 +125,14 @@ private:
     virtual void onResetCommandBuffer() = 0;
 
     virtual bool onAddRenderPass(const RenderPassDesc&,
+                                 SkIRect renderPassBounds,
                                  const Texture* colorTexture,
                                  const Texture* resolveTexture,
                                  const Texture* depthStencilTexture,
                                  SkRect viewport,
                                  const DrawPassList& drawPasses) = 0;
 
-    virtual bool onAddComputePass(const DispatchGroupList& dispatchGroups) = 0;
+    virtual bool onAddComputePass(DispatchGroupSpan dispatchGroups) = 0;
 
     virtual bool onCopyBufferToBuffer(const Buffer* srcBuffer,
                                       size_t srcOffset,
@@ -138,17 +151,21 @@ private:
     virtual bool onCopyTextureToTexture(const Texture* src,
                                         SkIRect srcRect,
                                         const Texture* dst,
-                                        SkIPoint dstPoint) = 0;
+                                        SkIPoint dstPoint,
+                                        int mipLevel) = 0;
     virtual bool onSynchronizeBufferToCpu(const Buffer*, bool* outDidResultInWork) = 0;
     virtual bool onClearBuffer(const Buffer*, size_t offset, size_t size) = 0;
 
 #ifdef SK_DEBUG
     bool fHasWork = false;
 #endif
-
     inline static constexpr int kInitialTrackedResourcesCount = 32;
-    skia_private::STArray<kInitialTrackedResourcesCount, sk_sp<Resource>> fTrackedResources;
+    template <typename T>
+    using TrackedResourceArray = skia_private::STArray<kInitialTrackedResourcesCount, T>;
+    TrackedResourceArray<sk_sp<Resource>> fTrackedUsageResources;
+    TrackedResourceArray<gr_cb<Resource>> fCommandBufferResources;
     skia_private::TArray<sk_sp<RefCntedCallback>> fFinishedProcs;
+    skia_private::TArray<sk_sp<Buffer>> fBuffersToAsyncMap;
 };
 
 } // namespace skgpu::graphite

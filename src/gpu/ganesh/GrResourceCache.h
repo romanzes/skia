@@ -11,24 +11,33 @@
 #include "include/core/SkRefCnt.h"
 #include "include/core/SkTypes.h"
 #include "include/gpu/GrDirectContext.h"
+#include "include/private/base/SkDebug.h"
 #include "include/private/base/SkTArray.h"
+#include "include/private/base/SkTDArray.h"
+#include "include/private/base/SkTo.h"
+#include "include/private/gpu/ganesh/GrTypesPriv.h"
 #include "src/base/SkTDPQueue.h"
-#include "src/base/SkTInternalLList.h"
 #include "src/core/SkMessageBus.h"
-#include "src/core/SkTHash.h"
+#include "src/core/SkTDynamicHash.h"
 #include "src/core/SkTMultiMap.h"
+#include "src/gpu/GpuTypesPriv.h"
 #include "src/gpu/ResourceKey.h"
 #include "src/gpu/ganesh/GrGpuResource.h"
 #include "src/gpu/ganesh/GrGpuResourceCacheAccess.h"
 #include "src/gpu/ganesh/GrGpuResourcePriv.h"
 
-class GrCaps;
+#include <cstddef>
+#include <cstdint>
+#include <functional>
+#include <type_traits>
+#include <utility>
+
 class GrProxyProvider;
+class GrSurface;
+class GrThreadSafeCache;
 class SkString;
 class SkTraceMemoryDump;
-class GrTexture;
-class GrThreadSafeCache;
-
+enum class GrPurgeResourceOptions;
 namespace skgpu {
 class SingleOwner;
 }
@@ -167,19 +176,19 @@ public:
         keys. */
     void purgeAsNeeded();
 
-    // Purge unlocked resources. If 'scratchResourcesOnly' is true the purgeable resources
-    // containing persistent data are spared. If it is false then all purgeable resources will
-    // be deleted.
-    void purgeUnlockedResources(bool scratchResourcesOnly=false) {
-        this->purgeUnlockedResources(/*purgeTime=*/nullptr, scratchResourcesOnly);
+    // Purge unlocked resources. If 'opts' is kScratchResourcesOnly, the purgeable resources
+    // containing persistent data are spared. If it is kAllResources then all purgeable resources
+    // will be deleted.
+    void purgeUnlockedResources(GrPurgeResourceOptions opts) {
+        this->purgeUnlockedResources(/*purgeTime=*/nullptr, opts);
     }
 
-    // Purge unlocked resources not used since the passed point in time. If 'scratchResourcesOnly'
-    // is true the purgeable resources containing persistent data are spared. If it is false then
-    // all purgeable resources older than 'purgeTime' will be deleted.
+    // Purge unlocked resources not used since the passed point in time. If 'opts' is
+    // kScratchResourcesOnly, the purgeable resources containing persistent data are spared.
+    // If it is kAllResources then all purgeable resources older than 'purgeTime' will be deleted.
     void purgeResourcesNotUsedSince(skgpu::StdSteadyClock::time_point purgeTime,
-                                    bool scratchResourcesOnly=false) {
-        this->purgeUnlockedResources(&purgeTime, scratchResourcesOnly);
+                                    GrPurgeResourceOptions opts) {
+        this->purgeUnlockedResources(&purgeTime, opts);
     }
 
     /** If it's possible to purge enough resources to get the provided amount of budget
@@ -241,7 +250,7 @@ public:
 
     void getStats(Stats*) const;
 
-#if GR_TEST_UTILS
+#if defined(GPU_TEST_UTILS)
     void dumpStats(SkString*) const;
 
     void dumpStatsKeyValuePairs(
@@ -250,7 +259,7 @@ public:
 
 #endif // GR_CACHE_STATS
 
-#if GR_TEST_UTILS
+#if defined(GPU_TEST_UTILS)
     int countUniqueKeysWithTag(const char* tag) const;
 
     void changeTimestamp(uint32_t newTimestamp);
@@ -317,7 +326,7 @@ private:
     uint32_t getNextTimestamp();
 
     void purgeUnlockedResources(const skgpu::StdSteadyClock::time_point* purgeTime,
-                                bool scratchResourcesOnly);
+                                GrPurgeResourceOptions opts);
 
 #ifdef SK_DEBUG
     bool isInCache(const GrGpuResource* r) const;

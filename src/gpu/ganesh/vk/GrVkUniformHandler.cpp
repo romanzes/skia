@@ -7,12 +7,28 @@
 
 #include "src/gpu/ganesh/vk/GrVkUniformHandler.h"
 
-#include "src/gpu/ganesh/GrTexture.h"
+#include "include/core/SkString.h"
+#include "include/core/SkTypes.h"
+#include "include/gpu/GrBackendSurface.h"
+#include "include/gpu/ganesh/vk/GrVkBackendSurface.h"
+#include "include/gpu/vk/VulkanTypes.h"
+#include "src/core/SkSLTypeShared.h"
+#include "src/gpu/ganesh/GrCaps.h"
 #include "src/gpu/ganesh/GrUtil.h"
 #include "src/gpu/ganesh/glsl/GrGLSLProgramBuilder.h"
 #include "src/gpu/ganesh/vk/GrVkGpu.h"
 #include "src/gpu/ganesh/vk/GrVkPipelineStateBuilder.h"
-#include "src/gpu/ganesh/vk/GrVkTexture.h"
+#include "src/gpu/ganesh/vk/GrVkResourceProvider.h"
+#include "src/gpu/ganesh/vk/GrVkSampler.h"
+
+#include <string.h>
+#include <algorithm>
+#include <utility>
+
+class GrProcessor;
+struct GrShaderCaps;
+
+static constexpr int kDstInputAttachmentIndex = 0;
 
 // To determine whether a current offset is aligned, we can just 'and' the lowest bits with the
 // alignment mask. A value of 0 means aligned, any other value is how many bytes past alignment we
@@ -250,21 +266,24 @@ GrGLSLUniformHandler::UniformHandle GrVkUniformHandler::internalAddUniformArray(
 }
 
 GrGLSLUniformHandler::SamplerHandle GrVkUniformHandler::addSampler(
-        const GrBackendFormat& backendFormat, GrSamplerState state, const skgpu::Swizzle& swizzle,
-        const char* name, const GrShaderCaps* shaderCaps) {
+        const GrBackendFormat& backendFormat,
+        GrSamplerState state,
+        const skgpu::Swizzle& swizzle,
+        const char* name,
+        const GrShaderCaps* shaderCaps) {
     SkASSERT(name && strlen(name));
 
     const char prefix = 'u';
     SkString mangleName = fProgramBuilder->nameVariable(prefix, name, /*mangle=*/true);
 
     SkString layoutQualifier;
-    layoutQualifier.appendf("set=%d, binding=%d", kSamplerDescSet, fSamplers.count());
+    layoutQualifier.appendf("vulkan, set=%d, binding=%d", kSamplerDescSet, fSamplers.count());
 
     VkUniformInfo tempInfo;
     tempInfo.fVariable =
             GrShaderVar{std::move(mangleName),
                         SkSLCombinedSamplerTypeForTextureType(backendFormat.textureType()),
-                        GrShaderVar::TypeModifier::Uniform,
+                        GrShaderVar::TypeModifier::None,
                         GrShaderVar::kNonArray,
                         std::move(layoutQualifier),
                         SkString()};
@@ -278,7 +297,7 @@ GrGLSLUniformHandler::SamplerHandle GrVkUniformHandler::addSampler(
     fSamplers.push_back(tempInfo);
 
     // Check if we are dealing with an external texture and store the needed information if so.
-    auto ycbcrInfo = backendFormat.getVkYcbcrConversionInfo();
+    auto ycbcrInfo = GrBackendFormats::GetVkYcbcrConversionInfo(backendFormat);
     if (ycbcrInfo && ycbcrInfo->isValid()) {
         GrVkGpu* gpu = static_cast<GrVkPipelineStateBuilder*>(fProgramBuilder)->gpu();
         GrVkSampler* sampler = gpu->resourceProvider().findOrCreateCompatibleSampler(state,
@@ -302,14 +321,20 @@ GrGLSLUniformHandler::SamplerHandle GrVkUniformHandler::addInputSampler(
     const char prefix = 'u';
     SkString mangleName = fProgramBuilder->nameVariable(prefix, name, /*mangle=*/true);
 
-    SkString layoutQualifier;
-    layoutQualifier.appendf("input_attachment_index=%d, set=%d, binding=%d",
-                            kDstInputAttachmentIndex, kInputDescSet, kInputBinding);
+    auto layoutQualifier = SkStringPrintf("vulkan, input_attachment_index=%d, set=%d, binding=%d",
+                                          kDstInputAttachmentIndex,
+                                          kInputDescSet,
+                                          kInputBinding);
 
-    fInputUniform = {
-            GrShaderVar{std::move(mangleName), SkSLType::kInput, GrShaderVar::TypeModifier::Uniform,
-                        GrShaderVar::kNonArray, std::move(layoutQualifier), SkString()},
-            kFragment_GrShaderFlag, nullptr, SkString(name)};
+    fInputUniform = {GrShaderVar{std::move(mangleName),
+                                 SkSLType::kInput,
+                                 GrShaderVar::TypeModifier::None,
+                                 GrShaderVar::kNonArray,
+                                 std::move(layoutQualifier),
+                                 SkString()},
+                     kFragment_GrShaderFlag,
+                     nullptr,
+                     SkString(name)};
     fInputSwizzle = swizzle;
     return GrGLSLUniformHandler::SamplerHandle(0);
 }
@@ -353,7 +378,7 @@ void GrVkUniformHandler::appendUniformDecls(GrShaderFlags visibility, SkString* 
         if (visibility & localUniform.fVisibility) {
             if (SkSLTypeCanBeUniformValue(localUniform.fVariable.getType())) {
                 Layout layout = fUsePushConstants ? kStd430Layout : kStd140Layout;
-                uniformsString.appendf("layout(offset=%d) ", localUniform.fOffsets[layout]);
+                uniformsString.appendf("layout(offset=%u) ", localUniform.fOffsets[layout]);
                 localUniform.fVariable.appendDecl(fProgramBuilder->shaderCaps(), &uniformsString);
                 uniformsString.append(";\n");
             }
@@ -362,9 +387,9 @@ void GrVkUniformHandler::appendUniformDecls(GrShaderFlags visibility, SkString* 
 
     if (!uniformsString.isEmpty()) {
         if (fUsePushConstants) {
-            out->append("layout (push_constant) ");
+            out->append("layout (vulkan, push_constant) ");
         } else {
-            out->appendf("layout (set=%d, binding=%d) ",
+            out->appendf("layout (vulkan, set=%d, binding=%d) ",
                          kUniformBufferDescSet, kUniformBinding);
         }
         out->append("uniform uniformBuffer\n{\n");

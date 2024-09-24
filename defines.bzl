@@ -25,29 +25,10 @@ GENERAL_DEFINES = [
     "//bazel/common_config_settings:enable_effect_serialization_false": ["SK_DISABLE_EFFECT_DESERIALIZATION"],
     "//conditions:default": [],
 }) + select({
-    "//bazel/common_config_settings:enable_sksl_in_raster_pipeline_true": ["SK_ENABLE_SKSL_IN_RASTER_PIPELINE"],
-    "//conditions:default": [],
-}) + select({
     "//src/gpu:enable_gpu_test_utils_true": [
-        "GR_TEST_UTILS=1",
+        "GPU_TEST_UTILS=1",
         "SK_ALLOW_STATIC_GLOBAL_INITIALIZERS=1",
     ],
-    "//conditions:default": [],
-}) + select({
-    "//src/sksl:enable_skslc_true": [
-        "SKSL_STANDALONE",
-        "SK_DISABLE_TRACING",
-        "SK_ENABLE_SKSL_IN_RASTER_PIPELINE",
-        "SK_ENABLE_SPIRV_CROSS",
-        "SK_ENABLE_SPIRV_VALIDATION",
-        "SK_ENABLE_WGSL_VALIDATION",
-    ],
-    "//conditions:default": [],
-}) + select({
-    "//src/sksl:enable_sksl_tracing_true": ["SKSL_ENABLE_TRACING"],
-    "//conditions:default": [],
-}) + select({
-    "//src/sksl:needs_sksl": ["SK_ENABLE_SKSL"],
     "//conditions:default": [],
 }) + select({
     "//src/pdf:enable_pdf_backend_true": ["SK_SUPPORT_PDF"],
@@ -72,11 +53,6 @@ GPU_DEFINES = select_multi({
         "SK_VULKAN",
         "SK_GANESH",
     ],
-    "//src/gpu:dawn_ganesh": [
-        "SK_DAWN",
-        "SK_GANESH",
-        "VK_USE_PLATFORM_XCB_KHR",  # TODO(kjlubick) support dawn's dawn_enable_vulkan etc
-    ],
     "//src/gpu:metal_ganesh": [
         "SK_METAL",
         "SK_GANESH",
@@ -90,7 +66,6 @@ GPU_DEFINES = select_multi({
     ],
     "//src/gpu:webgl_standard": [
         "SK_ASSUME_WEBGL=1",
-        "SK_USE_WEBGL",
     ],
     "//conditions:default": [],
 }) + select({
@@ -102,7 +77,7 @@ GPU_DEFINES = select_multi({
 
 CODEC_DEFINES = select_multi({
     "//src/codec:avif_decode_codec": ["SK_CODEC_DECODES_AVIF"],
-    "//src/codec:gif_decode_codec": ["SK_HAS_WUFFS_LIBRARY"],
+    "//src/codec:gif_decode_codec": ["SK_HAS_WUFFS_LIBRARY", "SK_CODEC_DECODES_GIF"],
     "//src/codec:jpeg_decode_codec": ["SK_CODEC_DECODES_JPEG"],
     "//src/codec:png_decode_codec": ["SK_CODEC_DECODES_PNG"],
     "//src/codec:raw_decode_codec": [
@@ -115,6 +90,7 @@ CODEC_DEFINES = select_multi({
 TYPEFACE_DEFINES = select_multi(
     {
         "//src/ports:uses_freetype": ["SK_TYPEFACE_FACTORY_FREETYPE"],
+        "//src/ports:uses_fontations": ["SK_TYPEFACE_FACTORY_FONTATIONS"],
         #TODO: others when they become available
     },
 )
@@ -123,7 +99,6 @@ PLATFORM_DEFINES = select({
     "//bazel/common_config_settings:cpu_wasm": [
         # working around https://github.com/emscripten-core/emscripten/issues/10072
         "SK_FORCE_8_BYTE_ALIGNMENT",
-        "SK_FORCE_AAA",
     ],
     "//conditions:default": [],
 }) + select({

@@ -20,6 +20,7 @@
 #include "include/private/base/SkAssert.h"
 #include "include/private/base/SkCPUTypes.h"
 #include "include/private/base/SkDebug.h"
+#include "include/private/base/SkFloatingPoint.h"
 #include "include/private/base/SkTemplates.h"
 #include "src/base/SkTLazy.h"
 #include "src/base/SkZip.h"
@@ -390,7 +391,7 @@ void SkDrawBase::drawPath(const SkPath& origSrcPath, const SkPaint& origPaint,
         return;
     }
 
-    SkPath*         pathPtr = (SkPath*)&origSrcPath;
+    SkPath*         pathPtr = const_cast<SkPath*>(&origSrcPath);
     bool            doFill = true;
     SkPath          tmpPathStorage;
     SkPath*         tmpPath = &tmpPathStorage;
@@ -595,7 +596,7 @@ bool SkDrawBase::DrawToMask(const SkPath& devPath, const SkIRect& clipBounds,
 
 void SkDrawBase::drawDevicePoints(SkCanvas::PointMode mode, size_t count,
                                   const SkPoint pts[], const SkPaint& paint,
-                                  SkBaseDevice* device) const {
+                                  SkDevice* device) const {
     // if we're in lines mode, force count to be even
     if (SkCanvas::kLines_PointMode == mode) {
         count &= ~(size_t)1;
@@ -610,7 +611,7 @@ void SkDrawBase::drawDevicePoints(SkCanvas::PointMode mode, size_t count,
     }
 
     // needed?
-    if (!SkScalarsAreFinite(&pts[0].fX, count * 2)) {
+    if (!SkIsFinite(&pts[0].fX, count * 2)) {
         return;
     }
 
@@ -763,4 +764,3 @@ void SkDrawBase::drawDevicePoints(SkCanvas::PointMode mode, size_t count,
         }
     }
 }
-

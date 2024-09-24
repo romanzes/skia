@@ -17,6 +17,7 @@
 #include "tools/Registry.h"
 
 #include <functional>
+#include <map>
 #include <memory>
 
 class GrRecordingContext;
@@ -30,6 +31,10 @@ class VerifierList;
 
 namespace skgpu::graphite {
 struct ContextOptions;
+}
+
+namespace skiatest::graphite {
+class GraphiteTestContext;
 }
 
 #define DEF_GM(CODE)                                         \
@@ -105,6 +110,7 @@ namespace skiagm {
     class GM {
     public:
         using DrawResult = skiagm::DrawResult;
+        using GraphiteTestContext = skiatest::graphite::GraphiteTestContext;
 
         GM(SkColor backgroundColor = SK_ColorWHITE);
         virtual ~GM();
@@ -121,11 +127,7 @@ namespace skiagm {
         inline static constexpr char kErrorMsg_DrawSkippedGpuOnly[] =
                 "This test is for GPU configs only.";
 
-        DrawResult gpuSetup(SkCanvas* canvas) {
-            SkString errorMsg;
-            return this->gpuSetup(canvas, &errorMsg);
-        }
-        DrawResult gpuSetup(SkCanvas*, SkString* errorMsg);
+        DrawResult gpuSetup(SkCanvas*, SkString* errorMsg, GraphiteTestContext* = nullptr);
         void gpuTeardown();
 
         void onceBeforeDraw() {
@@ -148,8 +150,9 @@ namespace skiagm {
         }
         DrawResult drawContent(SkCanvas*, SkString* errorMsg);
 
-        SkISize getISize() { return this->onISize(); }
-        const char* getName();
+        virtual SkISize getISize() = 0;
+
+        virtual SkString getName() const = 0;
 
         virtual bool runAsBench() const;
 
@@ -175,21 +178,19 @@ namespace skiagm {
         virtual void modifyGrContextOptions(GrContextOptions*) {}
         virtual void modifyGraphiteContextOptions(skgpu::graphite::ContextOptions*) const {}
 
-        virtual std::unique_ptr<verifiers::VerifierList> getVerifiers() const;
-
         // Convenience method to skip Bazel-only GMs from DM.
         //
         // As of Q3 2023, lovisolo@ is experimenting with reimplementing some DM behaviors as
-        // smaller, independent Bazel targets. For example, file //gm/BazelGMRunner.cpp provides a
-        // main function that can run GMs. With this file, one can define multiple small Bazel
-        // tests to run groups of related GMs with Bazel. However, GMs are only one kind of
-        // "source" supported by DM (see class GMSrc). DM supports other kinds of sources as well,
-        // such as codecs (CodecSrc class) and image generators (ImageGenSrc class). One possible
-        // strategy to support these sources in our Bazel build is to turn them into GMs. For
-        // example, instead of using the CodecSrc class from Bazel, we could have a GM subclass
-        // that takes an image as an input, decodes it using a codec, and draws in on a canvas.
-        // Given that this overlaps with existing DM functionality, we would mark such GMs as
-        // Bazel-only.
+        // smaller, independent Bazel targets. For example, file
+        // //tools/testrunners/gm/BazelGMTestRunner.cpp provides a main function that can run GMs.
+        // With this file, one can define multiple small Bazel tests to run groups of related GMs
+        // with Bazel. However, GMs are only one kind of "source" supported by DM (see class
+        // GMSrc). DM supports other kinds of sources as well, such as codecs (CodecSrc class) and
+        // image generators (ImageGenSrc class). One possible strategy to support these sources in
+        // our Bazel build is to turn them into GMs. For example, instead of using the CodecSrc
+        // class from Bazel, we could have a GM subclass that takes an image as an input, decodes
+        // it using a codec, and draws in on a canvas. Given that this overlaps with existing DM
+        // functionality, we would mark such GMs as Bazel-only.
         //
         // Another possibility is to slowly replace all existing DM source types with just GMs.
         // This would lead to a simpler DM architecture where there is only one source type and
@@ -200,28 +201,39 @@ namespace skiagm {
         // TODO(lovisolo): Delete once it's no longer needed.
         virtual bool isBazelOnly() const { return false; }
 
+        // Ignored by DM. Returns the set of Gold key/value pairs specific to this GM, such as the
+        // GM name and corpus. GMs may define additional keys. For example, codec GMs define keys
+        // for the parameters utilized to initialize the codec.
+        virtual std::map<std::string, std::string> getGoldKeys() const {
+            return std::map<std::string, std::string>{
+                    {"name", getName().c_str()},
+                    {"source_type", "gm"},
+            };
+        }
+
     protected:
         // onGpuSetup is called once before any other processing with a direct context.
-        virtual DrawResult onGpuSetup(SkCanvas*, SkString*) { return DrawResult::kOk; }
+        virtual DrawResult onGpuSetup(SkCanvas*, SkString*, GraphiteTestContext*) {
+            return DrawResult::kOk;
+        }
         virtual void onGpuTeardown() {}
         virtual void onOnceBeforeDraw();
         virtual DrawResult onDraw(SkCanvas*, SkString* errorMsg);
         virtual void onDraw(SkCanvas*);
 
-        virtual SkISize onISize() = 0;
-        virtual SkString onShortName() = 0;
-
         virtual bool onAnimate(double /*nanos*/);
         virtual bool onGetControls(SkMetaData*);
         virtual void onSetControls(const SkMetaData&);
 
+        GraphiteTestContext* graphiteTestContext() const { return fGraphiteTestContext; }
+
     private:
-        Mode       fMode;
-        SkString   fShortName;
+        Mode fMode;
         SkColor    fBGColor;
         bool       fHaveCalledOnceBeforeDraw = false;
         bool       fGpuSetup = false;
         DrawResult fGpuSetupResult = DrawResult::kOk;
+        GraphiteTestContext* fGraphiteTestContext;
     };
 
     using GMFactory = std::function<std::unique_ptr<skiagm::GM>()>;
@@ -231,13 +243,14 @@ namespace skiagm {
     void Register(skiagm::GM* gm);
 
     // Registry of functions that dynamically register GMs. Useful for GMs that are unknown at
-    // compile time, such as those that are created from images in a directory.
+    // compile time, such as those that are created from images in a directory (see e.g.
+    // //gm/png_codec.cpp).
     //
     // A GMRegistererFn may call skiagm::Register() zero or more times to register GMs as needed.
     // It should return the empty string on success, or a human-friendly message in the case of
     // errors.
     //
-    // Only used by //gm/BazelGMRunner.cpp for now.
+    // Only used by //tools/testrunners/gm/BazelGMTestRunner.cpp for now.
     using GMRegistererFn = std::function<std::string()>;
     using GMRegistererFnRegistry = sk_tools::Registry<GMRegistererFn>;
 
@@ -248,11 +261,6 @@ namespace skiagm {
     class GpuGM : public GM {
     public:
         GpuGM(SkColor backgroundColor = SK_ColorWHITE) : GM(backgroundColor) {}
-
-        // TODO(tdenniston): Currently GpuGMs don't have verifiers (because they do not render on
-        //   CPU), but we may want to be able to verify the output images standalone, without
-        //   requiring a gold image for comparison.
-        std::unique_ptr<verifiers::VerifierList> getVerifiers() const override;
 
     private:
         using GM::onDraw;
@@ -272,9 +280,10 @@ namespace skiagm {
         SimpleGM(SkColor bgColor, const SkString& name, const SkISize& size, DrawProc drawProc)
                 : GM(bgColor), fName(name), fSize(size), fDrawProc(drawProc) {}
 
+        SkString getName() const override;
+        SkISize getISize() override;
+
     private:
-        SkISize onISize() override;
-        SkString onShortName() override;
         DrawResult onDraw(SkCanvas* canvas, SkString* errorMsg) override;
 
         const SkString fName;
@@ -290,9 +299,10 @@ namespace skiagm {
         SimpleGpuGM(SkColor bgColor, const SkString& name, const SkISize& size, DrawProc drawProc)
                 : GpuGM(bgColor), fName(name), fSize(size), fDrawProc(drawProc) {}
 
+        SkString getName() const override;
+        SkISize getISize() override;
+
     private:
-        SkISize onISize() override;
-        SkString onShortName() override;
         DrawResult onDraw(GrRecordingContext*, SkCanvas*, SkString* errorMsg) override;
 
         const SkString fName;

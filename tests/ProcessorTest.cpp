@@ -56,6 +56,7 @@
 #include "tests/Test.h"
 #include "tests/TestHarness.h"
 #include "tests/TestUtils.h"
+#include "tools/EncodeUtils.h"
 #include "tools/flags/CommandLineFlags.h"
 
 #include <algorithm>
@@ -224,7 +225,7 @@ DEF_GANESH_TEST_FOR_ALL_CONTEXTS(ProcessorRefTest, reporter, ctxInfo, CtsEnforce
                                                    kDims,
                                                    GrRenderable::kNo,
                                                    1,
-                                                   GrMipmapped::kNo,
+                                                   skgpu::Mipmapped::kNo,
                                                    SkBackingFit::kExact,
                                                    skgpu::Budgeted::kYes,
                                                    GrProtected::kNo,
@@ -268,7 +269,7 @@ static DEFINE_bool(randomProcessorTest, false,
 static DEFINE_int(processorSeed, 0,
                   "Use specific seed for processor tests. Overridden by --randomProcessorTest.");
 
-#if GR_TEST_UTILS
+#if defined(GPU_TEST_UTILS)
 
 static GrColor input_texel_color(int x, int y, SkScalar delta) {
     // Delta must be less than 0.5 to prevent over/underflow issues with the input color
@@ -396,7 +397,7 @@ class TestFPGenerator {
         std::unique_ptr<GrFragmentProcessor> make(int type, int randomTreeDepth,
                                                   GrSurfaceProxyView view,
                                                   SkAlphaType alpha = kPremul_SkAlphaType) {
-            return make(type, randomTreeDepth, GrTextureEffect::Make(view, alpha));
+            return make(type, randomTreeDepth, GrTextureEffect::Make(std::move(view), alpha));
         }
 
     private:
@@ -451,7 +452,7 @@ static bool log_pixels(GrColor* pixels, int widthHeight, SkString* dst) {
             SkImageInfo::Make(widthHeight, widthHeight, kRGBA_8888_SkColorType, kLogAlphaType);
     SkBitmap bmp;
     bmp.installPixels(info, pixels, widthHeight * sizeof(GrColor));
-    return BitmapToBase64DataURI(bmp, dst);
+    return ToolUtils::BitmapToBase64DataURI(bmp, dst);
 }
 
 static bool log_texture_view(GrDirectContext* dContext, GrSurfaceProxyView src, SkString* dst) {
@@ -462,7 +463,7 @@ static bool log_texture_view(GrDirectContext* dContext, GrSurfaceProxyView src, 
     SkBitmap bm;
     SkAssertResult(bm.tryAllocPixels(ii));
     SkAssertResult(sContext->readPixels(dContext, bm.pixmap(), {0, 0}));
-    return BitmapToBase64DataURI(bm, dst);
+    return ToolUtils::BitmapToBase64DataURI(bm, dst);
 }
 
 static bool fuzzy_color_equals(const SkPMColor4f& c1, const SkPMColor4f& c2) {
@@ -582,10 +583,10 @@ static bool legal_modulation(const GrColor inGr[3], const GrColor outGr[3]) {
     return isLegalColorModulation || isLegalAlphaModulation;
 }
 
-DEF_GANESH_TEST_FOR_GL_RENDERING_CONTEXTS(ProcessorOptimizationValidationTest,
-                                          reporter,
-                                          ctxInfo,
-                                          CtsEnforcement::kNever) {
+DEF_GANESH_TEST_FOR_GL_CONTEXT(ProcessorOptimizationValidationTest,
+                               reporter,
+                               ctxInfo,
+                               CtsEnforcement::kNever) {
     GrDirectContext* context = ctxInfo.directContext();
     GrResourceProvider* resourceProvider = context->priv().resourceProvider();
     using FPFactory = GrFragmentProcessorTestFactory;
@@ -640,12 +641,6 @@ DEF_GANESH_TEST_FOR_GL_RENDERING_CONTEXTS(ProcessorOptimizationValidationTest,
         int optimizedForCoverageAsAlpha = 0;
         int optimizedForConstantOutputForInput = 0;
 
-#ifdef __MSVC_RUNTIME_CHECKS
-        // This test is infuriatingly slow with MSVC runtime checks enabled
-        static constexpr int kMinimumTrials = 1;
-        static constexpr int kMaximumTrials = 1;
-        static constexpr int kExpectedSuccesses = 1;
-#else
         // We start by testing each fragment-processor 100 times, watching the optimization bits
         // that appear. If we see an optimization bit appear in those first 100 trials, we keep
         // running tests until we see at least five successful trials that have this optimization
@@ -654,7 +649,6 @@ DEF_GANESH_TEST_FOR_GL_RENDERING_CONTEXTS(ProcessorOptimizationValidationTest,
         static constexpr int kMinimumTrials = 100;
         static constexpr int kMaximumTrials = 2000;
         static constexpr int kExpectedSuccesses = 5;
-#endif
 
         for (int trial = 0;; ++trial) {
             // Create a randomly-configured FP.
@@ -951,10 +945,7 @@ static void log_clone_failure(skiatest::Reporter* reporter, int renderSize,
 
 // Tests that a fragment processor returned by GrFragmentProcessor::clone() is equivalent to its
 // progenitor.
-DEF_GANESH_TEST_FOR_GL_RENDERING_CONTEXTS(ProcessorCloneTest,
-                                          reporter,
-                                          ctxInfo,
-                                          CtsEnforcement::kNever) {
+DEF_GANESH_TEST_FOR_GL_CONTEXT(ProcessorCloneTest, reporter, ctxInfo, CtsEnforcement::kNever) {
     GrDirectContext* context = ctxInfo.directContext();
     GrResourceProvider* resourceProvider = context->priv().resourceProvider();
 
@@ -1044,4 +1035,4 @@ DEF_GANESH_TEST_FOR_GL_RENDERING_CONTEXTS(ProcessorCloneTest,
     }
 }
 
-#endif  // GR_TEST_UTILS
+#endif  // defined(GPU_TEST_UTILS)

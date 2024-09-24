@@ -560,6 +560,11 @@ function paragraphTests(CK: CanvasKit, p?: Paragraph) {
     const m = p.getLineMetrics(); // $ExpectType LineMetrics[]
     const n = CK.GlyphRunFlags.IsWhiteSpace === 1;
     const o = p.unresolvedCodepoints(); // $ExpectType number[]
+    const q = p.getLineMetricsAt(0); // $ExpectType LineMetrics | null
+    const r = p.getNumberOfLines(); // $ExpectType number
+    const s = p.getLineNumberAt(0); // $ExpectType number
+    const t = p.getGlyphInfoAt(0);  // $ExpectType GlyphInfo | null
+    const u = p.getClosestGlyphInfoAtCoordinate(10, 3);  // $ExpectType GlyphInfo | null
 }
 
 function paragraphBuilderTests(CK: CanvasKit, fontMgr?: FontMgr, paint?: Paint) {
@@ -755,6 +760,10 @@ function skottieTests(CK: CanvasKit, canvas?: Canvas) {
     const mAnim = CK.MakeManagedAnimation('other json', { // $ExpectType ManagedSkottieAnimation
         'flightAnim.gif': buff,
     });
+    const textProp = new CK.SlottableTextProperty({ // $ExpectType SlottableTextProperty
+        fillColor: CK.Color(48, 37, 199),
+        strokeColor: CK.Color(0, 100, 100)
+    });
     mAnim.setColor('slider', CK.WHITE);
     mAnim.setOpacity('slider', 0.8);
     const e = mAnim.getMarkers();  // $ExpectType AnimationMarker[]
@@ -766,6 +775,19 @@ function skottieTests(CK: CanvasKit, canvas?: Canvas) {
     const j = mAnim.setOpacity('foo', 0.5);  // $ExpectType boolean
     const k = mAnim.setText('foo', 'bar', 12);  // $ExpectType boolean
     const l = mAnim.setTransform('foo', [1, 2], [3, 4], [5, 6], 90, 1, 0);  // $ExpectType boolean
+
+    const m = mAnim.setColorSlot('foo', CK.BLUE);  // $ExpectType boolean
+    const n = mAnim.setScalarSlot('foo', 5);  // $ExpectType boolean
+    const o = mAnim.setVec2Slot('foo', [1, 2]); // $ExpectType boolean
+    const p = mAnim.setImageSlot('foo', 'bar'); // $ExpectType boolean
+    const q = mAnim.setTextSlot('foo', textProp); // $ExpectType boolean
+
+    const r = mAnim.getColorSlot('foo'); // $ExpectType Float32Array | null
+    const s = mAnim.getScalarSlot('foo'); // $ExpectType number | null
+    const t = mAnim.getVec2Slot('foo'); // $ExpectType Float32Array | null
+    const u = mAnim.getTextSlot('foo'); // $ExpectType SlottableTextProperty | null
+
+    const v = mAnim.getSlotInfo(); // $ExpectType SlotInfo
 }
 
 function shaderTests(CK: CanvasKit) {
@@ -938,8 +960,8 @@ function surfaceTests(CK: CanvasKit, gl?: WebGLRenderingContext) {
     const surfaceNine = CK.MakeOnScreenGLSurface(grCtx!, 100, 400, // $ExpectType Surface
         CK.ColorSpace.ADOBE_RGB)!;
 
-    var sample = gl.getParameter(gl.SAMPLES);
-    var stencil = gl.getParameter(gl.STENCIL_BITS);
+    const sample = gl.getParameter(gl.SAMPLES);
+    const stencil = gl.getParameter(gl.STENCIL_BITS);
     const surfaceTen = CK.MakeOnScreenGLSurface(grCtx!, 100, 400, // $ExpectType Surface
         CK.ColorSpace.ADOBE_RGB, sample, stencil)!;
 
@@ -980,8 +1002,8 @@ function textBlobTests(CK: CanvasKit, font?: Font, path?: Path) {
 }
 
 function typefaceTests(CK: CanvasKit) {
-    const face = CK.Typeface.MakeFreeTypeFaceFromData(new ArrayBuffer(10));
-
+    const face = CK.Typeface.MakeTypefaceFromData(new ArrayBuffer(10));
+    const face2 = CK.Typeface.GetDefault(); // $ExpectType Typeface | null
     const ids = face!.getGlyphIDs('abcd');
     face!.getGlyphIDs('efgh', 4, ids);
 }

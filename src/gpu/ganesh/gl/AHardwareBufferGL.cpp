@@ -167,12 +167,13 @@ static GrBackendTexture make_gl_backend_texture(
     SkASSERT(backendFormat.isValid());
     textureInfo.fTarget = target;
     textureInfo.fFormat = GrBackendFormats::AsGLFormatEnum(backendFormat);
+    textureInfo.fProtected = skgpu::Protected(isProtectedContent);
 
     *deleteProc = delete_gl_texture;
     *updateProc = update_gl_texture;
     *imageCtx = new GLTextureHelper(texID, image, display, target);
 
-    return GrBackendTextures::MakeGL(width, height, GrMipmapped::kNo, textureInfo);
+    return GrBackendTextures::MakeGL(width, height, skgpu::Mipmapped::kNo, textureInfo);
 }
 
 static bool can_import_protected_content_eglimpl() {

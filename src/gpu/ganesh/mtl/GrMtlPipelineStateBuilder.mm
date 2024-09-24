@@ -11,6 +11,7 @@
 #include "src/core/SkReadBuffer.h"
 #include "src/core/SkTraceEvent.h"
 #include "src/core/SkWriteBuffer.h"
+#include "src/gpu/SkSLToBackend.h"
 #include "src/gpu/ganesh/GrAutoLocaleSetter.h"
 #include "src/gpu/ganesh/GrDirectContextPriv.h"
 #include "src/gpu/ganesh/GrPersistentCacheUtils.h"
@@ -57,10 +58,6 @@ const GrCaps* GrMtlPipelineStateBuilder::caps() const {
     return fGpu->caps();
 }
 
-SkSL::Compiler* GrMtlPipelineStateBuilder::shaderCompiler() const {
-    return fGpu->shaderCompiler();
-}
-
 void GrMtlPipelineStateBuilder::finalizeFragmentSecondaryColor(GrShaderVar& outputColor) {
     outputColor.addLayoutQualifier("location = 0, index = 1");
 }
@@ -91,7 +88,8 @@ id<MTLLibrary> GrMtlPipelineStateBuilder::compileMtlShaderLibrary(
         SkSL::Program::Interface interface,
         GrContextOptions::ShaderErrorHandler* errorHandler) {
     id<MTLLibrary> shaderLibrary = GrCompileMtlShaderLibrary(fGpu, shader, errorHandler);
-    if (shaderLibrary != nil && interface.fUseFlipRTUniform) {
+    if (shaderLibrary != nil &&
+        interface.fRTFlipUniform != SkSL::Program::Interface::kRTFlip_None) {
         this->addRTFlipUniform(SKSL_RTFLIP_NAME);
     }
     return shaderLibrary;
@@ -108,7 +106,7 @@ static inline MTLVertexFormat attribute_type_to_mtlformat(GrVertexAttribType typ
         case kFloat4_GrVertexAttribType:
             return MTLVertexFormatFloat4;
         case kHalf_GrVertexAttribType:
-            if (@available(macOS 10.13, iOS 11.0, *)) {
+            if (@available(macOS 10.13, iOS 11.0, tvOS 11.0, *)) {
                 return MTLVertexFormatHalf;
             } else {
                 return MTLVertexFormatInvalid;
@@ -124,7 +122,7 @@ static inline MTLVertexFormat attribute_type_to_mtlformat(GrVertexAttribType typ
         case kInt4_GrVertexAttribType:
             return MTLVertexFormatInt4;
         case kByte_GrVertexAttribType:
-            if (@available(macOS 10.13, iOS 11.0, *)) {
+            if (@available(macOS 10.13, iOS 11.0, tvOS 11.0, *)) {
                 return MTLVertexFormatChar;
             } else {
                 return MTLVertexFormatInvalid;
@@ -134,7 +132,7 @@ static inline MTLVertexFormat attribute_type_to_mtlformat(GrVertexAttribType typ
         case kByte4_GrVertexAttribType:
             return MTLVertexFormatChar4;
         case kUByte_GrVertexAttribType:
-            if (@available(macOS 10.13, iOS 11.0, *)) {
+            if (@available(macOS 10.13, iOS 11.0, tvOS 11.0, *)) {
                 return MTLVertexFormatUChar;
             } else {
                 return MTLVertexFormatInvalid;
@@ -144,7 +142,7 @@ static inline MTLVertexFormat attribute_type_to_mtlformat(GrVertexAttribType typ
         case kUByte4_GrVertexAttribType:
             return MTLVertexFormatUChar4;
         case kUByte_norm_GrVertexAttribType:
-            if (@available(macOS 10.13, iOS 11.0, *)) {
+            if (@available(macOS 10.13, iOS 11.0, tvOS 11.0, *)) {
                 return MTLVertexFormatUCharNormalized;
             } else {
                 return MTLVertexFormatInvalid;
@@ -164,7 +162,7 @@ static inline MTLVertexFormat attribute_type_to_mtlformat(GrVertexAttribType typ
         case kUInt_GrVertexAttribType:
             return MTLVertexFormatUInt;
         case kUShort_norm_GrVertexAttribType:
-            if (@available(macOS 10.13, iOS 11.0, *)) {
+            if (@available(macOS 10.13, iOS 11.0, tvOS 11.0, *)) {
                 return MTLVertexFormatUShortNormalized;
             } else {
                 return MTLVertexFormatInvalid;
@@ -179,7 +177,7 @@ static MTLVertexDescriptor* create_vertex_descriptor(const GrGeometryProcessor& 
                                                      SkBinaryWriteBuffer* writer) {
     uint32_t vertexBinding = 0, instanceBinding = 0;
 
-    int nextBinding = GrMtlUniformHandler::kLastUniformBinding + 1;
+    int nextBinding = GrMtlUniformHandler::kLastUniformBinding + 1; // Start after the uniforms.
     if (geomProc.hasVertexAttributes()) {
         vertexBinding = nextBinding++;
     }
@@ -286,25 +284,25 @@ static MTLBlendFactor blend_coeff_to_mtl_blend(skgpu::BlendCoeff coeff) {
         case skgpu::BlendCoeff::kIConstC:
             return MTLBlendFactorOneMinusBlendColor;
         case skgpu::BlendCoeff::kS2C:
-            if (@available(macOS 10.12, iOS 11.0, *)) {
+            if (@available(macOS 10.12, iOS 11.0, tvOS 11.0, *)) {
                 return MTLBlendFactorSource1Color;
             } else {
                 return MTLBlendFactorZero;
             }
         case skgpu::BlendCoeff::kIS2C:
-            if (@available(macOS 10.12, iOS 11.0, *)) {
+            if (@available(macOS 10.12, iOS 11.0, tvOS 11.0, *)) {
                 return MTLBlendFactorOneMinusSource1Color;
             } else {
                 return MTLBlendFactorZero;
             }
         case skgpu::BlendCoeff::kS2A:
-            if (@available(macOS 10.12, iOS 11.0, *)) {
+            if (@available(macOS 10.12, iOS 11.0, tvOS 11.0, *)) {
                 return MTLBlendFactorSource1Alpha;
             } else {
                 return MTLBlendFactorZero;
             }
         case skgpu::BlendCoeff::kIS2A:
-            if (@available(macOS 10.12, iOS 11.0, *)) {
+            if (@available(macOS 10.12, iOS 11.0, tvOS 11.0, *)) {
                 return MTLBlendFactorOneMinusSource1Alpha;
             } else {
                 return MTLBlendFactorZero;
@@ -490,7 +488,7 @@ GrMtlPipelineState* GrMtlPipelineStateBuilder::finalize(
         cached = persistentCache->load(*key);
     }
     if (persistentCache && !cached) {
-        writer.reset(new SkBinaryWriteBuffer());
+        writer = std::make_unique<SkBinaryWriteBuffer>(SkSerialProcs{});
     }
 
     // Ordering in how we set these matters. If it changes adjust read_pipeline_data, above.
@@ -516,8 +514,9 @@ GrMtlPipelineState* GrMtlPipelineStateBuilder::finalize(
     pipelineDescriptor.colorAttachments[0] = create_color_attachment(pixelFormat,
                                                                      programInfo.pipeline(),
                                                                      writer.get());
-    pipelineDescriptor.sampleCount = programInfo.numSamples();
-    GrMtlCaps* mtlCaps = (GrMtlCaps*)this->caps();
+    pipelineDescriptor.rasterSampleCount = programInfo.numSamples();
+
+    const GrMtlCaps* mtlCaps = (const GrMtlCaps*)this->caps();
     pipelineDescriptor.stencilAttachmentPixelFormat = mtlCaps->getStencilPixelFormat(desc);
     if (writer) {
         writer->writeInt(pipelineDescriptor.stencilAttachmentPixelFormat);
@@ -570,14 +569,14 @@ GrMtlPipelineState* GrMtlPipelineStateBuilder::finalize(
                     std::string cached_sksl[kGrShaderTypeCount];
                     if (GrPersistentCacheUtils::UnpackCachedShaders(
                                 &reader, cached_sksl, interfaces, kGrShaderTypeCount)) {
-                        bool success = skgpu::SkSLToMSL(fGpu->shaderCompiler(),
+                        bool success = skgpu::SkSLToMSL(mtlCaps->shaderCaps(),
                                                         cached_sksl[kVertex_GrShaderType],
                                                         SkSL::ProgramKind::kVertex,
                                                         settings,
                                                         &msl[kVertex_GrShaderType],
                                                         &interfaces[kVertex_GrShaderType],
                                                         errorHandler);
-                        success = success && skgpu::SkSLToMSL(fGpu->shaderCompiler(),
+                        success = success && skgpu::SkSLToMSL(mtlCaps->shaderCaps(),
                                                               cached_sksl[kFragment_GrShaderType],
                                                               SkSL::ProgramKind::kFragment,
                                                               settings,
@@ -601,7 +600,7 @@ GrMtlPipelineState* GrMtlPipelineStateBuilder::finalize(
         if (msl[kVertex_GrShaderType].empty() || msl[kFragment_GrShaderType].empty()) {
             bool success = true;
             if (msl[kVertex_GrShaderType].empty()) {
-                success = skgpu::SkSLToMSL(fGpu->shaderCompiler(),
+                success = skgpu::SkSLToMSL(mtlCaps->shaderCaps(),
                                            fVS.fCompilerString,
                                            SkSL::ProgramKind::kVertex,
                                            settings,
@@ -610,7 +609,7 @@ GrMtlPipelineState* GrMtlPipelineStateBuilder::finalize(
                                            errorHandler);
             }
             if (success && msl[kFragment_GrShaderType].empty()) {
-                success = skgpu::SkSLToMSL(fGpu->shaderCompiler(),
+                success = skgpu::SkSLToMSL(mtlCaps->shaderCaps(),
                                            fFS.fCompilerString,
                                            SkSL::ProgramKind::kFragment,
                                            settings,
@@ -670,26 +669,6 @@ GrMtlPipelineState* GrMtlPipelineStateBuilder::finalize(
     SkASSERT(pipelineDescriptor.fragmentFunction);
 
     NSError* error = nil;
-#if GR_METAL_SDK_VERSION >= 230
-    if (@available(macOS 11.0, iOS 14.0, *)) {
-        id<MTLBinaryArchive> archive = fGpu->binaryArchive();
-        if (archive) {
-            NSArray* archiveArray = [NSArray arrayWithObjects:archive, nil];
-            pipelineDescriptor.binaryArchives = archiveArray;
-            BOOL result;
-            {
-                TRACE_EVENT0("skia.shaders", "addRenderPipelineFunctionsWithDescriptor");
-                result = [archive addRenderPipelineFunctionsWithDescriptor: pipelineDescriptor
-                                                                            error: &error];
-            }
-            if (!result && error) {
-                SkDebugf("Error storing pipeline: %s\n",
-                        [[error localizedDescription] cStringUsingEncoding: NSASCIIStringEncoding]);
-            }
-        }
-    }
-#endif
-
     id<MTLRenderPipelineState> pipelineState;
     {
         TRACE_EVENT0("skia.shaders", "newRenderPipelineStateWithDescriptor");
@@ -768,7 +747,7 @@ bool GrMtlPipelineStateBuilder::PrecompileShaders(GrMtlGpu* gpu, const SkData& c
 
         case kSKSL_Tag: {
             std::string msl[kGrShaderTypeCount];
-            if (!skgpu::SkSLToMSL(gpu->shaderCompiler(),
+            if (!skgpu::SkSLToMSL(gpu->caps()->shaderCaps(),
                                   shaders[kVertex_GrShaderType],
                                   SkSL::ProgramKind::kVertex,
                                   settings,
@@ -777,7 +756,7 @@ bool GrMtlPipelineStateBuilder::PrecompileShaders(GrMtlGpu* gpu, const SkData& c
                                   errorHandler)) {
                 return false;
             }
-            if (!skgpu::SkSLToMSL(gpu->shaderCompiler(),
+            if (!skgpu::SkSLToMSL(gpu->caps()->shaderCaps(),
                                   shaders[kFragment_GrShaderType],
                                   SkSL::ProgramKind::kFragment,
                                   settings,
@@ -803,26 +782,6 @@ bool GrMtlPipelineStateBuilder::PrecompileShaders(GrMtlGpu* gpu, const SkData& c
     pipelineDescriptor.fragmentFunction =
             [precompiledLibs->fFragmentLibrary newFunctionWithName: @"fragmentMain"];
 
-#if GR_METAL_SDK_VERSION >= 230
-    if (@available(macOS 11.0, iOS 14.0, *)) {
-        id<MTLBinaryArchive> archive = gpu->binaryArchive();
-        if (archive) {
-            NSArray* archiveArray = [NSArray arrayWithObjects:archive, nil];
-            pipelineDescriptor.binaryArchives = archiveArray;
-            BOOL result;
-            NSError* error = nil;
-            {
-                TRACE_EVENT0("skia.shaders", "addRenderPipelineFunctionsWithDescriptor");
-                result = [archive addRenderPipelineFunctionsWithDescriptor: pipelineDescriptor
-                                                                            error: &error];
-            }
-            if (!result && error) {
-                SkDebugf("Error storing pipeline: %s\n",
-                        [[error localizedDescription] cStringUsingEncoding: NSASCIIStringEncoding]);
-            }
-        }
-    }
-#endif
     {
         TRACE_EVENT0("skia.shaders", "newRenderPipelineStateWithDescriptor");
         MTLNewRenderPipelineStateCompletionHandler completionHandler =
@@ -839,7 +798,8 @@ bool GrMtlPipelineStateBuilder::PrecompileShaders(GrMtlGpu* gpu, const SkData& c
                                           completionHandler: completionHandler];
     }
 
-    precompiledLibs->fRTFlip = interfaces[kFragment_GrShaderType].fUseFlipRTUniform;
+    precompiledLibs->fRTFlip = (interfaces[kFragment_GrShaderType].fRTFlipUniform !=
+                                SkSL::Program::Interface::kRTFlip_None);
     return true;
 }
 

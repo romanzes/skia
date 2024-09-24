@@ -8,14 +8,14 @@
 #include "include/core/SkTiledImageUtils.h"
 
 #include "include/core/SkBitmap.h"
+#include "include/core/SkPaint.h"
 #include "include/core/SkPixelRef.h"
 #include "include/private/base/SkAssert.h"
 #include "include/private/base/SkTFitsIn.h"
+#include "src/core/SkCanvasPriv.h"
+#include "src/core/SkDevice.h"
 #include "src/image/SkImage_Base.h"
-
-#if defined(SK_GRAPHITE)
-#include "src/gpu/TiledTextureUtils.h"
-#endif
+#include "src/image/SkImage_Picture.h"
 
 #include <string.h>
 
@@ -32,17 +32,16 @@ void DrawImageRect(SkCanvas* canvas,
         return;
     }
 
-#if defined(SK_GRAPHITE)
-    if (canvas->recorder()) {
-        if (skgpu::TiledTextureUtils::DrawAsTiledImageRect(canvas, image, src, dst,
-                                                           SkCanvas::kAll_QuadAAFlags, sampling,
-                                                           paint, constraint)) {
-            return;
-        }
+    SkPaint p;
+    if (paint) {
+        p = *paint;
     }
-#endif
-
-    canvas->drawImageRect(image, src, dst, sampling, paint, constraint);
+    if (!SkCanvasPriv::TopDevice(canvas)->drawAsTiledImageRect(
+                canvas, image, &src, dst, sampling, p, constraint)) {
+        // Either the image didn't require tiling or this is a raster-backed
+        // canvas. In either case fall back to a default draw.
+        canvas->drawImageRect(image, src, dst, sampling, paint, constraint);
+    }
 }
 
 void GetImageKeyValues(const SkImage* image, uint32_t keyValues[kNumImageKeyValues]) {
@@ -53,24 +52,34 @@ void GetImageKeyValues(const SkImage* image, uint32_t keyValues[kNumImageKeyValu
         return;
     }
 
-    SkIRect subset = image->bounds();
-
-    if (const SkBitmap* bm = as_IB(image)->onPeekBitmap()) {
+    const SkImage_Base* imageBase = as_IB(image);
+    if (const SkBitmap* bm = imageBase->onPeekBitmap()) {
         keyValues[0] = bm->pixelRef()->getGenerationID();
+        SkIRect subset = image->bounds();
         subset.offset(bm->pixelRefOrigin());
-    } else {
-        keyValues[0] = image->uniqueID();
+
+        SkASSERT(SkTFitsIn<uint32_t>(subset.fLeft));
+        SkASSERT(SkTFitsIn<uint32_t>(subset.fTop));
+        SkASSERT(SkTFitsIn<uint32_t>(subset.fRight));
+        SkASSERT(SkTFitsIn<uint32_t>(subset.fBottom));
+
+        keyValues[1] = 0;              // This empty slot is to disambiguate picture IDs
+        keyValues[2] = subset.fLeft;
+        keyValues[3] = subset.fTop;
+        keyValues[4] = subset.fRight;
+        keyValues[5] = subset.fBottom;
+        return;
     }
 
-    SkASSERT(SkTFitsIn<uint32_t>(subset.fLeft));
-    SkASSERT(SkTFitsIn<uint32_t>(subset.fTop));
-    SkASSERT(SkTFitsIn<uint32_t>(subset.fRight));
-    SkASSERT(SkTFitsIn<uint32_t>(subset.fBottom));
+    if (imageBase->type() == SkImage_Base::Type::kLazyPicture) {
+        const SkImage_Picture* pictureImage = static_cast<const SkImage_Picture*>(imageBase);
+        if (pictureImage->getImageKeyValues(keyValues)) {
+            return;
+        }
+    }
 
-    keyValues[1] = subset.fLeft;
-    keyValues[2] = subset.fTop;
-    keyValues[3] = subset.fRight;
-    keyValues[4] = subset.fBottom;
+    keyValues[0] = image->uniqueID();
+    memset(&keyValues[1], 0, (kNumImageKeyValues-1) * sizeof(uint32_t));
 }
 
 } // namespace SkTiledImageUtils

@@ -16,8 +16,11 @@
 
 namespace skgpu::graphite {
 
+class VulkanBuffer;
+class VulkanDescriptorSet;
 class VulkanResourceProvider;
 class VulkanSharedContext;
+class VulkanTexture;
 class Buffer;
 
 class VulkanCommandBuffer final : public CommandBuffer {
@@ -37,11 +40,9 @@ public:
     void addBufferMemoryBarrier(const Resource* resource,
                                 VkPipelineStageFlags srcStageMask,
                                 VkPipelineStageFlags dstStageMask,
-                                bool byRegion,
                                 VkBufferMemoryBarrier* barrier);
     void addBufferMemoryBarrier(VkPipelineStageFlags srcStageMask,
                                 VkPipelineStageFlags dstStageMask,
-                                bool byRegion,
                                 VkBufferMemoryBarrier* barrier);
     void addImageMemoryBarrier(const Resource*,
                                VkPipelineStageFlags srcStageMask,
@@ -68,13 +69,15 @@ private:
                                       const MutableTextureState* newState) override;
 
     bool onAddRenderPass(const RenderPassDesc&,
-                        const Texture* colorTexture,
-                        const Texture* resolveTexture,
-                        const Texture* depthStencilTexture,
-                        SkRect viewport,
-                        const DrawPassList&) override;
+                         SkIRect renderPassBounds,
+                         const Texture* colorTexture,
+                         const Texture* resolveTexture,
+                         const Texture* depthStencilTexture,
+                         SkRect viewport,
+                         const DrawPassList&) override;
 
     bool beginRenderPass(const RenderPassDesc&,
+                         SkIRect renderPassBounds,
                          const Texture* colorTexture,
                          const Texture* resolveTexture,
                          const Texture* depthStencilTexture);
@@ -91,7 +94,6 @@ private:
     void bindUniformBuffers();
     void syncDescriptorSets();
 
-    // TODO: Populate the following methods to handle the possible commands in a draw pass.
     void bindGraphicsPipeline(const GraphicsPipeline*);
     void setBlendConstants(float* blendConstants);
     void bindDrawBuffers(const BindBufferInfo& vertices,
@@ -120,7 +122,7 @@ private:
 
     // TODO: The virtuals in this class have not yet been implemented as we still haven't
     // implemented the objects they use.
-    bool onAddComputePass(const DispatchGroupList&) override;
+    bool onAddComputePass(DispatchGroupSpan) override;
 
     bool onCopyBufferToBuffer(const Buffer* srcBuffer,
                               size_t srcOffset,
@@ -139,7 +141,8 @@ private:
     bool onCopyTextureToTexture(const Texture* src,
                                 SkIRect srcRect,
                                 const Texture* dst,
-                                SkIPoint dstPoint) override;
+                                SkIPoint dstPoint,
+                                int mipLevel) override;
 
     bool onSynchronizeBufferToCpu(const Buffer*, bool* outDidResultInWork) override;
     bool onClearBuffer(const Buffer*, size_t offset, size_t size) override;
@@ -156,6 +159,23 @@ private:
                          void* barrier);
     void submitPipelineBarriers(bool forSelfDependency = false);
 
+    // Update the intrinsic constant uniform with the latest rtAdjust value as determined by a
+    // given viewport. The resource provider is responsible for finding a suitable buffer and
+    // managing its lifetime.
+    void updateRtAdjustUniform(const SkRect& viewport);
+
+    bool updateLoadMSAAVertexBuffer();
+    bool loadMSAAFromResolve(const RenderPassDesc&,
+                             VulkanTexture& resolveTexture,
+                             SkISize dstDimensions);
+    bool updateAndBindLoadMSAAInputAttachment(const VulkanTexture& resolveTexture);
+    void updateBuffer(const VulkanBuffer* buffer,
+                      const void* data,
+                      size_t dataSize,
+                      size_t dstOffset = 0);
+    void nextSubpass();
+    void setViewport(const SkRect& viewport);
+
     VkCommandPool fPool;
     VkCommandBuffer fPrimaryCommandBuffer;
     const VulkanSharedContext* fSharedContext;
@@ -163,13 +183,8 @@ private:
 
     // begin() has been called, but not end()
     bool fActive = false;
-
-    // Stores a pointer to the current active render pass (i.e. begin has been called but not
-    // end). A nullptr means there is no active render pass. The VulkanCommandBuffer does not own
-    // the render pass.
-    // TODO: define what this is once we implement renderpasses.
-    //const void* fActiveRenderPass = nullptr;
-    // For now, use this to track whether we're between beginRendering/endRendering calls.
+    // Track whether there is currently an active render pass (beginRenderPass has been called, but
+    // not endRenderPass)
     bool fActiveRenderPass = false;
 
     const VulkanGraphicsPipeline* fActiveGraphicsPipeline = nullptr;
@@ -191,15 +206,10 @@ private:
     bool fBindUniformBuffers = false;
     bool fBindTextureSamplers = false;
 
-    sk_sp<Buffer> fIntrinsicUniformBuffer;
-    std::array<BindBufferInfo, VulkanGraphicsPipeline::kNumUniformBuffers> fUniformBuffersToBind
-            = {{{nullptr, 0}}};
+    std::array<BindBufferInfo, VulkanGraphicsPipeline::kNumUniformBuffers> fUniformBuffersToBind;
     VkDescriptorSet fTextureSamplerDescSetToBind = VK_NULL_HANDLE;
 
     int fNumTextureSamplers = 0;
-    // Store the current viewport so we can calculate rtAdjust when it is time to populate / bind
-    // the intrinsic uniform buffer.
-    SkRect fCurrentViewport;
 
     VkBuffer fBoundInputBuffers[VulkanGraphicsPipeline::kNumInputBuffers];
     size_t fBoundInputBufferOffsets[VulkanGraphicsPipeline::kNumInputBuffers];
@@ -215,4 +225,3 @@ private:
 } // namespace skgpu::graphite
 
 #endif // skgpu_graphite_VulkanCommandBuffer_DEFINED
-

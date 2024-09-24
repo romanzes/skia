@@ -7,10 +7,14 @@
 
 #include "src/gpu/ganesh/GrPersistentCacheUtils.h"
 
+#include "include/private/base/SkTo.h"
+#include "include/private/gpu/ganesh/GrTypesPriv.h"
 #include "src/core/SkReadBuffer.h"
 #include "src/core/SkWriteBuffer.h"
 #include "src/sksl/SkSLProgramSettings.h"
-#include "src/sksl/SkSLString.h"
+
+#include <algorithm>
+#include <cstddef>
 
 namespace GrPersistentCacheUtils {
 
@@ -40,7 +44,7 @@ sk_sp<SkData> PackCachedShaders(SkFourByteTag shaderType,
     // kGrShaderTypeCount interfaces. If the backend gives us fewer, we just replicate the last one.
     SkASSERT(numInterfaces >= 1 && numInterfaces <= kGrShaderTypeCount);
 
-    SkBinaryWriteBuffer writer;
+    SkBinaryWriteBuffer writer({});
     writer.writeInt(kCurrentVersion);
     writer.writeUInt(shaderType);
     for (int i = 0; i < kGrShaderTypeCount; ++i) {

@@ -10,9 +10,11 @@
 #if defined(SK_GANESH)
 
 #include "include/core/SkBitmap.h"
+#include "include/core/SkColorSpace.h"
 #include "include/core/SkSurface.h"
 #include "include/gpu/GrBackendSurface.h"
 #include "include/gpu/GrDirectContext.h"
+#include "include/gpu/ganesh/SkImageGanesh.h"
 #include "tests/CtsEnforcement.h"
 #include "tools/gpu/ProtectedUtils.h"
 
@@ -21,13 +23,17 @@ static const int kSize = 8;
 DEF_GANESH_TEST_FOR_ALL_CONTEXTS(Protected_SmokeTest, reporter, ctxInfo, CtsEnforcement::kNever) {
     auto dContext = ctxInfo.directContext();
 
-    if (!ProtectedUtils::ContextSupportsProtected(dContext)) {
+    if (!dContext->supportsProtectedContent()) {
         // Protected content not supported
         return;
     }
 
     for (bool textureable : { true, false }) {
         for (bool isProtected : { true, false }) {
+            if (!isProtected && GrBackendApi::kVulkan == dContext->backend()) {
+                continue;
+            }
+
             sk_sp<SkSurface> surface = ProtectedUtils::CreateProtectedSkSurface(dContext,
                                                                                 { kSize, kSize },
                                                                                 textureable,
@@ -43,15 +49,30 @@ DEF_GANESH_TEST_FOR_ALL_CONTEXTS(Protected_SmokeTest, reporter, ctxInfo, CtsEnfo
                 continue;
             }
 
-            dContext->submit(/* syncCpu= */ true);
+            dContext->submit(GrSyncCpu::kYes);
 
+            REPORTER_ASSERT(reporter, image->isProtected() == isProtected);
             ProtectedUtils::CheckImageBEProtection(image.get(), isProtected);
         }
     }
 
     for (bool isProtected : { true, false }) {
-        ProtectedUtils::CreateProtectedSkImage(dContext, { kSize, kSize }, SkColors::kBlue,
-                                               isProtected);
+        if (!isProtected && GrBackendApi::kVulkan == dContext->backend()) {
+            continue;
+        }
+
+        sk_sp<SkImage> image = ProtectedUtils::CreateProtectedSkImage(dContext,
+                                                                      { kSize, kSize },
+                                                                      SkColors::kBlue,
+                                                                      isProtected);
+        if (!image) {
+            continue;
+        }
+
+        dContext->submit(GrSyncCpu::kYes);
+
+        REPORTER_ASSERT(reporter, image->isProtected() == isProtected);
+        ProtectedUtils::CheckImageBEProtection(image.get(), isProtected);
     }
 
     for (bool renderable : { true, false }) {
@@ -60,14 +81,25 @@ DEF_GANESH_TEST_FOR_ALL_CONTEXTS(Protected_SmokeTest, reporter, ctxInfo, CtsEnfo
                                                                     16,
                                                                     kRGBA_8888_SkColorType,
                                                                     SkColors::kTransparent,
-                                                                    GrMipmapped::kNo,
+                                                                    skgpu::Mipmapped::kNo,
                                                                     GrRenderable(renderable),
                                                                     GrProtected(isProtected));
 
             REPORTER_ASSERT(reporter, beTex.isValid());
             REPORTER_ASSERT(reporter, beTex.isProtected() == isProtected);
 
-            dContext->flushAndSubmit(/* syncCpu= */ true);
+            dContext->flushAndSubmit(GrSyncCpu::kYes);
+
+            {
+                sk_sp<SkImage> img = SkImages::BorrowTextureFrom(dContext, beTex,
+                                                                 kTopLeft_GrSurfaceOrigin,
+                                                                 kRGBA_8888_SkColorType,
+                                                                 kPremul_SkAlphaType,
+                                                                 /* colorSpace= */ nullptr);
+
+                REPORTER_ASSERT(reporter, img->isProtected() == isProtected);
+            }
+
             if (beTex.isValid()) {
                 dContext->deleteBackendTexture(beTex);
             }
@@ -80,24 +112,22 @@ DEF_GANESH_TEST_FOR_ALL_CONTEXTS(Protected_readPixelsFromSurfaces, reporter, ctx
                                  CtsEnforcement::kNever) {
     auto dContext = ctxInfo.directContext();
 
-    if (!ProtectedUtils::ContextSupportsProtected(dContext)) {
+    if (!dContext->supportsProtectedContent()) {
         // Protected content not supported
         return;
     }
 
-    for (bool isProtected : { true, false }) {
-        sk_sp<SkSurface> surface = ProtectedUtils::CreateProtectedSkSurface(dContext,
-                                                                            { kSize, kSize },
-                                                                            /* textureable= */ true,
-                                                                            isProtected);
-        if (!surface) {
-            continue;
-        }
-
-        SkBitmap readback;
-        readback.allocPixels(surface->imageInfo());
-        REPORTER_ASSERT(reporter, isProtected != surface->readPixels(readback, 0, 0));
+    sk_sp<SkSurface> surface = ProtectedUtils::CreateProtectedSkSurface(dContext,
+                                                                        { kSize, kSize },
+                                                                        /* textureable= */ true,
+                                                                        /* isProtected= */ true);
+    if (!surface) {
+        return;
     }
+
+    SkBitmap readback;
+    readback.allocPixels(surface->imageInfo());
+    REPORTER_ASSERT(reporter, !surface->readPixels(readback, 0, 0));
 }
 
 namespace {
@@ -120,33 +150,31 @@ DEF_GANESH_TEST_FOR_ALL_CONTEXTS(Protected_asyncRescaleAndReadPixelsFromSurfaces
                                  CtsEnforcement::kNever) {
     auto dContext = ctxInfo.directContext();
 
-    if (!ProtectedUtils::ContextSupportsProtected(dContext)) {
+    if (!dContext->supportsProtectedContent()) {
         // Protected content not supported
         return;
     }
 
-    for (bool isProtected : { true, false }) {
-        sk_sp<SkSurface> surface = ProtectedUtils::CreateProtectedSkSurface(dContext,
-                                                                            { kSize, kSize },
-                                                                            /* textureable= */ true,
-                                                                            isProtected);
-        if (!surface) {
-            continue;
-        }
-
-        AsyncContext cbContext;
-
-        surface->asyncRescaleAndReadPixels(surface->imageInfo(),
-                                           SkIRect::MakeWH(surface->width(), surface->height()),
-                                           SkSurface::RescaleGamma::kSrc,
-                                           SkSurface::RescaleMode::kNearest,
-                                           async_callback, &cbContext);
-        dContext->submit();
-        while (!cbContext.fCalled) {
-            dContext->checkAsyncWorkCompletion();
-        }
-        REPORTER_ASSERT(reporter, isProtected != SkToBool(cbContext.fResult));
+    sk_sp<SkSurface> surface = ProtectedUtils::CreateProtectedSkSurface(dContext,
+                                                                        { kSize, kSize },
+                                                                        /* textureable= */ true,
+                                                                        /* isProtected= */ true);
+    if (!surface) {
+        return;
     }
+
+    AsyncContext cbContext;
+
+    surface->asyncRescaleAndReadPixels(surface->imageInfo(),
+                                       SkIRect::MakeWH(surface->width(), surface->height()),
+                                       SkSurface::RescaleGamma::kSrc,
+                                       SkSurface::RescaleMode::kNearest,
+                                       async_callback, &cbContext);
+    dContext->submit();
+    while (!cbContext.fCalled) {
+        dContext->checkAsyncWorkCompletion();
+    }
+    REPORTER_ASSERT(reporter, !cbContext.fResult);
 }
 
 #endif  // defined(SK_GANESH)

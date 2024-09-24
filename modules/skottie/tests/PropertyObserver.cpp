@@ -6,12 +6,14 @@
  */
 
 #include "include/core/SkColor.h"
+#include "include/core/SkFontMgr.h"
 #include "include/core/SkPictureRecorder.h"
 #include "include/core/SkStream.h"
 #include "modules/skottie/include/Skottie.h"
 #include "modules/skottie/include/SkottieProperty.h"
 #include "tests/Test.h"
 #include "tools/ToolUtils.h"
+#include "tools/fonts/FontToolUtils.h"
 
 using namespace skottie;
 
@@ -20,7 +22,7 @@ namespace {
 TextPropertyValue make_text_prop(const char* str) {
     TextPropertyValue prop;
 
-    prop.fTypeface = ToolUtils::create_portable_typeface();
+    prop.fTypeface = ToolUtils::DefaultPortableTypeface();
     prop.fText     = SkString(str);
 
     return prop;
@@ -137,7 +139,7 @@ private:
 // Returns a single specified typeface for all requests.
 class MockFontMgr : public SkFontMgr {
  public:
-    MockFontMgr(sk_sp<SkTypeface> test_font) : fTestFont(test_font) {}
+    MockFontMgr(sk_sp<SkTypeface> test_font) : fTestFont(std::move(test_font)) {}
 
     int onCountFamilies() const override { return 1; }
     void onGetFamilyName(int index, SkString* familyName) const override {}
@@ -266,7 +268,7 @@ static const char gTestJson[] = R"({
 }  // anonymous namespace
 
 DEF_TEST(Skottie_Props, reporter) {
-    auto test_typeface = ToolUtils::create_portable_typeface();
+    auto test_typeface = ToolUtils::DefaultPortableTypeface();
     REPORTER_ASSERT(reporter, test_typeface);
     auto test_font_manager = sk_make_sp<MockFontMgr>(test_typeface);
 
@@ -334,7 +336,7 @@ DEF_TEST(Skottie_Props, reporter) {
     const auto& texts = observer->texts();
     REPORTER_ASSERT(reporter, texts.size() == 1);
     REPORTER_ASSERT(reporter, texts[0].node_name.equals("layer_1"));
-    REPORTER_ASSERT(reporter, texts[0].handle->get() == skottie::TextPropertyValue({
+    skottie::TextPropertyValue text_prop({
       test_typeface,
       SkString("inline_text"),
       100,
@@ -357,12 +359,18 @@ DEF_TEST(Skottie_Props, reporter) {
       SkPaint::Join::kDefault_Join,
       false,
       false,
-      nullptr
-    }));
+      nullptr,
+      SkString(),
+      SkString("test-family")
+    });
+    REPORTER_ASSERT(reporter, texts[0].handle->get() == text_prop);
+    text_prop.fLocale = "custom_lc";
+    texts[0].handle->set(text_prop);
+    REPORTER_ASSERT(reporter, texts[0].handle->get() == text_prop);
 }
 
 DEF_TEST(Skottie_Props_Revalidation, reporter) {
-    auto test_typeface = ToolUtils::create_portable_typeface();
+    auto test_typeface = ToolUtils::DefaultPortableTypeface();
     REPORTER_ASSERT(reporter, test_typeface);
     auto test_font_manager = sk_make_sp<MockFontMgr>(test_typeface);
 

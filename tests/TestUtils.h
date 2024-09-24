@@ -24,9 +24,7 @@
 class GrDirectContext;
 class GrRecordingContext;
 class GrSurfaceProxy;
-class SkBitmap;
 class SkPixmap;
-class SkString;
 enum class GrColorType;
 namespace skiatest { class Reporter; }
 namespace skgpu::ganesh {
@@ -58,10 +56,6 @@ void TestCopyFromSurface(skiatest::Reporter*,
                          GrColorType colorType,
                          uint32_t expectedPixelValues[],
                          const char* testName);
-
-// Encodes the bitmap into a data:/image/png;base64,... url suitable to view in a browser after
-// printing to a log. If false is returned, dst holds an error message instead of a URI.
-bool BitmapToBase64DataURI(const SkBitmap& bitmap, SkString* dst);
 
 /** Used by compare_pixels. */
 using ComparePixmapsErrorReporter = void(int x, int y, const float diffs[4]);
@@ -116,7 +110,7 @@ std::unique_ptr<skgpu::ganesh::SurfaceContext> CreateSurfaceContext(
         GrSurfaceOrigin = kTopLeft_GrSurfaceOrigin,
         GrRenderable = GrRenderable::kNo,
         int sampleCount = 1,
-        GrMipmapped = GrMipmapped::kNo,
+        skgpu::Mipmapped = skgpu::Mipmapped::kNo,
         GrProtected = GrProtected::kNo,
         skgpu::Budgeted = skgpu::Budgeted::kYes);
 

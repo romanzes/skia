@@ -16,6 +16,7 @@
 #include "include/core/SkString.h"
 #include "include/core/SkSurface.h"
 #include "include/encode/SkWebpEncoder.h"
+#include "tools/DecodeUtils.h"
 #include "tools/Resources.h"
 
 namespace skiagm {
@@ -36,6 +37,7 @@ static sk_sp<SkImage> make_image(SkColorType colorType, SkAlphaType alphaType) {
         case kRGB_888x_SkColorType:
         case kRGB_101010x_SkColorType:
         case kBGR_101010x_SkColorType:
+        case kRGB_F16F16F16x_SkColorType:
             if (alphaType != kOpaque_SkAlphaType) {
                 return nullptr;
             }
@@ -47,7 +49,7 @@ static sk_sp<SkImage> make_image(SkColorType colorType, SkAlphaType alphaType) {
             break;
     }
 
-    auto image = GetResourceAsImage(resource);
+    auto image = ToolUtils::GetResourceAsImage(resource);
     if (!image) {
         return nullptr;
     }
@@ -82,14 +84,14 @@ public:
     {}
 
 protected:
-    SkString onShortName() override {
+    SkString getName() const override {
         const char* variant = fVariant == Variant::kOpaque ? "opaque-":
                               fVariant == Variant::kGray   ? "gray-"  :
                                                              ""       ;
         return SkStringPrintf("encode-%scolor-types-%s", variant, fName);
     }
 
-    SkISize onISize() override {
+    SkISize getISize() override {
         const int width = fVariant == Variant::kNormal ? imageWidth * 7 : imageWidth * 2;
         return SkISize::Make(width, imageHeight);
     }
@@ -103,9 +105,10 @@ protected:
                 }
                 break;
             case Variant::kOpaque:
-                if (colorType != kRGB_565_SkColorType     &&
-                    colorType != kRGB_888x_SkColorType    &&
-                    colorType != kRGB_101010x_SkColorType &&
+                if (colorType != kRGB_565_SkColorType         &&
+                    colorType != kRGB_888x_SkColorType        &&
+                    colorType != kRGB_101010x_SkColorType     &&
+                    colorType != kRGB_F16F16F16x_SkColorType  &&
                     colorType != kBGR_101010x_SkColorType)
                 {
                     return DrawResult::kSkip;

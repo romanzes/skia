@@ -13,6 +13,7 @@
 #include "include/core/SkImageGenerator.h"
 #include "include/core/SkPixmap.h"
 #include "include/core/SkSize.h"
+#include "include/core/SkSurface.h"
 #include "include/core/SkYUVAInfo.h"
 #include "src/core/SkBitmapCache.h"
 #include "src/core/SkCachedData.h"
@@ -21,6 +22,8 @@
 #include "src/core/SkYUVPlanesCache.h"
 
 #include <utility>
+
+class SkSurfaceProps;
 
 enum SkColorType : int;
 
@@ -33,7 +36,7 @@ SharedGenerator::SharedGenerator(std::unique_ptr<SkImageGenerator> gen)
     SkASSERT(fGenerator);
 }
 
-const SkImageInfo& SharedGenerator::getInfo() { return fGenerator->getInfo(); }
+const SkImageInfo& SharedGenerator::getInfo() const { return fGenerator->getInfo(); }
 
 bool SharedGenerator::isTextureGenerator() { return fGenerator->isTextureGenerator(); }
 
@@ -154,6 +157,11 @@ sk_sp<SharedGenerator> SkImage_Lazy::generator() const {
     return fSharedGenerator;
 }
 
+bool SkImage_Lazy::onIsProtected() const {
+    ScopedGenerator generator(fSharedGenerator);
+    return generator->isProtected();
+}
+
 bool SkImage_Lazy::onReadPixels(GrDirectContext* dContext,
                                 const SkImageInfo& dstInfo,
                                 void* dstPixels,
@@ -200,6 +208,13 @@ sk_sp<SkImage> SkImage_Lazy::onMakeSubset(skgpu::graphite::Recorder*,
         return nullptr;
     }
     return nonLazyImg->makeSubset(nullptr, subset, props);
+}
+
+sk_sp<SkSurface> SkImage_Lazy::onMakeSurface(skgpu::graphite::Recorder*,
+                                             const SkImageInfo& info) const {
+    const SkSurfaceProps* props = nullptr;
+    const size_t rowBytes = 0;
+    return SkSurfaces::Raster(info, rowBytes, props);
 }
 
 sk_sp<SkImage> SkImage_Lazy::onMakeColorTypeAndColorSpace(SkColorType targetCT,

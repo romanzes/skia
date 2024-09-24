@@ -5,15 +5,24 @@
  * found in the LICENSE file.
  */
 
+#include "include/core/SkRefCnt.h"
+#include "include/gpu/GrContextThreadSafeProxy.h"
 #include "include/gpu/GrRecordingContext.h"
+#include "include/gpu/GrTypes.h"
+#include "include/private/base/SkAssert.h"
+#include "include/private/base/SkNoncopyable.h"
+#include "include/private/base/SkTArray.h"
 #include "src/core/SkChecksum.h"
 #include "src/core/SkLRUCache.h"
 #include "src/gpu/ganesh/GrCaps.h"
-#include "src/gpu/ganesh/GrContextThreadSafeProxyPriv.h"
 #include "src/gpu/ganesh/GrProgramDesc.h"
-#include "src/gpu/ganesh/GrProgramInfo.h"
 #include "src/gpu/ganesh/GrRecordingContextPriv.h"
-#include "src/gpu/ganesh/effects/GrSkSLFP.h"
+
+#include <cstdint>
+#include <memory>
+#include <utility>
+
+class GrProgramInfo;
 
 using namespace skia_private;
 
@@ -43,11 +52,8 @@ private:
 
         const GrCaps* caps = this->caps();
 
-        if (this->backend() == GrBackendApi::kMetal ||
-            this->backend() == GrBackendApi::kDirect3D ||
-            this->backend() == GrBackendApi::kDawn) {
-            // Currently Metal, Direct3D, and Dawn require a live renderTarget to
-            // compute the key
+        if (this->backend() == GrBackendApi::kMetal || this->backend() == GrBackendApi::kDirect3D) {
+            // Currently Metal and Direct3D require a live renderTarget to compute the key
             return;
         }
 

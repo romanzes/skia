@@ -6,9 +6,6 @@
  */
 
 #include "include/effects/SkImageFilters.h"
-#include "src/effects/imagefilters/SkCropImageFilter.h"
-
-#ifdef SK_ENABLE_SKSL
 
 #include "include/core/SkColor.h"
 #include "include/core/SkFlattenable.h"
@@ -23,14 +20,16 @@
 #include "include/core/SkTypes.h"
 #include "include/effects/SkRuntimeEffect.h"
 #include "include/private/base/SkCPUTypes.h"
+#include "include/private/base/SkFloatingPoint.h"
 #include "include/private/base/SkSpan_impl.h"
 #include "src/core/SkImageFilterTypes.h"
 #include "src/core/SkImageFilter_Base.h"
+#include "src/core/SkKnownRuntimeEffects.h"
 #include "src/core/SkReadBuffer.h"
 #include "src/core/SkRectPriv.h"
-#include "src/core/SkRuntimeEffectPriv.h"
 #include "src/core/SkWriteBuffer.h"
 
+#include <optional>
 #include <utility>
 
 struct SkISize;
@@ -160,7 +159,7 @@ struct Material {
 class SkLightingImageFilter final : public SkImageFilter_Base {
 public:
     SkLightingImageFilter(const Light& light, const Material& material, sk_sp<SkImageFilter> input)
-            : SkImageFilter_Base(&input, 1, nullptr)
+            : SkImageFilter_Base(&input, 1)
             , fLight(light)
             , fMaterial(material) {}
 
@@ -183,11 +182,11 @@ private:
     skif::LayerSpace<SkIRect> onGetInputLayerBounds(
             const skif::Mapping& mapping,
             const skif::LayerSpace<SkIRect>& desiredOutput,
-            const skif::LayerSpace<SkIRect>& contentBounds) const override;
+            std::optional<skif::LayerSpace<SkIRect>> contentBounds) const override;
 
-    skif::LayerSpace<SkIRect> onGetOutputLayerBounds(
+    std::optional<skif::LayerSpace<SkIRect>> onGetOutputLayerBounds(
             const skif::Mapping& mapping,
-            const skif::LayerSpace<SkIRect>& contentBounds) const override;
+            std::optional<skif::LayerSpace<SkIRect>> contentBounds) const override;
 
     skif::LayerSpace<SkIRect> requiredInput(const skif::LayerSpace<SkIRect>& desiredOutput) const {
         // We request 1px of padding so that the visible normal map can do a regular Sobel kernel
@@ -206,44 +205,13 @@ private:
 sk_sp<SkShader> make_normal_shader(sk_sp<SkShader> alphaMap,
                                    const skif::LayerSpace<SkIRect>& edgeBounds,
                                    skif::LayerSpace<ZValue> surfaceDepth) {
-    static const SkRuntimeEffect* effect = SkMakeRuntimeEffect(SkRuntimeEffect::MakeForShader,
-        "uniform shader alphaMap;"
-        "uniform float4 edgeBounds;"
-        "uniform half surfaceDepth;"
+    const SkRuntimeEffect* normalEffect =
+            GetKnownRuntimeEffect(SkKnownRuntimeEffects::StableKey::kNormal);
 
-        "half3 normal(half3 alphaC0, half3 alphaC1, half3 alphaC2) {"
-            // The right column (or bottom row) terms of the Sobel filter. The left/top is just
-            // the negative, and the middle row/column is all 0s so those instructions are skipped.
-            "const half3 kSobel = 0.25 * half3(1,2,1);"
-            "half3 alphaR0 = half3(alphaC0.x, alphaC1.x, alphaC2.x);"
-            "half3 alphaR2 = half3(alphaC0.z, alphaC1.z, alphaC2.z);"
-            "half nx = dot(kSobel, alphaC2) - dot(kSobel, alphaC0);"
-            "half ny = dot(kSobel, alphaR2) - dot(kSobel, alphaR0);"
-            "return normalize(half3(-surfaceDepth*half2(nx, ny), 1));"
-        "}"
-
-        "half4 main(float2 coord) {"
-            "half3 alphaC0 = half3("
-                "alphaMap.eval(clamp(coord + float2(-1,-1), edgeBounds.LT, edgeBounds.RB)).a,"
-                "alphaMap.eval(clamp(coord + float2(-1, 0), edgeBounds.LT, edgeBounds.RB)).a,"
-                "alphaMap.eval(clamp(coord + float2(-1, 1), edgeBounds.LT, edgeBounds.RB)).a);"
-            "half3 alphaC1 = half3("
-                "alphaMap.eval(clamp(coord + float2( 0,-1), edgeBounds.LT, edgeBounds.RB)).a,"
-                "alphaMap.eval(clamp(coord + float2( 0, 0), edgeBounds.LT, edgeBounds.RB)).a,"
-                "alphaMap.eval(clamp(coord + float2( 0, 1), edgeBounds.LT, edgeBounds.RB)).a);"
-            "half3 alphaC2 = half3("
-                "alphaMap.eval(clamp(coord + float2( 1,-1), edgeBounds.LT, edgeBounds.RB)).a,"
-                "alphaMap.eval(clamp(coord + float2( 1, 0), edgeBounds.LT, edgeBounds.RB)).a,"
-                "alphaMap.eval(clamp(coord + float2( 1, 1), edgeBounds.LT, edgeBounds.RB)).a);"
-
-            "half mainAlpha = alphaC1.y;" // offset = (0,0)
-            "return half4(normal(alphaC0, alphaC1, alphaC2), mainAlpha);"
-        "}");
-
-    SkRuntimeShaderBuilder builder(sk_ref_sp(effect));
+    SkRuntimeShaderBuilder builder(sk_ref_sp(normalEffect));
     builder.child("alphaMap") = std::move(alphaMap);
     builder.uniform("edgeBounds") = SkRect::Make(SkIRect(edgeBounds)).makeInset(0.5f, 0.5f);
-    builder.uniform("surfaceDepth") = surfaceDepth.val();
+    builder.uniform("negSurfaceDepth") = -surfaceDepth.val();
 
     return builder.makeShader();
 }
@@ -261,73 +229,11 @@ sk_sp<SkShader> make_lighting_shader(sk_sp<SkShader> normalMap,
                                      skif::LayerSpace<ZValue> surfaceDepth,
                                      float k,
                                      float shininess) {
-    static const SkRuntimeEffect* effect = SkMakeRuntimeEffect(SkRuntimeEffect::MakeForShader,
-        "const half kConeAAThreshold = 0.016;"
-        "const half kConeScale = 1.0 / kConeAAThreshold;"
 
-        "uniform shader normalMap;"
+    const SkRuntimeEffect* lightingEffect =
+            GetKnownRuntimeEffect(SkKnownRuntimeEffects::StableKey::kLighting);
 
-        // Pack's surface depth, shininess, material type (0 == diffuse) and light type
-        // (< 0 = distant, 0 = point, > 0 = spot)
-        "uniform half4 materialAndLightType;"
-
-        "uniform half4 lightPosAndSpotFalloff;" // (x,y,z) are lightPos, w is spot falloff exponent
-        "uniform half4 lightDirAndSpotCutoff;" // (x,y,z) are lightDir, w is spot cos(cutoffAngle)
-        "uniform half3 lightColor;" // Material's k has already been multipled in
-
-        "half3 surface_to_light(half3 coord) {"
-            "if (materialAndLightType.w < 0) {"
-                "return lightDirAndSpotCutoff.xyz;"
-            "} else {"
-                // Spot and point have the same equation
-                "return normalize(lightPosAndSpotFalloff.xyz - coord);"
-            "}"
-        "}"
-
-        "half spotlight_scale(half3 surfaceToLight) {"
-            "half cosCutoffAngle = lightDirAndSpotCutoff.w;"
-            "half cosAngle = -dot(surfaceToLight, lightDirAndSpotCutoff.xyz);"
-            "if (cosAngle < cosCutoffAngle) {"
-                "return 0.0;"
-            "}"
-            "half scale = pow(cosAngle, lightPosAndSpotFalloff.w);"
-            "if (cosAngle < cosCutoffAngle + kConeAAThreshold) {"
-                "return scale * (cosAngle - cosCutoffAngle) * kConeScale;"
-            "} else {"
-                "return scale;"
-            "}"
-        "}"
-
-        "half4 compute_lighting(half3 normal, half3 surfaceToLight) {"
-            // Point and distant light color contributions are constant
-            "half3 color = lightColor;"
-            // Spot lights fade based on the angle away from its direction
-            "if (materialAndLightType.w > 0) {"
-                "color *= spotlight_scale(surfaceToLight);"
-            "}"
-
-            // Diffuse and specular reflections scale the light's "color" differently
-            "if (materialAndLightType.z == 0) {"
-                "half coeff = dot(normal, surfaceToLight);"
-                "color = saturate(coeff * color);"
-                "return half4(color, 1.0);"
-            "} else {"
-                "half3 halfDir = normalize(surfaceToLight + half3(0, 0, 1));"
-                "half shininess = materialAndLightType.y;"
-                "half coeff = pow(dot(normal, halfDir), shininess);"
-                "color = saturate(coeff * color);"
-                "return half4(color, max(max(color.r, color.g), color.b));"
-            "}"
-        "}"
-
-        "half4 main(float2 coord) {"
-            "half4 normalAndA = normalMap.eval(coord);"
-            "half depth = materialAndLightType.x;"
-            "half3 surfaceToLight = surface_to_light(half3(half2(coord), depth*normalAndA.a));"
-            "return compute_lighting(normalAndA.xyz, surfaceToLight);"
-        "}");
-
-    SkRuntimeShaderBuilder builder(sk_ref_sp(effect));
+    SkRuntimeShaderBuilder builder(sk_ref_sp(lightingEffect));
     builder.child("normalMap") = std::move(normalMap);
 
     builder.uniform("materialAndLightType") =
@@ -376,19 +282,15 @@ sk_sp<SkImageFilter> make_lighting(const Light& light,
                                    const SkImageFilters::CropRect& cropRect) {
     // According to the spec, ks and kd can be any non-negative number:
     // http://www.w3.org/TR/SVG/filters.html#feSpecularLightingElement
-    if (!SkScalarIsFinite(material.fK) || material.fK < 0.f ||
-        !SkScalarIsFinite(material.fShininess) ||
-        !SkScalarIsFinite(ZValue(material.fSurfaceDepth))) {
+    if (!SkIsFinite(material.fK, material.fShininess, ZValue(material.fSurfaceDepth)) ||
+        material.fK < 0.f) {
         return nullptr;
     }
 
     // Ensure light values are finite, and the cosine should be between -1 and 1
-    if (!SkPoint(light.fLocationXY).isFinite() ||
-        !SkScalarIsFinite(ZValue(light.fLocationZ)) ||
-        !skif::Vector(light.fDirectionXY).isFinite() ||
-        !SkScalarIsFinite(ZValue(light.fDirectionZ)) ||
-        !SkScalarIsFinite(light.fFalloffExponent) ||
-        !SkScalarIsFinite(light.fCosCutoffAngle) ||
+    if (!SkPoint(light.fLocationXY).isFinite() || !skif::Vector(light.fDirectionXY).isFinite() ||
+        !SkIsFinite(light.fFalloffExponent, light.fCosCutoffAngle,
+                    ZValue(light.fLocationZ), ZValue(light.fDirectionZ)) ||
         light.fCosCutoffAngle < -1.f || light.fCosCutoffAngle > 1.f) {
         return nullptr;
     }
@@ -397,12 +299,12 @@ sk_sp<SkImageFilter> make_lighting(const Light& light,
     // boundary condition spec) and the output (because otherwise it has infinite bounds).
     sk_sp<SkImageFilter> filter = std::move(input);
     if (cropRect) {
-        filter = SkMakeCropImageFilter(*cropRect, std::move(filter));
+        filter = SkImageFilters::Crop(*cropRect, std::move(filter));
     }
     filter = sk_sp<SkImageFilter>(
             new SkLightingImageFilter(light, material, std::move(filter)));
     if (cropRect) {
-        filter = SkMakeCropImageFilter(*cropRect, std::move(filter));
+        filter = SkImageFilters::Crop(*cropRect, std::move(filter));
     }
     return filter;
 }
@@ -680,66 +582,20 @@ skif::FilterResult SkLightingImageFilter::onFilterImage(const skif::Context& ctx
 skif::LayerSpace<SkIRect> SkLightingImageFilter::onGetInputLayerBounds(
         const skif::Mapping& mapping,
         const skif::LayerSpace<SkIRect>& desiredOutput,
-        const skif::LayerSpace<SkIRect>& contentBounds) const {
+        std::optional<skif::LayerSpace<SkIRect>> contentBounds) const {
     skif::LayerSpace<SkIRect> requiredInput = this->requiredInput(desiredOutput);
     return this->getChildInputLayerBounds(0, mapping, requiredInput, contentBounds);
 }
 
-skif::LayerSpace<SkIRect> SkLightingImageFilter::onGetOutputLayerBounds(
+std::optional<skif::LayerSpace<SkIRect>> SkLightingImageFilter::onGetOutputLayerBounds(
         const skif::Mapping& mapping,
-        const skif::LayerSpace<SkIRect>& contentBounds) const {
+        std::optional<skif::LayerSpace<SkIRect>> contentBounds) const {
     // The lighting equation is defined on the entire plane, even if the input image that defines
     // the normal map is bounded. It just is evaluated at a constant normal vector, which can still
     // produce non-constant color since the direction to the eye and light change per pixel.
-    return skif::LayerSpace<SkIRect>(SkRectPriv::MakeILarge());
+    return skif::LayerSpace<SkIRect>::Unbounded();
 }
 
 SkRect SkLightingImageFilter::computeFastBounds(const SkRect& src) const {
     return SkRectPriv::MakeLargeS32();
 }
-
-#else // SK_ENABLE_SKSL
-
-// Without SkSL, just return the input image filter (possibly cropped)
-
-sk_sp<SkImageFilter> SkImageFilters::DistantLitDiffuse(
-        const SkPoint3& direction, SkColor lightColor, SkScalar surfaceScale, SkScalar kd,
-        sk_sp<SkImageFilter> input, const CropRect& cropRect) {
-    return cropRect ? SkMakeCropImageFilter(*cropRect, std::move(input)) : input;
-}
-
-sk_sp<SkImageFilter> SkImageFilters::PointLitDiffuse(
-        const SkPoint3& location, SkColor lightColor, SkScalar surfaceScale, SkScalar kd,
-        sk_sp<SkImageFilter> input, const CropRect& cropRect) {
-    return cropRect ? SkMakeCropImageFilter(*cropRect, std::move(input)) : input;
-}
-
-sk_sp<SkImageFilter> SkImageFilters::SpotLitDiffuse(
-        const SkPoint3& location, const SkPoint3& target, SkScalar falloffExponent,
-        SkScalar cutoffAngle, SkColor lightColor, SkScalar surfaceScale, SkScalar kd,
-        sk_sp<SkImageFilter> input, const CropRect& cropRect) {
-    return cropRect ? SkMakeCropImageFilter(*cropRect, std::move(input)) : input;
-}
-
-sk_sp<SkImageFilter> SkImageFilters::DistantLitSpecular(
-        const SkPoint3& direction, SkColor lightColor, SkScalar surfaceScale, SkScalar ks,
-        SkScalar shininess, sk_sp<SkImageFilter> input, const CropRect& cropRect) {
-    return cropRect ? SkMakeCropImageFilter(*cropRect, std::move(input)) : input;
-}
-
-sk_sp<SkImageFilter> SkImageFilters::PointLitSpecular(
-        const SkPoint3& location, SkColor lightColor, SkScalar surfaceScale, SkScalar ks,
-        SkScalar shininess, sk_sp<SkImageFilter> input, const CropRect& cropRect) {
-    return cropRect ? SkMakeCropImageFilter(*cropRect, std::move(input)) : input;
-}
-
-sk_sp<SkImageFilter> SkImageFilters::SpotLitSpecular(
-        const SkPoint3& location, const SkPoint3& target, SkScalar falloffExponent,
-        SkScalar cutoffAngle, SkColor lightColor, SkScalar surfaceScale, SkScalar ks,
-        SkScalar shininess, sk_sp<SkImageFilter> input, const CropRect& cropRect) {
-    return cropRect ? SkMakeCropImageFilter(*cropRect, std::move(input)) : input;
-}
-
-void SkRegisterLightingImageFilterFlattenables() {}
-
-#endif // SK_ENABLE_SKSL

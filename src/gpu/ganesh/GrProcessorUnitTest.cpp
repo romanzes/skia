@@ -7,18 +7,22 @@
 
 #include "src/gpu/ganesh/GrProcessorUnitTest.h"
 
-#include <memory>
+#if defined(GPU_TEST_UTILS)
 
 #include "include/gpu/GrRecordingContext.h"
+#include "include/private/SkColorData.h"
+#include "include/private/base/SkDebug.h"
+#include "include/private/gpu/ganesh/GrTypesPriv.h"
+#include "src/base/SkArenaAlloc.h"
+#include "src/base/SkRandom.h"
 #include "src/gpu/ganesh/GrFragmentProcessor.h"
 #include "src/gpu/ganesh/GrRecordingContextPriv.h"
-#include "src/gpu/ganesh/GrSurfaceProxyView.h"
+
+#include <cstdint>
+#include <memory>
+#include <utility>
 
 using namespace skia_private;
-
-#if GR_TEST_UTILS
-
-class GrGeometryProcessor;
 
 GrProcessorTestData::GrProcessorTestData(SkRandom* random, GrRecordingContext* context,
                                          int maxTreeDepth, int numViews, const ViewInfo views[])
@@ -149,7 +153,7 @@ TArray<GrXPFactoryTestFactory*, true>* GrXPFactoryTestFactory::GetFactories() {
  * we verify the count is as expected.  If a new factory is added, then these numbers must be
  * manually adjusted.
  */
-static constexpr int kFPFactoryCount = 12;
+static constexpr int kFPFactoryCount = 10;
 static constexpr int kGPFactoryCount = 14;
 static constexpr int kXPFactoryCount = 4;
 

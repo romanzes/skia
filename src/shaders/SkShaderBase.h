@@ -174,7 +174,8 @@ private:
     M(Picture)            \
     M(Runtime)            \
     M(Transform)          \
-    M(TriColor)
+    M(TriColor)           \
+    M(WorkingColorSpace)
 
 #define SK_ALL_GRADIENTS(M) \
     M(Conical)              \
@@ -269,7 +270,7 @@ public:
                    const SkShaders::MatrixRec& matrixRec,
                    SkColorType dstColorType,
                    SkColorSpace* dstColorSpace,
-                   SkSurfaceProps props)
+                   const SkSurfaceProps& props)
                 : fMatrixRec(matrixRec)
                 , fDstColorType(dstColorType)
                 , fDstColorSpace(dstColorSpace)
@@ -342,7 +343,7 @@ public:
      *  Note: if this returns true, the returned color will always be opaque, as only the RGB
      *  components are used to compute luminance.
      */
-    bool asLuminanceColor(SkColor*) const;
+    bool asLuminanceColor(SkColor4f*) const;
 
     /**
      * If this returns false, then we draw nothing (do not fall back to shader context). This should
@@ -356,7 +357,7 @@ public:
      * in r,g MatrixRec::apply() must be called (unless the shader doesn't require it's input
      * coords). The default impl creates shadercontext and calls that (not very efficient).
      */
-    virtual bool appendStages(const SkStageRec&, const SkShaders::MatrixRec&) const;
+    virtual bool appendStages(const SkStageRec&, const SkShaders::MatrixRec&) const = 0;
 
     virtual SkImage* onIsAImage(SkMatrix*, SkTileMode[2]) const {
         return nullptr;
@@ -402,7 +403,7 @@ protected:
     }
 #endif
 
-    virtual bool onAsLuminanceColor(SkColor*) const {
+    virtual bool onAsLuminanceColor(SkColor4f*) const {
         return false;
     }
 
@@ -426,5 +427,6 @@ void SkRegisterColorShaderFlattenable();
 void SkRegisterCoordClampShaderFlattenable();
 void SkRegisterEmptyShaderFlattenable();
 void SkRegisterPerlinNoiseShaderFlattenable();
+void SkRegisterWorkingColorSpaceShaderFlattenable();
 
 #endif // SkShaderBase_DEFINED

@@ -1,5 +1,8 @@
 #include <metal_stdlib>
 #include <simd/simd.h>
+#ifdef __clang__
+#pragma clang diagnostic ignored "-Wall"
+#endif
 using namespace metal;
 
 struct sampler2D {
@@ -17,7 +20,7 @@ half4 sampleGrad(sampler2D i, float2 p, float2 dPdx, float2 dPdy) {
 }
 
 struct Inputs {
-    float2 vLocalCoord_Stage0  [[user(locn0)]];
+    float2 vLocalCoord_Stage0 [[user(locn0)]];
 };
 struct Outputs {
     half4 sk_FragColor [[color(0)]];

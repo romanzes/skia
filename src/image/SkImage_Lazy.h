@@ -30,6 +30,7 @@ class SkBitmap;
 class SkCachedData;
 class SkData;
 class SkPixmap;
+class SkSurface;
 enum SkColorType : int;
 struct SkIRect;
 
@@ -59,6 +60,8 @@ public:
         // a way to provide content for levels other than via SkImageGenerator::generateTexture().
         return false;
     }
+    bool onIsProtected() const override;
+
     bool onReadPixels(GrDirectContext*, const SkImageInfo&, void*, size_t, int srcX, int srcY,
                       CachingHint) const override;
     sk_sp<SkData> onRefEncoded() const override;
@@ -66,6 +69,8 @@ public:
     sk_sp<SkImage> onMakeSubset(skgpu::graphite::Recorder*,
                                 const SkIRect&,
                                 RequiredProperties) const override;
+
+    sk_sp<SkSurface> onMakeSurface(skgpu::graphite::Recorder*, const SkImageInfo&) const override;
 
     bool getROPixels(GrDirectContext*, SkBitmap*, CachingHint) const override;
     SkImage_Base::Type type() const override { return SkImage_Base::Type::kLazy; }
@@ -108,7 +113,7 @@ public:
     static sk_sp<SharedGenerator> Make(std::unique_ptr<SkImageGenerator> gen);
 
     // This is thread safe.  It is a const field set in the constructor.
-    const SkImageInfo& getInfo();
+    const SkImageInfo& getInfo() const;
 
     bool isTextureGenerator();
 

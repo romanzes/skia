@@ -12,13 +12,17 @@
 #include "src/gpu/graphite/DrawPass.h"
 #include "src/gpu/graphite/GpuWorkSubmission.h"
 #include "src/gpu/graphite/Log.h"
+#include "src/gpu/graphite/compute/DispatchGroup.h"
 #include "src/gpu/graphite/dawn/DawnGraphicsPipeline.h"
 
-#include "webgpu/webgpu_cpp.h"
+#include "webgpu/webgpu_cpp.h"  // NO_G3_REWRITE
+
+#include <optional>
 
 namespace skgpu::graphite {
 class ComputePipeline;
 class DawnBuffer;
+class DawnComputePipeline;
 class DawnQueueManager;
 class DawnResourceProvider;
 class DawnSharedContext;
@@ -41,15 +45,17 @@ private:
     bool setNewCommandBufferResources() override;
 
     bool onAddRenderPass(const RenderPassDesc&,
+                         SkIRect renderPassBounds,
                          const Texture* colorTexture,
                          const Texture* resolveTexture,
                          const Texture* depthStencilTexture,
                          SkRect viewport,
                          const DrawPassList&) override;
-    bool onAddComputePass(const DispatchGroupList&) override;
+    bool onAddComputePass(DispatchGroupSpan) override;
 
     // Methods for populating a Dawn RenderPassEncoder:
     bool beginRenderPass(const RenderPassDesc&,
+                         SkIRect renderPassBounds,
                          const Texture* colorTexture,
                          const Texture* resolveTexture,
                          const Texture* depthStencilTexture);
@@ -57,15 +63,16 @@ private:
             const RenderPassDesc& frontendRenderPassDesc,
             const wgpu::RenderPassDescriptor& wgpuRenderPassDesc,
             const DawnTexture* msaaTexture);
-    bool doBlitWithDraw(const RenderPassDesc& frontendRenderPassDesc,
+    bool doBlitWithDraw(const wgpu::RenderPassEncoder& renderEncoder,
+                        const RenderPassDesc& frontendRenderPassDesc,
                         const wgpu::TextureView& sourceTextureView,
                         int width,
                         int height);
     void endRenderPass();
 
-    void addDrawPass(const DrawPass*);
+    bool addDrawPass(const DrawPass*);
 
-    void bindGraphicsPipeline(const GraphicsPipeline*);
+    bool bindGraphicsPipeline(const GraphicsPipeline*);
     void setBlendConstants(float* blendConstants);
 
     void bindUniformBuffer(const BindBufferInfo& info, UniformSlot);
@@ -103,10 +110,9 @@ private:
     // Methods for populating a Dawn ComputePassEncoder:
     void beginComputePass();
     void bindComputePipeline(const ComputePipeline*);
-    void bindBuffer(const Buffer* buffer, unsigned int offset, unsigned int index);
-    void bindTexture(const Texture* texture, unsigned int index);
-    void bindSampler(const Sampler* sampler, unsigned int index);
-    void dispatchThreadgroups(const WorkgroupSize& globalSize, const WorkgroupSize& localSize);
+    void bindDispatchResources(const DispatchGroup&, const DispatchGroup::Dispatch&);
+    void dispatchWorkgroups(const WorkgroupSize& globalSize);
+    void dispatchWorkgroupsIndirect(const Buffer* indirectBuffer, size_t indirectBufferOffset);
     void endComputePass();
 
     // Methods for doing texture/buffer to texture/buffer copying:
@@ -127,7 +133,8 @@ private:
     bool onCopyTextureToTexture(const Texture* src,
                                 SkIRect srcRect,
                                 const Texture* dst,
-                                SkIPoint dstPoint) override;
+                                SkIPoint dstPoint,
+                                int mipLevel) override;
     bool onSynchronizeBufferToCpu(const Buffer*, bool* outDidResultInWork) override;
     bool onClearBuffer(const Buffer*, size_t offset, size_t size) override;
 
@@ -138,6 +145,7 @@ private:
 
     std::array<const DawnBuffer*, DawnGraphicsPipeline::kNumUniformBuffers> fBoundUniformBuffers;
     std::array<uint32_t, DawnGraphicsPipeline::kNumUniformBuffers> fBoundUniformBufferOffsets;
+    std::array<uint32_t, DawnGraphicsPipeline::kNumUniformBuffers> fBoundUniformBufferSizes;
 
     wgpu::CommandEncoder fCommandEncoder;
     wgpu::RenderPassEncoder fActiveRenderPassEncoder;
@@ -146,9 +154,20 @@ private:
     wgpu::Buffer fCurrentIndirectBuffer;
     size_t fCurrentIndirectBufferOffset = 0;
 
-    wgpu::Buffer fIntrinsicConstantBuffer;
+    using IntrinsicConstant = std::array<float, 4>;
+
+    static constexpr int kBufferBindingOffsetAlignment = 256;
+    static constexpr int kIntrinsicConstantAlignedSize =
+            SkAlignTo(sizeof(IntrinsicConstant), kBufferBindingOffsetAlignment);
+    static constexpr int kNumSlotsForIntrinsicConstantBuffer = 8;
+
+    std::optional<IntrinsicConstant> fCurrentRTAdjust;
+
+    sk_sp<DawnBuffer> fIntrinsicConstantBuffer;
+    int fIntrinsicConstantBufferSlotsUsed = 0;
 
     const DawnGraphicsPipeline* fActiveGraphicsPipeline = nullptr;
+    const DawnComputePipeline* fActiveComputePipeline = nullptr;
     const DawnSharedContext* fSharedContext;
     DawnResourceProvider* fResourceProvider;
 };

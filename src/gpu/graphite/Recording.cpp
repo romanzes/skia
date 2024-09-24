@@ -16,9 +16,9 @@
 #include "src/gpu/graphite/Resource.h"
 #include "src/gpu/graphite/ResourceProvider.h"
 #include "src/gpu/graphite/Surface_Graphite.h"
-#include "src/gpu/graphite/TaskGraph.h"
 #include "src/gpu/graphite/Texture.h"
 #include "src/gpu/graphite/TextureProxy.h"
+#include "src/gpu/graphite/task/TaskList.h"
 
 #include <unordered_set>
 
@@ -26,12 +26,15 @@ using namespace skia_private;
 
 namespace skgpu::graphite {
 
-Recording::Recording(std::unique_ptr<TaskGraph> graph,
+Recording::Recording(uint32_t uniqueID,
+                     uint32_t recorderID,
                      std::unordered_set<sk_sp<TextureProxy>, ProxyHash>&& nonVolatileLazyProxies,
                      std::unordered_set<sk_sp<TextureProxy>, ProxyHash>&& volatileLazyProxies,
                      std::unique_ptr<LazyProxyData> targetProxyData,
                      TArray<sk_sp<RefCntedCallback>>&& finishedProcs)
-        : fGraph(std::move(graph))
+        : fUniqueID(uniqueID)
+        , fRecorderID(recorderID)
+        , fRootTaskList(new TaskList)
         , fNonVolatileLazyProxies(std::move(nonVolatileLazyProxies))
         , fVolatileLazyProxies(std::move(volatileLazyProxies))
         , fTargetProxyData(std::move(targetProxyData))
@@ -72,7 +75,7 @@ bool RecordingPriv::hasNonVolatileLazyProxies() const {
 bool RecordingPriv::instantiateNonVolatileLazyProxies(ResourceProvider* resourceProvider) {
     SkASSERT(this->hasNonVolatileLazyProxies());
 
-    for (auto proxy : fRecording->fNonVolatileLazyProxies) {
+    for (const auto& proxy : fRecording->fNonVolatileLazyProxies) {
         if (!proxy->lazyInstantiate(resourceProvider)) {
             return false;
         }
@@ -91,7 +94,7 @@ bool RecordingPriv::hasVolatileLazyProxies() const {
 bool RecordingPriv::instantiateVolatileLazyProxies(ResourceProvider* resourceProvider) {
     SkASSERT(this->hasVolatileLazyProxies());
 
-    for (auto proxy : fRecording->fVolatileLazyProxies) {
+    for (const auto& proxy : fRecording->fVolatileLazyProxies) {
         if (!proxy->lazyInstantiate(resourceProvider)) {
             return false;
         }
@@ -105,7 +108,7 @@ void RecordingPriv::deinstantiateVolatileLazyProxies() {
         return;
     }
 
-    for (auto proxy : fRecording->fVolatileLazyProxies) {
+    for (const auto& proxy : fRecording->fVolatileLazyProxies) {
         SkASSERT(proxy->isVolatile());
         proxy->deinstantiate();
     }
@@ -149,8 +152,12 @@ bool RecordingPriv::addCommands(Context* context,
     for (size_t i = 0; i < fRecording->fExtraResourceRefs.size(); ++i) {
         commandBuffer->trackResource(fRecording->fExtraResourceRefs[i]);
     }
-    if (!fRecording->fGraph->addCommands(
-                context, commandBuffer, {replayTarget, targetTranslation})) {
+
+    // There's no need to differentiate kSuccess and kDiscard at the root list level; if every task
+    // is discarded, the Recording will automatically be a no-op on replay while still correctly
+    // notifying any finish procs the client may have added.
+    if (fRecording->fRootTaskList->addCommands(
+                context, commandBuffer, {replayTarget, targetTranslation}) == Task::Status::kFail) {
         return false;
     }
     for (int i = 0; i < fRecording->fFinishedProcs.size(); ++i) {
@@ -165,12 +172,7 @@ void RecordingPriv::addResourceRef(sk_sp<Resource> resource) {
     fRecording->fExtraResourceRefs.push_back(std::move(resource));
 }
 
-void RecordingPriv::addTask(sk_sp<Task> task) {
-    fRecording->fGraph->prepend(std::move(task));
-}
-
-////////////////////////////////////////////////////////////////////////////////
-// Utility methods for testing only
+#if defined(GPU_TEST_UTILS)
 bool RecordingPriv::isTargetProxyInstantiated() const {
     return fRecording->fTargetProxyData->lazyProxy()->isInstantiated();
 }
@@ -184,7 +186,8 @@ int RecordingPriv::numNonVolatilePromiseImages() const {
 }
 
 bool RecordingPriv::hasTasks() const {
-    return fRecording->fGraph->hasTasks();
+    return fRecording->fRootTaskList->hasTasks();
 }
+#endif
 
 } // namespace skgpu::graphite

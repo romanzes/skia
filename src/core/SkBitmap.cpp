@@ -145,8 +145,6 @@ bool SkBitmap::setInfo(const SkImageInfo& info, size_t rowBytes) {
     return true;
 }
 
-
-
 bool SkBitmap::setAlphaType(SkAlphaType newAlphaType) {
     if (!SkColorTypeValidateAlphaType(this->colorType(), newAlphaType, &newAlphaType)) {
         return false;
@@ -157,6 +155,14 @@ bool SkBitmap::setAlphaType(SkAlphaType newAlphaType) {
     }
     SkDEBUGCODE(this->validate();)
     return true;
+}
+
+void SkBitmap::setColorSpace(sk_sp<SkColorSpace> newColorSpace) {
+    if (this->colorSpace() != newColorSpace.get()) {
+        SkImageInfo newInfo = fPixmap.info().makeColorSpace(std::move(newColorSpace));
+        fPixmap.reset(std::move(newInfo), fPixmap.addr(), fPixmap.rowBytes());
+    }
+    SkDEBUGCODE(this->validate();)
 }
 
 SkIPoint SkBitmap::pixelRefOrigin() const {
@@ -243,11 +249,17 @@ void SkBitmap::allocPixels(Allocator* allocator) {
 }
 
 void SkBitmap::allocPixelsFlags(const SkImageInfo& info, uint32_t flags) {
-    SkASSERT_RELEASE(this->tryAllocPixelsFlags(info, flags));
+    SkASSERTF_RELEASE(this->tryAllocPixelsFlags(info, flags),
+                      "ColorType:%d AlphaType:%d [w:%d h:%d] rb:%zu flags: 0x%x",
+                      info.colorType(), info.alphaType(), info.width(), info.height(),
+                      this->rowBytes(), flags);
 }
 
 void SkBitmap::allocPixels(const SkImageInfo& info, size_t rowBytes) {
-    SkASSERT_RELEASE(this->tryAllocPixels(info, rowBytes));
+    SkASSERTF_RELEASE(this->tryAllocPixels(info, rowBytes),
+                      "ColorType:%d AlphaType:%d [w:%d h:%d] rb:%zu",
+                      info.colorType(), info.alphaType(), info.width(), info.height(),
+                      this->rowBytes());
 }
 
 void SkBitmap::allocPixels(const SkImageInfo& info) {

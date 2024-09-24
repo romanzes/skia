@@ -13,6 +13,7 @@ genrule(
     # $< is the one and only input file.
     # $@ is the one and only output location.
     cmd = "cp $< $@",
+    cmd_bat = "copy $< $@",
 )
 
 HARFBUZZ_HDRS = [
@@ -324,6 +325,8 @@ HARFBUZZ_SRCS = [
     "src/hb-subset-cff2.cc",
     "src/hb-subset-input.cc",
     "src/hb-subset-input.hh",
+    "src/hb-subset-instancer-iup.cc",
+    "src/hb-subset-instancer-iup.hh",
     "src/hb-subset-instancer-solver.cc",
     "src/hb-subset-instancer-solver.hh",
     "src/hb-subset-plan-member-list.hh",

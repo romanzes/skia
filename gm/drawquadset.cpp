@@ -30,6 +30,7 @@
 #include "src/gpu/ganesh/SkGr.h"
 #include "src/gpu/ganesh/SurfaceDrawContext.h"
 #include "tools/ToolUtils.h"
+#include "tools/fonts/FontToolUtils.h"
 
 #include <utility>
 
@@ -40,7 +41,7 @@ static constexpr int kRowCount = 4;
 static constexpr int kColCount = 3;
 
 static void draw_text(SkCanvas* canvas, const char* text) {
-    SkFont font(ToolUtils::create_portable_typeface(), 12);
+    SkFont font(ToolUtils::DefaultPortableTypeface(), 12);
     canvas->drawString(text, 0, 0, font, SkPaint());
 }
 
@@ -179,8 +180,8 @@ namespace skiagm {
 
 class DrawQuadSetGM : public GM {
 private:
-    SkString onShortName() override { return SkString("draw_quad_set"); }
-    SkISize onISize() override { return SkISize::Make(800, 800); }
+    SkString getName() const override { return SkString("draw_quad_set"); }
+    SkISize getISize() override { return SkISize::Make(800, 800); }
 
     void onDraw(SkCanvas* canvas) override {
         SkMatrix rowMatrices[5];

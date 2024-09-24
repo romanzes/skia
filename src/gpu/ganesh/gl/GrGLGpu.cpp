@@ -7,51 +7,72 @@
 
 #include "src/gpu/ganesh/gl/GrGLGpu.h"
 
+#include "include/core/SkAlphaType.h"
+#include "include/core/SkColor.h"
 #include "include/core/SkColorSpace.h"
-#include "include/core/SkPixmap.h"
+#include "include/core/SkData.h"
+#include "include/core/SkRect.h"
+#include "include/core/SkSize.h"
+#include "include/core/SkString.h"
 #include "include/core/SkTextureCompressionType.h"
 #include "include/core/SkTypes.h"
-#include "include/gpu/GrBackendSemaphore.h"
+#include "include/gpu/GpuTypes.h"
 #include "include/gpu/GrBackendSurface.h"
+#include "include/gpu/GrContextOptions.h"
 #include "include/gpu/GrDirectContext.h"
+#include "include/gpu/GrDriverBugWorkarounds.h"
 #include "include/gpu/GrTypes.h"
+#include "include/gpu/gl/GrGLConfig.h"
+#include "include/private/base/SkFloatingPoint.h"
+#include "include/private/base/SkMath.h"
+#include "include/private/base/SkPoint_impl.h"
 #include "include/private/base/SkTemplates.h"
 #include "include/private/base/SkTo.h"
-#include "src/base/SkAutoMalloc.h"
-#include "src/base/SkHalf.h"
 #include "src/base/SkScopeExit.h"
 #include "src/core/SkCompressedDataUtils.h"
 #include "src/core/SkLRUCache.h"
 #include "src/core/SkMipmap.h"
+#include "src/core/SkSLTypeShared.h"
 #include "src/core/SkTraceEvent.h"
 #include "src/gpu/SkRenderEngineAbortf.h"
+#include "src/gpu/Swizzle.h"
+#include "src/gpu/ganesh/GrAttachment.h"
 #include "src/gpu/ganesh/GrBackendSurfacePriv.h"
 #include "src/gpu/ganesh/GrBackendUtils.h"
-#include "src/gpu/ganesh/GrCpuBuffer.h"
+#include "src/gpu/ganesh/GrBuffer.h"
 #include "src/gpu/ganesh/GrDataUtils.h"
 #include "src/gpu/ganesh/GrDirectContextPriv.h"
-#include "src/gpu/ganesh/GrGpuResourcePriv.h"
+#include "src/gpu/ganesh/GrGpuBuffer.h"
+#include "src/gpu/ganesh/GrImageInfo.h"
 #include "src/gpu/ganesh/GrPipeline.h"
 #include "src/gpu/ganesh/GrProgramInfo.h"
 #include "src/gpu/ganesh/GrRenderTarget.h"
+#include "src/gpu/ganesh/GrSemaphore.h"
 #include "src/gpu/ganesh/GrShaderCaps.h"
+#include "src/gpu/ganesh/GrShaderVar.h"
 #include "src/gpu/ganesh/GrStagingBufferManager.h"
-#include "src/gpu/ganesh/GrSurfaceProxyPriv.h"
+#include "src/gpu/ganesh/GrSurface.h"
 #include "src/gpu/ganesh/GrTexture.h"
 #include "src/gpu/ganesh/GrUtil.h"
+#include "src/gpu/ganesh/GrWindowRectangles.h"
 #include "src/gpu/ganesh/gl/GrGLAttachment.h"
 #include "src/gpu/ganesh/gl/GrGLBackendSurfacePriv.h"
 #include "src/gpu/ganesh/gl/GrGLBuffer.h"
 #include "src/gpu/ganesh/gl/GrGLOpsRenderPass.h"
+#include "src/gpu/ganesh/gl/GrGLProgram.h"
 #include "src/gpu/ganesh/gl/GrGLSemaphore.h"
 #include "src/gpu/ganesh/gl/GrGLTextureRenderTarget.h"
 #include "src/gpu/ganesh/gl/builders/GrGLShaderStringBuilder.h"
-#include "src/sksl/SkSLCompiler.h"
 #include "src/sksl/SkSLProgramKind.h"
 #include "src/sksl/SkSLProgramSettings.h"
+#include "src/sksl/ir/SkSLProgram.h"
 
+#include <algorithm>
 #include <cmath>
+#include <functional>
 #include <memory>
+#include <string>
+#include <utility>
 
 using namespace skia_private;
 
@@ -384,14 +405,21 @@ private:
 
 ///////////////////////////////////////////////////////////////////////////////
 
-sk_sp<GrGpu> GrGLGpu::Make(sk_sp<const GrGLInterface> interface, const GrContextOptions& options,
-                           GrDirectContext* direct) {
+std::unique_ptr<GrGpu> GrGLGpu::Make(sk_sp<const GrGLInterface> interface,
+                                     const GrContextOptions& options,
+                                     GrDirectContext* direct) {
+#if !defined(SK_DISABLE_LEGACY_GL_MAKE_NATIVE_INTERFACE)
     if (!interface) {
         interface = GrGLMakeNativeInterface();
         if (!interface) {
             return nullptr;
         }
     }
+#else
+    if (!interface) {
+        return nullptr;
+    }
+#endif
 #ifdef USE_NSIGHT
     const_cast<GrContextOptions&>(options).fSuppressPathRendering = true;
 #endif
@@ -399,7 +427,7 @@ sk_sp<GrGpu> GrGLGpu::Make(sk_sp<const GrGLInterface> interface, const GrContext
     if (!glContext) {
         return nullptr;
     }
-    return sk_sp<GrGpu>(new GrGLGpu(std::move(glContext), direct));
+    return std::unique_ptr<GrGpu>(new GrGLGpu(std::move(glContext), direct));
 }
 
 GrGLGpu::GrGLGpu(std::unique_ptr<GrGLContext> ctx, GrDirectContext* dContext)
@@ -417,7 +445,7 @@ GrGLGpu::GrGLGpu(std::unique_ptr<GrGLContext> ctx, GrDirectContext* dContext)
     // Toss out any pre-existing OOM that was hanging around before we got started.
     this->checkAndResetOOMed();
 
-    this->initCapsAndCompiler(sk_ref_sp(fGLContext->caps()));
+    this->initCaps(sk_ref_sp(fGLContext->caps()));
 
     fHWTextureUnitBindings.reset(this->numTextureUnits());
 
@@ -689,11 +717,16 @@ static bool check_backend_texture(const GrBackendTexture& backendTex,
         return false;
     }
 
+    if (info.fProtected == skgpu::Protected::kYes && !caps.supportsProtectedContent()) {
+        return false;
+    }
+
     desc->fSize = {backendTex.width(), backendTex.height()};
     desc->fTarget = info.fTarget;
     desc->fID = info.fID;
     desc->fFormat = GrGLFormatFromGLEnum(info.fFormat);
-    desc->fIsProtected = info.fProtected;
+    desc->fIsProtected = GrProtected(info.fProtected == GrProtected::kYes ||
+                                     caps.supportsProtectedContent());
 
     if (desc->fFormat == GrGLFormat::kUnknown) {
         return false;
@@ -709,16 +742,14 @@ static bool check_backend_texture(const GrBackendTexture& backendTex,
     } else if (GR_GL_TEXTURE_2D != desc->fTarget) {
         return false;
     }
-    if (desc->fIsProtected == skgpu::Protected::kYes && !caps.supportsProtected()) {
-        return false;
-    }
+
 
     return true;
 }
 
 static sk_sp<GrGLTextureParameters> get_gl_texture_params(const GrBackendTexture& backendTex) {
-    GrBackendTextureData* btd = GrBackendSurfacePriv::GetBackendData(backendTex);
-    auto glTextureData = static_cast<GrGLBackendTextureData*>(btd);
+    const GrBackendTextureData* btd = GrBackendSurfacePriv::GetBackendData(backendTex);
+    auto glTextureData = static_cast<const GrGLBackendTextureData*>(btd);
     SkASSERT(glTextureData);
     return glTextureData->info().refParameters();
 }
@@ -762,21 +793,22 @@ static bool check_compressed_backend_texture(const GrBackendTexture& backendTex,
     if (!GrBackendTextures::GetGLTextureInfo(backendTex, &info) || !info.fID || !info.fFormat) {
         return false;
     }
+    if (info.fProtected == skgpu::Protected::kYes && !caps.supportsProtectedContent()) {
+        return false;
+    }
 
     desc->fSize = {backendTex.width(), backendTex.height()};
     desc->fTarget = info.fTarget;
     desc->fID = info.fID;
     desc->fFormat = GrGLFormatFromGLEnum(info.fFormat);
-    desc->fIsProtected = info.fProtected;
+    desc->fIsProtected = GrProtected(info.fProtected == GrProtected::kYes ||
+                                     caps.supportsProtectedContent());
 
     if (desc->fFormat == GrGLFormat::kUnknown) {
         return false;
     }
 
     if (GR_GL_TEXTURE_2D != desc->fTarget) {
-        return false;
-    }
-    if (desc->fIsProtected == skgpu::Protected::kYes && !caps.supportsProtected()) {
         return false;
     }
 
@@ -864,7 +896,7 @@ sk_sp<GrRenderTarget> GrGLGpu::onWrapBackendRenderTarget(const GrBackendRenderTa
         return nullptr;
     }
 
-    if (backendRT.isProtected() && !this->glCaps().supportsProtected()) {
+    if (backendRT.isProtected() && !this->glCaps().supportsProtectedContent()) {
         return nullptr;
     }
 
@@ -1205,9 +1237,10 @@ void GrGLGpu::uploadTexData(SkISize texDims,
 bool GrGLGpu::uploadCompressedTexData(SkTextureCompressionType compressionType,
                                       GrGLFormat format,
                                       SkISize dimensions,
-                                      GrMipmapped mipmapped,
+                                      skgpu::Mipmapped mipmapped,
                                       GrGLenum target,
-                                      const void* data, size_t dataSize) {
+                                      const void* data,
+                                      size_t dataSize) {
     SkASSERT(format != GrGLFormat::kUnknown);
     const GrGLCaps& caps = this->glCaps();
 
@@ -1222,7 +1255,7 @@ bool GrGLGpu::uploadCompressedTexData(SkTextureCompressionType compressionType,
     bool useTexStorage = caps.formatSupportsTexStorage(format);
 
     int numMipLevels = 1;
-    if (mipmapped == GrMipmapped::kYes) {
+    if (mipmapped == skgpu::Mipmapped::kYes) {
         numMipLevels = SkMipmap::ComputeLevelCount(dimensions.width(), dimensions.height())+1;
     }
 
@@ -1253,7 +1286,7 @@ bool GrGLGpu::uploadCompressedTexData(SkTextureCompressionType compressionType,
                                                           dimensions.height(),
                                                           internalFormat,
                                                           SkToInt(levelDataSize),
-                                                          &((char*)data)[offset]));
+                                                          &((const char*)data)[offset]));
 
             if (error != GR_GL_NO_ERROR) {
                 return false;
@@ -1269,7 +1302,7 @@ bool GrGLGpu::uploadCompressedTexData(SkTextureCompressionType compressionType,
             size_t levelDataSize = SkCompressedDataSize(compressionType, dimensions,
                                                         nullptr, false);
 
-            const char* rawLevelData = &((char*)data)[offset];
+            const char* rawLevelData = &((const char*)data)[offset];
             GrGLenum error = GL_ALLOC_CALL(CompressedTexImage2D(target,
                                                                 level,
                                                                 internalFormat,
@@ -1485,7 +1518,7 @@ sk_sp<GrTexture> GrGLGpu::onCreateTexture(SkISize dimensions,
                                           int mipLevelCount,
                                           uint32_t levelClearMask,
                                           std::string_view label) {
-    if (isProtected == GrProtected::kYes && !this->glCaps().supportsProtected()) {
+    if (isProtected == GrProtected::kYes && !this->glCaps().supportsProtectedContent()) {
         return nullptr;
     }
     SkASSERT(GrGLCaps::kNone_MSFBOType != this->glCaps().msFBOType() || renderTargetSampleCnt == 1);
@@ -1514,7 +1547,8 @@ sk_sp<GrTexture> GrGLGpu::onCreateTexture(SkISize dimensions,
     texDesc.fOwnership = GrBackendObjectOwnership::kOwned;
     SkASSERT(texDesc.fFormat != GrGLFormat::kUnknown);
     SkASSERT(!GrGLFormatIsCompressed(texDesc.fFormat));
-    texDesc.fIsProtected = isProtected;
+    texDesc.fIsProtected = GrProtected(isProtected == GrProtected::kYes ||
+                                       this->glCaps().supportsProtectedContent());
 
     texDesc.fID = this->createTexture(dimensions, texDesc.fFormat, texDesc.fTarget, renderable,
                                       &initialState, mipLevelCount, texDesc.fIsProtected, label);
@@ -1590,11 +1624,11 @@ sk_sp<GrTexture> GrGLGpu::onCreateTexture(SkISize dimensions,
 sk_sp<GrTexture> GrGLGpu::onCreateCompressedTexture(SkISize dimensions,
                                                     const GrBackendFormat& format,
                                                     skgpu::Budgeted budgeted,
-                                                    GrMipmapped mipmapped,
+                                                    skgpu::Mipmapped mipmapped,
                                                     GrProtected isProtected,
                                                     const void* data,
                                                     size_t dataSize) {
-    if (isProtected == GrProtected::kYes && !this->glCaps().supportsProtected()) {
+    if (isProtected == GrProtected::kYes && !this->glCaps().supportsProtectedContent()) {
         return nullptr;
     }
     SkTextureCompressionType compression = GrBackendFormatToCompressionType(format);
@@ -1605,7 +1639,8 @@ sk_sp<GrTexture> GrGLGpu::onCreateCompressedTexture(SkISize dimensions,
     desc.fTarget = GR_GL_TEXTURE_2D;
     desc.fOwnership = GrBackendObjectOwnership::kOwned;
     desc.fFormat = GrBackendFormats::AsGLFormat(format);
-    desc.fIsProtected = isProtected;
+    desc.fIsProtected = GrProtected(isProtected == GrProtected::kYes ||
+                                    this->glCaps().supportsProtectedContent());
     desc.fID = this->createCompressedTexture2D(desc.fSize, compression, desc.fFormat,
                                                mipmapped, desc.fIsProtected, &initialState);
     if (!desc.fID) {
@@ -1623,9 +1658,9 @@ sk_sp<GrTexture> GrGLGpu::onCreateCompressedTexture(SkISize dimensions,
     // Unbind this texture from the scratch texture unit.
     this->bindTextureToScratchUnit(GR_GL_TEXTURE_2D, 0);
 
-    GrMipmapStatus mipmapStatus = mipmapped == GrMipmapped::kYes
-                                                            ? GrMipmapStatus::kValid
-                                                            : GrMipmapStatus::kNotAllocated;
+    GrMipmapStatus mipmapStatus = mipmapped == skgpu::Mipmapped::kYes
+                                          ? GrMipmapStatus::kValid
+                                          : GrMipmapStatus::kNotAllocated;
 
     auto tex = sk_make_sp<GrGLTexture>(this, budgeted, desc, mipmapStatus,
                                        /*label=*/"GLGpuCreateCompressedTexture");
@@ -1635,10 +1670,11 @@ sk_sp<GrTexture> GrGLGpu::onCreateCompressedTexture(SkISize dimensions,
     return tex;
 }
 
-GrBackendTexture GrGLGpu::onCreateCompressedBackendTexture(
-        SkISize dimensions, const GrBackendFormat& format, GrMipmapped mipmapped,
-        GrProtected isProtected) {
-    if (isProtected == GrProtected::kYes && !this->glCaps().supportsProtected()) {
+GrBackendTexture GrGLGpu::onCreateCompressedBackendTexture(SkISize dimensions,
+                                                           const GrBackendFormat& format,
+                                                           skgpu::Mipmapped mipmapped,
+                                                           GrProtected isProtected) {
+    if (isProtected == GrProtected::kYes && !this->glCaps().supportsProtectedContent()) {
         return {};
     }
 
@@ -1656,7 +1692,8 @@ GrBackendTexture GrGLGpu::onCreateCompressedBackendTexture(
 
     info.fTarget = GR_GL_TEXTURE_2D;
     info.fFormat = GrGLFormatToEnum(glFormat);
-    info.fProtected = isProtected;
+    info.fProtected = GrProtected(isProtected == GrProtected::kYes ||
+                                  this->glCaps().supportsProtectedContent());
     info.fID = this->createCompressedTexture2D(dimensions, compression, glFormat,
                                                mipmapped, info.fProtected, &initialState);
     if (!info.fID) {
@@ -1689,13 +1726,14 @@ bool GrGLGpu::onUpdateCompressedBackendTexture(const GrBackendTexture& backendTe
     }
     SkTextureCompressionType compression = GrBackendFormatToCompressionType(format);
 
-    GrMipmapped mipmapped = backendTexture.hasMipmaps() ? GrMipmapped::kYes : GrMipmapped::kNo;
+    skgpu::Mipmapped mipmapped =
+            backendTexture.hasMipmaps() ? skgpu::Mipmapped::kYes : skgpu::Mipmapped::kNo;
 
     this->bindTextureToScratchUnit(info.fTarget, info.fID);
 
     // If we have mips make sure the base level is set to 0 and the max level set to numMipLevels-1
     // so that the uploads go to the right levels.
-    if (backendTexture.hasMipMaps() && this->glCaps().mipmapLevelControlSupport()) {
+    if (backendTexture.hasMipmaps() && this->glCaps().mipmapLevelControlSupport()) {
         auto params = get_gl_texture_params(backendTexture);
         GrGLTextureParameters::NonsamplerState nonsamplerState = params->nonsamplerState();
         if (params->nonsamplerState().fBaseMipMapLevel != 0) {
@@ -1733,11 +1771,13 @@ int GrGLGpu::getCompatibleStencilIndex(GrGLFormat format) {
         // Default to unsupported, set this if we find a stencil format that works.
         int firstWorkingStencilFormatIndex = -1;
 
+        GrProtected isProtected = GrProtected(this->glCaps().supportsProtectedContent());
+
         GrGLuint colorID = this->createTexture({kSize, kSize}, format, GR_GL_TEXTURE_2D,
                                                GrRenderable::kYes,
                                                nullptr,
                                                1,
-                                               GrProtected::kNo,
+                                               isProtected,
                                                /*label=*/"Skia");
         if (!colorID) {
             return -1;
@@ -1816,7 +1856,7 @@ GrGLuint GrGLGpu::createCompressedTexture2D(
         SkISize dimensions,
         SkTextureCompressionType compression,
         GrGLFormat format,
-        GrMipmapped mipmapped,
+        skgpu::Mipmapped mipmapped,
         GrProtected isProtected,
         GrGLTextureParameters::SamplerOverriddenState* initialState) {
     if (format == GrGLFormat::kUnknown) {
@@ -1836,8 +1876,9 @@ GrGLuint GrGLGpu::createCompressedTexture2D(
                                                this->glCaps(),
                                                GR_GL_TEXTURE_2D);
 
+    SkASSERT((GrProtected::kYes == isProtected) == this->glCaps().supportsProtectedContent());
     if (GrProtected::kYes == isProtected) {
-        if (this->glCaps().supportsProtected()) {
+        if (this->glCaps().supportsProtectedContent()) {
             GL_CALL(TexParameteri(GR_GL_TEXTURE_2D, GR_GL_TEXTURE_PROTECTED_EXT, GR_GL_TRUE));
         } else {
             GL_CALL(DeleteTextures(1, &id));
@@ -1881,8 +1922,9 @@ GrGLuint GrGLGpu::createTexture(SkISize dimensions,
         set_initial_texture_params(this->glInterface(), this->glCaps(), target);
     }
 
+    SkASSERT((GrProtected::kYes == isProtected) == this->glCaps().supportsProtectedContent());
     if (GrProtected::kYes == isProtected) {
-        if (this->glCaps().supportsProtected()) {
+        if (this->glCaps().supportsProtectedContent()) {
             GL_CALL(TexParameteri(target, GR_GL_TEXTURE_PROTECTED_EXT, GR_GL_TRUE));
         } else {
             GL_CALL(DeleteTextures(1, &id));
@@ -2806,8 +2848,8 @@ void GrGLGpu::bindTexture(int unitIdx, GrSamplerState samplerState, const skgpu:
         fHWTextureUnitBindings[unitIdx].setBoundID(target, textureID);
     }
 
-    if (samplerState.mipmapped() == GrMipmapped::kYes) {
-        if (!this->caps()->mipmapSupport() || texture->mipmapped() == GrMipmapped::kNo) {
+    if (samplerState.mipmapped() == skgpu::Mipmapped::kYes) {
+        if (!this->caps()->mipmapSupport() || texture->mipmapped() == skgpu::Mipmapped::kNo) {
             // We should have caught this already.
             SkASSERT(!samplerState.isAniso());
             samplerState = GrSamplerState(samplerState.wrapModeX(),
@@ -2826,7 +2868,7 @@ void GrGLGpu::bindTexture(int unitIdx, GrSamplerState samplerState, const skgpu:
     if (this->glCaps().useSamplerObjects()) {
         fSamplerObjectCache->bindSampler(unitIdx, samplerState);
         if (this->glCaps().mustSetAnyTexParameterToEnableMipmapping()) {
-            if (samplerState.mipmapped() == GrMipmapped::kYes) {
+            if (samplerState.mipmapped() == skgpu::Mipmapped::kYes) {
                 GrGLenum minFilter = filter_to_gl_min_filter(samplerState.filter(),
                                                              samplerState.mipmapMode());
                 const GrGLTextureParameters::SamplerOverriddenState& oldSamplerState =
@@ -3260,7 +3302,7 @@ bool GrGLGpu::createCopyProgram(GrTexture* srcTex) {
     GrShaderVar uTexCoordXform("u_texCoordXform", SkSLType::kHalf4,
                                GrShaderVar::TypeModifier::Uniform);
     GrShaderVar uPosXform("u_posXform", SkSLType::kHalf4, GrShaderVar::TypeModifier::Uniform);
-    GrShaderVar uTexture("u_texture", samplerType, GrShaderVar::TypeModifier::Uniform);
+    GrShaderVar uTexture("u_texture", samplerType);
     GrShaderVar vTexCoord("v_texCoord", SkSLType::kHalf2, GrShaderVar::TypeModifier::Out);
     GrShaderVar oFragColor("o_FragColor", SkSLType::kHalf4, GrShaderVar::TypeModifier::Out);
 
@@ -3313,31 +3355,33 @@ bool GrGLGpu::createCopyProgram(GrTexture* srcTex) {
     auto errorHandler = this->getContext()->priv().getShaderErrorHandler();
     std::string glsl[kGrShaderTypeCount];
     SkSL::ProgramSettings settings;
-    std::unique_ptr<SkSL::Program> program =
-            GrSkSLtoGLSL(this, SkSL::ProgramKind::kVertex, vertexSkSL, settings,
-                         &glsl[kVertex_GrShaderType], errorHandler);
+    SkSL::Program::Interface interface;
+    skgpu::SkSLToGLSL(shaderCaps, vertexSkSL, SkSL::ProgramKind::kVertex, settings,
+                      &glsl[kVertex_GrShaderType], &interface, errorHandler);
     GrGLuint vshader = GrGLCompileAndAttachShader(*fGLContext,
                                                   fCopyPrograms[progIdx].fProgram,
                                                   GR_GL_VERTEX_SHADER,
                                                   glsl[kVertex_GrShaderType],
+                                                  /*shaderWasCached=*/false,
                                                   fProgramCache->stats(),
                                                   errorHandler);
-    SkASSERT(program->fInterface == SkSL::Program::Interface());
+    SkASSERT(interface == SkSL::Program::Interface());
     if (!vshader) {
         // Just delete the program, no shaders to delete
         cleanup_program(this, &fCopyPrograms[progIdx].fProgram, nullptr, nullptr);
         return false;
     }
 
-    program = GrSkSLtoGLSL(this, SkSL::ProgramKind::kFragment, fragmentSkSL, settings,
-                           &glsl[kFragment_GrShaderType], errorHandler);
+    skgpu::SkSLToGLSL(shaderCaps, fragmentSkSL, SkSL::ProgramKind::kFragment, settings,
+                      &glsl[kFragment_GrShaderType], &interface, errorHandler);
     GrGLuint fshader = GrGLCompileAndAttachShader(*fGLContext,
                                                   fCopyPrograms[progIdx].fProgram,
                                                   GR_GL_FRAGMENT_SHADER,
                                                   glsl[kFragment_GrShaderType],
+                                                  /*shaderWasCached=*/false,
                                                   fProgramCache->stats(),
                                                   errorHandler);
-    SkASSERT(program->fInterface == SkSL::Program::Interface());
+    SkASSERT(interface == SkSL::Program::Interface());
     if (!fshader) {
         // Delete the program and previously compiled vertex shader
         cleanup_program(this, &fCopyPrograms[progIdx].fProgram, &vshader, nullptr);
@@ -3346,7 +3390,12 @@ bool GrGLGpu::createCopyProgram(GrTexture* srcTex) {
 
     const std::string* sksl[kGrShaderTypeCount] = {&vertexSkSL, &fragmentSkSL};
     GL_CALL(LinkProgram(fCopyPrograms[progIdx].fProgram));
-    if (!GrGLCheckLinkStatus(this, fCopyPrograms[progIdx].fProgram, errorHandler, sksl, glsl)) {
+    if (!GrGLCheckLinkStatus(this,
+                             fCopyPrograms[progIdx].fProgram,
+                             /*shaderWasCached=*/false,
+                             errorHandler,
+                             sksl,
+                             glsl)) {
         // Failed to link, delete everything
         cleanup_program(this, &fCopyPrograms[progIdx].fProgram, &vshader, &fshader);
         return false;
@@ -3383,8 +3432,7 @@ bool GrGLGpu::createMipmapProgram(int progIdx) {
     GrShaderVar aVertex("a_vertex", SkSLType::kHalf2, GrShaderVar::TypeModifier::In);
     GrShaderVar uTexCoordXform("u_texCoordXform", SkSLType::kHalf4,
                                GrShaderVar::TypeModifier::Uniform);
-    GrShaderVar uTexture("u_texture", SkSLType::kTexture2DSampler,
-                         GrShaderVar::TypeModifier::Uniform);
+    GrShaderVar uTexture("u_texture", SkSLType::kTexture2DSampler);
     // We need 1, 2, or 4 texture coordinates (depending on parity of each dimension):
     GrShaderVar vTexCoords[] = {
         GrShaderVar("v_texCoord0", SkSLType::kHalf2, GrShaderVar::TypeModifier::Out),
@@ -3491,31 +3539,33 @@ bool GrGLGpu::createMipmapProgram(int progIdx) {
     auto errorHandler = this->getContext()->priv().getShaderErrorHandler();
     std::string glsl[kGrShaderTypeCount];
     SkSL::ProgramSettings settings;
+    SkSL::Program::Interface interface;
 
-    std::unique_ptr<SkSL::Program> program =
-            GrSkSLtoGLSL(this, SkSL::ProgramKind::kVertex, vertexSkSL, settings,
-                         &glsl[kVertex_GrShaderType], errorHandler);
+    skgpu::SkSLToGLSL(shaderCaps, vertexSkSL, SkSL::ProgramKind::kVertex, settings,
+                      &glsl[kVertex_GrShaderType], &interface, errorHandler);
     GrGLuint vshader = GrGLCompileAndAttachShader(*fGLContext,
                                                   fMipmapPrograms[progIdx].fProgram,
                                                   GR_GL_VERTEX_SHADER,
                                                   glsl[kVertex_GrShaderType],
+                                                  /*shaderWasCached=*/false,
                                                   fProgramCache->stats(),
                                                   errorHandler);
-    SkASSERT(program->fInterface == SkSL::Program::Interface());
+    SkASSERT(interface == SkSL::Program::Interface());
     if (!vshader) {
         cleanup_program(this, &fMipmapPrograms[progIdx].fProgram, nullptr, nullptr);
         return false;
     }
 
-    program = GrSkSLtoGLSL(this, SkSL::ProgramKind::kFragment, fragmentSkSL, settings,
-                           &glsl[kFragment_GrShaderType], errorHandler);
+    skgpu::SkSLToGLSL(shaderCaps, fragmentSkSL, SkSL::ProgramKind::kFragment, settings,
+                      &glsl[kFragment_GrShaderType], &interface, errorHandler);
     GrGLuint fshader = GrGLCompileAndAttachShader(*fGLContext,
                                                   fMipmapPrograms[progIdx].fProgram,
                                                   GR_GL_FRAGMENT_SHADER,
                                                   glsl[kFragment_GrShaderType],
+                                                  /*shaderWasCached=*/false,
                                                   fProgramCache->stats(),
                                                   errorHandler);
-    SkASSERT(program->fInterface == SkSL::Program::Interface());
+    SkASSERT(interface == SkSL::Program::Interface());
     if (!fshader) {
         cleanup_program(this, &fMipmapPrograms[progIdx].fProgram, &vshader, nullptr);
         return false;
@@ -3523,7 +3573,12 @@ bool GrGLGpu::createMipmapProgram(int progIdx) {
 
     const std::string* sksl[kGrShaderTypeCount] = {&vertexSkSL, &fragmentSkSL};
     GL_CALL(LinkProgram(fMipmapPrograms[progIdx].fProgram));
-    if (!GrGLCheckLinkStatus(this, fMipmapPrograms[progIdx].fProgram, errorHandler, sksl, glsl)) {
+    if (!GrGLCheckLinkStatus(this,
+                             fMipmapPrograms[progIdx].fProgram,
+                             /*shaderWasCached=*/false,
+                             errorHandler,
+                             sksl,
+                             glsl)) {
         // Program linking failed, clean up
         cleanup_program(this, &fMipmapPrograms[progIdx].fProgram, &vshader, &fshader);
         return false;
@@ -3852,10 +3907,14 @@ void GrGLGpu::xferBarrier(GrRenderTarget* rt, GrXferBarrierType type) {
 GrBackendTexture GrGLGpu::onCreateBackendTexture(SkISize dimensions,
                                                  const GrBackendFormat& format,
                                                  GrRenderable renderable,
-                                                 GrMipmapped mipmapped,
+                                                 skgpu::Mipmapped mipmapped,
                                                  GrProtected isProtected,
                                                  std::string_view label) {
     this->handleDirtyContext();
+
+    if (isProtected == GrProtected::kYes && !this->glCaps().supportsProtectedContent()) {
+        return {};
+    }
 
     GrGLFormat glFormat = GrBackendFormats::AsGLFormat(format);
     if (glFormat == GrGLFormat::kUnknown) {
@@ -3863,7 +3922,7 @@ GrBackendTexture GrGLGpu::onCreateBackendTexture(SkISize dimensions,
     }
 
     int numMipLevels = 1;
-    if (mipmapped == GrMipmapped::kYes) {
+    if (mipmapped == skgpu::Mipmapped::kYes) {
         numMipLevels = SkMipmap::ComputeLevelCount(dimensions.width(), dimensions.height()) + 1;
     }
 
@@ -3884,19 +3943,20 @@ GrBackendTexture GrGLGpu::onCreateBackendTexture(SkISize dimensions,
             info.fTarget = GR_GL_TEXTURE_2D;
             break;
         case GrTextureType::kRectangle:
-            if (!this->glCaps().rectangleTextureSupport() || mipmapped == GrMipmapped::kYes) {
+            if (!this->glCaps().rectangleTextureSupport() || mipmapped == skgpu::Mipmapped::kYes) {
                 return {};
             }
             info.fTarget = GR_GL_TEXTURE_RECTANGLE;
             break;
     }
+    info.fProtected = GrProtected(isProtected == GrProtected::kYes ||
+                                  this->glCaps().supportsProtectedContent());
     info.fFormat = GrGLFormatToEnum(glFormat);
     info.fID = this->createTexture(dimensions, glFormat, info.fTarget, renderable, &initialState,
-                                   numMipLevels, isProtected, label);
+                                   numMipLevels, info.fProtected, label);
     if (!info.fID) {
         return {};
     }
-    info.fProtected = isProtected;
 
     // Unbind this texture from the scratch texture unit.
     this->bindTextureToScratchUnit(info.fTarget, 0);
@@ -3977,7 +4037,7 @@ bool GrGLGpu::compile(const GrProgramDesc& desc, const GrProgramInfo& programInf
     return stat != GrThreadSafePipelineBuilder::Stats::ProgramCacheResult::kHit;
 }
 
-#if GR_TEST_UTILS
+#if defined(GPU_TEST_UTILS)
 
 bool GrGLGpu::isTestingOnlyBackendTexture(const GrBackendTexture& tex) const {
     SkASSERT(GrBackendApi::kOpenGL == tex.backend());
@@ -4001,7 +4061,7 @@ GrBackendRenderTarget GrGLGpu::createTestingOnlyBackendRenderTarget(SkISize dime
         dimensions.height() > this->caps()->maxRenderTargetSize()) {
         return {};
     }
-    if (isProtected == GrProtected::kYes && !this->glCaps().supportsProtected()) {
+    if (isProtected == GrProtected::kYes && !this->glCaps().supportsProtectedContent()) {
         return {};
     }
 
@@ -4036,7 +4096,8 @@ GrBackendRenderTarget GrGLGpu::createTestingOnlyBackendRenderTarget(SkISize dime
     GrGLFramebufferInfo info;
     info.fFBOID = 0;
     info.fFormat = GrGLFormatToEnum(format);
-    info.fProtected = isProtected;
+    info.fProtected = GrProtected(isProtected == GrProtected::kYes ||
+                                  this->glCaps().supportsProtectedContent());
 
     auto deleteIDs = [&](bool saveFBO = false) {
         if (colorID) {
@@ -4209,8 +4270,9 @@ void GrGLGpu::flush(FlushType flushType) {
     }
 }
 
-bool GrGLGpu::onSubmitToGpu(bool syncCpu) {
-    if (syncCpu || (!fFinishCallbacks.empty() && !this->caps()->fenceSyncSupport())) {
+bool GrGLGpu::onSubmitToGpu(GrSyncCpu sync) {
+    if (sync == GrSyncCpu::kYes ||
+        (!fFinishCallbacks.empty() && !this->glCaps().fenceSyncSupport())) {
         this->finishOutstandingGpuWork();
         fFinishCallbacks.callAll(true);
     } else {
@@ -4238,9 +4300,9 @@ void GrGLGpu::submit(GrOpsRenderPass* renderPass) {
     fCachedOpsRenderPass->reset();
 }
 
-[[nodiscard]] GrFence GrGLGpu::insertFence() {
-    if (!this->caps()->fenceSyncSupport()) {
-        return 0;
+[[nodiscard]] GrGLsync GrGLGpu::insertFence() {
+    if (!this->glCaps().fenceSyncSupport()) {
+        return nullptr;
     }
     GrGLsync sync;
     if (this->glCaps().fenceType() == GrGLCaps::FenceType::kNVFence) {
@@ -4253,8 +4315,7 @@ void GrGLGpu::submit(GrOpsRenderPass* renderPass) {
         GL_CALL_RET(sync, FenceSync(GR_GL_SYNC_GPU_COMMANDS_COMPLETE, 0));
     }
     this->setNeedsFlush();
-    static_assert(sizeof(GrFence) >= sizeof(GrGLsync));
-    return (GrFence)sync;
+    return sync;
 }
 
 bool GrGLGpu::waitSync(GrGLsync sync, uint64_t timeout, bool flush) {
@@ -4281,16 +4342,16 @@ bool GrGLGpu::waitSync(GrGLsync sync, uint64_t timeout, bool flush) {
     }
 }
 
-bool GrGLGpu::waitFence(GrFence fence) {
-    if (!this->caps()->fenceSyncSupport()) {
+bool GrGLGpu::waitFence(GrGLsync fence) {
+    if (!this->glCaps().fenceSyncSupport()) {
         return true;
     }
-    return this->waitSync(reinterpret_cast<GrGLsync>(fence), 0, false);
+    return this->waitSync(fence, 0, false);
 }
 
-void GrGLGpu::deleteFence(GrFence fence) {
-    if (this->caps()->fenceSyncSupport()) {
-        this->deleteSync(reinterpret_cast<GrGLsync>(fence));
+void GrGLGpu::deleteFence(GrGLsync fence) {
+    if (this->glCaps().fenceSyncSupport()) {
+        this->deleteSync(fence);
     }
 }
 
@@ -4299,11 +4360,10 @@ void GrGLGpu::deleteFence(GrFence fence) {
     return GrGLSemaphore::Make(this, isOwned);
 }
 
-std::unique_ptr<GrSemaphore> GrGLGpu::wrapBackendSemaphore(const GrBackendSemaphore& semaphore,
-                                                           GrSemaphoreWrapType /* wrapType */,
-                                                           GrWrapOwnership ownership) {
-    SkASSERT(this->caps()->semaphoreSupport());
-    return GrGLSemaphore::MakeWrapped(this, semaphore.glSync(), ownership);
+std::unique_ptr<GrSemaphore> GrGLGpu::wrapBackendSemaphore(const GrBackendSemaphore&,
+                                                           GrSemaphoreWrapType,
+                                                           GrWrapOwnership) {
+    SK_ABORT("Unsupported");
 }
 
 void GrGLGpu::insertSemaphore(GrSemaphore* semaphore) {
@@ -4362,7 +4422,7 @@ std::unique_ptr<GrSemaphore> GrGLGpu::prepareTextureForCrossContextUsage(GrTextu
     std::unique_ptr<GrSemaphore> semaphore = this->makeSemaphore(true);
     SkASSERT(semaphore);
     this->insertSemaphore(semaphore.get());
-    // We must call flush here to make sure the GrGLSync object gets created and sent to the gpu.
+    // We must call flush here to make sure the GrGLsync object gets created and sent to the gpu.
     this->flush(FlushType::kForce);
 
     return semaphore;

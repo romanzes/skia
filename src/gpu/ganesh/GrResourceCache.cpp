@@ -6,25 +6,27 @@
  */
 
 #include "src/gpu/ganesh/GrResourceCache.h"
-#include <atomic>
-#include <vector>
+
+#include "include/core/SkString.h"
 #include "include/gpu/GrDirectContext.h"
+#include "include/gpu/GrTypes.h"
 #include "include/private/base/SingleOwner.h"
+#include "include/private/base/SkNoncopyable.h"
 #include "include/private/base/SkTo.h"
+#include "src/base/SkMathPriv.h"
 #include "src/base/SkRandom.h"
-#include "src/base/SkScopeExit.h"
 #include "src/base/SkTSort.h"
 #include "src/core/SkMessageBus.h"
-#include "src/core/SkOpts.h"
-#include "src/gpu/ganesh/GrCaps.h"
+#include "src/core/SkTraceEvent.h"
 #include "src/gpu/ganesh/GrDirectContextPriv.h"
 #include "src/gpu/ganesh/GrGpuResourceCacheAccess.h"
 #include "src/gpu/ganesh/GrProxyProvider.h"
-#include "src/gpu/ganesh/GrTexture.h"
-#include "src/gpu/ganesh/GrTextureProxyCacheAccess.h"
 #include "src/gpu/ganesh/GrThreadSafeCache.h"
-#include "src/gpu/ganesh/GrTracing.h"
-#include "src/gpu/ganesh/SkGr.h"
+
+#include <algorithm>
+#include <chrono>
+#include <cstring>
+#include <vector>
 
 using namespace skia_private;
 
@@ -484,9 +486,8 @@ void GrResourceCache::purgeAsNeeded() {
 }
 
 void GrResourceCache::purgeUnlockedResources(const skgpu::StdSteadyClock::time_point* purgeTime,
-                                             bool scratchResourcesOnly) {
-
-    if (!scratchResourcesOnly) {
+                                             GrPurgeResourceOptions opts) {
+    if (opts == GrPurgeResourceOptions::kAllResources) {
         if (purgeTime) {
             fThreadSafeCache->dropUniqueRefsOlderThan(*purgeTime);
         } else {
@@ -513,6 +514,7 @@ void GrResourceCache::purgeUnlockedResources(const skgpu::StdSteadyClock::time_p
             resource->cacheAccess().release();
         }
     } else {
+        SkASSERT(opts == GrPurgeResourceOptions::kScratchResourcesOnly);
         // Early out if the very first item is too new to purge to avoid sorting the queue when
         // nothing will be deleted.
         if (purgeTime && fPurgeableQueue.count() &&
@@ -746,7 +748,7 @@ void GrResourceCache::getStats(Stats* stats) const {
     }
 }
 
-#if GR_TEST_UTILS
+#if defined(GPU_TEST_UTILS)
 void GrResourceCache::dumpStats(SkString* out) const {
     this->validate();
 
@@ -775,7 +777,7 @@ void GrResourceCache::dumpStatsKeyValuePairs(TArray<SkString>* keys,
 
     keys->push_back(SkString("gpu_cache_purgable_entries")); values->push_back(stats.fNumPurgeable);
 }
-#endif // GR_TEST_UTILS
+#endif // defined(GPU_TEST_UTILS)
 #endif // GR_CACHE_STATS
 
 #ifdef SK_DEBUG
@@ -917,7 +919,7 @@ bool GrResourceCache::isInCache(const GrGpuResource* resource) const {
 
 #endif // SK_DEBUG
 
-#if GR_TEST_UTILS
+#if defined(GPU_TEST_UTILS)
 
 int GrResourceCache::countUniqueKeysWithTag(const char* tag) const {
     int count = 0;
@@ -948,4 +950,4 @@ void GrResourceCache::visitSurfaces(
     }
 }
 
-#endif // GR_TEST_UTILS
+#endif // defined(GPU_TEST_UTILS)

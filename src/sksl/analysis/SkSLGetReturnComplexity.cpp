@@ -5,8 +5,8 @@
  * found in the LICENSE file.
  */
 
-#include "include/private/SkSLDefines.h"
 #include "src/sksl/SkSLAnalysis.h"
+#include "src/sksl/SkSLDefines.h"
 #include "src/sksl/analysis/SkSLProgramVisitor.h"
 #include "src/sksl/ir/SkSLBlock.h"
 #include "src/sksl/ir/SkSLFunctionDefinition.h"
@@ -37,7 +37,7 @@ static int count_returns_at_end_of_control_flow(const FunctionDefinition& funcDe
                 case Statement::Kind::kBlock: {
                     // Check only the last statement of a block.
                     const auto& block = stmt.as<Block>();
-                    return block.children().size() &&
+                    return !block.children().empty() &&
                            this->visitStatement(*block.children().back());
                 }
                 case Statement::Kind::kSwitch:

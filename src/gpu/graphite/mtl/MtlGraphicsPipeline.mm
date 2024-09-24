@@ -10,6 +10,8 @@
 #include "include/gpu/graphite/TextureInfo.h"
 #include "src/gpu/graphite/Attribute.h"
 #include "src/gpu/graphite/Log.h"
+#include "src/gpu/graphite/RenderPassDesc.h"
+#include "src/gpu/graphite/mtl/MtlGraphiteTypesPriv.h"
 #include "src/gpu/graphite/mtl/MtlResourceProvider.h"
 #include "src/gpu/graphite/mtl/MtlSharedContext.h"
 #include "src/gpu/mtl/MtlUtilsPriv.h"
@@ -29,7 +31,7 @@ inline MTLVertexFormat attribute_type_to_mtlformat(VertexAttribType type) {
         case VertexAttribType::kFloat4:
             return MTLVertexFormatFloat4;
         case VertexAttribType::kHalf:
-            if (@available(macOS 10.13, iOS 11.0, *)) {
+            if (@available(macOS 10.13, iOS 11.0, tvOS 11.0, *)) {
                 return MTLVertexFormatHalf;
             } else {
                 return MTLVertexFormatInvalid;
@@ -45,7 +47,7 @@ inline MTLVertexFormat attribute_type_to_mtlformat(VertexAttribType type) {
         case VertexAttribType::kInt4:
             return MTLVertexFormatInt4;
         case VertexAttribType::kByte:
-            if (@available(macOS 10.13, iOS 11.0, *)) {
+            if (@available(macOS 10.13, iOS 11.0, tvOS 11.0, *)) {
                 return MTLVertexFormatChar;
             } else {
                 return MTLVertexFormatInvalid;
@@ -55,7 +57,7 @@ inline MTLVertexFormat attribute_type_to_mtlformat(VertexAttribType type) {
         case VertexAttribType::kByte4:
             return MTLVertexFormatChar4;
         case VertexAttribType::kUByte:
-            if (@available(macOS 10.13, iOS 11.0, *)) {
+            if (@available(macOS 10.13, iOS 11.0, tvOS 11.0, *)) {
                 return MTLVertexFormatUChar;
             } else {
                 return MTLVertexFormatInvalid;
@@ -65,7 +67,7 @@ inline MTLVertexFormat attribute_type_to_mtlformat(VertexAttribType type) {
         case VertexAttribType::kUByte4:
             return MTLVertexFormatUChar4;
         case VertexAttribType::kUByte_norm:
-            if (@available(macOS 10.13, iOS 11.0, *)) {
+            if (@available(macOS 10.13, iOS 11.0, tvOS 11.0, *)) {
                 return MTLVertexFormatUCharNormalized;
             } else {
                 return MTLVertexFormatInvalid;
@@ -85,7 +87,7 @@ inline MTLVertexFormat attribute_type_to_mtlformat(VertexAttribType type) {
         case VertexAttribType::kUInt:
             return MTLVertexFormatUInt;
         case VertexAttribType::kUShort_norm:
-            if (@available(macOS 10.13, iOS 11.0, *)) {
+            if (@available(macOS 10.13, iOS 11.0, tvOS 11.0, *)) {
                 return MTLVertexFormatUShortNormalized;
             } else {
                 return MTLVertexFormatInvalid;
@@ -173,25 +175,25 @@ static MTLBlendFactor blend_coeff_to_mtl_blend(skgpu::BlendCoeff coeff) {
         case skgpu::BlendCoeff::kIConstC:
             return MTLBlendFactorOneMinusBlendColor;
         case skgpu::BlendCoeff::kS2C:
-            if (@available(macOS 10.12, iOS 11.0, *)) {
+            if (@available(macOS 10.12, iOS 11.0, tvOS 11.0, *)) {
                 return MTLBlendFactorSource1Color;
             } else {
                 return MTLBlendFactorZero;
             }
         case skgpu::BlendCoeff::kIS2C:
-            if (@available(macOS 10.12, iOS 11.0, *)) {
+            if (@available(macOS 10.12, iOS 11.0, tvOS 11.0, *)) {
                 return MTLBlendFactorOneMinusSource1Color;
             } else {
                 return MTLBlendFactorZero;
             }
         case skgpu::BlendCoeff::kS2A:
-            if (@available(macOS 10.12, iOS 11.0, *)) {
+            if (@available(macOS 10.12, iOS 11.0, tvOS 11.0, *)) {
                 return MTLBlendFactorSource1Alpha;
             } else {
                 return MTLBlendFactorZero;
             }
         case skgpu::BlendCoeff::kIS2A:
-            if (@available(macOS 10.12, iOS 11.0, *)) {
+            if (@available(macOS 10.12, iOS 11.0, tvOS 11.0, *)) {
                 return MTLBlendFactorOneMinusSource1Alpha;
             } else {
                 return MTLBlendFactorZero;
@@ -253,7 +255,7 @@ static MTLRenderPipelineColorAttachmentDescriptor* create_color_attachment(
 } // anonymous namespace
 
 sk_sp<MtlGraphicsPipeline> MtlGraphicsPipeline::Make(const MtlSharedContext* sharedContext,
-                                                     std::string label,
+                                                     const std::string& label,
                                                      MSLFunction vertexMain,
                                                      SkSpan<const Attribute> vertexAttrs,
                                                      SkSpan<const Attribute> instanceAttrs,
@@ -262,7 +264,7 @@ sk_sp<MtlGraphicsPipeline> MtlGraphicsPipeline::Make(const MtlSharedContext* sha
                                                      uint32_t stencilRefValue,
                                                      const BlendInfo& blendInfo,
                                                      const RenderPassDesc& renderPassDesc,
-                                                     Shaders* pipelineShaders) {
+                                                     PipelineInfo* pipelineInfo) {
     id<MTLLibrary> vsLibrary = std::get<0>(vertexMain);
     id<MTLLibrary> fsLibrary = std::get<0>(fragmentMain);
     if (!vsLibrary || !fsLibrary) {
@@ -282,17 +284,16 @@ sk_sp<MtlGraphicsPipeline> MtlGraphicsPipeline::Make(const MtlSharedContext* sha
     // TODO: I *think* this gets cleaned up by the pipelineDescriptor?
     (*psoDescriptor).vertexDescriptor = create_vertex_descriptor(vertexAttrs, instanceAttrs);
 
-    const MtlTextureSpec& mtlColorSpec =
-            renderPassDesc.fColorAttachment.fTextureInfo.mtlTextureSpec();
-    auto mtlColorAttachment = create_color_attachment((MTLPixelFormat)mtlColorSpec.fFormat,
-                                                      blendInfo);
+    MTLPixelFormat pixelFormat =
+            TextureInfos::GetMTLPixelFormat(renderPassDesc.fColorAttachment.fTextureInfo);
+    auto mtlColorAttachment = create_color_attachment(pixelFormat, blendInfo);
     (*psoDescriptor).colorAttachments[0] = mtlColorAttachment;
 
-    (*psoDescriptor).sampleCount = renderPassDesc.fColorAttachment.fTextureInfo.numSamples();
+    (*psoDescriptor).rasterSampleCount =
+            renderPassDesc.fColorAttachment.fTextureInfo.numSamples();
 
-    const MtlTextureSpec& mtlDSSpec =
-            renderPassDesc.fDepthStencilAttachment.fTextureInfo.mtlTextureSpec();
-    MTLPixelFormat depthStencilFormat = (MTLPixelFormat)mtlDSSpec.fFormat;
+    MTLPixelFormat depthStencilFormat =
+            TextureInfos::GetMTLPixelFormat(renderPassDesc.fDepthStencilAttachment.fTextureInfo);
     if (MtlFormatIsStencil(depthStencilFormat)) {
         (*psoDescriptor).stencilAttachmentPixelFormat = depthStencilFormat;
     } else {
@@ -314,20 +315,20 @@ sk_sp<MtlGraphicsPipeline> MtlGraphicsPipeline::Make(const MtlSharedContext* sha
     }
 
     return sk_sp<MtlGraphicsPipeline>(new MtlGraphicsPipeline(sharedContext,
-                                                              pipelineShaders,
+                                                              pipelineInfo,
                                                               std::move(pso),
                                                               std::move(dss),
                                                               stencilRefValue));
 }
 
 MtlGraphicsPipeline::MtlGraphicsPipeline(const skgpu::graphite::SharedContext* sharedContext,
-                                         Shaders* pipelineShaders,
+                                         PipelineInfo* pipelineInfo,
                                          sk_cfp<id<MTLRenderPipelineState>> pso,
                                          sk_cfp<id<MTLDepthStencilState>> dss,
                                          uint32_t refValue)
-        : GraphicsPipeline(sharedContext, pipelineShaders)
+        : GraphicsPipeline(sharedContext, pipelineInfo)
         , fPipelineState(std::move(pso))
-        , fDepthStencilState(dss)
+        , fDepthStencilState(std::move(dss))
         , fStencilReferenceValue(refValue) {}
 
 void MtlGraphicsPipeline::freeGpuData() {

@@ -17,7 +17,6 @@
 #include "include/core/SkRect.h"
 #include "include/core/SkScalar.h"
 #include "include/core/SkTypes.h"
-#include "include/private/SkShadowFlags.h"
 #include "include/private/base/SkTArray.h"
 #include "include/private/base/SkTDArray.h"
 #include "include/utils/SkShadowUtils.h"
@@ -304,7 +303,7 @@ DEF_SIMPLE_GM(shadow_utils_directional, canvas, 256, 384) {
     // scale
     for (int i = 0; i < 3; ++i) {
         canvas->save();
-        SkScalar scaleFactor = sk_float_pow(2.0, -i);
+        SkScalar scaleFactor = std::pow(2.0, -i);
         canvas->translate(35 + 80*i, 185);
         canvas->scale(scaleFactor, scaleFactor);
         SkShadowUtils::DrawShadow(canvas, rrect, SkPoint3{ 0, 0, kHeight }, lightPos,

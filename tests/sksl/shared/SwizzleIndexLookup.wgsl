@@ -1,8 +1,5 @@
 diagnostic(off, derivative_uniformity);
-struct FSIn {
-  @builtin(front_facing) sk_Clockwise: bool,
-  @builtin(position) sk_FragCoord: vec4<f32>,
-};
+diagnostic(off, chromium.unreachable_code);
 struct FSOut {
   @location(0) sk_FragColor: vec4<f32>,
 };
@@ -20,7 +17,7 @@ fn test3x3_b() -> bool {
       var c: i32 = 0;
       loop {
         {
-          var vec: vec3<f32> = _globalUniforms.testMatrix3x3[c];
+          let vec: vec3<f32> = _globalUniforms.testMatrix3x3[c];
           {
             var r: i32 = 0;
             loop {
@@ -55,7 +52,7 @@ fn test4x4_b() -> bool {
       var c: i32 = 0;
       loop {
         {
-          var vec: vec4<f32> = _globalUniforms.testMatrix4x4[c];
+          let vec: vec4<f32> = _globalUniforms.testMatrix4x4[c];
           {
             var r: i32 = 0;
             loop {
@@ -83,8 +80,7 @@ fn test4x4_b() -> bool {
     return true;
   }
 }
-fn main(_skParam0: vec2<f32>) -> vec4<f32> {
-  let coords = _skParam0;
+fn _skslMain(coords: vec2<f32>) -> vec4<f32> {
   {
     var _skTemp0: vec4<f32>;
     var _skTemp1: bool;
@@ -103,8 +99,8 @@ fn main(_skParam0: vec2<f32>) -> vec4<f32> {
     return _skTemp0;
   }
 }
-@fragment fn fragmentMain(_stageIn: FSIn) -> FSOut {
+@fragment fn main() -> FSOut {
   var _stageOut: FSOut;
-  _stageOut.sk_FragColor = main(_stageIn.sk_FragCoord.xy);
+  _stageOut.sk_FragColor = _skslMain(/*fragcoord*/ vec2<f32>());
   return _stageOut;
 }

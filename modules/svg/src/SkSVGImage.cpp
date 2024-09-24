@@ -88,14 +88,8 @@ void SkSVGImage::onRender(const SkSVGRenderContext& ctx) const {
     }
 
     // TODO: image-rendering property
-    // NON-SKIA-UPSTREAMED CHANGE
-    /*
     ctx.canvas()->drawImageRect(
             imgInfo.fImage, imgInfo.fDst, SkSamplingOptions(SkFilterMode::kLinear));
-    */
-    ctx.canvas()->drawImageRect(imgInfo.fImage, imgInfo.fDst,
-                                SkSamplingOptions(SkFilterMode::kLinear, SkMipmapMode::kLinear));
-    // END OF NON-SKIA-UPSTREAMED CHANGE
 }
 
 SkPath SkSVGImage::onAsPath(const SkSVGRenderContext&) const { return {}; }
