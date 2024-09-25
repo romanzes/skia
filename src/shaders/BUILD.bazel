@@ -1,9 +1,11 @@
-load("//bazel:skia_rules.bzl", "exports_files_legacy", "skia_filegroup", "split_srcs_and_hdrs")
 load("//bazel:flags.bzl", "bool_flag")
+load("//bazel:skia_rules.bzl", "skia_filegroup", "split_srcs_and_hdrs")
+
+package(
+    default_applicable_licenses = ["//:license"],
+)
 
 licenses(["notice"])
-
-exports_files_legacy()
 
 SHADER_FILES = [
     "SkBitmapProcShader.cpp",
@@ -18,12 +20,18 @@ SHADER_FILES = [
     "SkCoordClampShader.h",
     "SkEmptyShader.cpp",
     "SkEmptyShader.h",
+    "SkGainmapShader.cpp",
     "SkImageShader.cpp",
     "SkImageShader.h",
     "SkLocalMatrixShader.cpp",
     "SkLocalMatrixShader.h",
     "SkPerlinNoiseShaderImpl.cpp",
     "SkPerlinNoiseShaderImpl.h",
+    "SkPerlinNoiseShaderType.h",
+    "SkPictureShader.cpp",
+    "SkPictureShader.h",
+    "SkRuntimeShader.cpp",
+    "SkRuntimeShader.h",
     "SkShader.cpp",
     "SkShaderBase.cpp",
     "SkShaderBase.h",
@@ -31,23 +39,13 @@ SHADER_FILES = [
     "SkTransformShader.h",
     "SkTriColorShader.cpp",
     "SkTriColorShader.h",
+    "SkWorkingColorSpaceShader.cpp",
+    "SkWorkingColorSpaceShader.h",
 ]
 
 split_srcs_and_hdrs(
     name = "shader",
     files = SHADER_FILES,
-)
-
-# Maintain SkPicture files in separate skia_filegroups so that the legacy
-# skia_skpicture_sources GNI file list can be created.
-SKPICTURE_FILES = [
-    "SkPictureShader.cpp",
-    "SkPictureShader.h",
-]
-
-split_srcs_and_hdrs(
-    name = "skpicture",
-    files = SKPICTURE_FILES,
 )
 
 bool_flag(
@@ -56,40 +54,49 @@ bool_flag(
 )
 
 skia_filegroup(
-    name = "sksl_srcs",
+    name = "srcs",
     srcs = [
-        "SkGainmapShader.cpp",
-        "SkRuntimeShader.cpp",
+        ":shader_srcs",
+        "//src/shaders/gradients:srcs",
+    ],
+    visibility = [
+        "//src:__pkg__",
+        "//src/core:__pkg__",
     ],
 )
 
 skia_filegroup(
-    name = "sksl_hdrs",
-    srcs = ["SkRuntimeShader.h"],
-)
-
-skia_filegroup(
-    name = "srcs",
+    name = "opts_srcs",
     srcs = [
-        ":shader_srcs",
-        ":skpicture_srcs",
-        "//src/shaders/gradients:srcs",
-    ] + select({
-        "//src/sksl:needs_sksl": [":sksl_srcs"],
-        "//conditions:default": [],
-    }),
-    visibility = ["//src:__pkg__"],
+        "SkPerlinNoiseShaderType.h",
+    ],
+    visibility = ["//src/opts:__pkg__"],
 )
 
 skia_filegroup(
     name = "private_hdrs",
     srcs = [
         ":shader_hdrs",
-        ":skpicture_hdrs",
         "//src/shaders/gradients:private_hdrs",
-    ] + select({
-        "//src/sksl:needs_sksl": [":sksl_hdrs"],
-        "//conditions:default": [],
-    }),
-    visibility = ["//src:__pkg__"],
+    ],
+    visibility = [
+        "//src:__pkg__",
+        "//src/core:__pkg__",
+    ],
+)
+
+alias(
+    name = "core_priv_hdrs",
+    actual = ":private_hdrs",
+    visibility = [
+        "//src/core:__pkg__",
+    ],
+)
+
+alias(
+    name = "core_srcs",
+    actual = ":srcs",
+    visibility = [
+        "//src/core:__pkg__",
+    ],
 )

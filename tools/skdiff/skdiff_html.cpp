@@ -6,7 +6,6 @@
  */
 
 #include "include/core/SkStream.h"
-#include "include/core/SkTime.h"
 #include "tools/skdiff/skdiff.h"
 #include "tools/skdiff/skdiff_html.h"
 
@@ -30,28 +29,10 @@ static void print_table_header(SkFILEWStream* stream,
                                const int colorThreshold,
                                const RecordArray& differences,
                                const SkString &baseDir,
-                               const SkString &comparisonDir,
-                               bool doOutputDate = false) {
+                               const SkString &comparisonDir) {
     stream->writeText("<table>\n");
     stream->writeText("<tr><th>");
     stream->writeText("select image</th>\n<th>");
-    if (doOutputDate) {
-        SkTime::DateTime dt;
-        SkTime::GetDateTime(&dt);
-        stream->writeText("SkDiff run at ");
-        stream->writeDecAsText(dt.fHour);
-        stream->writeText(":");
-        if (dt.fMinute < 10) {
-            stream->writeText("0");
-        }
-        stream->writeDecAsText(dt.fMinute);
-        stream->writeText(":");
-        if (dt.fSecond < 10) {
-            stream->writeText("0");
-        }
-        stream->writeDecAsText(dt.fSecond);
-        stream->writeText("<br>");
-    }
     stream->writeDecAsText(matchCount);
     stream->writeText(" of ");
     stream->writeDecAsText(differences.size());
@@ -97,7 +78,7 @@ static void print_checkbox_cell(SkFILEWStream* stream, const DiffRecord& diff) {
 }
 
 static void print_label_cell(SkFILEWStream* stream, const DiffRecord& diff) {
-    char metricBuf [20];
+    char metricBuf[20];
 
     stream->writeText("<td><b>");
     stream->writeText(diff.fBase.fFilename.c_str());
@@ -113,11 +94,11 @@ static void print_label_cell(SkFILEWStream* stream, const DiffRecord& diff) {
         stream->writeText("Image sizes differ</td>");
         return;
       case DiffRecord::kDifferentPixels_Result:
-        sprintf(metricBuf, "%.4f%%", 100 * diff.fFractionDifference);
+        snprintf(metricBuf, std::size(metricBuf), "%.4f%%", 100 * diff.fFractionDifference);
         stream->writeText(metricBuf);
         stream->writeText(" of pixels differ");
         stream->writeText("\n  (");
-        sprintf(metricBuf, "%.4f%%", 100 * diff.fWeightedFraction);
+        snprintf(metricBuf, std::size(metricBuf), "%.4f%%", 100 * diff.fWeightedFraction);
         stream->writeText(metricBuf);
         stream->writeText(" weighted)");
         // Write the actual number of pixels that differ if it's < 1%

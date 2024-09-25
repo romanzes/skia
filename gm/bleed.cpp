@@ -33,6 +33,7 @@
 
 #if defined(SK_GRAPHITE)
 #include "include/gpu/graphite/ContextOptions.h"
+#include "src/gpu/graphite/ContextOptionsPriv.h"
 #endif
 
 /** Creates an image with two one-pixel wide borders around a checkerboard. The checkerboard is 2x2
@@ -121,13 +122,13 @@ public:
         , fConstraint(constraint)
         , fManual(manual) {
         // Make sure GPU SkSurfaces can be created for this GM.
-        SkASSERT(this->onISize().width() <= kMaxTextureSize &&
-                 this->onISize().height() <= kMaxTextureSize);
+        SkASSERT(this->getISize().width() <= kMaxTextureSize &&
+                 this->getISize().height() <= kMaxTextureSize);
     }
 
 protected:
-    SkString onShortName() override { return fShortName; }
-    SkISize onISize() override { return SkISize::Make(800, 1000); }
+    SkString getName() const override { return fShortName; }
+    SkISize getISize() override { return SkISize::Make(800, 1000); }
 
     void drawImage(SkCanvas* canvas, sk_sp<SkImage> image, SkRect srcRect, SkRect dstRect,
                    const SkSamplingOptions& sampling, SkPaint* paint) {
@@ -298,7 +299,8 @@ protected:
 
 #if defined(SK_GRAPHITE)
     void modifyGraphiteContextOptions(skgpu::graphite::ContextOptions* options) const override {
-        options->fMaxTextureSizeOverride = kMaxTextureSize;
+        SkASSERT(options->fOptionsPriv);
+        options->fOptionsPriv->fMaxTextureSizeOverride = kMaxTextureSize;
     }
 #endif
 
@@ -318,8 +320,9 @@ private:
     inline static constexpr int kRow4Y = 5*kBlockSpacing + 4*kBlockSize;
 
     inline static constexpr int kSmallSize = 6;
-    // This must be at least as large as the GM width and height so that a surface can be made.
-    inline static constexpr int kMaxTextureSize = 1000;
+    // This must be at least as large as the GM width and height so that a surface can be made, and
+    // a power-of-2 to account for any approx-fitting that the backend may perform.
+    inline static constexpr int kMaxTextureSize = 1024;
 
     SkString fShortName;
     sk_sp<SkImage> fBigImage;

@@ -23,6 +23,7 @@
 #include "include/effects/SkImageFilters.h"
 #include "src/base/SkRandom.h"
 #include "tools/ToolUtils.h"
+#include "tools/fonts/FontToolUtils.h"
 #include "tools/timer/TimeUtils.h"
 
 #include <utility>
@@ -33,7 +34,7 @@
 static void draw_content(SkCanvas* canvas, float maxTextSize, int count) {
     const char* str = "The quick brown fox jumped over the lazy dog.";
     SkRandom rand;
-    SkFont      font(ToolUtils::create_portable_typeface());
+    SkFont   font = ToolUtils::DefaultPortableFont();
     for (int i = 0; i < count; ++i) {
         int x = rand.nextULessThan(WIDTH);
         int y = rand.nextULessThan(HEIGHT);
@@ -100,8 +101,8 @@ public:
     ImageMagnifierBounds() : fX(0.f), fY(0.f) {}
 
 protected:
-    SkString onShortName() override { return SkString("imagemagnifier_bounds"); }
-    SkISize onISize() override { return SkISize::Make(768, 512); }
+    SkString getName() const override { return SkString("imagemagnifier_bounds"); }
+    SkISize getISize() override { return SkISize::Make(768, 512); }
 
     bool onAnimate(double nanos) override {
         fX = TimeUtils::SineWave(nanos, 10.f, 0.f, -200.f, 200.f);

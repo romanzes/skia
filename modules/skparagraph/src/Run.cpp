@@ -203,7 +203,6 @@ void Run::shift(const Cluster* cluster, SkScalar offset) {
     if (offset == 0) {
         return;
     }
-
     for (size_t i = cluster->startPos(); i < cluster->endPos(); ++i) {
         fPositions[i].fX += offset;
     }
@@ -211,6 +210,11 @@ void Run::shift(const Cluster* cluster, SkScalar offset) {
         // To make calculations easier
         fPositions[cluster->endPos()].fX += offset;
     }
+}
+
+void Run::extend(const Cluster* cluster, SkScalar offset) {
+    // Extend the cluster at the end
+    fPositions[cluster->endPos()].fX += offset;
 }
 
 void Run::updateMetrics(InternalLineMetrics* endlineMetrics) {
@@ -345,7 +349,8 @@ bool Cluster::isSoftBreak() const {
         return false;
     }
     // END OF NON-SKIA-UPSTREAMED CHANGE
-    return fOwner->codeUnitHasProperty(fTextRange.end, SkUnicode::CodeUnitFlags::kSoftLineBreakBefore);
+    return fOwner->codeUnitHasProperty(fTextRange.end,
+                                       SkUnicode::CodeUnitFlags::kSoftLineBreakBefore);
 }
 
 bool Cluster::isGraphemeBreak() const {

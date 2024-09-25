@@ -9,13 +9,15 @@
 #define SkGraphics_DEFINED
 
 #include "include/core/SkRefCnt.h"
+#include "include/private/base/SkAPI.h"
 
+#include <cstddef>
+#include <cstdint>
 #include <memory>
 
 class SkData;
 class SkImageGenerator;
 class SkOpenTypeSVGDecoder;
-class SkPath;
 class SkTraceMemoryDump;
 
 class SK_API SkGraphics {
@@ -66,6 +68,19 @@ public:
      *  it will automatically try to purge entries to meet the new limit.
      */
     static int SetFontCacheCountLimit(int count);
+
+    /**
+     *  Return the current limit to the number of entries in the typeface cache.
+     *  A cache "entry" is associated with each typeface.
+     */
+    static int GetTypefaceCacheCountLimit();
+
+    /**
+     *  Set the limit to the number of entries in the typeface cache, and return
+     *  the previous value. Changes to this only take effect the next time
+     *  each cache object is modified.
+     */
+    static int SetTypefaceCacheCountLimit(int count);
 
     /**
      *  For debugging purposes, this will attempt to purge the font cache. It

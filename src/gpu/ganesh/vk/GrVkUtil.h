@@ -8,27 +8,38 @@
 #ifndef GrVkUtil_DEFINED
 #define GrVkUtil_DEFINED
 
-#include "include/gpu/GrTypes.h"
-#include "include/gpu/vk/GrVkTypes.h"
+#include "include/private/base/SkAssert.h"
+#include "include/private/base/SkDebug.h"
 #include "include/private/base/SkMacros.h"
-#include "src/gpu/ganesh/GrColor.h"
-#include "src/gpu/ganesh/GrDataUtils.h"
+#include "include/private/gpu/ganesh/GrTypesPriv.h"
+#include "include/private/gpu/vk/SkiaVulkan.h"
 #include "src/gpu/vk/VulkanInterface.h"
 #include "src/sksl/ir/SkSLProgram.h"
 
-namespace SkSL { struct ProgramSettings; }
+#include <string>
+
 class GrVkGpu;
+namespace SkSL {
+struct ProgramSettings;
+}
 
 // makes a Vk call on the interface
 #define GR_VK_CALL(IFACE, X) (IFACE)->fFunctions.f##X
+
+// Note: must be called before checkVkResult, since this does not log if the GPU is already
+// considering the device to be lost.
+#define GR_VK_LOG_IF_NOT_SUCCESS(GPU, RESULT, X, ...)                                   \
+    do {                                                                                \
+        if (RESULT != VK_SUCCESS && !GPU->isDeviceLost()) {                             \
+            SkDebugf("Failed vulkan call. Error: %d, " X "\n", RESULT, ##__VA_ARGS__);  \
+        }                                                                               \
+    } while (false)
 
 #define GR_VK_CALL_RESULT(GPU, RESULT, X)                                 \
     do {                                                                  \
         (RESULT) = GR_VK_CALL(GPU->vkInterface(), X);                     \
         SkASSERT(VK_SUCCESS == RESULT || VK_ERROR_DEVICE_LOST == RESULT); \
-        if (RESULT != VK_SUCCESS && !GPU->isDeviceLost()) {               \
-            SkDebugf("Failed vulkan call. Error: %d," #X "\n", RESULT);   \
-        }                                                                 \
+        GR_VK_LOG_IF_NOT_SUCCESS(GPU, RESULT, #X);                        \
         GPU->checkVkResult(RESULT);                                       \
     } while (false)
 
@@ -55,6 +66,8 @@ static constexpr GrColorFormatDesc GrVkFormatDesc(VkFormat vkFormat) {
         case VK_FORMAT_B8G8R8A8_UNORM:
             return GrColorFormatDesc::MakeRGBA(8, GrColorTypeEncoding::kUnorm);
         case VK_FORMAT_R5G6B5_UNORM_PACK16:
+            return GrColorFormatDesc::MakeRGB(5, 6, 5, GrColorTypeEncoding::kUnorm);
+        case VK_FORMAT_B5G6R5_UNORM_PACK16:
             return GrColorFormatDesc::MakeRGB(5, 6, 5, GrColorTypeEncoding::kUnorm);
         case VK_FORMAT_R16G16B16A16_SFLOAT:
             return GrColorFormatDesc::MakeRGBA(16, GrColorTypeEncoding::kFloat);

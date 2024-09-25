@@ -21,6 +21,7 @@
 #include "include/core/SkSize.h"
 #include "include/core/SkString.h"
 #include "include/core/SkSurface.h"
+#include "tools/fonts/FontToolUtils.h"
 #include "tools/timer/TimeUtils.h"
 
 // Mimics https://output.jsbin.com/falefice/1/quiet?CC_POSTER_CIRCLE, which can't be captured as
@@ -31,14 +32,9 @@ public:
     PosterCircleGM() : fTime(0.f) {}
 
 protected:
+    SkString getName() const override { return SkString("poster_circle"); }
 
-    SkString onShortName() override {
-        return SkString("poster_circle");
-    }
-
-    SkISize onISize() override {
-        return SkISize::Make(kStageWidth, kStageHeight + 50);
-    }
+    SkISize getISize() override { return SkISize::Make(kStageWidth, kStageHeight + 50); }
 
     bool onAnimate(double nanos) override {
         fTime = TimeUtils::Scaled(1e-9 * nanos, 0.5f);
@@ -46,7 +42,7 @@ protected:
     }
 
     void onOnceBeforeDraw() override {
-        SkFont font;
+        SkFont font = ToolUtils::DefaultPortableFont();
         font.setEdging(SkFont::Edging::kAntiAlias);
         font.setEmbolden(true);
         font.setSize(24.f);

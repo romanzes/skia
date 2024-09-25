@@ -7,12 +7,24 @@
 #ifndef GrMockTexture_DEFINED
 #define GrMockTexture_DEFINED
 
+#include "include/core/SkSize.h"
+#include "include/gpu/GpuTypes.h"
+#include "include/gpu/GrBackendSurface.h"
 #include "include/gpu/ganesh/SkImageGanesh.h"
 #include "include/gpu/mock/GrMockTypes.h"
+#include "include/private/base/SkAssert.h"
+#include "include/private/gpu/ganesh/GrTypesPriv.h"
 #include "src/gpu/ganesh/GrAttachment.h"
+#include "src/gpu/ganesh/GrBackendUtils.h"
 #include "src/gpu/ganesh/GrRenderTarget.h"
+#include "src/gpu/ganesh/GrSurface.h"
 #include "src/gpu/ganesh/GrTexture.h"
 #include "src/gpu/ganesh/mock/GrMockGpu.h"
+
+#include <cstddef>
+#include <string_view>
+
+namespace skgpu { class ScratchKey; }
 
 class GrMockTexture : public GrTexture {
 public:
@@ -123,8 +135,8 @@ public:
             // Add one to account for the resolve buffer.
             ++numColorSamples;
         }
-        return GrSurface::ComputeSize(this->backendFormat(), this->dimensions(),
-                                      numColorSamples, GrMipmapped::kNo);
+        return GrSurface::ComputeSize(
+                this->backendFormat(), this->dimensions(), numColorSamples, skgpu::Mipmapped::kNo);
     }
 
     GrBackendRenderTarget getBackendRenderTarget() const override {

@@ -46,7 +46,8 @@ using GpuFinishedProc = void (*)(GpuFinishedContext finishedContext, CallbackRes
  *
  * The client may pass in two arrays of initialized BackendSemaphores to be included in the
  * command stream. At some time before issuing commands in the Recording, the fWaitSemaphores will
- * be waited on by the gpu. Similarly, at some time after issuing the Recording's commands, the
+ * be waited on by the gpu. We only guarantee these wait semaphores block transfer and fragment
+ * shader work. Similarly, at some time after issuing the Recording's commands, the
  * fSignalSemaphores will be signaled by the gpu. Depending on the platform, the timing of the wait
  * and signal operations will either be immediately before or after the given Recording's command
  * stream, respectively, or before and after the entire CommandBuffer's command stream. The
@@ -103,24 +104,45 @@ enum class Volatile : bool {
 };
 
 /*
- * Graphite's different rendering methods each only apply to certain types of draws. This
- * enum supports decision-making regarding the different renderers and what is being drawn.
+ * This enum allows mapping from a set of observed RenderSteps (e.g., from a GraphicsPipeline
+ * printout) to the correct 'drawTypes' parameter needed by the Precompilation API.
  */
-enum DrawTypeFlags : uint8_t {
+enum DrawTypeFlags : uint16_t {
 
-    kNone         = 0b000,
+    kNone             = 0b000000000,
 
-    // SkCanvas:: drawSimpleText, drawString, drawGlyphs, drawTextBlob, drawSlug
-    kText         = 0b001,
+    // kBitmapText_Mask should be used for the BitmapTextRenderStep[mask] RenderStep
+    kBitmapText_Mask  = 0b00000001,
+    // kBitmapText_LCD should be used for the BitmapTextRenderStep[LCD] RenderStep
+    kBitmapText_LCD   = 0b00000010,
+    // kBitmapText_Color should be used for the BitmapTextRenderStep[color] RenderStep
+    kBitmapText_Color = 0b00000100,
+    // kSDFText should be used for the SDFTextRenderStep RenderStep
+    kSDFText          = 0b00001000,
+    // kSDFText_LCD should be used for the SDFTextLCDRenderStep RenderStep
+    kSDFText_LCD      = 0b00010000,
 
-    // SkCanvas::drawVertices
-    kDrawVertices = 0b010,
+    // kDrawVertices should be used to generate Pipelines that use the following RenderSteps:
+    //    VerticesRenderStep[*] for:
+    //        [tris], [tris-texCoords], [tris-color], [tris-color-texCoords],
+    //        [tristrips], [tristrips-texCoords], [tristrips-color], [tristrips-color-texCoords]
+    kDrawVertices     = 0b00100000,
 
-    // All other canvas draw calls
-    kShape        = 0b100,
+    // kSimpleShape should be used to generate Pipelines that use the following RenderSteps:
+    //    AnalyticBlurRenderStep
+    //    AnalyticRRectRenderStep
+    //    PerEdgeAAQuadRenderStep
+    //    CoverBoundsRenderStep[non-aa-fill]
+    kSimpleShape      = 0b01000000,
 
-    kMostCommon = kText | kShape,
-    kAll = kText | kDrawVertices | kShape
+    // kNonSimpleShape should be used to generate Pipelines that use the following RenderSteps:
+    //    CoverageMaskRenderStep
+    //    CoverBoundsRenderStep[*] for [inverse-cover], [regular-cover]
+    //    TessellateStrokeRenderStep
+    //    TessellateWedgesRenderStep[*] for [convex], [evenodd], [winding]
+    //    TessellateCurvesRenderStep[*] for [even-odd], [winding]
+    //    MiddleOutFanRenderStep[*] for [even-odd], [winding]
+    kNonSimpleShape   = 0b10000000,
 };
 
 } // namespace skgpu::graphite

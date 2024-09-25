@@ -5,8 +5,6 @@
  * found in the LICENSE file.
  */
 
-#include "include/private/SkSLDefines.h"
-#include "include/private/base/SkTArray.h"
 #include "src/sksl/SkSLBuiltinTypes.h"
 #include "src/sksl/SkSLContext.h"
 #include "src/sksl/ir/SkSLConstructorCompound.h"

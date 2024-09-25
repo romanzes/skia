@@ -26,6 +26,7 @@
 #include "src/gpu/ganesh/SkGr.h"
 #include "src/gpu/ganesh/SurfaceDrawContext.h"
 #include "src/gpu/ganesh/effects/GrTextureEffect.h"
+#include "tools/DecodeUtils.h"
 #include "tools/Resources.h"
 #include "tools/gpu/TestOps.h"
 
@@ -50,7 +51,7 @@ public:
     }
 
 protected:
-    SkString onShortName() override {
+    SkString getName() const override {
         SkString name("texel_subset");
         switch (fFilter) {
             case Filter::kNearest:
@@ -74,7 +75,7 @@ protected:
         return name;
     }
 
-    SkISize onISize() override {
+    SkISize getISize() override {
         static constexpr int kN = GrSamplerState::kWrapModeCount;
         int w = kTestPad + 2*kN*(kImageSize.width()  + 2*kDrawPad + kTestPad);
         int h = kTestPad + 2*kN*(kImageSize.height() + 2*kDrawPad + kTestPad);
@@ -82,7 +83,7 @@ protected:
     }
 
     void onOnceBeforeDraw() override {
-        SkAssertResult(GetResourceAsBitmap("images/mandrill_128.png", &fBitmap));
+        SkAssertResult(ToolUtils::GetResourceAsBitmap("images/mandrill_128.png", &fBitmap));
         // Make the bitmap non-square to detect any width/height confusion.
         fBitmap.extractSubset(&fBitmap, SkIRect::MakeSize(fBitmap.dimensions()).makeInset(0, 20));
         SkASSERT(fBitmap.dimensions() == kImageSize);
@@ -95,9 +96,9 @@ protected:
             return DrawResult::kSkip;
         }
 
-        GrMipmapped mipmapped = (fMipmapMode != MipmapMode::kNone) ? GrMipmapped::kYes
-                                                                   : GrMipmapped::kNo;
-        if (mipmapped == GrMipmapped::kYes && !rContext->priv().caps()->mipmapSupport()) {
+        skgpu::Mipmapped mipmapped =
+                (fMipmapMode != MipmapMode::kNone) ? skgpu::Mipmapped::kYes : skgpu::Mipmapped::kNo;
+        if (mipmapped == skgpu::Mipmapped::kYes && !rContext->priv().caps()->mipmapSupport()) {
             return DrawResult::kSkip;
         }
         auto view = std::get<0>(GrMakeCachedBitmapProxyView(
@@ -139,7 +140,7 @@ protected:
 
         SkRect localRect = SkRect::Make(fBitmap.bounds()).makeOutset(kDrawPad, kDrawPad);
 
-        auto size = this->onISize();
+        auto size = this->getISize();
 
         SkScalar y = kDrawPad + kTestPad;
         SkRect drawRect;

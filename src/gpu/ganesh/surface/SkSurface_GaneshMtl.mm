@@ -9,8 +9,10 @@
 #include "include/core/SkRefCnt.h"
 #include "include/core/SkSurface.h"
 #include "include/gpu/GrBackendSurface.h"
+#include "include/gpu/ganesh/mtl/GrMtlBackendSurface.h"
+#include "include/gpu/ganesh/mtl/GrMtlTypes.h"
 #include "include/gpu/ganesh/mtl/SkSurfaceMetal.h"
-#include "include/gpu/mtl/GrMtlTypes.h"
+#include "src/core/SkSurfacePriv.h"
 #include "src/gpu/ganesh/GrProxyProvider.h"
 #include "src/gpu/ganesh/GrRecordingContextPriv.h"
 #include "src/gpu/ganesh/GrResourceProvider.h"
@@ -37,14 +39,14 @@ sk_sp<SkSurface> WrapCAMetalLayer(GrRecordingContext* rContext,
     GrProxyProvider* proxyProvider = rContext->priv().proxyProvider();
 
     CAMetalLayer* metalLayer = (__bridge CAMetalLayer*)layer;
-    GrBackendFormat backendFormat = GrBackendFormat::MakeMtl(metalLayer.pixelFormat);
+    GrBackendFormat backendFormat = GrBackendFormats::MakeMtl(metalLayer.pixelFormat);
 
     GrColorType grColorType = SkColorTypeToGrColorType(colorType);
 
     SkISize dims = {(int)metalLayer.drawableSize.width, (int)metalLayer.drawableSize.height};
 
     GrProxyProvider::TextureInfo texInfo;
-    texInfo.fMipmapped = GrMipmapped::kNo;
+    texInfo.fMipmapped = skgpu::Mipmapped::kNo;
     texInfo.fTextureType = GrTextureType::k2D;
 
     sk_sp<GrRenderTargetProxy> proxy = proxyProvider->createLazyRenderTargetProxy(
@@ -109,14 +111,14 @@ sk_sp<SkSurface> WrapMTKView(GrRecordingContext* rContext,
     GrProxyProvider* proxyProvider = rContext->priv().proxyProvider();
 
     MTKView* mtkView = (__bridge MTKView*)view;
-    GrBackendFormat backendFormat = GrBackendFormat::MakeMtl(mtkView.colorPixelFormat);
+    GrBackendFormat backendFormat = GrBackendFormats::MakeMtl(mtkView.colorPixelFormat);
 
     GrColorType grColorType = SkColorTypeToGrColorType(colorType);
 
     SkISize dims = {(int)mtkView.drawableSize.width, (int)mtkView.drawableSize.height};
 
     GrProxyProvider::TextureInfo texInfo;
-    texInfo.fMipmapped = GrMipmapped::kNo;
+    texInfo.fMipmapped = skgpu::Mipmapped::kNo;
     texInfo.fTextureType = GrTextureType::k2D;
 
     sk_sp<GrRenderTargetProxy> proxy = proxyProvider->createLazyRenderTargetProxy(

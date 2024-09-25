@@ -9,31 +9,29 @@
 
 #include "include/core/SkFlattenable.h"
 #include "include/core/SkImageFilter.h"
+#include "include/core/SkM44.h"
 #include "include/core/SkMatrix.h"
 #include "include/core/SkPoint.h"
 #include "include/core/SkRect.h"
 #include "include/core/SkRefCnt.h"
 #include "include/core/SkSamplingOptions.h"
 #include "include/core/SkScalar.h"
+#include "include/core/SkShader.h"
 #include "include/core/SkSize.h"
+#include "include/core/SkSpan.h"
 #include "include/core/SkTypes.h"
+#include "include/effects/SkRuntimeEffect.h"
+#include "include/private/base/SkFloatingPoint.h"
 #include "src/core/SkImageFilterTypes.h"
 #include "src/core/SkImageFilter_Base.h"
+#include "src/core/SkKnownRuntimeEffects.h"
 #include "src/core/SkPicturePriv.h"
 #include "src/core/SkReadBuffer.h"
 #include "src/core/SkWriteBuffer.h"
-#include "src/effects/imagefilters/SkCropImageFilter.h"
 
 #include <algorithm>
+#include <optional>
 #include <utility>
-
-#ifdef SK_ENABLE_SKSL
-#include "include/core/SkM44.h"
-#include "include/core/SkShader.h"
-#include "include/core/SkSpan.h"
-#include "include/effects/SkRuntimeEffect.h"
-#include "src/core/SkRuntimeEffectPriv.h"
-#endif
 
 namespace {
 
@@ -44,7 +42,7 @@ public:
                            float inset,
                            const SkSamplingOptions& sampling,
                            sk_sp<SkImageFilter> input)
-        : SkImageFilter_Base(&input, 1, nullptr)
+        : SkImageFilter_Base(&input, 1)
         , fLensBounds(lensBounds)
         , fZoomAmount(zoomAmount)
         , fInset(inset)
@@ -64,11 +62,11 @@ private:
     skif::LayerSpace<SkIRect> onGetInputLayerBounds(
             const skif::Mapping& mapping,
             const skif::LayerSpace<SkIRect>& desiredOutput,
-            const skif::LayerSpace<SkIRect>& contentBounds) const override;
+            std::optional<skif::LayerSpace<SkIRect>> contentBounds) const override;
 
-    skif::LayerSpace<SkIRect> onGetOutputLayerBounds(
+    std::optional<skif::LayerSpace<SkIRect>> onGetOutputLayerBounds(
             const skif::Mapping& mapping,
-            const skif::LayerSpace<SkIRect>& contentBounds) const override;
+            std::optional<skif::LayerSpace<SkIRect>> contentBounds) const override;
 
     skif::ParameterSpace<SkRect> fLensBounds;
     // Zoom is relative so does not belong to a coordinate space, see note in onFilterImage().
@@ -88,14 +86,14 @@ sk_sp<SkImageFilter> SkImageFilters::Magnifier(const SkRect& lensBounds,
                                                sk_sp<SkImageFilter> input,
                                                const CropRect& cropRect) {
     if (lensBounds.isEmpty() || !lensBounds.isFinite() ||
-        zoomAmount <= 0.f || !SkScalarIsFinite(zoomAmount) ||
-        inset < 0.f || !SkScalarIsFinite(inset)) {
+        zoomAmount <= 0.f || inset < 0.f ||
+        !SkIsFinite(zoomAmount, inset)) {
         return nullptr; // invalid
     }
     // The magnifier automatically restricts its output based on the size of the image it receives
     // as input, so 'cropRect' only applies to its input.
     if (cropRect) {
-        input = SkMakeCropImageFilter(*cropRect, std::move(input));
+        input = SkImageFilters::Crop(*cropRect, std::move(input));
     }
 
     if (zoomAmount > 1.f) {
@@ -141,43 +139,15 @@ void SkMagnifierImageFilter::flatten(SkWriteBuffer& buffer) const {
 
 ////////////////////////////////////////////////////////////////////////////////
 
-#ifdef SK_ENABLE_SKSL
 static sk_sp<SkShader> make_magnifier_shader(
         sk_sp<SkShader> input,
         const skif::LayerSpace<SkRect>& lensBounds,
         const skif::LayerSpace<SkMatrix>& zoomXform,
         const skif::LayerSpace<SkSize>& inset) {
-    static const SkRuntimeEffect* effect = SkMakeRuntimeEffect(SkRuntimeEffect::MakeForShader,
-        "uniform shader src;"
-        "uniform float4 lensBounds;"
-        "uniform float4 zoomXform;"
-        "uniform float2 invInset;"
+    const SkRuntimeEffect* magEffect =
+            GetKnownRuntimeEffect(SkKnownRuntimeEffects::StableKey::kMagnifier);
 
-        "half4 main(float2 coord) {"
-            "float2 zoomCoord = zoomXform.xy + zoomXform.zw*coord;"
-            // edgeInset is the smallest distance to the lens bounds edges,
-            // in units of "insets".
-            "float2 edgeInset = min(coord - lensBounds.xy, lensBounds.zw - coord) * invInset;"
-
-            // The equations for 'weight' ensure that it is 0 along the outside of lensBounds so
-            // it seams with any un-zoomed, un-filtered content. The zoomed content fills a rounded
-            // rectangle that is 1 "inset" in from lensBounds with circular corners with radii
-            // equal to the inset distance. Outside of this region, there is a non-linear weighting
-            // to compress the un-zoomed content to the zoomed content. The critical zone about
-            // each corner is limited to 2x"inset" square.
-            "float weight = (edgeInset.x < 2.0 && edgeInset.y < 2.0)"
-                // Circular distortion weighted by distance to inset corner
-                "? (2.0 - length(2.0 - edgeInset))"
-                // Linear zoom, or single-axis compression outside of the inset area (if delta < 1)
-                ": min(edgeInset.x, edgeInset.y);"
-
-            // Saturate before squaring so that negative weights are clamped to 0 before squaring
-            "weight = saturate(weight);"
-            "return src.eval(mix(coord, zoomCoord, weight*weight));"
-        "}"
-    );
-
-    SkRuntimeShaderBuilder builder(sk_ref_sp(effect));
+    SkRuntimeShaderBuilder builder(sk_ref_sp(magEffect));
     builder.child("src") = std::move(input);
 
     SkASSERT(inset.width() > 0.f && inset.height() > 0.f);
@@ -189,7 +159,6 @@ static sk_sp<SkShader> make_magnifier_shader(
 
     return builder.makeShader();
 }
-#endif // SK_ENABLE_SKSL
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -209,8 +178,11 @@ skif::FilterResult SkMagnifierImageFilter::onFilterImage(const skif::Context& co
     // We pre-emptively fit the zoomed-in src rect to what we expect the child input filter to
     // produce. This should be correct in all cases except for failure to create an offscreen image,
     // at which point there's nothing to be done anyway.
-    skif::LayerSpace<SkRect> expectedChildOutput{
-            this->getChildOutputLayerBounds(0, context.mapping(), context.source().layerBounds())};
+    skif::LayerSpace<SkRect> expectedChildOutput = lensBounds;
+    if (std::optional<skif::LayerSpace<SkIRect>> output =
+            this->getChildOutputLayerBounds(0, context.mapping(), context.source().layerBounds())) {
+        expectedChildOutput = skif::LayerSpace<SkRect>(*output);
+    }
 
     // Clamp the zoom center to be within the childOutput image
     zoomCenter = expectedChildOutput.clamp(zoomCenter);
@@ -263,11 +235,9 @@ skif::FilterResult SkMagnifierImageFilter::onFilterImage(const skif::Context& co
 
     // When there is no SkSL support, or there's a 0 inset, the magnifier is equivalent to a
     // rect->rect transform and crop.
-#ifdef SK_ENABLE_SKSL
     skif::LayerSpace<SkSize> inset = context.mapping().paramToLayer(
             skif::ParameterSpace<SkSize>({fInset, fInset}));
     if (inset.width() <= 0.f || inset.height() <= 0.f)
-#endif
     {
         // When applying the zoom as a direct transform, we only require the visibleSrcRect as
         // input from the child filter, and transform it by the inverse of zoomXform (to go from
@@ -280,7 +250,6 @@ skif::FilterResult SkMagnifierImageFilter::onFilterImage(const skif::Context& co
                           .applyCrop(context, lensBounds.roundOut());
     }
 
-#ifdef SK_ENABLE_SKSL
     using ShaderFlags = skif::FilterResult::ShaderFlags;
     skif::FilterResult::Builder builder{context};
     builder.add(this->getChildOutput(0, context.withNewDesiredOutput(visibleLensBounds.roundOut())),
@@ -290,13 +259,12 @@ skif::FilterResult SkMagnifierImageFilter::onFilterImage(const skif::Context& co
             return inputs[0] ? make_magnifier_shader(inputs[0], lensBounds, zoomXform, inset)
                              : nullptr;
         }, lensBounds.roundOut());
-#endif
 }
 
 skif::LayerSpace<SkIRect> SkMagnifierImageFilter::onGetInputLayerBounds(
         const skif::Mapping& mapping,
         const skif::LayerSpace<SkIRect>& desiredOutput,
-        const skif::LayerSpace<SkIRect>& contentBounds) const {
+        std::optional<skif::LayerSpace<SkIRect>> contentBounds) const {
     // The required input is always the lens bounds. The filter distorts the pixels contained within
     // these bounds to zoom in on a portion of it, depending on the inset and zoom amount. However,
     // it adjusts the region based on cropping that occurs between what's requested and what's
@@ -308,13 +276,14 @@ skif::LayerSpace<SkIRect> SkMagnifierImageFilter::onGetInputLayerBounds(
     return this->getChildInputLayerBounds(0, mapping, requiredInput, contentBounds);
 }
 
-skif::LayerSpace<SkIRect> SkMagnifierImageFilter::onGetOutputLayerBounds(
+std::optional<skif::LayerSpace<SkIRect>> SkMagnifierImageFilter::onGetOutputLayerBounds(
         const skif::Mapping& mapping,
-        const skif::LayerSpace<SkIRect>& contentBounds) const {
+        std::optional<skif::LayerSpace<SkIRect>> contentBounds) const {
     // The output of this filter is fLensBounds intersected with its child's output.
-    skif::LayerSpace<SkIRect> output = this->getChildOutputLayerBounds(0, mapping, contentBounds);
-    if (output.intersect(mapping.paramToLayer(fLensBounds).roundOut())) {
-        return output;
+    auto output = this->getChildOutputLayerBounds(0, mapping, contentBounds);
+    skif::LayerSpace<SkIRect> lensBounds = mapping.paramToLayer(fLensBounds).roundOut();
+    if (!output || lensBounds.intersect(*output)) {
+        return lensBounds;
     } else {
         // Nothing to magnify
         return skif::LayerSpace<SkIRect>::Empty();

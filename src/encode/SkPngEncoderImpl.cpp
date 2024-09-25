@@ -34,8 +34,8 @@
 #include <algorithm>
 #include <csetjmp>
 #include <cstdint>
+#include <cstring>
 #include <memory>
-#include <string>
 #include <utility>
 #include <vector>
 
@@ -135,6 +135,14 @@ bool SkPngEncoderMgr::setHeader(const SkImageInfo& srcInfo, const SkPngEncoder::
             pngColorType = srcInfo.isOpaque() ? PNG_COLOR_TYPE_RGB : PNG_COLOR_TYPE_RGB_ALPHA;
             fPngBytesPerPixel = 8;
             break;
+        case kRGB_F16F16F16x_SkColorType:
+            sigBit.red = 16;
+            sigBit.green = 16;
+            sigBit.blue = 16;
+            pngColorType = PNG_COLOR_TYPE_RGB;
+            fPngBytesPerPixel = 8;
+            SkASSERT(srcInfo.isOpaque());
+            break;
         case kGray_8_SkColorType:
             sigBit.gray = 8;
             pngColorType = PNG_COLOR_TYPE_GRAY;
@@ -193,6 +201,7 @@ bool SkPngEncoderMgr::setHeader(const SkImageInfo& srcInfo, const SkPngEncoder::
             pngColorType = srcInfo.isOpaque() ? PNG_COLOR_TYPE_RGB : PNG_COLOR_TYPE_RGB_ALPHA;
             fPngBytesPerPixel = 8;
             break;
+        case kBGR_101010x_XR_SkColorType:
         case kRGB_101010x_SkColorType:
             bitDepth = 16;
             sigBit.red = 10;
@@ -200,6 +209,15 @@ bool SkPngEncoderMgr::setHeader(const SkImageInfo& srcInfo, const SkPngEncoder::
             sigBit.blue = 10;
             pngColorType = PNG_COLOR_TYPE_RGB;
             fPngBytesPerPixel = 6;
+            break;
+        case kBGRA_10101010_XR_SkColorType:
+            bitDepth = 16;
+            sigBit.red = 10;
+            sigBit.green = 10;
+            sigBit.blue = 10;
+            sigBit.alpha = 10;
+            pngColorType = srcInfo.isOpaque() ? PNG_COLOR_TYPE_RGB : PNG_COLOR_TYPE_RGB_ALPHA;
+            fPngBytesPerPixel = 8;
             break;
         default:
             return false;
@@ -245,8 +263,8 @@ bool SkPngEncoderMgr::setHeader(const SkImageInfo& srcInfo, const SkPngEncoder::
             // and we don't have to provide text_length and other fields as we're providing
             // 0-terminated c_str with PNG_TEXT_COMPRESSION_NONE (no compression, no itxt).
             png_texts[i].compression = PNG_TEXT_COMPRESSION_NONE;
-            png_texts[i].key = (png_charp)keyword;
-            png_texts[i].text = (png_charp)text;
+            png_texts[i].key = const_cast<png_charp>(keyword);
+            png_texts[i].text = const_cast<png_charp>(text);
         }
         png_set_text(fPngPtr, fInfoPtr, png_texts.data(), png_texts.size());
     }
@@ -318,6 +336,8 @@ static transform_scanline_proc choose_proc(const SkImageInfo& info) {
                     SkDEBUGFAIL("unknown alpha type");
                     return nullptr;
             }
+        case kRGB_F16F16F16x_SkColorType:
+            return transform_scanline_F16F16F16x;
         case kRGBA_F32_SkColorType:
             switch (info.alphaType()) {
                 case kOpaque_SkAlphaType:
@@ -356,9 +376,15 @@ static transform_scanline_proc choose_proc(const SkImageInfo& info) {
         case kBGR_101010x_SkColorType:
             return transform_scanline_bgr_101010x;
         case kBGR_101010x_XR_SkColorType:
-            SkDEBUGFAIL("unsupported color type");
-            return nullptr;
-
+            switch (info.alphaType()) {
+                case kOpaque_SkAlphaType:
+                    return transform_scanline_bgr_101010x_xr;
+                default:
+                    SkDEBUGFAIL("unsupported color type");
+                    return nullptr;
+            }
+        case kBGRA_10101010_XR_SkColorType:
+            return transform_scanline_bgra_10101010_xr;
         case kAlpha_8_SkColorType:
             return transform_scanline_A8_to_GrayAlpha;
         case kR8G8_unorm_SkColorType:
@@ -368,6 +394,7 @@ static transform_scanline_proc choose_proc(const SkImageInfo& info) {
         case kA16_float_SkColorType:
         case kR16G16B16A16_unorm_SkColorType:
         case kR8_unorm_SkColorType:
+        case kRGBA_10x6_SkColorType:
             return nullptr;
     }
     SkDEBUGFAIL("unsupported color type");

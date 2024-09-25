@@ -32,8 +32,6 @@ Skia and the third party dep depend on that.
 
 CORE_COPTS = [
     "-fstrict-aliasing",
-    "-fPIC",
-    "-fno-rtti",  # Reduces code size
 ] + select({
     # SkRawCodec catches any exceptions thrown by dng_sdk, insulating the rest of Skia.
     "//src/codec:raw_decode_codec": [],
@@ -44,6 +42,23 @@ CORE_COPTS = [
         # On Android, this option causes the linker to fail
         # (e.g. "undefined reference to `SkString::data()'").
         "-fvisibility=hidden",
+    ],
+}) + select({
+    "@platforms//os:windows": [],
+    "//conditions:default": [
+        # In Clang 14, this default was changed. We turn this off to (hopefully) make our
+        # GMs more consistent and avoid some floating-point related test failures on M1 macs.
+        "-ffp-contract=off",
+        # Windows doesn't support position-independent code.
+        "-fPIC",
+    ],
+}) + select({
+    # Turning off RTTI reduces code size, but is necessary for connecting C++
+    # and Objective-C code.
+    "@platforms//os:macos": [],
+    "@platforms//os:ios": [],
+    "//conditions:default": [
+        "-fno-rtti",
     ],
 })
 
@@ -90,9 +105,11 @@ WARNINGS = [
     "-Wno-undefined-func-template",
     "-Wno-unused-parameter",  # It is common to have unused parameters in src/
     "-Wno-zero-as-null-pointer-constant",  # VK_NULL_HANDLE is defined as 0
+    "-Wno-unsafe-buffer-usage",
     #### Warnings we would like to fix ####
     "-Wno-abstract-vbase-init",
     "-Wno-cast-align",
+    "-Wno-cast-function-type-strict",
     "-Wno-cast-qual",
     "-Wno-class-varargs",
     "-Wno-conversion",  # -Wsign-conversion re-enabled for header sources
@@ -153,18 +170,16 @@ WARNINGS = [
     # A catch-all for when the version of clang we are using does not have the prior options
     "-Wno-unknown-warning-option",
 ] + select({
-    "//bazel/common_config_settings:compile_generated_cpp_files_for_headers_true": [
-        # These warnings show up when we compile generated .cpp files when enforcing IWYU
-        "-Wno-unused-function",
-        "-Wno-unused-template",
-        "-Wno-unused-const-variable",
-    ],
-    "//conditions:default": [],
-}) + select({
     "@platforms//os:windows": [
         # skbug.com/14203
         "-Wno-nonportable-system-include-path",
         "-Wno-unknown-argument",
+        # Clang warns even when all enum values are covered.
+        "-Wno-switch-default",
+        # The Windows build fails without these options:
+        "-Wno-extra-semi-stmt",
+        "-Wno-invalid-constexpr",
+        "-D_CRT_USE_BUILTIN_OFFSETOF",
     ],
     "//conditions:default": [],
 })

@@ -47,10 +47,9 @@ class ConvexPathsGM : public skiagm::GM {
 
     void onOnceBeforeDraw() override { this->setBGColor(0xFF000000); }
 
-    SkString onShortName() override { return SkString("convexpaths"); }
+    SkString getName() const override { return SkString("convexpaths"); }
 
-
-    SkISize onISize() override { return {1200, 1100}; }
+    SkISize getISize() override { return {1200, 1100}; }
 
     void makePaths() {
         if (fOnce.alreadyDone()) {
@@ -79,10 +78,9 @@ class ConvexPathsGM : public skiagm::GM {
                                        SkPathDirection::kCW));
 
         // large number of points
-        enum {
-            kLength = 100,
-            kPtsPerSide = (1 << 12),
-        };
+        static constexpr int kLength = 100;
+        static constexpr int kPtsPerSide = (1 << 12);
+
         b.moveTo(0, 0);
         for (int i = 1; i < kPtsPerSide; ++i) { // skip the first point due to moveTo.
             b.lineTo(kLength * SkIntToScalar(i) / kPtsPerSide, 0);

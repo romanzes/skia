@@ -7,12 +7,21 @@
 
 #include "src/gpu/ganesh/gl/GrGLUniformHandler.h"
 
-#include "src/gpu/ganesh/GrTexture.h"
+#include "include/core/SkString.h"
+#include "include/gpu/GrBackendSurface.h"
+#include "include/gpu/gl/GrGLFunctions.h"
+#include "include/gpu/gl/GrGLInterface.h"
+#include "include/private/base/SkAssert.h"
 #include "src/gpu/ganesh/GrUtil.h"
 #include "src/gpu/ganesh/gl/GrGLCaps.h"
 #include "src/gpu/ganesh/gl/GrGLGpu.h"
+#include "src/gpu/ganesh/gl/GrGLUtil.h"
 #include "src/gpu/ganesh/gl/builders/GrGLProgramBuilder.h"
+#include "src/gpu/ganesh/glsl/GrGLSLProgramBuilder.h"
 #include "src/sksl/SkSLCompiler.h"
+
+#include <string.h>
+#include <utility>
 
 #define GL_CALL(X) GR_GL_CALL(this->glGpu()->glInterface(), X)
 #define GL_CALL_RET(R, X) GR_GL_CALL_RET(this->glGpu()->glInterface(), R, X)
@@ -69,8 +78,11 @@ GrGLSLUniformHandler::UniformHandle GrGLUniformHandler::internalAddUniformArray(
 }
 
 GrGLSLUniformHandler::SamplerHandle GrGLUniformHandler::addSampler(
-        const GrBackendFormat& backendFormat, GrSamplerState, const skgpu::Swizzle& swizzle,
-        const char* name, const GrShaderCaps* shaderCaps) {
+        const GrBackendFormat& backendFormat,
+        GrSamplerState,
+        const skgpu::Swizzle& swizzle,
+        const char* name,
+        const GrShaderCaps* shaderCaps) {
     SkASSERT(name && strlen(name));
 
     constexpr char prefix = 'u';
@@ -80,8 +92,7 @@ GrGLSLUniformHandler::SamplerHandle GrGLUniformHandler::addSampler(
 
     GLUniformInfo tempInfo;
     tempInfo.fVariable = GrShaderVar{std::move(mangleName),
-                                     SkSLCombinedSamplerTypeForTextureType(type),
-                                     GrShaderVar::TypeModifier::Uniform};
+                                     SkSLCombinedSamplerTypeForTextureType(type)};
 
     tempInfo.fVisibility = kFragment_GrShaderFlag;
     tempInfo.fOwner      = nullptr;

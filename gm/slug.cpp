@@ -24,6 +24,7 @@
 #include "include/private/base/SkTDArray.h"
 #include "include/private/chromium/Slug.h"
 #include "tools/ToolUtils.h"
+#include "tools/fonts/FontToolUtils.h"
 
 #if defined(SK_GRAPHITE)
 #include "include/gpu/graphite/ContextOptions.h"
@@ -48,7 +49,7 @@ protected:
 #endif
 
     void onOnceBeforeDraw() override {
-        fTypeface = ToolUtils::create_portable_typeface("serif", SkFontStyle());
+        fTypeface = ToolUtils::CreatePortableTypeface("serif", SkFontStyle());
         SkFont font(fTypeface);
         size_t txtLen = strlen(fText);
         int glyphCount = font.countText(fText, txtLen, SkTextEncoding::kUTF8);
@@ -57,13 +58,9 @@ protected:
         font.textToGlyphs(fText, txtLen, SkTextEncoding::kUTF8, fGlyphs.begin(), glyphCount);
     }
 
-    SkString onShortName() override {
-        return SkString("slug");
-    }
+    SkString getName() const override { return SkString("slug"); }
 
-    SkISize onISize() override {
-        return SkISize::Make(1000, 480);
-    }
+    SkISize getISize() override { return SkISize::Make(1000, 480); }
 
     void onDraw(SkCanvas* canvas) override {
         sk_sp<SkTextBlob> blob(this->makeBlob());
@@ -79,7 +76,7 @@ protected:
         canvas->translate(30, 30);
         canvas->drawTextBlob(blob, 10, 10, p);
         canvas->translate(370, 0);
-        slug->draw(canvas);
+        slug->draw(canvas, p);
         for (float scale = 1.5; scale < 4; scale += 0.5) {
             canvas->translate(-370, 20 * scale);
             canvas->save();
@@ -92,7 +89,7 @@ protected:
             canvas->scale(scale, scale);
             canvas->rotate(5);
 
-            slug->draw(canvas);
+            slug->draw(canvas, p);
             canvas->restore();
         }
     }

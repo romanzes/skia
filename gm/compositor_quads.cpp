@@ -37,8 +37,10 @@
 #include "include/effects/SkShaderMaskFilter.h"
 #include "include/private/base/SkTArray.h"
 #include "src/core/SkLineClipper.h"
+#include "tools/DecodeUtils.h"
 #include "tools/Resources.h"
 #include "tools/ToolUtils.h"
+#include "tools/fonts/FontToolUtils.h"
 #include "tools/gpu/YUVUtils.h"
 
 #include <array>
@@ -191,7 +193,7 @@ static void draw_clipping_boundaries(SkCanvas* canvas, const SkMatrix& local) {
 }
 
 static void draw_text(SkCanvas* canvas, const char* text) {
-    SkFont font(ToolUtils::create_portable_typeface(), 12);
+    SkFont font(ToolUtils::DefaultPortableTypeface(), 12);
     canvas->drawString(text, 0, 0, font, SkPaint());
 }
 
@@ -424,7 +426,7 @@ public:
             , fName(name) {}
 
 protected:
-    SkISize onISize() override {
+    SkISize getISize() override {
         // Initialize the array of renderers.
         this->onceBeforeDraw();
 
@@ -439,7 +441,7 @@ protected:
                              SkScalarRoundToInt(kCellHeight * fRenderers.size() + 75.f));
     }
 
-    SkString onShortName() override {
+    SkString getName() const override {
         SkString fullName;
         fullName.appendf("compositor_quads_%s", fName.c_str());
         return fullName;
@@ -1018,7 +1020,7 @@ static ClipTileRendererArray make_shader_renderers() {
 }
 
 static ClipTileRendererArray make_image_renderers() {
-    sk_sp<SkImage> mandrill = GetResourceAsImage("images/mandrill_512.png");
+    sk_sp<SkImage> mandrill = ToolUtils::GetResourceAsImage("images/mandrill_512.png");
     sk_sp<SkData> mandrillJpeg = GetResourceAsData("images/mandrill_h1v1.jpg");
     return ClipTileRendererArray{TextureSetRenderer::MakeUnbatched(mandrill),
                                  TextureSetRenderer::MakeBatched(mandrill, 0),
@@ -1027,7 +1029,7 @@ static ClipTileRendererArray make_image_renderers() {
 }
 
 static ClipTileRendererArray make_filtered_renderers() {
-    sk_sp<SkImage> mandrill = GetResourceAsImage("images/mandrill_512.png");
+    sk_sp<SkImage> mandrill = ToolUtils::GetResourceAsImage("images/mandrill_512.png");
 
     SkColorMatrix cm;
     cm.setSaturation(10);

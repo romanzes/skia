@@ -53,7 +53,7 @@ private:
 class SkCommandLineConfigGpu : public SkCommandLineConfig {
 public:
     enum class SurfType { kDefault, kBackendTexture, kBackendRenderTarget };
-    typedef sk_gpu_test::GrContextFactory::ContextType      ContextType;
+    typedef skgpu::ContextType                              ContextType;
     typedef sk_gpu_test::GrContextFactory::ContextOverrides ContextOverrides;
 
     SkCommandLineConfigGpu(const SkString&           tag,
@@ -113,28 +113,47 @@ private:
 
 class SkCommandLineConfigGraphite : public SkCommandLineConfig {
 public:
-    using ContextType = sk_gpu_test::GrContextFactory::ContextType;
+    using ContextType = skgpu::ContextType;
 
-    SkCommandLineConfigGraphite(const SkString&           tag,
+    enum class SurfaceType {
+        // SkSurfaces::RenderTarget()
+        kDefault,
+        // BackendTexture around a WGPUTextureView passed to SkSurfaces::WrapBackendTexture()
+        kWrapTextureView,
+    };
+
+    SkCommandLineConfigGraphite(const SkString& tag,
                                 const skia_private::TArray<SkString>& viaParts,
-                                ContextType               contextType,
-                                SkColorType               colorType,
-                                SkAlphaType               alphaType)
+                                ContextType contextType,
+                                SurfaceType surfaceType,
+                                const skiatest::graphite::TestOptions& options,
+                                SkColorType colorType,
+                                SkAlphaType alphaType,
+                                bool testPrecompile)
             : SkCommandLineConfig(tag, SkString("graphite"), viaParts)
+            , fOptions(options)
             , fContextType(contextType)
+            , fSurfaceType(surfaceType)
             , fColorType(colorType)
-            , fAlphaType(alphaType) {
+            , fAlphaType(alphaType)
+            , fTestPrecompile(testPrecompile) {
     }
     const SkCommandLineConfigGraphite* asConfigGraphite() const override { return this; }
 
+    const skiatest::graphite::TestOptions& getOptions() const { return fOptions; }
     ContextType getContextType() const { return fContextType; }
+    SurfaceType getSurfaceType() const { return fSurfaceType; }
     SkColorType getColorType() const { return fColorType; }
     SkAlphaType getAlphaType() const { return fAlphaType; }
+    bool        getTestPrecompile() const { return fTestPrecompile; }
 
 private:
-    ContextType         fContextType;
-    SkColorType         fColorType;
-    SkAlphaType         fAlphaType;
+    skiatest::graphite::TestOptions fOptions;
+    ContextType                     fContextType;
+    SurfaceType                     fSurfaceType;
+    SkColorType                     fColorType;
+    SkAlphaType                     fAlphaType;
+    bool                            fTestPrecompile;
 };
 
 #endif // SK_GRAPHITE

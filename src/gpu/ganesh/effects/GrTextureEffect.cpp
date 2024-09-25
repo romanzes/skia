@@ -27,6 +27,7 @@
 #include "src/gpu/ganesh/glsl/GrGLSLUniformHandler.h"
 
 #include <algorithm>
+#include <cmath>
 #include <utility>
 
 enum SkAlphaType : int;
@@ -120,9 +121,9 @@ GrTextureEffect::Sampling::Sampling(const GrSurfaceProxy& proxy,
         bool needsShaderWrap = !canDoWrapInHW(dim.width(),  sampler.wrapModeX()) ||
                                !canDoWrapInHW(dim.height(), sampler.wrapModeY());
         if (needsShaderWrap || anisoSubset) {
-            MipmapMode newMM = proxy.asTextureProxy()->mipmapped() == GrMipmapped::kYes
-                                    ? MipmapMode::kLinear
-                                    : MipmapMode::kNone;
+            MipmapMode newMM = proxy.asTextureProxy()->mipmapped() == skgpu::Mipmapped::kYes
+                                       ? MipmapMode::kLinear
+                                       : MipmapMode::kNone;
             sampler = GrSamplerState(sampler.wrapModeX(),
                                      sampler.wrapModeY(),
                                      SkFilterMode::kLinear,
@@ -144,16 +145,16 @@ GrTextureEffect::Sampling::Sampling(const GrSurfaceProxy& proxy,
         r.fShaderSubset = subset;
         bool domainIsSafe = false;
         if (filter == Filter::kNearest) {
-            Span isubset{sk_float_floor(subset.fA), sk_float_ceil(subset.fB)};
+            Span isubset{std::floor(subset.fA), std::ceil(subset.fB)};
             if (domain.fA > isubset.fA && domain.fB < isubset.fB) {
                 domainIsSafe = true;
             }
             // This inset prevents sampling neighboring texels that could occur when
             // texture coords fall exactly at texel boundaries (depending on precision
             // and GPU-specific snapping at the boundary).
-            r.fShaderClamp = isubset.makeInset(0.5f);
+            r.fShaderClamp = isubset.makeInset(0.5f + kInsetEpsilon);
         } else {
-            r.fShaderClamp = subset.makeInset(linearFilterInset);
+            r.fShaderClamp = subset.makeInset(linearFilterInset + kInsetEpsilon);
             if (r.fShaderClamp.contains(domain)) {
                 domainIsSafe = true;
             }
@@ -851,7 +852,7 @@ std::unique_ptr<GrFragmentProcessor> GrTextureEffect::clone() const {
 }
 
 GR_DEFINE_FRAGMENT_PROCESSOR_TEST(GrTextureEffect)
-#if GR_TEST_UTILS
+#if defined(GPU_TEST_UTILS)
 std::unique_ptr<GrFragmentProcessor> GrTextureEffect::TestCreate(GrProcessorTestData* testData) {
     auto [view, ct, at] = testData->randomView();
     Wrap wrapModes[2];
@@ -859,7 +860,7 @@ std::unique_ptr<GrFragmentProcessor> GrTextureEffect::TestCreate(GrProcessorTest
 
     Filter filter = testData->fRandom->nextBool() ? Filter::kLinear : Filter::kNearest;
     MipmapMode mm = MipmapMode::kNone;
-    if (view.asTextureProxy()->mipmapped() == GrMipmapped::kYes) {
+    if (view.asTextureProxy()->mipmapped() == skgpu::Mipmapped::kYes) {
         mm = testData->fRandom->nextBool() ? MipmapMode::kLinear : MipmapMode::kNone;
     }
     GrSamplerState params(wrapModes, filter, mm);

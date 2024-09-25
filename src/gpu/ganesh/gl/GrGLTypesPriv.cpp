@@ -4,10 +4,10 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
+#include "src/gpu/ganesh/gl/GrGLTypesPriv.h"
 
 #include "include/core/SkScalar.h"
-#include "include/private/gpu/ganesh/GrGLTypesPriv.h"
-#include "src/gpu/Swizzle.h"
+#include "include/gpu/GrTypes.h"
 #include "src/gpu/ganesh/gl/GrGLDefines.h"
 
 GrGLTextureParameters::SamplerOverriddenState::SamplerOverriddenState()
@@ -55,11 +55,6 @@ void GrGLTextureParameters::set(const SamplerOverriddenState* samplerState,
     }
     fNonsamplerState = nonsamplerState;
     fResetTimestamp = currTimestamp;
-}
-
-void GrGLBackendTextureInfo::assign(const GrGLBackendTextureInfo& that, bool thisIsValid) {
-    fInfo = that.fInfo;
-    fParams = that.fParams;
 }
 
 GrGLSurfaceInfo GrGLTextureSpecToSurfaceInfo(const GrGLTextureSpec& glSpec,

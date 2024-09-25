@@ -26,12 +26,15 @@ class Swizzle;
 namespace skgpu::graphite {
 
 class ComputeStep;
+enum class Coverage;
 class DrawParams;
 enum class DstReadRequirement;
+class Geometry;
 class GraphicsPipelineDesc;
 class PaintParams;
 class PipelineDataGatherer;
 class Recorder;
+struct RenderPassDesc;
 class RenderStep;
 class RuntimeEffectDictionary;
 class ShaderNode;
@@ -39,23 +42,36 @@ class UniquePaintParamsID;
 
 struct ResourceBindingRequirements;
 
+struct VertSkSLInfo {
+    std::string fSkSL;
+
+    std::string fLabel;
+};
+
 struct FragSkSLInfo {
     std::string fSkSL;
     BlendInfo fBlendInfo;
+
+    std::string fLabel;
+
     bool fRequiresLocalCoords = false;
-    int fNumTexturesAndSamplers = 0;
+    int  fNumTexturesAndSamplers = 0;
+    bool fHasPaintUniforms = false;
+    bool fHasGradientBuffer = false;
+    skia_private::TArray<uint32_t> fData = {};
 };
 
-std::tuple<UniquePaintParamsID, const UniformDataBlock*, const TextureDataBlock*>
-ExtractPaintData(Recorder*,
-                 PipelineDataGatherer* gatherer,
-                 PaintParamsKeyBuilder* builder,
-                 const Layout layout,
-                 const SkM44& local2Dev,
-                 const PaintParams&,
-                 sk_sp<TextureProxy> dstTexture,
-                 SkIPoint dstOffset,
-                 const SkColorInfo& targetColorInfo);
+std::tuple<UniquePaintParamsID, const UniformDataBlock*, const TextureDataBlock*> ExtractPaintData(
+        Recorder*,
+        PipelineDataGatherer* gatherer,
+        PaintParamsKeyBuilder* builder,
+        const Layout layout,
+        const SkM44& local2Dev,
+        const PaintParams&,
+        const Geometry& geometry,
+        sk_sp<TextureProxy> dstTexture,
+        SkIPoint dstOffset,
+        const SkColorInfo& targetColorInfo);
 
 std::tuple<const UniformDataBlock*, const TextureDataBlock*> ExtractRenderStepData(
         UniformDataCache* uniformDataCache,
@@ -65,13 +81,15 @@ std::tuple<const UniformDataBlock*, const TextureDataBlock*> ExtractRenderStepDa
         const RenderStep* step,
         const DrawParams& params);
 
-DstReadRequirement GetDstReadRequirement(const Caps*, std::optional<SkBlendMode>, bool hasCoverage);
+DstReadRequirement GetDstReadRequirement(const Caps*, std::optional<SkBlendMode>, Coverage);
 
-std::string BuildVertexSkSL(const ResourceBindingRequirements&,
-                            const RenderStep* step,
-                            bool defineShadingSsboIndexVarying,
-                            bool defineLocalCoordsVarying);
+VertSkSLInfo BuildVertexSkSL(const ResourceBindingRequirements&,
+                             const RenderStep* step,
+                             bool defineShadingSsboIndexVarying,
+                             bool defineLocalCoordsVarying);
 
+// TODO(b/347072931): Refactor to return std::unique_ptr<ShaderInfo> instead such that snippet
+// data can remain tied to its snippet ID.
 FragSkSLInfo BuildFragmentSkSL(const Caps* caps,
                                const ShaderCodeDictionary*,
                                const RuntimeEffectDictionary*,
@@ -80,20 +98,30 @@ FragSkSLInfo BuildFragmentSkSL(const Caps* caps,
                                bool useStorageBuffers,
                                skgpu::Swizzle writeSwizzle);
 
+std::string GetPipelineLabel(const ShaderCodeDictionary*,
+                             const RenderPassDesc& renderPassDesc,
+                             const RenderStep* renderStep,
+                             UniquePaintParamsID paintID);
+
 std::string BuildComputeSkSL(const Caps*, const ComputeStep*);
 
 std::string EmitPaintParamsUniforms(int bufferID,
-                                    const char* name,
                                     const Layout layout,
-                                    SkSpan<const ShaderNode*> nodes);
+                                    SkSpan<const ShaderNode*> nodes,
+                                    bool* hasUniforms,
+                                    bool* wrotePaintColor);
 std::string EmitRenderStepUniforms(int bufferID,
-                                   const char* name,
                                    const Layout layout,
                                    SkSpan<const Uniform> uniforms);
 std::string EmitPaintParamsStorageBuffer(int bufferID,
-                                         const char* bufferTypePrefix,
-                                         const char* bufferNamePrefix,
-                                         SkSpan<const ShaderNode*> nodes);
+                                         SkSpan<const ShaderNode*> nodes,
+                                         bool* hasUniforms,
+                                         bool* wrotePaintColor);
+std::string EmitRenderStepStorageBuffer(int bufferID,
+                                        SkSpan<const Uniform> uniforms);
+std::string EmitUniformsFromStorageBuffer(const char* bufferNamePrefix,
+                                          const char* ssboIndex,
+                                          SkSpan<const Uniform> uniforms);
 std::string EmitStorageBufferAccess(const char* bufferNamePrefix,
                                     const char* ssboIndex,
                                     const char* uniformName);
@@ -103,7 +131,7 @@ std::string EmitTexturesAndSamplers(const ResourceBindingRequirements&,
 std::string EmitSamplerLayout(const ResourceBindingRequirements&, int* binding);
 std::string EmitVaryings(const RenderStep* step,
                          const char* direction,
-                         bool emitShadingSsboIndexVarying,
+                         bool emitSsboIndicesVarying,
                          bool emitLocalCoordsVarying);
 
 } // namespace skgpu::graphite

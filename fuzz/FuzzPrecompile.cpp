@@ -18,21 +18,21 @@
 #include "include/effects/SkColorMatrix.h"
 #include "include/gpu/graphite/Context.h"
 #include "include/gpu/graphite/Surface.h"
+#include "include/gpu/graphite/precompile/Precompile.h"
+#include "include/gpu/graphite/precompile/PrecompileColorFilter.h"
 #include "modules/skcms/skcms.h"
 #include "src/core/SkBlenderBase.h"
 #include "src/gpu/graphite/ContextPriv.h"
 #include "src/gpu/graphite/ContextUtils.h"
-#include "src/gpu/graphite/FactoryFunctions.h"
 #include "src/gpu/graphite/KeyContext.h"
-#include "src/gpu/graphite/PaintOptionsPriv.h"
 #include "src/gpu/graphite/PaintParams.h"
 #include "src/gpu/graphite/PaintParamsKey.h"
 #include "src/gpu/graphite/PipelineData.h"
-#include "src/gpu/graphite/Precompile.h"
-#include "src/gpu/graphite/PublicPrecompile.h"
 #include "src/gpu/graphite/RecorderPriv.h"
+#include "src/gpu/graphite/Renderer.h"
 #include "src/gpu/graphite/RuntimeEffectDictionary.h"
-#include "tools/ToolUtils.h"
+#include "src/gpu/graphite/geom/Geometry.h"
+#include "src/gpu/graphite/precompile/PaintOptionsPriv.h"
 #include "tools/gpu/GrContextFactory.h"
 #include "tools/graphite/ContextFactory.h"
 
@@ -82,12 +82,6 @@ SkPath make_path() {
     path.close();
     return path.detach();
 }
-
-#ifdef SK_DEBUG
-void dump(ShaderCodeDictionary* dict, UniquePaintParamsID id) {
-    dict->lookup(id).dump(dict);
-}
-#endif
 
 //--------------------------------------------------------------------------------------------------
 // color spaces
@@ -281,8 +275,10 @@ void check_draw(Context* context,
         SkCanvas* canvas = surf->getCanvas();
 
         switch (dt) {
-            case DrawTypeFlags::kShape:
+            case DrawTypeFlags::kSimpleShape:
                 canvas->drawRect(SkRect::MakeWH(16, 16), paint);
+                break;
+            case DrawTypeFlags::kNonSimpleShape:
                 canvas->drawPath(path, paint);
                 break;
             default:
@@ -317,16 +313,21 @@ void fuzz_graphite(Fuzz* fuzz, Context* context, int depth = 9) {
                                     /* dstTexture= */ nullptr,
                                     /* dstOffset= */ {0, 0});
 
+    auto dstTexInfo = recorder->priv().caps()->getDefaultSampledTextureInfo(kRGBA_8888_SkColorType,
+                                                                            skgpu::Mipmapped::kNo,
+                                                                            skgpu::Protected::kNo,
+                                                                            skgpu::Renderable::kNo);
+    // Use Budgeted::kYes to avoid immediately instantiating the TextureProxy. This test doesn't
+    // require full resources.
     sk_sp<TextureProxy> fakeDstTexture = TextureProxy::Make(recorder->priv().caps(),
+                                                            recorder->priv().resourceProvider(),
                                                             SkISize::Make(1, 1),
-                                                            kRGBA_8888_SkColorType,
-                                                            skgpu::Mipmapped::kNo,
-                                                            skgpu::Protected::kNo,
-                                                            skgpu::Renderable::kYes,
-                                                            skgpu::Budgeted::kNo);
+                                                            dstTexInfo,
+                                                            "FuzzPrecompileFakeDstTexture",
+                                                            skgpu::Budgeted::kYes);
     constexpr SkIPoint fakeDstOffset = SkIPoint::Make(0, 0);
 
-    DrawTypeFlags kDrawType = DrawTypeFlags::kShape;
+    DrawTypeFlags kDrawType = DrawTypeFlags::kSimpleShape;
     SkPath path = make_path();
 
     Layout layout = context->backend() == skgpu::BackendApi::kMetal ? Layout::kMetal
@@ -335,38 +336,51 @@ void fuzz_graphite(Fuzz* fuzz, Context* context, int depth = 9) {
     PaintParamsKeyBuilder builder(dict);
     PipelineDataGatherer gatherer(layout);
 
-
     auto [paint, paintOptions] = create_random_paint(fuzz, depth);
 
-
-    bool hasCoverage;
-    fuzz->next(&hasCoverage);
+    constexpr Coverage coverageOptions[3] = {
+            Coverage::kNone, Coverage::kSingleChannel, Coverage::kLCD};
+    uint32_t temp;
+    fuzz->next(&temp);
+    Coverage coverage = coverageOptions[temp % 3];
 
     DstReadRequirement dstReadReq = DstReadRequirement::kNone;
     const SkBlenderBase* blender = as_BB(paint.getBlender());
     if (blender) {
         dstReadReq = GetDstReadRequirement(recorder->priv().caps(),
                                            blender->asBlendMode(),
-                                           hasCoverage);
+                                           coverage);
     }
     bool needsDstSample = dstReadReq == DstReadRequirement::kTextureCopy ||
                           dstReadReq == DstReadRequirement::kTextureSample;
     sk_sp<TextureProxy> curDst = needsDstSample ? fakeDstTexture : nullptr;
 
-    auto [paintID, uData, tData] = ExtractPaintData(
-            recorder.get(), &gatherer, &builder, layout, {},
-            PaintParams(paint,
-                        /* primitiveBlender= */ nullptr,
-                        dstReadReq,
-                        /* skipColorXform= */ false),
-            curDst, fakeDstOffset, ci);
+    auto [paintID, uData, tData] = ExtractPaintData(recorder.get(),
+                                                    &gatherer,
+                                                    &builder,
+                                                    layout,
+                                                    {},
+                                                    PaintParams(paint,
+                                                                /* primitiveBlender= */ nullptr,
+                                                                /* clipShader= */ nullptr,
+                                                                dstReadReq,
+                                                                /* skipColorXform= */ false),
+                                                    {},
+                                                    curDst,
+                                                    fakeDstOffset,
+                                                    ci);
 
     std::vector<UniquePaintParamsID> precompileIDs;
     paintOptions.priv().buildCombinations(precompileKeyContext,
-                                          /* addPrimitiveBlender= */ false,
-                                          hasCoverage,
-                                          [&](UniquePaintParamsID id) {
-                                              precompileIDs.push_back(id);
+                                          &gatherer,
+                                          DrawTypeFlags::kNone,
+                                          /* withPrimitiveBlender= */ false,
+                                          coverage,
+                                          [&](UniquePaintParamsID id,
+                                              DrawTypeFlags,
+                                              bool /* withPrimitiveBlender */,
+                                              Coverage) {
+                                                  precompileIDs.push_back(id);
                                           });
 
     // The specific key generated by ExtractPaintData should be one of the
@@ -376,11 +390,11 @@ void fuzz_graphite(Fuzz* fuzz, Context* context, int depth = 9) {
 #ifdef SK_DEBUG
     if (result == precompileIDs.end()) {
         SkDebugf("From paint: ");
-        dump(dict, paintID);
+        dict->dump(paintID);
 
         SkDebugf("From combination builder:");
         for (auto iter : precompileIDs) {
-            dump(dict, iter);
+            dict->dump(iter);
         }
     }
 #endif
@@ -406,18 +420,17 @@ void fuzz_graphite(Fuzz* fuzz, Context* context, int depth = 9) {
 DEF_FUZZ(Precompile, fuzz) {
     skiatest::graphite::ContextFactory factory;
 
-    sk_gpu_test::GrContextFactory::ContextType contextType;
+    skgpu::ContextType contextType;
 #if defined(SK_METAL)
-    contextType = sk_gpu_test::GrContextFactory::kMetal_ContextType;
+    contextType = skgpu::ContextType::kMetal;
 #elif defined(SK_VULKAN)
-    contextType = sk_gpu_test::GrContextFactory::kVulkan_ContextType;
-#elif defined(SK_DAWN)
-    contextType = sk_gpu_test::GrContextFactory::kDawn_ContextType;
+    contextType = skgpu::ContextType::kVulkan;
 #else
-    contextType = sk_gpu_test::GrContextFactory::kMock_ContextType;
+    contextType = skgpu::ContextType::kMock;
 #endif
 
-    auto [_, context] = factory.getContextInfo(contextType);
+    skiatest::graphite::ContextInfo ctxInfo = factory.getContextInfo(contextType);
+    skgpu::graphite::Context* context = ctxInfo.fContext;
     if (!context) {
         return;
     }

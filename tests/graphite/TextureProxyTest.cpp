@@ -24,19 +24,31 @@
 
 namespace skgpu::graphite {
 
-DEF_GRAPHITE_TEST_FOR_ALL_CONTEXTS(GraphiteTextureProxyTest, reporter, context) {
+DEF_GRAPHITE_TEST_FOR_ALL_CONTEXTS(GraphiteTextureProxyTest, reporter, context,
+                                   CtsEnforcement::kApiLevel_V) {
     const Caps* caps = context->priv().caps();
     constexpr SkISize kValidSize = SkISize::Make(1, 1);
     constexpr SkISize kInvalidSize = SkISize::MakeEmpty();
     constexpr SkColorType kValidColorType = kRGBA_8888_SkColorType;
     constexpr SkColorType kInvalidColorType = kUnknown_SkColorType;
 
+    Protected isProtected = Protected(caps->protectedSupport());
+
     std::unique_ptr<Recorder> recorder = context->makeRecorder();
     ResourceProvider* resourceProvider = recorder->priv().resourceProvider();
     const TextureInfo textureInfo = caps->getDefaultSampledTextureInfo(
-            kValidColorType, Mipmapped::kNo, Protected::kNo, Renderable::kNo);
-    const BackendTexture backendTexture = recorder->createBackendTexture(kValidSize, textureInfo);
-    sk_sp<Texture> texture = resourceProvider->createWrappedTexture(backendTexture);
+            kValidColorType, Mipmapped::kNo, isProtected, Renderable::kNo);
+    BackendTexture backendTexture = recorder->createBackendTexture(kValidSize, textureInfo);
+    sk_sp<Texture> texture = resourceProvider->createWrappedTexture(backendTexture,
+                                                                    "TextureProxyTestWrappedTex");
+
+    auto makeProxy = [&](SkISize dimensions, SkColorType colorType, Mipmapped mipmapped,
+                         Protected isProtected, Renderable renderable, Budgeted budgeted) {
+        auto textureInfo = caps->getDefaultSampledTextureInfo(colorType, mipmapped,
+                                                              isProtected, renderable);
+        return TextureProxy::Make(caps, recorder->priv().resourceProvider(),
+                                  dimensions, textureInfo, "TextureProxyTestTexture", budgeted);
+    };
 
     auto nullCallback = [](ResourceProvider*) -> sk_sp<Texture> { return nullptr; };
     auto callback = [texture](ResourceProvider*) -> sk_sp<Texture> { return texture; };
@@ -49,31 +61,41 @@ DEF_GRAPHITE_TEST_FOR_ALL_CONTEXTS(GraphiteTextureProxyTest, reporter, context) 
 
     // Invalid parameters.
     sk_sp<TextureProxy> textureProxy;
-    textureProxy = TextureProxy::Make(caps,
-                                      kInvalidSize,
-                                      kValidColorType,
-                                      Mipmapped::kNo,
-                                      Protected::kNo,
-                                      Renderable::kNo,
-                                      skgpu::Budgeted::kNo);
+    textureProxy = makeProxy(kInvalidSize,
+                             kValidColorType,
+                             Mipmapped::kNo,
+                             isProtected,
+                             Renderable::kNo,
+                             skgpu::Budgeted::kNo);
     REPORTER_ASSERT(reporter, textureProxy == nullptr);
-    textureProxy = TextureProxy::Make(caps,
-                                      kValidSize,
-                                      kInvalidColorType,
-                                      Mipmapped::kNo,
-                                      Protected::kNo,
-                                      Renderable::kNo,
-                                      skgpu::Budgeted::kNo);
+    textureProxy = makeProxy(kValidSize,
+                             kInvalidColorType,
+                             Mipmapped::kNo,
+                             isProtected,
+                             Renderable::kNo,
+                             skgpu::Budgeted::kNo);
     REPORTER_ASSERT(reporter, textureProxy == nullptr);
 
-    // Non-lazy TextureProxy, successful instantiation.
-    textureProxy = TextureProxy::Make(caps,
-                                      kValidSize,
-                                      kValidColorType,
-                                      Mipmapped::kNo,
-                                      Protected::kNo,
-                                      Renderable::kNo,
-                                      skgpu::Budgeted::kNo);
+    // Non-budgeted, non-lazy TextureProxy is instantiated on return
+    textureProxy = makeProxy(kValidSize,
+                             kValidColorType,
+                             Mipmapped::kNo,
+                             isProtected,
+                             Renderable::kNo,
+                             skgpu::Budgeted::kNo);
+    REPORTER_ASSERT(reporter, !textureProxy->isLazy());
+    REPORTER_ASSERT(reporter, !textureProxy->isFullyLazy());
+    REPORTER_ASSERT(reporter, !textureProxy->isVolatile());
+    REPORTER_ASSERT(reporter, textureProxy->isInstantiated());
+    REPORTER_ASSERT(reporter, textureProxy->dimensions() == kValidSize);
+
+    // Budgeted, non-lazy TextureProxy, successful instantiation later on
+    textureProxy = makeProxy(kValidSize,
+                             kValidColorType,
+                             Mipmapped::kNo,
+                             isProtected,
+                             Renderable::kNo,
+                             skgpu::Budgeted::kYes);
     REPORTER_ASSERT(reporter, !textureProxy->isLazy());
     REPORTER_ASSERT(reporter, !textureProxy->isFullyLazy());
     REPORTER_ASSERT(reporter, !textureProxy->isVolatile());
@@ -150,21 +172,21 @@ DEF_GRAPHITE_TEST_FOR_ALL_CONTEXTS(GraphiteTextureProxyTest, reporter, context) 
     REPORTER_ASSERT(reporter, textureProxy->isFullyLazy());
 
     constexpr SkISize kLargerSize = SkISize::Make(2, 2);
-    const BackendTexture largerBackendTexture =
+    BackendTexture largerBackendTexture =
             recorder->createBackendTexture(kLargerSize, textureInfo);
-    assignableTexture = resourceProvider->createWrappedTexture(largerBackendTexture);
+    assignableTexture = resourceProvider->createWrappedTexture(largerBackendTexture,
+                                                               "TextureProxyTestWrappedTex");
     instantiateSuccess = textureProxy->lazyInstantiate(resourceProvider);
     REPORTER_ASSERT(reporter, instantiateSuccess);
     REPORTER_ASSERT(reporter, textureProxy->dimensions() == kLargerSize);
 
     // InstantiateIfNotLazy tests.
-    textureProxy = TextureProxy::Make(caps,
-                                      kValidSize,
-                                      kValidColorType,
-                                      Mipmapped::kNo,
-                                      Protected::kNo,
-                                      Renderable::kNo,
-                                      skgpu::Budgeted::kNo);
+    textureProxy = makeProxy(kValidSize,
+                             kValidColorType,
+                             Mipmapped::kNo,
+                             isProtected,
+                             Renderable::kNo,
+                             skgpu::Budgeted::kYes);
     instantiateSuccess = TextureProxy::InstantiateIfNotLazy(resourceProvider, textureProxy.get());
     REPORTER_ASSERT(reporter, instantiateSuccess);
 
@@ -172,9 +194,13 @@ DEF_GRAPHITE_TEST_FOR_ALL_CONTEXTS(GraphiteTextureProxyTest, reporter, context) 
             caps, kValidSize, textureInfo, skgpu::Budgeted::kNo, Volatile::kNo, nullCallback);
     instantiateSuccess = TextureProxy::InstantiateIfNotLazy(resourceProvider, textureProxy.get());
     REPORTER_ASSERT(reporter, instantiateSuccess);
+    // Clean up the backend textures.
+    recorder->deleteBackendTexture(backendTexture);
+    recorder->deleteBackendTexture(largerBackendTexture);
 }
 
-DEF_GRAPHITE_TEST_FOR_ALL_CONTEXTS(GraphiteTextureTooLargeTest, reporter, context) {
+DEF_GRAPHITE_TEST_FOR_ALL_CONTEXTS(GraphiteTextureTooLargeTest, reporter, context,
+                                   CtsEnforcement::kApiLevel_V) {
     std::unique_ptr<Recorder> recorder = context->makeRecorder();
     const Caps* caps = context->priv().caps();
 
@@ -194,7 +220,8 @@ DEF_GRAPHITE_TEST_FOR_ALL_CONTEXTS(GraphiteTextureTooLargeTest, reporter, contex
     REPORTER_ASSERT(reporter, recorder->snap());
 }
 
-DEF_GRAPHITE_TEST_FOR_ALL_CONTEXTS(GraphiteLazyTextureInvalidDimensions, reporter, context) {
+DEF_GRAPHITE_TEST_FOR_ALL_CONTEXTS(GraphiteLazyTextureInvalidDimensions, reporter, context,
+                                   CtsEnforcement::kApiLevel_V) {
     class FulfillContext {
     public:
         FulfillContext(BackendTexture backendTexture) : fBackendTexture(backendTexture) {}
@@ -241,9 +268,12 @@ DEF_GRAPHITE_TEST_FOR_ALL_CONTEXTS(GraphiteLazyTextureInvalidDimensions, reporte
                                                                    nullptr,
                                                                    nullptr,
                                                                    &fulfillContext);
+
         surface->getCanvas()->drawImage(promiseImage, 0.0f, 0.0f);
         std::unique_ptr<Recording> recording = recorder->snap();
         REPORTER_ASSERT(reporter, context->insertRecording({recording.get()}));
+        // Clean up backend texture
+        context->deleteBackendTexture(fulfillContext.fBackendTexture);
     }
 }
 

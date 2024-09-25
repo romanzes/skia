@@ -11,8 +11,8 @@
 #include <string>
 
 #include "src/core/SkAutoPixmapStorage.h"
+#include "src/core/SkMemset.h"
 #include "src/core/SkMipmap.h"
-#include "src/core/SkOpts.h"
 #include "tools/flags/CommandLineFlags.h"
 
 #include "tools/fiddle/fiddle_main.h"
@@ -22,6 +22,9 @@ static DEFINE_double(duration, 1.0,
 static DEFINE_double(frame, 1.0,
                      "A double value in [0, 1] that specifies the point in animation to draw.");
 
+#include "include/codec/SkCodec.h"
+#include "include/codec/SkJpegDecoder.h"
+#include "include/codec/SkPngDecoder.h"
 #include "include/encode/SkPngEncoder.h"
 #include "include/gpu/GrBackendSurface.h"
 #include "include/gpu/ganesh/SkSurfaceGanesh.h"
@@ -33,6 +36,10 @@ static DEFINE_double(frame, 1.0,
 #include "tools/gpu/ManagedBackendTexture.h"
 #include "tools/gpu/gl/GLTestContext.h"
 
+#if defined(SK_FONTMGR_FONTCONFIG_AVAILABLE)
+#include "include/ports/SkFontMgr_fontconfig.h"
+#endif
+
 using namespace skia_private;
 
 // Globals externed in fiddle_main.h
@@ -43,6 +50,7 @@ SkBitmap source;
 sk_sp<SkImage> image;
 double duration; // The total duration of the animation in seconds.
 double frame;    // A value in [0, 1] of where we are in the animation.
+sk_sp<SkFontMgr> fontMgr;
 
 // Global used by the local impl of SkDebugf.
 std::ostringstream gTextOutput;
@@ -192,7 +200,7 @@ static bool setup_backend_objects(GrDirectContext* dContext,
                                                 GrRenderable::kYes,
                                                 kSampleCnt,
                                                 skgpu::Budgeted::kNo,
-                                                GrMipmapped::kNo,
+                                                skgpu::Mipmapped::kNo,
                                                 GrProtected::kNo,
                                                 &level0,
                                                 /*label=*/"Fiddle_SetupBackendObjects");
@@ -244,19 +252,36 @@ int main(int argc, char** argv) {
         options.pdf = false;
         options.skp = false;
     }
+#if defined(SK_FONTMGR_FONTCONFIG_AVAILABLE)
+    fontMgr = SkFontMgr_New_FontConfig(nullptr);
+#else
+    fontMgr = SkFontMgr::RefEmpty();
+#endif
     if (options.source) {
         sk_sp<SkData> data(SkData::MakeFromFileName(options.source));
         if (!data) {
             perror(options.source);
             return 1;
-        } else {
-            image = SkImages::DeferredFromEncodedData(std::move(data));
-            if (!image) {
-                perror("Unable to decode the source image.");
-                return 1;
-            }
-            SkAssertResult(image->asLegacyBitmap(&source));
         }
+        std::unique_ptr<SkCodec> codec = nullptr;
+        if (SkPngDecoder::IsPng(data->data(), data->size())) {
+            codec = SkPngDecoder::Decode(data, nullptr);
+        } else if (SkJpegDecoder::IsJpeg(data->data(), data->size())) {
+            codec = SkJpegDecoder::Decode(data, nullptr);
+        } else {
+            perror("Unsupported file format\n");
+            return 1;
+        }
+        if (!codec) {
+            perror("Corrupt source image file\n");
+            return 1;
+        }
+        image = std::get<0>(codec->getImage());
+        if (!image) {
+            perror("Unable to decode the source image.\n");
+            return 1;
+        }
+        SkAssertResult(image->asLegacyBitmap(&source));
     }
     sk_sp<SkData> rasterData, gpuData, pdfData, skpData;
     SkColorType colorType = kN32_SkColorType;

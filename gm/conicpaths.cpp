@@ -16,21 +16,16 @@
 #include "include/core/SkSize.h"
 #include "include/core/SkString.h"
 #include "include/core/SkTypes.h"
-#include "include/private/base/SkFloatBits.h"
 #include "include/private/base/SkTArray.h"
+#include "src/base/SkFloatBits.h"
 
 using namespace skia_private;
 
 class ConicPathsGM : public skiagm::GM {
 protected:
+    SkString getName() const override { return SkString("conicpaths"); }
 
-    SkString onShortName() override {
-        return SkString("conicpaths");
-    }
-
-    SkISize onISize() override {
-        return SkISize::Make(920, 960);
-    }
+    SkISize getISize() override { return SkISize::Make(920, 960); }
 
     template <typename Proc> void append_path(Proc proc) {
         SkPathBuilder b;

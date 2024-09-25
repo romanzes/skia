@@ -27,6 +27,7 @@ class GrRecordingContext;
 class SkColorSpace;
 class SkData;
 class SkPixmap;
+class SkSurface;
 enum SkColorType : int;
 struct SkIRect;
 struct SkImageInfo;
@@ -55,6 +56,8 @@ public:
                                 const SkIRect&,
                                 RequiredProperties) const override;
 
+    sk_sp<SkSurface> onMakeSurface(skgpu::graphite::Recorder*, const SkImageInfo&) const override;
+
     SkPixelRef* getPixelRef() const { return fBitmap.pixelRef(); }
 
     bool onAsLegacyBitmap(GrDirectContext*, SkBitmap*) const override;
@@ -73,6 +76,7 @@ public:
     }
 
     bool onHasMipmaps() const override { return SkToBool(fBitmap.fMips); }
+    bool onIsProtected() const override { return false; }
 
     SkMipmap* onPeekMips() const override { return fBitmap.fMips.get(); }
 

@@ -67,7 +67,8 @@ SK_API sk_sp<SkSurface> RenderTarget(GrRecordingContext* context,
                                      int sampleCount,
                                      GrSurfaceOrigin surfaceOrigin,
                                      const SkSurfaceProps* surfaceProps,
-                                     bool shouldCreateWithMips = false);
+                                     bool shouldCreateWithMips = false,
+                                     bool isProtected = false);
 inline sk_sp<SkSurface> RenderTarget(GrRecordingContext* context,
                                      skgpu::Budgeted budgeted,
                                      const SkImageInfo& imageInfo,
@@ -198,7 +199,7 @@ SK_API GrBackendRenderTarget GetBackendRenderTarget(SkSurface*, BackendHandleAcc
     GrDirectContext::flush.
  */
 SK_API void ResolveMSAA(SkSurface* surface);
-inline void ResolveMSAA(sk_sp<SkSurface> surface) {
+inline void ResolveMSAA(const sk_sp<SkSurface>& surface) {
     return ResolveMSAA(surface.get());
 }
 

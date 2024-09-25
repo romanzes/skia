@@ -8,6 +8,7 @@
 #ifndef SkLocalMatrixShader_DEFINED
 #define SkLocalMatrixShader_DEFINED
 
+#include "include/core/SkColor.h"
 #include "include/core/SkFlattenable.h"
 #include "include/core/SkMatrix.h"
 #include "include/core/SkRefCnt.h"
@@ -31,15 +32,18 @@ public:
     static std::enable_if_t<std::is_base_of_v<SkShader, T>, sk_sp<SkShader>>
     MakeWrapped(const SkMatrix* localMatrix, Args&&... args) {
         auto t = sk_make_sp<T>(std::forward<Args>(args)...);
-        if (!localMatrix || localMatrix->isIdentity()) {
-            return t;
+        if (localMatrix) {
+            return t->makeWithLocalMatrix(*localMatrix);
         }
-        return sk_make_sp<SkLocalMatrixShader>(sk_sp<SkShader>(std::move(t)), *localMatrix);
+        return t;
     }
 
     SkLocalMatrixShader(sk_sp<SkShader> wrapped, const SkMatrix& localMatrix)
             : fLocalMatrix(localMatrix), fWrappedShader(std::move(wrapped)) {}
 
+    bool isOpaque() const override { return as_SB(fWrappedShader)->isOpaque(); }
+
+    bool isConstant() const override;
     GradientType asGradient(GradientInfo* info, SkMatrix* localMatrix) const override;
     ShaderType type() const override { return ShaderType::kLocalMatrix; }
 
@@ -62,6 +66,8 @@ protected:
 
     SkImage* onIsAImage(SkMatrix* matrix, SkTileMode* mode) const override;
 
+    bool onAsLuminanceColor(SkColor4f*) const override;
+
     bool appendStages(const SkStageRec&, const SkShaders::MatrixRec&) const override;
 
 private:
@@ -80,6 +86,9 @@ class SkCTMShader final : public SkShaderBase {
 public:
     SkCTMShader(sk_sp<SkShader> proxy, const SkMatrix& ctm);
 
+    bool isOpaque() const override { return fProxyShader->isOpaque(); }
+
+    bool isConstant() const override;
     GradientType asGradient(GradientInfo* info, SkMatrix* localMatrix) const override;
 
     ShaderType type() const override { return ShaderType::kCTM; }

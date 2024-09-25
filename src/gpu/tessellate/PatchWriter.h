@@ -8,14 +8,29 @@
 #ifndef skgpu_tessellate_PatchWriter_DEFINED
 #define skgpu_tessellate_PatchWriter_DEFINED
 
+#include "include/core/SkAlphaType.h"
+#include "include/core/SkScalar.h"
+#include "include/core/SkTypes.h"
 #include "include/private/SkColorData.h"
+#include "include/private/base/SkDebug.h"
+#include "include/private/base/SkFloatingPoint.h"
+#include "include/private/base/SkPoint_impl.h"
+#include "include/private/base/SkTemplates.h"
+#include "src/base/SkUtils.h"
+#include "src/base/SkVx.h"
 #include "src/gpu/BufferWriter.h"
 #include "src/gpu/tessellate/LinearTolerances.h"
 #include "src/gpu/tessellate/MiddleOutPolygonTriangulator.h"
 #include "src/gpu/tessellate/Tessellation.h"
 #include "src/gpu/tessellate/WangsFormula.h"
 
+#include <algorithm>
+#include <cstdint>
+#include <cstring>
+#include <math.h>
+#include <tuple>
 #include <type_traits>
+#include <utility>
 #include <variant>
 
 namespace skgpu::tess {
@@ -227,7 +242,7 @@ class PatchWriter {
     DEF_ATTRIB_TYPE(ColorAttrib,     PatchAttribs::kColor,             Color);
     DEF_ATTRIB_TYPE(DepthAttrib,     PatchAttribs::kPaintDepth,        float);
     DEF_ATTRIB_TYPE(CurveTypeAttrib, PatchAttribs::kExplicitCurveType, float);
-    DEF_ATTRIB_TYPE(SsboIndexAttrib, PatchAttribs::kSsboIndex, int);
+    DEF_ATTRIB_TYPE(SsboIndexAttrib, PatchAttribs::kSsboIndex,         skvx::ushort2);
 #undef DEF_ATTRIB_TYPE
 
     static constexpr size_t kMaxStride = 4 * sizeof(SkPoint) + // control points
@@ -364,7 +379,7 @@ public:
 
     // Updates the storage buffer index used to access uniforms.
     ENABLE_IF(SsboIndexAttrib::kEnabled)
-    updateSsboIndexAttrib(int ssboIndex) {
+    updateSsboIndexAttrib(skvx::ushort2 ssboIndex) {
         SkASSERT(fAttribs & PatchAttribs::kSsboIndex);
         fSsboIndex = ssboIndex;
     }

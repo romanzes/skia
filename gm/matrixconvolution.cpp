@@ -22,9 +22,9 @@
 #include "include/core/SkTypeface.h"
 #include "include/effects/SkGradientShader.h"
 #include "include/effects/SkImageFilters.h"
-#include "src/effects/imagefilters/SkCropImageFilter.h"
-#include "src/gpu/ganesh/effects/GrMatrixConvolutionEffect.h"
+#include "src/gpu/BlurUtils.h"
 #include "tools/ToolUtils.h"
+#include "tools/fonts/FontToolUtils.h"
 
 #include <vector>
 
@@ -32,7 +32,9 @@ namespace skiagm {
 
 enum KernelFixture {
     kBasic_KernelFixture,
-    kLarge_KernelFixture
+    kLarge_KernelFixture,
+    kLarger_KernelFixture,
+    kLargest_KernelFixture,
 };
 
 class MatrixConvolutionGM : public GM {
@@ -46,10 +48,9 @@ public:
     }
 
 protected:
+    bool runAsBench() const override { return true; }
 
-    SkString onShortName() override {
-        return SkStringPrintf("matrixconvolution%s", fNameSuffix);
-    }
+    SkString getName() const override { return SkStringPrintf("matrixconvolution%s", fNameSuffix); }
 
     void makeBitmap() {
         // Draw our bitmap in N32, so legacy devices get "premul" values they understand
@@ -61,36 +62,64 @@ protected:
         SkScalar pos[2] = { 0, 80.0f };
         paint.setShader(SkGradientShader::MakeLinear(
             pts, fColors, pos, 2, SkTileMode::kClamp));
-        SkFont font(ToolUtils::create_portable_typeface(), 180.0f);
+        SkFont font(ToolUtils::DefaultPortableTypeface(), 180.0f);
         surf->getCanvas()->drawString("e", -10.0f, 80.0f, font, paint);
         fImage = surf->makeImageSnapshot();
     }
 
-    SkISize onISize() override {
-        return SkISize::Make(500, 300);
-    }
+    SkISize getISize() override { return SkISize::Make(500, 300); }
 
-    sk_sp<SkImageFilter> makeFilter(const SkIPoint &kernelOffset,
+    sk_sp<SkImageFilter> makeFilter(const SkIPoint &kernelOffsetIn,
                                     SkTileMode tileMode,
                                     bool convolveAlpha) {
+        // The kernelOffset is specified in a 0..2 coordinate space.
+        float normalizedXOffset = kernelOffsetIn.fX / 2.0f;
+        float normalizedYOffset = kernelOffsetIn.fY / 2.0f;
         // Must provide a cropping geometry in order for 'tileMode' to be well defined.
         SkIRect tileBoundary = fImage->bounds();
         switch (fKernelFixture) {
             case kBasic_KernelFixture: {
+                SkIPoint kernelOffset {SkScalarRoundToInt(2*normalizedXOffset),
+                                       SkScalarRoundToInt(2*normalizedYOffset)};
                 // All 1s except center value, which is -7 (sum of 1).
                 std::vector<SkScalar> kernel(9, SkIntToScalar(1));
                 kernel[4] = SkIntToScalar(-7);
                 return SkImageFilters::MatrixConvolution(
-                        {3,3}, kernel.data(), /* gain */ 0.3f, /* bias */ SkIntToScalar(100),
+                        {3,3}, kernel.data(), /* gain= */ 0.3f, /* bias= */ 100.0f,
                         kernelOffset, tileMode, convolveAlpha, nullptr, tileBoundary);
             }
             case kLarge_KernelFixture: {
-                static_assert(49 > GrMatrixConvolutionEffect::kMaxUniformSize);
+                SkIPoint kernelOffset {SkScalarRoundToInt(6*normalizedXOffset),
+                                       SkScalarRoundToInt(6*normalizedYOffset)};
+                // This ensures the texture fallback path will be taken
+                static_assert(49 > skgpu::kMaxBlurSamples);
                 // All 1s except center value, which is -47 (sum of 1).
                 std::vector<SkScalar> kernel(49, SkIntToScalar(1));
                 kernel[24] = SkIntToScalar(-47);
                 return SkImageFilters::MatrixConvolution(
-                        {7,7}, kernel.data(), /* gain */ 0.3f, /* bias */ SkIntToScalar(100),
+                        {7,7}, kernel.data(), /* gain= */ 0.3f, /* bias= */ 100.0f,
+                        kernelOffset, tileMode, convolveAlpha, nullptr, tileBoundary);
+            }
+            case kLarger_KernelFixture: {
+                SkIPoint kernelOffset {SkScalarRoundToInt(127*normalizedXOffset), 0};
+                // This ensures the texture fallback path will be taken
+                static_assert(128 > skgpu::kMaxBlurSamples);
+                std::vector<float> kernel(128, 0.0f);
+                kernel[64] = 0.5f;
+                kernel[65] = -0.5f;
+                return SkImageFilters::MatrixConvolution(
+                        {128,1}, kernel.data(), /* gain= */ 0.3f, /* bias= */ 100.0f,
+                        kernelOffset, tileMode, convolveAlpha, nullptr, tileBoundary);
+            }
+            case kLargest_KernelFixture: {
+                SkIPoint kernelOffset {0, SkScalarRoundToInt(254*normalizedYOffset)};
+                // This ensures the texture fallback path will be taken
+                static_assert(255 > skgpu::kMaxBlurSamples);
+                std::vector<float> kernel(255, 0.0f);
+                kernel[126] = 0.5f;
+                kernel[128] = -0.5f;
+                return SkImageFilters::MatrixConvolution(
+                        {1,255}, kernel.data(), /* gain= */ 0.3f, /* bias= */ 100.0f,
                         kernelOffset, tileMode, convolveAlpha, nullptr, tileBoundary);
             }
             default:
@@ -104,7 +133,7 @@ protected:
         SkPaint paint;
         auto filter = this->makeFilter(kernelOffset, tileMode, convolveAlpha);
         if (cropRect) {
-            filter = SkMakeCropImageFilter(SkRect::Make(*cropRect), std::move(filter));
+            filter = SkImageFilters::Crop(SkRect::Make(*cropRect), std::move(filter));
         }
         paint.setImageFilter(std::move(filter));
         canvas->save();
@@ -152,5 +181,7 @@ DEF_GM(return new MatrixConvolutionGM(0xFFFFFFFF, 0x40404040, KernelFixture::kBa
 DEF_GM(return new MatrixConvolutionGM(0xFFFF0000, 0xFF00FF00, KernelFixture::kBasic_KernelFixture, "_color");)
 DEF_GM(return new MatrixConvolutionGM(0xFFFFFFFF, 0x40404040, KernelFixture::kLarge_KernelFixture, "_big");)
 DEF_GM(return new MatrixConvolutionGM(0xFFFF0000, 0xFF00FF00, KernelFixture::kLarge_KernelFixture, "_big_color");)
+DEF_GM(return new MatrixConvolutionGM(0xFFFFFFFF, 0x40404040, KernelFixture::kLarger_KernelFixture, "_bigger");)
+DEF_GM(return new MatrixConvolutionGM(0xFFFFFFFF, 0x40404040, KernelFixture::kLargest_KernelFixture, "_biggest");)
 
 }  // namespace skiagm

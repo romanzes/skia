@@ -82,7 +82,6 @@ namespace skgpu::graphite {
 //   fine
 //
 // TODO: Document the coverage mask pipeline once it has been re-implemented.
-// TODO: Update this when the stroke rework is complete.
 
 // ***
 // Shared buffers that are accessed by various stages.
@@ -115,13 +114,14 @@ constexpr int kVelloSlot_LargePathtagReduceSecondPassOutput = 4;
 constexpr int kVelloSlot_LargePathtagScanFirstPassOutput = 5;
 
 // ***
-// The second part of element processing converts path tags (moveTo, lineTo, quadTo, etc) into a
-// fixed-stride buffer of cubic beziers (using the tag monoids computed earlier) and computes their
-// bounding boxes.
+// The second part of element processing flattens path elements (moveTo, lineTo, quadTo, etc) into
+// an unordered line soup buffer and computes their bounding boxes. This stage is where strokes get
+// expanded to fills and stroke styles get applied. The output is an unordered "line soup" buffer
+// and the tight device-space bounding box of each path.
 //
-// Pipelines: bbox_clear, pathseg
+// Pipelines: bbox_clear, flatten
 constexpr int kVelloSlot_PathBBoxes = 6;
-constexpr int kVelloSlot_Cubics = 7;
+constexpr int kVelloSlot_Lines = 7;
 
 // ***
 // The next part prepares the draw object stream (entries in the per-tile command list aka PTCL)
@@ -145,18 +145,19 @@ constexpr int kVelloSlot_ClipElement = 13;
 constexpr int kVelloSlot_ClipBBoxes = 14;
 
 // ***
-// Buffers containing bump allocated data, including path segment, tile, bounding box, and binning
-// metadata, and the per-tile command list assembled from the draw monoids.
+// Buffers containing bump allocated data, the inputs and outputs to the binning, coarse raster, and
+// per-tile segment assembly stages.
 //
-// Pipelines: binning, tile_alloc, path_coarse_full, backdrop_dyn, coarse
+// Pipelines: binning, tile_alloc, path_count, backdrop, coarse, path_tiling
 constexpr int kVelloSlot_DrawBBoxes = 15;
 constexpr int kVelloSlot_BumpAlloc = 16;
 constexpr int kVelloSlot_BinHeader = 17;
 
 constexpr int kVelloSlot_Path = 18;
 constexpr int kVelloSlot_Tile = 19;
-constexpr int kVelloSlot_Segments = 20;
-constexpr int kVelloSlot_PTCL = 21;
+constexpr int kVelloSlot_SegmentCounts = 20;
+constexpr int kVelloSlot_Segments = 21;
+constexpr int kVelloSlot_PTCL = 22;
 
 // ***
 // Texture resources used by the fine rasterization stage. The gradient image needs to get populated
@@ -164,15 +165,25 @@ constexpr int kVelloSlot_PTCL = 21;
 // images that are composited into the scene.
 //
 // The output image contains the final render.
-constexpr int kVelloSlot_OutputImage = 22;
-constexpr int kVelloSlot_GradientImage = 23;
-constexpr int kVelloSlot_ImageAtlas = 24;
+constexpr int kVelloSlot_OutputImage = 23;
+constexpr int kVelloSlot_GradientImage = 24;
+constexpr int kVelloSlot_ImageAtlas = 25;
+
+// ***
+// The indirect count buffer is used to issue an indirect dispatch of the path count and path tiling
+// stages.
+constexpr int kVelloSlot_IndirectCount = 26;
+
+// ***
+// The sample mask lookup table used in MSAA modes of the fine rasterization stage.
+constexpr int kVelloSlot_MaskLUT = 27;
 
 std::string_view VelloStageName(vello_cpp::ShaderStage);
 WorkgroupSize VelloStageLocalSize(vello_cpp::ShaderStage);
 skia_private::TArray<ComputeStep::WorkgroupBufferDesc> VelloWorkgroupBuffers(
         vello_cpp::ShaderStage);
-std::string_view VelloNativeShaderSource(vello_cpp::ShaderStage, ComputeStep::NativeShaderFormat);
+ComputeStep::NativeShaderSource VelloNativeShaderSource(vello_cpp::ShaderStage,
+                                                        ComputeStep::NativeShaderFormat);
 
 template <vello_cpp::ShaderStage S>
 class VelloStep : public ComputeStep {
@@ -180,10 +191,8 @@ public:
     ~VelloStep() override = default;
 
     NativeShaderSource nativeShaderSource(NativeShaderFormat format) const override {
-        return {VelloNativeShaderSource(S, format), "main_"};
+        return VelloNativeShaderSource(S, format);
     }
-
-    std::string computeSkSL(const ResourceBindingRequirements&, int) const override { return ""; }
 
 protected:
     explicit VelloStep(SkSpan<const ResourceDesc> resources)
@@ -217,19 +226,19 @@ private:
         Vello##stage##Step();                                                          \
     };
 
-VELLO_COMPUTE_STEP(Backdrop);
 VELLO_COMPUTE_STEP(BackdropDyn);
 VELLO_COMPUTE_STEP(BboxClear);
 VELLO_COMPUTE_STEP(Binning);
 VELLO_COMPUTE_STEP(ClipLeaf);
 VELLO_COMPUTE_STEP(ClipReduce);
 VELLO_COMPUTE_STEP(Coarse);
+VELLO_COMPUTE_STEP(Flatten);
 VELLO_COMPUTE_STEP(DrawLeaf);
 VELLO_COMPUTE_STEP(DrawReduce);
-VELLO_COMPUTE_STEP(Fine);
-VELLO_COMPUTE_STEP(PathCoarse);
-VELLO_COMPUTE_STEP(PathCoarseFull);
-VELLO_COMPUTE_STEP(Pathseg);
+VELLO_COMPUTE_STEP(PathCount);
+VELLO_COMPUTE_STEP(PathCountSetup);
+VELLO_COMPUTE_STEP(PathTiling);
+VELLO_COMPUTE_STEP(PathTilingSetup);
 VELLO_COMPUTE_STEP(PathtagReduce);
 VELLO_COMPUTE_STEP(PathtagReduce2);
 VELLO_COMPUTE_STEP(PathtagScan1);
@@ -238,6 +247,92 @@ VELLO_COMPUTE_STEP(PathtagScanSmall);
 VELLO_COMPUTE_STEP(TileAlloc);
 
 #undef VELLO_COMPUTE_STEP
+
+template <vello_cpp::ShaderStage S, SkColorType T> class VelloFineStepBase : public VelloStep<S> {
+public:
+    // We need to return a texture format for the bound textures.
+    std::tuple<SkISize, SkColorType> calculateTextureParameters(
+            int index, const ComputeStep::ResourceDesc&) const override {
+        SkASSERT(index == 4);
+        // TODO: The texture dimensions are unknown here so this method returns 0 for the texture
+        // size. In this case this field is unused since VelloRenderer assigns texture resources
+        // directly to the DispatchGroupBuilder. The format must still be queried to describe the
+        // ComputeStep's binding layout. This method could be improved to enable conditional
+        // querying of optional/dynamic parameters.
+        return {{}, T};
+    }
+
+protected:
+    explicit VelloFineStepBase(SkSpan<const ComputeStep::ResourceDesc> resources)
+            : VelloStep<S>(resources) {}
+};
+
+template <vello_cpp::ShaderStage S, SkColorType T, ::rust::Vec<uint8_t> (*MaskLutBuilder)()>
+class VelloFineMsaaStepBase : public VelloFineStepBase<S, T> {
+public:
+    size_t calculateBufferSize(int resourceIndex, const ComputeStep::ResourceDesc&) const override {
+        SkASSERT(resourceIndex == 5);
+        return fMaskLut.size();
+    }
+
+    void prepareStorageBuffer(int resourceIndex,
+                              const ComputeStep::ResourceDesc&,
+                              void* buffer,
+                              size_t bufferSize) const override {
+        SkASSERT(resourceIndex == 5);
+        SkASSERT(fMaskLut.size() == bufferSize);
+        memcpy(buffer, fMaskLut.data(), fMaskLut.size());
+    }
+
+protected:
+    explicit VelloFineMsaaStepBase(SkSpan<const ComputeStep::ResourceDesc> resources)
+            : VelloFineStepBase<S, T>(resources), fMaskLut(MaskLutBuilder()) {}
+
+private:
+    ::rust::Vec<uint8_t> fMaskLut;
+};
+
+class VelloFineAreaStep final
+        : public VelloFineStepBase<vello_cpp::ShaderStage::FineArea, kRGBA_8888_SkColorType> {
+public:
+    VelloFineAreaStep();
+};
+
+class VelloFineAreaAlpha8Step final
+        : public VelloFineStepBase<vello_cpp::ShaderStage::FineAreaR8, kAlpha_8_SkColorType> {
+public:
+    VelloFineAreaAlpha8Step();
+};
+
+class VelloFineMsaa16Step final : public VelloFineMsaaStepBase<vello_cpp::ShaderStage::FineMsaa16,
+                                                               kRGBA_8888_SkColorType,
+                                                               vello_cpp::build_mask_lut_16> {
+public:
+    VelloFineMsaa16Step();
+};
+
+class VelloFineMsaa16Alpha8Step final
+        : public VelloFineMsaaStepBase<vello_cpp::ShaderStage::FineMsaa16R8,
+                                       kAlpha_8_SkColorType,
+                                       vello_cpp::build_mask_lut_16> {
+public:
+    VelloFineMsaa16Alpha8Step();
+};
+
+class VelloFineMsaa8Step final : public VelloFineMsaaStepBase<vello_cpp::ShaderStage::FineMsaa8,
+                                                              kRGBA_8888_SkColorType,
+                                                              vello_cpp::build_mask_lut_8> {
+public:
+    VelloFineMsaa8Step();
+};
+
+class VelloFineMsaa8Alpha8Step final
+        : public VelloFineMsaaStepBase<vello_cpp::ShaderStage::FineMsaa8R8,
+                                       kAlpha_8_SkColorType,
+                                       vello_cpp::build_mask_lut_8> {
+public:
+    VelloFineMsaa8Alpha8Step();
+};
 
 }  // namespace skgpu::graphite
 

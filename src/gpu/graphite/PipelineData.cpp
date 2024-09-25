@@ -12,21 +12,18 @@
 
 namespace skgpu::graphite {
 
-PipelineDataGatherer::PipelineDataGatherer(Layout layout) : fUniformManager(layout) {}
+PipelineDataGatherer::PipelineDataGatherer(Layout layout)
+        : fUniformManager(layout) {}
 
 void PipelineDataGatherer::resetWithNewLayout(Layout layout) {
     fUniformManager.resetWithNewLayout(layout);
     fTextureDataBlock.reset();
 }
 
-#ifdef SK_DEBUG
+#if defined(SK_DEBUG)
 void PipelineDataGatherer::checkReset() {
     SkASSERT(fTextureDataBlock.empty());
-    SkDEBUGCODE(fUniformManager.checkReset());
-}
-
-void PipelineDataGatherer::setExpectedUniforms(SkSpan<const Uniform> expectedUniforms) {
-    fUniformManager.setExpectedUniforms(expectedUniforms);
+    SkASSERT(fUniformManager.isReset());
 }
 #endif // SK_DEBUG
 
@@ -83,13 +80,5 @@ uint32_t TextureDataBlock::hash() const {
 
     return hash;
 }
-
-#ifdef SK_DEBUG
-UniformExpectationsValidator::UniformExpectationsValidator(PipelineDataGatherer *gatherer,
-                                                           SkSpan<const Uniform> expectedUniforms)
-        : fGatherer(gatherer) {
-    fGatherer->setExpectedUniforms(expectedUniforms);
-}
-#endif
 
 } // namespace skgpu::graphite

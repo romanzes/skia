@@ -21,6 +21,7 @@
 #include "src/base/SkRandom.h"
 #include "src/core/SkColorSpacePriv.h"
 #include "src/core/SkRuntimeEffectPriv.h"
+#include "tools/DecodeUtils.h"
 #include "tools/Resources.h"
 
 #include <cmath>
@@ -31,7 +32,7 @@ public:
 
     void onOnceBeforeDraw() override {
         // Load the mandrill into a shader.
-        sk_sp<SkImage> img = GetResourceAsImage("images/mandrill_512.png");
+        sk_sp<SkImage> img = ToolUtils::GetResourceAsImage("images/mandrill_512.png");
         if (!img) {
             SkDebugf("Unable to load mandrill_512 from resources directory");
             return;
@@ -52,8 +53,8 @@ public:
         fEffect = std::move(effect);
     }
 
-    SkString onShortName() override { return SkString("rippleshader"); }
-    SkISize onISize() override { return kSize; }
+    SkString getName() const override { return SkString("rippleshader"); }
+    SkISize getISize() override { return kSize; }
     bool onAnimate(double nanos) override {
         fMillis = nanos / (1000. * 1000.);
         return true;

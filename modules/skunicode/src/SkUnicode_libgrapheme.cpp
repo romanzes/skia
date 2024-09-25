@@ -1,18 +1,22 @@
-                                           /*
+/*
 * Copyright 2022 Google Inc.
 *
 * Use of this source code is governed by a BSD-style license that can be
 * found in the LICENSE file.
 */
 
+#include "modules/skunicode/include/SkUnicode_libgrapheme.h"
+
 #include "include/core/SkSpan.h"
 #include "include/core/SkString.h"
 #include "include/core/SkTypes.h"
 #include "include/private/base/SkTArray.h"
 #include "modules/skunicode/include/SkUnicode.h"
+#include "modules/skunicode/src/SkBidiFactory_icu_subset.h"
 #include "modules/skunicode/src/SkUnicode_hardcoded.h"
 #include "modules/skunicode/src/SkUnicode_icu_bidi.h"
 #include "src/base/SkBitmaskEnum.h"
+
 extern "C" {
 #include <grapheme.h>
 }
@@ -21,57 +25,13 @@ extern "C" {
 #include <vector>
 #include <unordered_map>
 
-#undef LEN
-#define LEN(x) (sizeof(x) / sizeof(*(x)))
-
 using namespace skia_private;
-
-#ifndef SK_UNICODE_ICU_IMPLEMENTATION
-
-/* We "borrow" bidi implementatoin from ICU for now */
-
-const char* SkUnicode_IcuBidi::errorName(UErrorCode status) {
-    return u_errorName_skia(status);
-}
-void SkUnicode_IcuBidi::bidi_close(UBiDi* bidi) {
-    ubidi_close_skia(bidi);
-}
-UBiDiDirection SkUnicode_IcuBidi::bidi_getDirection(const UBiDi* bidi) {
-    return ubidi_getDirection_skia(bidi);
-}
-SkBidiIterator::Position SkUnicode_IcuBidi::bidi_getLength(const UBiDi* bidi) {
-    return ubidi_getLength_skia(bidi);
-}
-SkBidiIterator::Level SkUnicode_IcuBidi::bidi_getLevelAt(const UBiDi* bidi, int pos) {
-    return ubidi_getLevelAt_skia(bidi, pos);
-}
-UBiDi* SkUnicode_IcuBidi::bidi_openSized(int32_t maxLength, int32_t maxRunCount, UErrorCode* pErrorCode) {
-    return ubidi_openSized_skia(maxLength, maxRunCount, pErrorCode);
-}
-void SkUnicode_IcuBidi::bidi_setPara(UBiDi* bidi,
-                         const UChar* text,
-                         int32_t length,
-                         UBiDiLevel paraLevel,
-                         UBiDiLevel* embeddingLevels,
-                         UErrorCode* status) {
-    return ubidi_setPara_skia(bidi, text, length, paraLevel, embeddingLevels, status);
-}
-void SkUnicode_IcuBidi::bidi_reorderVisual(const SkUnicode::BidiLevel runLevels[],
-                               int levelsCount,
-                               int32_t logicalFromVisual[]) {
-    ubidi_reorderVisual_skia(runLevels, levelsCount, logicalFromVisual);
-}
-#endif
 
 class SkUnicode_libgrapheme : public SkUnicodeHardCodedCharProperties {
 public:
     SkUnicode_libgrapheme() { }
 
     ~SkUnicode_libgrapheme() override = default;
-
-    std::unique_ptr<SkUnicode> copy() override {
-        return std::make_unique<SkUnicode_libgrapheme>();
-    }
 
     // For SkShaper
     std::unique_ptr<SkBidiIterator> makeBidiIterator(const uint16_t text[], int count,
@@ -86,7 +46,15 @@ public:
                         int utf8Units,
                         TextDirection dir,
                         std::vector<BidiRegion>* results) override {
-        return SkUnicode::extractBidi(utf8, utf8Units, dir, results);
+        return fBidiFact->ExtractBidi(utf8, utf8Units, dir, results);
+    }
+
+    bool getSentences(const char utf8[],
+                      int utf8Units,
+                      const char* locale,
+                      std::vector<SkUnicode::Position>* results) override {
+        SkDEBUGF("Method 'getSentences' is not implemented\n");
+        return false;
     }
 
     bool computeCodeUnitFlags(char utf8[],
@@ -188,8 +156,69 @@ public:
         return true;
     }
 
-    SkString toUpper(const SkString& str) override {
+    bool getUtf8Words(const char utf8[],
+                      int utf8Units,
+                      const char* locale,
+                      std::vector<Position>* results) override {
+        // Let's consider sort line breaks, whitespaces and CJK codepoints instead
+        std::vector<CodeUnitFlags> breaks(utf8Units + 1, CodeUnitFlags::kNoCodeUnitFlag);
 
+        size_t lineBreak = 0;
+        breaks[lineBreak] = CodeUnitFlags::kSoftLineBreakBefore;
+        while (lineBreak < utf8Units) {
+            lineBreak += grapheme_next_line_break_utf8(utf8 + lineBreak, utf8Units - lineBreak);
+            breaks[lineBreak] = CodeUnitFlags::kSoftLineBreakBefore;
+        }
+        breaks[lineBreak] = CodeUnitFlags::kSoftLineBreakBefore;
+
+        const char* current = utf8;
+        const char* end = utf8 + utf8Units;
+        while (current < end) {
+            auto index = current - utf8;
+            SkUnichar unichar = SkUTF::NextUTF8(&current, end);
+            if (this->isWhitespace(unichar)) {
+                breaks[index] = CodeUnitFlags::kPartOfWhiteSpaceBreak;
+            } else if (this->isIdeographic(unichar)) {
+                breaks[index] = CodeUnitFlags::kIdeographic;
+            }
+        }
+
+        bool whitespaces = false;
+        for (size_t i = 0; i < breaks.size(); ++i) {
+            auto b = breaks[i];
+            if (b == CodeUnitFlags::kSoftLineBreakBefore) {
+                results->emplace_back(i);
+                whitespaces = false;
+            } else if (b == CodeUnitFlags::kIdeographic) {
+                results->emplace_back(i);
+                whitespaces = false;
+            } else if (b == CodeUnitFlags::kPartOfWhiteSpaceBreak) {
+                if (!whitespaces) {
+                    results->emplace_back(i);
+                }
+                whitespaces = true;
+            } else {
+                whitespaces = false;
+            }
+        }
+
+        return true;
+
+        /*
+        size_t wordBreak = 0;
+        while (wordBreak < utf8Units) {
+            wordBreak += grapheme_next_word_break_utf8(utf8 + wordBreak, utf8Units - wordBreak);
+            results->emplace_back(wordBreak);
+        }
+        return true;
+        */
+    }
+
+    SkString toUpper(const SkString& str) override {
+        return this->toUpper(str, nullptr);
+    }
+
+    SkString toUpper(const SkString& str, const char* locale) override {
         SkString res(" ", str.size());
         grapheme_to_uppercase_utf8(str.data(), str.size(), res.data(), res.size());
         return res;
@@ -198,47 +227,50 @@ public:
     void reorderVisual(const BidiLevel runLevels[],
                        int levelsCount,
                        int32_t logicalFromVisual[]) override {
-        SkUnicode_IcuBidi::bidi_reorderVisual(runLevels, levelsCount, logicalFromVisual);
+        fBidiFact->bidi_reorderVisual(runLevels, levelsCount, logicalFromVisual);
     }
 private:
     friend class SkBreakIterator_libgrapheme;
+
+    sk_sp<SkBidiFactory> fBidiFact = sk_make_sp<SkBidiSubsetFactory>();
 };
 
 class SkBreakIterator_libgrapheme: public SkBreakIterator {
     SkUnicode_libgrapheme* fUnicode;
     std::vector<SkUnicode::LineBreakBefore> fLineBreaks;
-    Position fLastResult;
-    Position fStart;
-    Position fEnd;
+    Position fLineBreakIndex;
+    static constexpr const int kDone = -1;
 public:
     explicit SkBreakIterator_libgrapheme(SkUnicode_libgrapheme* unicode) : fUnicode(unicode) { }
     Position first() override
-      { return fLineBreaks[fStart + (fLastResult = 0)].pos; }
+      { return fLineBreaks[(fLineBreakIndex = 0)].pos; }
     Position current() override
-      { return fLineBreaks[fStart + fLastResult].pos; }
+      { return fLineBreaks[fLineBreakIndex].pos; }
     Position next() override
-      { return fLineBreaks[fStart + fLastResult + 1].pos; }
+      { return fLineBreaks[++fLineBreakIndex].pos; }
     Status status() override {
-        return fLineBreaks[fStart + fLastResult].breakType ==
+        return fLineBreaks[fLineBreakIndex].breakType ==
                        SkUnicode::LineBreakType::kHardLineBreak
                        ? SkUnicode::CodeUnitFlags::kHardLineBreakBefore
                        : SkUnicode::CodeUnitFlags::kSoftLineBreakBefore;
     }
-    bool isDone() override { return fStart + fLastResult == fEnd; }
+    bool isDone() override { return fLineBreaks[fLineBreakIndex].pos == kDone; }
     bool setText(const char utftext8[], int utf8Units) override {
         fLineBreaks.clear();
         size_t lineBreak = 0;
-        for (size_t pos = 0; pos < utf8Units; pos += lineBreak) {
-            lineBreak = grapheme_next_line_break_utf8(utftext8 + pos, utf8Units - pos);
-            auto codePoint = utftext8[lineBreak];
-            fLineBreaks.emplace_back(lineBreak,
+        // first() must always go to the beginning of the string.
+        fLineBreaks.emplace_back(0, SkUnicode::LineBreakType::kHardLineBreak);
+        for (size_t pos = 0; pos < utf8Units;) {
+            pos += grapheme_next_line_break_utf8(utftext8 + pos, utf8Units - pos);
+            auto codePoint = utftext8[pos];
+            fLineBreaks.emplace_back(pos,
                                      fUnicode->isHardBreak(codePoint)
                                     ? SkUnicode::LineBreakType::kHardLineBreak
                                     : SkUnicode::LineBreakType::kSoftLineBreak);
         }
-        fStart = 0;
-        fEnd = utf8Units;
-        fLastResult = 0;
+        // There is always an "end" which signals "done".
+        fLineBreaks.emplace_back(kDone, SkUnicode::LineBreakType::kHardLineBreak);
+        fLineBreakIndex = 0;
         return true;
     }
     bool setText(const char16_t utftext16[], int utf16Units) override {
@@ -249,12 +281,12 @@ public:
 
 std::unique_ptr<SkBidiIterator> SkUnicode_libgrapheme::makeBidiIterator(const uint16_t text[], int count,
                                                  SkBidiIterator::Direction dir) {
-    return SkUnicode::makeBidiIterator(text, count, dir);
+    return fBidiFact->MakeIterator(text, count, dir);
 }
 std::unique_ptr<SkBidiIterator> SkUnicode_libgrapheme::makeBidiIterator(const char text[],
                                                  int count,
                                                  SkBidiIterator::Direction dir) {
-    return SkUnicode::makeBidiIterator(text, count, dir);
+    return fBidiFact->MakeIterator(text, count, dir);
 }
 std::unique_ptr<SkBreakIterator> SkUnicode_libgrapheme::makeBreakIterator(const char locale[],
                                                    BreakType breakType) {
@@ -263,6 +295,9 @@ std::unique_ptr<SkBreakIterator> SkUnicode_libgrapheme::makeBreakIterator(const 
 std::unique_ptr<SkBreakIterator> SkUnicode_libgrapheme::makeBreakIterator(BreakType breakType) {
     return std::make_unique<SkBreakIterator_libgrapheme>(this);
 }
-std::unique_ptr<SkUnicode> SkUnicode::MakeLibgraphemeBasedUnicode() {
-    return std::make_unique<SkUnicode_libgrapheme>();
+
+namespace SkUnicodes::Libgrapheme {
+sk_sp<SkUnicode> Make() {
+    return sk_make_sp<SkUnicode_libgrapheme>();
+}
 }

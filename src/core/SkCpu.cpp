@@ -5,10 +5,9 @@
  * found in the LICENSE file.
  */
 
-#include "include/core/SkStream.h"
-#include "include/core/SkString.h"
-#include "include/private/base/SkOnce.h"
 #include "src/core/SkCpu.h"
+
+#include "include/private/base/SkOnce.h"
 
 #if defined(SK_CPU_X86)
     #if defined(_MSC_VER)
@@ -70,6 +69,18 @@
                 if (abcd[1] & (1<<31)) { features |= SkCpu::AVX512VL; }
             }
         }
+        return features;
+    }
+#elif defined(SK_CPU_LOONGARCH)
+    #include <sys/auxv.h>
+    static uint32_t read_cpu_features(void)
+    {
+        uint64_t features = 0;
+        uint64_t hwcap = getauxval(AT_HWCAP);
+
+        if (hwcap & HWCAP_LOONGARCH_LSX)  { features |= SkCpu::LOONGARCH_SX; }
+        if (hwcap & HWCAP_LOONGARCH_LASX) { features |= SkCpu::LOONGARCH_ASX; }
+
         return features;
     }
 #else

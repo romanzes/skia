@@ -9,21 +9,32 @@
 #define GrRenderTask_DEFINED
 
 #include "include/core/SkRefCnt.h"
+#include "include/gpu/GpuTypes.h"
+#include "include/private/base/SkAssert.h"
+#include "include/private/base/SkDebug.h"
+#include "include/private/base/SkSpan_impl.h"
 #include "include/private/base/SkTArray.h"
+#include "include/private/base/SkTo.h"
+#include "include/private/gpu/ganesh/GrTypesPriv.h"
 #include "src/base/SkTInternalLList.h"
+#include "src/gpu/ganesh/GrCaps.h"
 #include "src/gpu/ganesh/GrSurfaceProxyView.h"
-#include "src/gpu/ganesh/GrTextureProxy.h"
-#include "src/gpu/ganesh/GrTextureResolveManager.h"
 
-class GrMockRenderTask;
+#include <cstdint>
+
+class GrDrawingManager;
 class GrOpFlushState;
+class GrRecordingContext;
 class GrResourceAllocator;
+class GrSurfaceProxy;
+class GrTextureProxy;
+class GrTextureResolveManager;
 class GrTextureResolveRenderTask;
-namespace skgpu {
-namespace ganesh {
+class SkString;
+struct SkIRect;
+namespace skgpu::ganesh {
 class OpsTask;
 }
-}  // namespace skgpu
 
 // This class abstracts a task that targets a single GrSurfaceProxy, participates in the
 // GrDrawingManager's DAG, and implements the onExecute method to modify its target proxy's
@@ -31,7 +42,7 @@ class OpsTask;
 class GrRenderTask : public SkRefCnt {
 public:
     GrRenderTask();
-    SkDEBUGCODE(~GrRenderTask() override);
+    SkDEBUGCODE(~GrRenderTask() override;)
 
     void makeClosed(GrRecordingContext*);
 
@@ -75,8 +86,11 @@ public:
     /*
      * Notify this GrRenderTask that it relies on the contents of 'dependedOn'
      */
-    void addDependency(GrDrawingManager*, GrSurfaceProxy* dependedOn, GrMipmapped,
-                       GrTextureResolveManager, const GrCaps& caps);
+    void addDependency(GrDrawingManager*,
+                       GrSurfaceProxy* dependedOn,
+                       skgpu::Mipmapped,
+                       GrTextureResolveManager,
+                       const GrCaps& caps);
 
     /*
      * Notify this GrRenderTask that it relies on the contents of all GrRenderTasks which otherTask
@@ -105,7 +119,7 @@ public:
      */
     virtual skgpu::ganesh::OpsTask* asOpsTask() { return nullptr; }
 
-#if GR_TEST_UTILS
+#if defined(GPU_TEST_UTILS)
     /*
      * Dump out the GrRenderTask dependency DAG
      */
@@ -124,7 +138,7 @@ public:
     void visitTargetAndSrcProxies_debugOnly(const GrVisitProxyFunc& func) const {
         this->visitProxies_debugOnly(func);
         for (const sk_sp<GrSurfaceProxy>& target : fTargets) {
-            func(target.get(), GrMipmapped::kNo);
+            func(target.get(), skgpu::Mipmapped::kNo);
         }
     }
 #endif
@@ -149,7 +163,7 @@ public:
     // Used by GrRenderTaskCluster.
     SK_DECLARE_INTERNAL_LLIST_INTERFACE(GrRenderTask);
 
-#if GR_TEST_UTILS
+#if defined(GPU_TEST_UTILS)
     const GrTextureResolveRenderTask* resolveTask() const { return fTextureResolveTask; }
 #endif
 protected:

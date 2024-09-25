@@ -4,8 +4,12 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
+#ifndef GrGLAssembleInterface_DEFINED
+#define GrGLAssembleInterface_DEFINED
 
+#include "include/core/SkRefCnt.h"
 #include "include/gpu/gl/GrGLInterface.h"
+#include "include/private/base/SkAPI.h"
 
 typedef GrGLFuncPtr (*GrGLGetProc)(void* ctx, const char name[]);
 
@@ -37,3 +41,5 @@ SK_API sk_sp<const GrGLInterface> GrGLMakeAssembledWebGLInterface(void *ctx, GrG
 
 /** Deprecated version of GrGLMakeAssembledInterface() that returns a bare pointer. */
 SK_API const GrGLInterface* GrGLAssembleInterface(void *ctx, GrGLGetProc get);
+
+#endif  // GrGLAssembleInterface_DEFINED

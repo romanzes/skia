@@ -1,10 +1,17 @@
-load("//bazel:macros.bzl", "bool_flag", "exports_files_legacy", "skia_filegroup", "wasm_cc_binary")
-load("//bazel:karma_test.bzl", "karma_test")
 load("@skia_user_config//:copts.bzl", "DEFAULT_COPTS")
+load("//bazel:macros.bzl", "bool_flag", "skia_filegroup", "wasm_cc_binary")
+load("//bazel/karma:karma_test.bzl", "karma_test")
+
+package(
+    default_applicable_licenses = ["//:license"],
+)
 
 licenses(["notice"])
 
-exports_files_legacy()
+exports_files(
+    ["npm_build/types/index.d.ts"],
+    visibility = ["//infra:__subpackages__"],
+)
 
 BASE_LINKOPTS = [
     #"-flto",  # https://github.com/emscripten-core/emsdk/issues/807
@@ -36,7 +43,6 @@ DEBUG_OPTS = [
     "-sGL_ASSERTIONS",
     "-O0",
     "-g3",
-    "--source-map-base=/build/",
 ]
 
 skia_filegroup(
@@ -58,7 +64,7 @@ genrule(
           # in the fonts/ subdirectory as if it had been there all along.
           "--output=$@ " +
           "--align=4",
-    exec_tools = ["//tools:embed_resources"],
+    tools = ["//tools:embed_resources"],
 )
 
 # Note: These are defines that only impact the _bindings.cpp files in this folder.
@@ -66,9 +72,13 @@ genrule(
 CK_DEFINES = [
     "CK_INCLUDE_PATHOPS",
     "EMSCRIPTEN_HAS_UNBOUND_TYPE_NAMES=0",  # Allows us to compile with -fno-rtti
+    "SK_DISABLE_LEGACY_PARAGRAPH_UNICODE=1",
 ] + select({
     ":enable_fonts_true": ["CK_INCLUDE_PARAGRAPH"],
     ":enable_fonts_false": ["CK_NO_FONTS"],
+}) + select({
+    ":include_embedded_font_true": ["CK_EMBED_FONT"],
+    ":include_embedded_font_false": [],
 }) + select({
     ":enable_skp_serialization_true": ["CK_SERIALIZE_SKP=1"],
     ":enable_skp_serialization_false": [],
@@ -76,7 +86,7 @@ CK_DEFINES = [
     ":enable_runtime_effect_true": ["CK_INCLUDE_RUNTIME_EFFECT=1"],
     ":enable_runtime_effect_false": [],
 }) + select({
-    "//src/gpu:gl_ganesh": ["CK_ENABLE_WEBGL"],
+    ":enable_webgl_true": ["CK_ENABLE_WEBGL"],
     "//conditions:default": [],
 })
 
@@ -104,7 +114,7 @@ CK_LINKOPTS = BASE_LINKOPTS + [
     "--pre-js",
     "modules/canvaskit/pathops.js",
 ] + select({
-    "//src/gpu:gl_ganesh": [
+    ":enable_webgl_true": [
         "--pre-js",
         "modules/canvaskit/cpu.js",
         "--pre-js",
@@ -272,17 +282,34 @@ cc_binary(
     # headers etc. Therefore, we hide it from wildcards.
     tags = ["manual"],
     deps = [
-        "//:skia_public",
+        "//:bmp_decode_codec",
+        "//:core",
+        "//:gif_decode_codec",
+        "//:ico_decode_codec",
+        "//:jpeg_decode_codec",
+        "//:jpeg_encode_codec",
+        "//:png_decode_codec",
+        "//:png_encode_codec",
+        "//:wbmp_decode_codec",
+        "//:webp_decode_codec",
+        "//:webp_encode_codec",
+        "//src/android:animated_image",
     ] + select({
         ":enable_fonts_true": [
-            "//modules/skparagraph",
-            "//modules/skunicode",
+            "//:fontmgr_data_freetype",
+            "//:fontmgr_empty_freetype",
+            "//modules/skparagraph:skparagraph_harfbuzz_skunicode",
+            "//modules/skunicode:skunicode_icu",
         ],
         ":enable_fonts_false": [],
     }) + select({
         ":enable_skottie_true": [
+            "//:skshaper_harfbuzz",
+            "//:skshaper_unicode",
+            "//:skunicode_icu",
             "//modules/skottie",
-            "//modules/skottie:utils",
+            "//modules/skottie/utils:skottie_utils",
+            "//modules/skottie/utils:text_editor",
         ],
         ":enable_skottie_false": [],
     }) + select({
@@ -290,6 +317,12 @@ cc_binary(
             "//tools/debugger",
         ],
         "//bazel/common_config_settings:build_for_debugger_false": [],
+    }) + select({
+        ":enable_webgl_true": [
+            "//:ganesh_gl",
+            "//:ganesh_webgl_factory",
+        ],
+        "//conditions:default": [],
     }),
 )
 
@@ -298,7 +331,12 @@ wasm_cc_binary(
     # Whatever is before the dot will be the name of the output js and wasm, aka "the stem".
     # https://github.com/emscripten-core/emsdk/blob/82ad00499a42abde16b363239d2bc83bf5d863ab/bazel/emscripten_toolchain/wasm_cc_binary.bzl#L91
     cc_target = ":canvaskit.build",
-    visibility = ["//infra/debugger-app:__pkg__"],
+    visibility = [
+        "//infra/debugger-app:__pkg__",
+        "//infra/jsfiddle:__pkg__",
+        "//infra/shaders:__pkg__",
+        "//infra/skottie:__pkg__",
+    ],
 )
 
 bool_flag(
@@ -333,6 +371,11 @@ bool_flag(
 
 bool_flag(
     name = "enable_runtime_effect",
+    default = False,
+)
+
+bool_flag(
+    name = "enable_webgl",
     default = False,
 )
 

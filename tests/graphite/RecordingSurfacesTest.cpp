@@ -78,14 +78,14 @@ void run_test(skiatest::Reporter* reporter,
 #ifdef SK_DEBUG
         if (color != e.fColor) {
             SkDebugf("Wrong color\n\texpected: %f %f %f %f\n\tactual: %f %f %f %f",
-                     color.fR,
-                     color.fG,
-                     color.fB,
-                     color.fA,
                      e.fColor.fR,
                      e.fColor.fG,
                      e.fColor.fB,
-                     e.fColor.fA);
+                     e.fColor.fA,
+                     color.fR,
+                     color.fG,
+                     color.fB,
+                     color.fA);
         }
 #endif
         REPORTER_ASSERT(reporter, color == e.fColor);
@@ -93,7 +93,8 @@ void run_test(skiatest::Reporter* reporter,
 }
 
 // Tests that clear does not clear an entire replayed-to surface if recorded onto a smaller surface.
-DEF_GRAPHITE_TEST_FOR_ALL_CONTEXTS(RecordingSurfacesTestClear, reporter, context) {
+DEF_GRAPHITE_TEST_FOR_ALL_CONTEXTS(RecordingSurfacesTestClear, reporter, context,
+                                   CtsEnforcement::kApiLevel_V) {
     SkISize surfaceSize = SkISize::Make(8, 4);
     SkISize recordingSize = SkISize::Make(4, 4);
     SkISize replayOffset = SkISize::Make(0, 0);
@@ -107,7 +108,8 @@ DEF_GRAPHITE_TEST_FOR_ALL_CONTEXTS(RecordingSurfacesTestClear, reporter, context
 }
 
 // Tests that writePixels is translated correctly when replayed with an offset.
-DEF_GRAPHITE_TEST_FOR_ALL_CONTEXTS(RecordingSurfacesTestWritePixels, reporter, context) {
+DEF_GRAPHITE_TEST_FOR_ALL_CONTEXTS(RecordingSurfacesTestWritePixels, reporter, context,
+                                   CtsEnforcement::kApiLevel_V) {
     SkBitmap bitmap;
     bitmap.allocN32Pixels(4, 4, true);
     SkCanvas bitmapCanvas(bitmap);
@@ -128,7 +130,8 @@ DEF_GRAPHITE_TEST_FOR_ALL_CONTEXTS(RecordingSurfacesTestWritePixels, reporter, c
 }
 
 // Tests that the result of writePixels is cropped correctly when offscreen.
-DEF_GRAPHITE_TEST_FOR_ALL_CONTEXTS(RecordingSurfacesTestWritePixelsOffscreen, reporter, context) {
+DEF_GRAPHITE_TEST_FOR_ALL_CONTEXTS(RecordingSurfacesTestWritePixelsOffscreen, reporter, context,
+                                   CtsEnforcement::kApiLevel_V) {
     SkBitmap bitmap;
     bitmap.allocN32Pixels(4, 4, true);
     SkCanvas bitmapCanvas(bitmap);

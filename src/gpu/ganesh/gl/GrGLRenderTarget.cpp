@@ -7,15 +7,29 @@
 
 #include "src/gpu/ganesh/gl/GrGLRenderTarget.h"
 
+#include "include/core/SkString.h"
 #include "include/core/SkTraceMemoryDump.h"
+#include "include/gpu/GpuTypes.h"
 #include "include/gpu/GrDirectContext.h"
+#include "include/gpu/GrTypes.h"
 #include "include/gpu/ganesh/gl/GrGLBackendSurface.h"
+#include "include/gpu/gl/GrGLFunctions.h"
+#include "include/gpu/gl/GrGLInterface.h"
+#include "include/private/base/SkAssert.h"
+#include "include/private/base/SkDebug.h"
+#include "include/private/gpu/ganesh/GrTypesPriv.h"
+#include "src/gpu/ganesh/GrAttachment.h"
 #include "src/gpu/ganesh/GrBackendUtils.h"
+#include "src/gpu/ganesh/GrCaps.h"
 #include "src/gpu/ganesh/GrDirectContextPriv.h"
-#include "src/gpu/ganesh/GrGpuResourcePriv.h"
+#include "src/gpu/ganesh/GrGpu.h"
 #include "src/gpu/ganesh/GrResourceProvider.h"
+#include "src/gpu/ganesh/gl/GrGLCaps.h"
 #include "src/gpu/ganesh/gl/GrGLGpu.h"
+#include "src/gpu/ganesh/gl/GrGLTexture.h"
 #include "src/gpu/ganesh/gl/GrGLUtil.h"
+
+#include <utility>
 
 #define GPUGL static_cast<GrGLGpu*>(this->getGpu())
 #define GL_CALL(X) GR_GL_CALL(GPUGL->glInterface(), X)
@@ -135,8 +149,10 @@ GrBackendFormat GrGLRenderTarget::backendFormat() const {
 }
 
 size_t GrGLRenderTarget::onGpuMemorySize() const {
-    return GrSurface::ComputeSize(this->backendFormat(), this->dimensions(),
-                                  fTotalMemorySamplesPerPixel, GrMipmapped::kNo);
+    return GrSurface::ComputeSize(this->backendFormat(),
+                                  this->dimensions(),
+                                  fTotalMemorySamplesPerPixel,
+                                  skgpu::Mipmapped::kNo);
 }
 
 void GrGLRenderTarget::onSetLabel() {
@@ -308,15 +324,15 @@ void GrGLRenderTarget::onRelease() {
             GL_CALL(DeleteRenderbuffers(1, &fMSColorRenderbufferID));
         }
     }
-    fMultisampleFBOID       = 0;
-    fSingleSampleFBOID      = 0;
+    fMultisampleFBOID       = kUnresolvableFBOID;
+    fSingleSampleFBOID      = kUnresolvableFBOID;
     fMSColorRenderbufferID  = 0;
     INHERITED::onRelease();
 }
 
 void GrGLRenderTarget::onAbandon() {
-    fMultisampleFBOID       = 0;
-    fSingleSampleFBOID      = 0;
+    fMultisampleFBOID       = kUnresolvableFBOID;
+    fSingleSampleFBOID      = kUnresolvableFBOID;
     fMSColorRenderbufferID  = 0;
     INHERITED::onAbandon();
 }
@@ -352,8 +368,10 @@ void GrGLRenderTarget::dumpMemoryStatistics(SkTraceMemoryDump* traceMemoryDump) 
         --numSamplesNotInTexture;  // GrGLTexture::dumpMemoryStatistics accounts for 1 sample.
     }
     if (numSamplesNotInTexture >= 1) {
-        size_t size = GrSurface::ComputeSize(this->backendFormat(), this->dimensions(),
-                                             numSamplesNotInTexture, GrMipmapped::kNo);
+        size_t size = GrSurface::ComputeSize(this->backendFormat(),
+                                             this->dimensions(),
+                                             numSamplesNotInTexture,
+                                             skgpu::Mipmapped::kNo);
 
         // Due to this resource having both a texture and a renderbuffer component, dump as
         // skia/gpu_resources/resource_#/renderbuffer

@@ -4,18 +4,32 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
-
 #include "src/gpu/ganesh/GrRecordingContextPriv.h"
 
+#include "include/core/SkAlphaType.h"
 #include "include/core/SkColorSpace.h"
+#include "include/core/SkSize.h"
+#include "include/core/SkSurfaceProps.h"
+#include "include/gpu/GrBackendSurface.h"
+#include "include/gpu/GrContextOptions.h"
+#include "include/private/gpu/ganesh/GrContext_Base.h"
+#include "include/private/gpu/ganesh/GrTypesPriv.h"
+#include "src/gpu/RefCntedCallback.h"
+#include "src/gpu/Swizzle.h"
 #include "src/gpu/ganesh/Device.h"
 #include "src/gpu/ganesh/GrCaps.h"
 #include "src/gpu/ganesh/GrDrawingManager.h"
+#include "src/gpu/ganesh/GrImageInfo.h"
 #include "src/gpu/ganesh/GrProxyProvider.h"
-#include "src/gpu/ganesh/GrRenderTargetProxy.h"
+#include "src/gpu/ganesh/GrShaderCaps.h"
+#include "src/gpu/ganesh/GrSurfaceProxy.h"
 #include "src/gpu/ganesh/GrSurfaceProxyView.h"
+#include "src/gpu/ganesh/GrTextureProxy.h"
+#include "src/gpu/ganesh/SurfaceContext.h"
 #include "src/gpu/ganesh/SurfaceDrawContext.h"
 #include "src/gpu/ganesh/SurfaceFillContext.h"
+
+#include <utility>
 
 void GrRecordingContextPriv::addOnFlushCallbackObject(GrOnFlushCallbackObject* onFlushCBObject) {
     this->context()->addOnFlushCallbackObject(onFlushCBObject);
@@ -42,7 +56,7 @@ sk_sp<skgpu::ganesh::Device> GrRecordingContextPriv::createDevice(
         const SkImageInfo& ii,
         SkBackingFit fit,
         int sampleCount,
-        GrMipmapped mipmapped,
+        skgpu::Mipmapped mipmapped,
         GrProtected isProtected,
         GrSurfaceOrigin origin,
         const SkSurfaceProps& props,
@@ -63,16 +77,17 @@ void GrRecordingContextPriv::moveRenderTasksToDDL(GrDeferredDisplayList* ddl) {
     this->context()->drawingManager()->moveRenderTasksToDDL(ddl);
 }
 
-sktext::gpu::SDFTControl GrRecordingContextPriv::getSDFTControl(bool useSDFTForSmallText) const {
+sktext::gpu::SubRunControl GrRecordingContextPriv::getSubRunControl(
+        bool useSDFTForSmallText) const {
 #if !defined(SK_DISABLE_SDF_TEXT)
-    return sktext::gpu::SDFTControl{
+    return sktext::gpu::SubRunControl{
             this->caps()->shaderCaps()->supportsDistanceFieldText(),
             useSDFTForSmallText,
             !this->caps()->disablePerspectiveSDFText(),
             this->options().fMinDistanceFieldFontSize,
             this->options().fGlyphsAsPathsFontSize};
 #else
-    return sktext::gpu::SDFTControl{};
+    return sktext::gpu::SubRunControl{};
 #endif
 }
 
@@ -126,7 +141,7 @@ std::unique_ptr<skgpu::ganesh::SurfaceContext> GrRecordingContextPriv::makeSC(
         GrSurfaceOrigin origin,
         GrRenderable renderable,
         int sampleCount,
-        GrMipmapped mipmapped,
+        skgpu::Mipmapped mipmapped,
         GrProtected isProtected,
         skgpu::Budgeted budgeted) {
     SkASSERT(renderable == GrRenderable::kYes || sampleCount == 1);
@@ -162,7 +177,7 @@ std::unique_ptr<skgpu::ganesh::SurfaceFillContext> GrRecordingContextPriv::makeS
         std::string_view label,
         SkBackingFit fit,
         int sampleCount,
-        GrMipmapped mipmapped,
+        skgpu::Mipmapped mipmapped,
         GrProtected isProtected,
         GrSurfaceOrigin origin,
         skgpu::Budgeted budgeted) {
@@ -214,7 +229,7 @@ std::unique_ptr<skgpu::ganesh::SurfaceFillContext> GrRecordingContextPriv::makeS
         SkBackingFit fit,
         const GrBackendFormat& format,
         int sampleCount,
-        GrMipmapped mipmapped,
+        skgpu::Mipmapped mipmapped,
         GrProtected isProtected,
         skgpu::Swizzle readSwizzle,
         skgpu::Swizzle writeSwizzle,
@@ -268,7 +283,7 @@ std::unique_ptr<skgpu::ganesh::SurfaceFillContext> GrRecordingContextPriv::makeS
         GrImageInfo info,
         SkBackingFit fit,
         int sampleCount,
-        GrMipmapped mipmapped,
+        skgpu::Mipmapped mipmapped,
         GrProtected isProtected,
         GrSurfaceOrigin origin,
         skgpu::Budgeted budgeted) {

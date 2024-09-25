@@ -53,6 +53,7 @@ struct GrContextOptions;
 #include "src/gpu/graphite/Caps.h"
 #include "src/gpu/graphite/RecorderPriv.h"
 #include "src/gpu/graphite/Texture.h"
+#include "tools/GpuToolUtils.h"
 #else
 namespace skgpu { namespace graphite { class Recorder; } }
 #endif
@@ -63,8 +64,15 @@ namespace skgpu { namespace graphite { class Recorder; } }
 #include <string.h>
 #include <utility>
 
-extern int gOverrideMaxTextureSize;
-extern std::atomic<int> gNumTilesDrawn;
+#if defined(SK_GANESH) && defined(GPU_TEST_UTILS)
+extern int gOverrideMaxTextureSizeGanesh;
+extern std::atomic<int> gNumTilesDrawnGanesh;
+#endif
+
+#if defined(SK_GRAPHITE) && defined(GPU_TEST_UTILS)
+extern int gOverrideMaxTextureSizeGraphite;
+extern std::atomic<int> gNumTilesDrawnGraphite;
+#endif
 
 namespace {
 
@@ -300,17 +308,6 @@ void tiling_comparison_test(GrDirectContext* dContext,
 
     int numClippedTiles = 9;
     for (auto gen : kGenerators) {
-        if (recorder && !strcmp(gen.fTag, "Picture")) {
-            // In the picture-image case, the non-tiled code path draws the picture directly into a
-            // gpu-backed surface while the tiled code path the picture is draws the picture into
-            // a raster-backed surface. For Ganesh this works out, since both Ganesh and Raster
-            // support non-AA rect draws. For Graphite the results are very different (since
-            // Graphite always anti-aliases. Forcing all the rect draws to be AA doesn't work out
-            // since AA introduces too much variance between both of the gpu backends and Raster -
-            // which would obscure any errors introduced by tiling.
-            continue;
-        }
-
         sk_sp<SkImage> img = (*gen.fGen)(kImageSize,
                                          kWhiteBandWidth,
                                          /* desiredLineWidth= */ 16,
@@ -378,9 +375,12 @@ void tiling_comparison_test(GrDirectContext* dContext,
                             canvas->concat(m);
 
                             // First, draw w/o tiling
-                            gOverrideMaxTextureSize = 0;
-                            gNumTilesDrawn.store(0, std::memory_order_relaxed);
-
+#if defined(SK_GANESH) && defined(GPU_TEST_UTILS)
+                            gOverrideMaxTextureSizeGanesh = 0;
+#endif
+#if defined(SK_GRAPHITE) && defined(GPU_TEST_UTILS)
+                            gOverrideMaxTextureSizeGraphite = 0;
+#endif
                             canvas->clear(SK_ColorBLACK);
                             canvas->save();
                             canvas->clipRect(clipRect);
@@ -389,13 +389,29 @@ void tiling_comparison_test(GrDirectContext* dContext,
                                                              sampling, /* paint= */ nullptr,
                                                              constraint);
                             SkAssertResult(surface->readPixels(expected, 0, 0));
-                            int actualNumTiles = gNumTilesDrawn.load(std::memory_order_acquire);
-                            REPORTER_ASSERT(reporter, actualNumTiles == 0);
-
+#if defined(SK_GANESH) && defined(GPU_TEST_UTILS)
+                            if (canvas->recordingContext()) {
+                                int actualNumTiles =
+                                        gNumTilesDrawnGanesh.load(std::memory_order_acquire);
+                                REPORTER_ASSERT(reporter, actualNumTiles == 0);
+                            }
+#endif
+#if defined(SK_GRAPHITE) && defined(GPU_TEST_UTILS)
+                            if (canvas->recorder()) {
+                                int actualNumTiles =
+                                        gNumTilesDrawnGraphite.load(std::memory_order_acquire);
+                                REPORTER_ASSERT(reporter, actualNumTiles == 0);
+                            }
+#endif
                             canvas->restore();
 
                             // Then, force 4x4 tiling
-                            gOverrideMaxTextureSize = kOverrideMaxTextureSize;
+#if defined(SK_GANESH) && defined(GPU_TEST_UTILS)
+                            gOverrideMaxTextureSizeGanesh = kOverrideMaxTextureSize;
+#endif
+#if defined(SK_GRAPHITE) && defined(GPU_TEST_UTILS)
+                            gOverrideMaxTextureSizeGraphite = kOverrideMaxTextureSize;
+#endif
 
                             canvas->clear(SK_ColorBLACK);
                             canvas->save();
@@ -405,11 +421,28 @@ void tiling_comparison_test(GrDirectContext* dContext,
                                                              sampling, /* paint= */ nullptr,
                                                              constraint);
                             SkAssertResult(surface->readPixels(actual, 0, 0));
-
-                            actualNumTiles = gNumTilesDrawn.load(std::memory_order_acquire);
-                            REPORTER_ASSERT(reporter, numDesiredTiles == actualNumTiles,
-                                            "mismatch expected: %d actual: %d\n",
-                                            numDesiredTiles, actualNumTiles);
+#if defined(SK_GANESH) && defined(GPU_TEST_UTILS)
+                            if (canvas->recordingContext()) {
+                                int actualNumTiles =
+                                        gNumTilesDrawnGanesh.load(std::memory_order_acquire);
+                                REPORTER_ASSERT(reporter,
+                                                numDesiredTiles == actualNumTiles,
+                                                "mismatch expected: %d actual: %d\n",
+                                                numDesiredTiles,
+                                                actualNumTiles);
+                            }
+#endif
+#if defined(SK_GRAPHITE) && defined(GPU_TEST_UTILS)
+                            if (canvas->recorder()) {
+                                int actualNumTiles =
+                                        gNumTilesDrawnGraphite.load(std::memory_order_acquire);
+                                REPORTER_ASSERT(reporter,
+                                                numDesiredTiles == actualNumTiles,
+                                                "mismatch expected: %d actual: %d\n",
+                                                numDesiredTiles,
+                                                actualNumTiles);
+                            }
+#endif
 
                             canvas->restore();
 
@@ -424,6 +457,13 @@ void tiling_comparison_test(GrDirectContext* dContext,
             }
         }
     }
+    // Reset tiling behavior
+#if defined(SK_GANESH) && defined(GPU_TEST_UTILS)
+    gOverrideMaxTextureSizeGanesh = 0;
+#endif
+#if defined(SK_GRAPHITE) && defined(GPU_TEST_UTILS)
+    gOverrideMaxTextureSizeGraphite = 0;
+#endif
 }
 
 // In this test we draw the same bitmap-backed image twice and check that we only upload it once.
@@ -467,8 +507,12 @@ void tiled_image_caching_test(GrDirectContext* dContext,
 
     SkCanvas* canvas = surface->getCanvas();
 
-    gOverrideMaxTextureSize = kOverrideMaxTextureSize;
-
+#if defined(SK_GANESH) && defined(GPU_TEST_UTILS)
+    gOverrideMaxTextureSizeGanesh = kOverrideMaxTextureSize;
+#endif
+#if defined(SK_GRAPHITE) && defined(GPU_TEST_UTILS)
+    gOverrideMaxTextureSizeGraphite = kOverrideMaxTextureSize;
+#endif
     for (int i = 0; i < 2; ++i) {
         canvas->clear(SK_ColorBLACK);
 
@@ -509,13 +553,20 @@ void tiled_image_caching_test(GrDirectContext* dContext,
 
     REPORTER_ASSERT(reporter, numFound == 16, "Expected: 16 Actual: %d", numFound);
 
-    gOverrideMaxTextureSize = 0;
+    // reset to default behavior
+#if defined(SK_GANESH) && defined(GPU_TEST_UTILS)
+    gOverrideMaxTextureSizeGanesh = 0;
+#endif
+#if defined(SK_GRAPHITE) && defined(GPU_TEST_UTILS)
+    gOverrideMaxTextureSizeGraphite = 0;
+#endif
 }
 
 } // anonymous namespace
 
 #if defined(SK_GANESH)
 
+// TODO(b/306005622): fix in SkQP and move to CtsEnforcement::kNextRelease
 DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(BigImageTest_Ganesh,
                                        reporter,
                                        ctxInfo,
@@ -525,6 +576,7 @@ DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(BigImageTest_Ganesh,
     tiling_comparison_test(dContext, /* recorder= */ nullptr, reporter);
 }
 
+// TODO(b/306005622): fix in SkQP and move to CtsEnforcement::kNextRelease
 DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(TiledDrawCacheTest_Ganesh,
                                        reporter,
                                        ctxInfo,
@@ -538,9 +590,11 @@ DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(TiledDrawCacheTest_Ganesh,
 
 #if defined(SK_GRAPHITE)
 
+// TODO(b/306005622): fix in SkQP and move to CtsEnforcement::kNextRelease
 DEF_GRAPHITE_TEST_FOR_RENDERING_CONTEXTS(BigImageTest_Graphite,
                                          reporter,
-                                         context) {
+                                         context,
+                                         CtsEnforcement::kNever) {
     std::unique_ptr<skgpu::graphite::Recorder> recorder =
             context->makeRecorder(ToolUtils::CreateTestingRecorderOptions());
 
@@ -549,7 +603,8 @@ DEF_GRAPHITE_TEST_FOR_RENDERING_CONTEXTS(BigImageTest_Graphite,
 
 DEF_GRAPHITE_TEST_FOR_RENDERING_CONTEXTS(TiledDrawCacheTest_Graphite,
                                          reporter,
-                                         context) {
+                                         context,
+                                         CtsEnforcement::kApiLevel_V) {
     std::unique_ptr<skgpu::graphite::Recorder> recorder =
             context->makeRecorder(ToolUtils::CreateTestingRecorderOptions());
 

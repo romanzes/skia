@@ -16,11 +16,11 @@
 #include "include/gpu/ShaderErrorHandler.h"
 #include "include/private/gpu/ganesh/GrTypesPriv.h"
 
+#include <optional>
 #include <vector>
 
 class SkExecutor;
 
-#if defined(SK_GANESH)
 struct SK_API GrContextOptions {
     enum class Enable {
         /** Forces an option to be disabled. */
@@ -96,6 +96,12 @@ struct SK_API GrContextOptions {
         buffers to CPU memory in order to update them.  A value of -1 means the GrContext should
         deduce the optimal value for this platform. */
     int  fBufferMapThreshold = -1;
+
+    /** Default minimum size to use when allocating buffers for uploading data to textures. The
+        larger the value the more uploads can be packed into one buffer, but at the cost of
+        more gpu memory allocated that may not be used. Uploads larger than the minimum will still
+        work by allocating a dedicated buffer. */
+    size_t fMinimumStagingBufferSize = 64 * 1024;
 
     /**
      * Executor to handle threaded work within Ganesh. If this is nullptr, then all work will be
@@ -241,6 +247,17 @@ struct SK_API GrContextOptions {
     int fMaxCachedVulkanSecondaryCommandBuffers = -1;
 
     /**
+     * If Skia is creating a default VMA allocator for the Vulkan backend this value will be used
+     * for the preferredLargeHeapBlockSize. If the value is not set, then Skia will use an
+     * inernally defined default size.
+     *
+     * However, it is highly discouraged to have Skia make a default allocator (and support for
+     * doing so will be removed soon,  b/321962001). Instead clients should create their own
+     * allocator to pass into Skia where they can fine tune this value themeselves.
+     */
+    std::optional<uint64_t> fVulkanVMALargeHeapBlockSize;
+
+    /**
      * If true, the caps will never support mipmaps.
      */
     bool fSuppressMipmapSupport = false;
@@ -292,7 +309,7 @@ struct SK_API GrContextOptions {
     GrDirectContextDestroyedContext fContextDeleteContext = nullptr;
     GrDirectContextDestroyedProc fContextDeleteProc = nullptr;
 
-#if GR_TEST_UTILS
+#if defined(GPU_TEST_UTILS)
     /**
      * Private options that are only meant for testing within Skia's tools.
      */
@@ -365,10 +382,5 @@ struct SK_API GrContextOptions {
 
     GrDriverBugWorkarounds fDriverBugWorkarounds;
 };
-#else
-struct GrContextOptions {
-    struct PersistentCache {};
-};
-#endif
 
 #endif

@@ -8,37 +8,89 @@
 #ifndef GrGLGpu_DEFINED
 #define GrGLGpu_DEFINED
 
+#include "include/core/SkRefCnt.h"
+#include "include/core/SkSamplingOptions.h"
 #include "include/core/SkTypes.h"
+#include "include/gpu/GrBackendSurface.h"
+#include "include/gpu/GrTypes.h"
 #include "include/gpu/ganesh/gl/GrGLBackendSurface.h"
+#include "include/gpu/gl/GrGLFunctions.h"
+#include "include/gpu/gl/GrGLInterface.h"
+#include "include/gpu/gl/GrGLTypes.h"
+#include "include/private/SkColorData.h"
+#include "include/private/base/SkDebug.h"
 #include "include/private/base/SkTArray.h"
+#include "include/private/base/SkTemplates.h"
+#include "include/private/base/SkTo.h"
+#include "include/private/gpu/ganesh/GrTypesPriv.h"
 #include "src/core/SkChecksum.h"
 #include "src/core/SkLRUCache.h"
-#include "src/gpu/ganesh/GrFinishCallbacks.h"
+#include "src/gpu/Blend.h"
+#include "src/gpu/ganesh/GrCaps.h"
 #include "src/gpu/ganesh/GrGpu.h"
+#include "src/gpu/ganesh/GrGpuResource.h"
 #include "src/gpu/ganesh/GrNativeRect.h"
+#include "src/gpu/ganesh/GrOpsRenderPass.h"
 #include "src/gpu/ganesh/GrProgramDesc.h"
+#include "src/gpu/ganesh/GrSamplerState.h"
+#include "src/gpu/ganesh/GrScissorState.h"
+#include "src/gpu/ganesh/GrShaderCaps.h"
+#include "src/gpu/ganesh/GrStencilSettings.h"
 #include "src/gpu/ganesh/GrThreadSafePipelineBuilder.h"
 #include "src/gpu/ganesh/GrWindowRectsState.h"
 #include "src/gpu/ganesh/GrXferProcessor.h"
-#include "src/gpu/ganesh/gl/GrGLAttachment.h"
+#include "src/gpu/ganesh/gl/GrGLCaps.h"
 #include "src/gpu/ganesh/gl/GrGLContext.h"
-#include "src/gpu/ganesh/gl/GrGLProgram.h"
+#include "src/gpu/ganesh/gl/GrGLDefines.h"
+#include "src/gpu/ganesh/gl/GrGLFinishCallbacks.h"
 #include "src/gpu/ganesh/gl/GrGLRenderTarget.h"
 #include "src/gpu/ganesh/gl/GrGLTexture.h"
+#include "src/gpu/ganesh/gl/GrGLTypesPriv.h"
+#include "src/gpu/ganesh/gl/GrGLUtil.h"
 #include "src/gpu/ganesh/gl/GrGLVertexArray.h"
 
+#include <array>
+#include <cstddef>
+#include <cstdint>
+#include <memory>
+#include <string_view>
+
+class GrAttachment;
+class GrBackendSemaphore;
+class GrBuffer;
+class GrDirectContext;
 class GrGLBuffer;
 class GrGLOpsRenderPass;
-class GrPipeline;
+class GrGLProgram;
+class GrGpuBuffer;
+class GrProgramInfo;
+class GrRenderTarget;
+class GrSemaphore;
+class GrStagingBufferManager;
+class GrSurface;
+class GrSurfaceProxy;
+class GrTexture;
+class SkData;
 enum class SkTextureCompressionType;
+struct GrContextOptions;
+struct SkIPoint;
+struct SkIRect;
+struct SkISize;
+
+namespace SkSL { enum class GLSLGeneration; }
 
 namespace skgpu {
+class RefCntedCallback;
 class Swizzle;
+enum class Budgeted : bool;
+enum class Mipmapped : bool;
 }
 
 class GrGLGpu final : public GrGpu {
 public:
-    static sk_sp<GrGpu> Make(sk_sp<const GrGLInterface>, const GrContextOptions&, GrDirectContext*);
+    static std::unique_ptr<GrGpu> Make(sk_sp<const GrGLInterface>,
+                                       const GrContextOptions&,
+                                       GrDirectContext*);
     ~GrGLGpu() override;
 
     void disconnect(DisconnectType) override;
@@ -171,7 +223,7 @@ public:
         return fProgramCache->precompileShader(this->getContext(), key, data);
     }
 
-#if GR_TEST_UTILS
+#if defined(GPU_TEST_UTILS)
     bool isTestingOnlyBackendTexture(const GrBackendTexture&) const override;
 
     GrBackendRenderTarget createTestingOnlyBackendRenderTarget(SkISize dimensions,
@@ -189,9 +241,9 @@ public:
 
     void submit(GrOpsRenderPass* renderPass) override;
 
-    [[nodiscard]] GrFence insertFence() override;
-    bool waitFence(GrFence) override;
-    void deleteFence(GrFence) override;
+    [[nodiscard]] GrGLsync insertFence();
+    bool waitFence(GrGLsync);
+    void deleteFence(GrGLsync);
 
     [[nodiscard]] std::unique_ptr<GrSemaphore> makeSemaphore(bool isOwned) override;
     std::unique_ptr<GrSemaphore> wrapBackendSemaphore(const GrBackendSemaphore&,
@@ -231,13 +283,13 @@ private:
     GrBackendTexture onCreateBackendTexture(SkISize dimensions,
                                             const GrBackendFormat&,
                                             GrRenderable,
-                                            GrMipmapped,
+                                            skgpu::Mipmapped,
                                             GrProtected,
                                             std::string_view label) override;
 
     GrBackendTexture onCreateCompressedBackendTexture(SkISize dimensions,
                                                       const GrBackendFormat&,
-                                                      GrMipmapped,
+                                                      skgpu::Mipmapped,
                                                       GrProtected) override;
 
     bool onClearBackendTexture(const GrBackendTexture&,
@@ -267,7 +319,7 @@ private:
     sk_sp<GrTexture> onCreateCompressedTexture(SkISize dimensions,
                                                const GrBackendFormat&,
                                                skgpu::Budgeted,
-                                               GrMipmapped,
+                                               skgpu::Mipmapped,
                                                GrProtected,
                                                const void* data,
                                                size_t dataSize) override;
@@ -318,7 +370,7 @@ private:
     GrGLuint createCompressedTexture2D(SkISize dimensions,
                                        SkTextureCompressionType compression,
                                        GrGLFormat,
-                                       GrMipmapped,
+                                       skgpu::Mipmapped,
                                        GrProtected,
                                        GrGLTextureParameters::SamplerOverriddenState*);
 
@@ -399,7 +451,7 @@ private:
             const skia_private::TArray<GrSurfaceProxy*, true>& sampledProxies,
             GrXferBarrierFlags renderPassXferBarriers) override;
 
-    bool onSubmitToGpu(bool syncCpu) override;
+    bool onSubmitToGpu(GrSyncCpu sync) override;
 
     bool waitSync(GrGLsync, uint64_t timeout, bool flush);
 
@@ -517,9 +569,10 @@ private:
     bool uploadCompressedTexData(SkTextureCompressionType compressionType,
                                  GrGLFormat,
                                  SkISize dimensions,
-                                 GrMipmapped,
+                                 skgpu::Mipmapped,
                                  GrGLenum target,
-                                 const void* data, size_t dataSize);
+                                 const void* data,
+                                 size_t dataSize);
 
     // Calls one of various versions of renderBufferStorageMultisample.
     bool renderbufferStorageMSAA(const GrGLContext& ctx, int sampleCount, GrGLenum format,
@@ -583,7 +636,7 @@ private:
         }
     } fHWScissorSettings;
 
-    class {
+    class HWWindowRectsState {
     public:
         bool valid() const { return kInvalidSurfaceOrigin != fRTOrigin; }
         void invalidate() { fRTOrigin = kInvalidSurfaceOrigin; }
@@ -614,13 +667,14 @@ private:
         }
 
     private:
-        enum { kInvalidSurfaceOrigin = -1 };
+        static constexpr int kInvalidSurfaceOrigin = -1;
 
         int                  fRTOrigin;
         int                  fWidth;
         int                  fHeight;
         GrWindowRectsState   fWindowState;
-    } fHWWindowRectsState;
+    };
+    HWWindowRectsState fHWWindowRectsState;
 
     GrNativeRect fHWViewport;
 
@@ -804,14 +858,14 @@ private:
 
     std::unique_ptr<GrStagingBufferManager> fStagingBufferManager;
 
-    GrFinishCallbacks fFinishCallbacks;
+    GrGLFinishCallbacks fFinishCallbacks;
 
     // If we've called a command that requires us to call glFlush than this will be set to true
     // since we defer calling flush until submit time. When we call submitToGpu if this is true then
     // we call glFlush and reset this to false.
     bool fNeedsGLFlush = false;
 
-    SkDEBUGCODE(bool fIsExecutingCommandBuffer_DebugOnly = false);
+    SkDEBUGCODE(bool fIsExecutingCommandBuffer_DebugOnly = false;)
 
     friend class GrGLPathRendering; // For accessing setTextureUnit.
 

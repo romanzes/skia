@@ -5,13 +5,27 @@
  * found in the LICENSE file.
  */
 
-#include "modules/skottie/include/Skottie.h"
-#include "modules/skottie/src/SkottiePriv.h"
-
 #include "include/core/SkImage.h"
+#include "include/core/SkMatrix.h"
+#include "include/core/SkRect.h"
+#include "include/core/SkRefCnt.h"
+#include "include/core/SkSamplingOptions.h"
+#include "include/core/SkSize.h"
+#include "include/core/SkString.h"
+#include "include/private/base/SkAssert.h"
+#include "modules/skottie/include/Skottie.h"
+#include "modules/skottie/include/SlotManager.h"
 #include "modules/skottie/src/SkottieJson.h"
+#include "modules/skottie/src/SkottiePriv.h"
+#include "modules/skottie/src/animator/Animator.h"
+#include "modules/skresources/include/SkResources.h"
 #include "modules/sksg/include/SkSGImage.h"
+#include "modules/sksg/include/SkSGRenderNode.h"
 #include "modules/sksg/include/SkSGTransform.h"
+#include "src/core/SkTHash.h"
+#include "src/utils/SkJSON.h"
+
+#include <utility>
 
 namespace skottie {
 namespace internal {
@@ -112,7 +126,7 @@ AnimationBuilder::loadFootageAsset(const skjson::ObjectValue& defaultJImage) con
     }
 
     auto asset = fResourceProvider->loadImageAsset(path->begin(), name->begin(), id->begin());
-    if (!asset) {
+    if (!asset && !slotID) {
         this->log(Logger::Level::kError, nullptr, "Could not load image asset: %s/%s (id: '%s').",
                   path->begin(), name->begin(), id->begin());
         return nullptr;

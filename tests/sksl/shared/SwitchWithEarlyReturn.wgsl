@@ -1,8 +1,5 @@
 diagnostic(off, derivative_uniformity);
-struct FSIn {
-  @builtin(front_facing) sk_Clockwise: bool,
-  @builtin(position) sk_FragCoord: vec4<f32>,
-};
+diagnostic(off, chromium.unreachable_code);
 struct FSOut {
   @location(0) sk_FragColor: vec4<f32>,
 };
@@ -11,8 +8,7 @@ struct _GlobalUniforms {
   colorRed: vec4<f32>,
 };
 @binding(0) @group(0) var<uniform> _globalUniforms: _GlobalUniforms;
-fn return_in_one_case_bi(_skParam0: i32) -> bool {
-  let x = _skParam0;
+fn return_in_one_case_bi(x: i32) -> bool {
   {
     var val: i32 = 0;
     switch x {
@@ -27,8 +23,7 @@ fn return_in_one_case_bi(_skParam0: i32) -> bool {
     return val == 1;
   }
 }
-fn return_in_default_bi(_skParam0: i32) -> bool {
-  let x = _skParam0;
+fn return_in_default_bi(x: i32) -> bool {
   {
     switch x {
       case default {
@@ -37,8 +32,7 @@ fn return_in_default_bi(_skParam0: i32) -> bool {
     }
   }
 }
-fn return_in_every_case_bi(_skParam0: i32) -> bool {
-  let x = _skParam0;
+fn return_in_every_case_bi(x: i32) -> bool {
   {
     switch x {
       case 1 {
@@ -50,8 +44,7 @@ fn return_in_every_case_bi(_skParam0: i32) -> bool {
     }
   }
 }
-fn return_in_every_case_no_default_bi(_skParam0: i32) -> bool {
-  let x = _skParam0;
+fn return_in_every_case_no_default_bi(x: i32) -> bool {
   {
     var val: i32 = 0;
     switch x {
@@ -67,8 +60,7 @@ fn return_in_every_case_no_default_bi(_skParam0: i32) -> bool {
     return val == 1;
   }
 }
-fn case_has_break_before_return_bi(_skParam0: i32) -> bool {
-  let x = _skParam0;
+fn case_has_break_before_return_bi(x: i32) -> bool {
   {
     var val: i32 = 0;
     switch x {
@@ -86,8 +78,7 @@ fn case_has_break_before_return_bi(_skParam0: i32) -> bool {
     return val == 1;
   }
 }
-fn case_has_break_after_return_bi(_skParam0: i32) -> bool {
-  let x = _skParam0;
+fn case_has_break_after_return_bi(x: i32) -> bool {
   {
     switch x {
       case 1 {
@@ -102,8 +93,7 @@ fn case_has_break_after_return_bi(_skParam0: i32) -> bool {
     }
   }
 }
-fn no_return_in_default_bi(_skParam0: i32) -> bool {
-  let x = _skParam0;
+fn no_return_in_default_bi(x: i32) -> bool {
   {
     var val: i32 = 0;
     switch x {
@@ -121,8 +111,7 @@ fn no_return_in_default_bi(_skParam0: i32) -> bool {
     return val == 1;
   }
 }
-fn empty_default_bi(_skParam0: i32) -> bool {
-  let x = _skParam0;
+fn empty_default_bi(x: i32) -> bool {
   {
     var val: i32 = 0;
     switch x {
@@ -140,8 +129,7 @@ fn empty_default_bi(_skParam0: i32) -> bool {
     return val == 1;
   }
 }
-fn return_with_fallthrough_bi(_skParam0: i32) -> bool {
-  let x = _skParam0;
+fn return_with_fallthrough_bi(x: i32) -> bool {
   {
     switch x {
       case 1, 2 {
@@ -153,8 +141,7 @@ fn return_with_fallthrough_bi(_skParam0: i32) -> bool {
     }
   }
 }
-fn fallthrough_ends_in_break_bi(_skParam0: i32) -> bool {
-  let x = _skParam0;
+fn fallthrough_ends_in_break_bi(x: i32) -> bool {
   {
     var val: i32 = 0;
     switch x {
@@ -169,8 +156,7 @@ fn fallthrough_ends_in_break_bi(_skParam0: i32) -> bool {
     return val == 1;
   }
 }
-fn fallthrough_to_default_with_break_bi(_skParam0: i32) -> bool {
-  let x = _skParam0;
+fn fallthrough_to_default_with_break_bi(x: i32) -> bool {
   {
     var val: i32 = 0;
     switch x {
@@ -182,8 +168,7 @@ fn fallthrough_to_default_with_break_bi(_skParam0: i32) -> bool {
     return val == 1;
   }
 }
-fn fallthrough_to_default_with_return_bi(_skParam0: i32) -> bool {
-  let x = _skParam0;
+fn fallthrough_to_default_with_return_bi(x: i32) -> bool {
   {
     switch x {
       case 1, 2, default {
@@ -192,8 +177,7 @@ fn fallthrough_to_default_with_return_bi(_skParam0: i32) -> bool {
     }
   }
 }
-fn fallthrough_with_loop_break_bi(_skParam0: i32) -> bool {
-  let x = _skParam0;
+fn fallthrough_with_loop_break_bi(x: i32) -> bool {
   {
     var val: i32 = 0;
     switch x {
@@ -224,8 +208,7 @@ fn fallthrough_with_loop_break_bi(_skParam0: i32) -> bool {
     }
   }
 }
-fn fallthrough_with_loop_continue_bi(_skParam0: i32) -> bool {
-  let x = _skParam0;
+fn fallthrough_with_loop_continue_bi(x: i32) -> bool {
   {
     var val: i32 = 0;
     switch x {
@@ -256,10 +239,9 @@ fn fallthrough_with_loop_continue_bi(_skParam0: i32) -> bool {
     }
   }
 }
-fn main(_skParam0: vec2<f32>) -> vec4<f32> {
-  let coords = _skParam0;
+fn _skslMain(coords: vec2<f32>) -> vec4<f32> {
   {
-    var x: i32 = i32(_globalUniforms.colorGreen.y);
+    let x: i32 = i32(_globalUniforms.colorGreen.y);
     var _skTemp2: vec4<f32>;
     var _skTemp3: bool;
     var _skTemp4: bool;
@@ -361,8 +343,8 @@ fn main(_skParam0: vec2<f32>) -> vec4<f32> {
     return _skTemp2;
   }
 }
-@fragment fn fragmentMain(_stageIn: FSIn) -> FSOut {
+@fragment fn main() -> FSOut {
   var _stageOut: FSOut;
-  _stageOut.sk_FragColor = main(_stageIn.sk_FragCoord.xy);
+  _stageOut.sk_FragColor = _skslMain(/*fragcoord*/ vec2<f32>());
   return _stageOut;
 }

@@ -12,50 +12,6 @@
 #include "include/gpu/GpuTypes.h"
 #include "include/gpu/vk/VulkanTypes.h"
 
-using GrVkBackendMemory = skgpu::VulkanBackendMemory;
-using GrVkAlloc = skgpu::VulkanAlloc;
-
-// This struct is used to pass in the necessary information to create a VkSamplerYcbcrConversion
-// object for an VkExternalFormatANDROID.
-struct GrVkYcbcrConversionInfo {
-    bool operator==(const GrVkYcbcrConversionInfo& that) const {
-        // Invalid objects are not required to have all other fields initialized or matching.
-        if (!this->isValid() && !that.isValid()) {
-            return true;
-        }
-        return this->fFormat == that.fFormat &&
-               this->fExternalFormat == that.fExternalFormat &&
-               this->fYcbcrModel == that.fYcbcrModel &&
-               this->fYcbcrRange == that.fYcbcrRange &&
-               this->fXChromaOffset == that.fXChromaOffset &&
-               this->fYChromaOffset == that.fYChromaOffset &&
-               this->fChromaFilter == that.fChromaFilter &&
-               this->fForceExplicitReconstruction == that.fForceExplicitReconstruction;
-    }
-    bool operator!=(const GrVkYcbcrConversionInfo& that) const { return !(*this == that); }
-
-    bool isValid() const { return fYcbcrModel != VK_SAMPLER_YCBCR_MODEL_CONVERSION_RGB_IDENTITY; }
-
-    // Format of the source image. Must be set to VK_FORMAT_UNDEFINED for external images or
-    // a valid image format otherwise.
-    VkFormat fFormat = VK_FORMAT_UNDEFINED;
-
-    // The external format. Must be non-zero for external images, zero otherwise.
-    // Should be compatible to be used in a VkExternalFormatANDROID struct.
-    uint64_t fExternalFormat = 0;
-
-    VkSamplerYcbcrModelConversion fYcbcrModel = VK_SAMPLER_YCBCR_MODEL_CONVERSION_RGB_IDENTITY;
-    VkSamplerYcbcrRange fYcbcrRange = VK_SAMPLER_YCBCR_RANGE_ITU_FULL;
-    VkChromaLocation fXChromaOffset = VK_CHROMA_LOCATION_COSITED_EVEN;
-    VkChromaLocation fYChromaOffset = VK_CHROMA_LOCATION_COSITED_EVEN;
-    VkFilter fChromaFilter = VK_FILTER_NEAREST;
-    VkBool32 fForceExplicitReconstruction = false;
-
-    // For external images format features here should be those returned by a call to
-    // vkAndroidHardwareBufferFormatPropertiesANDROID
-    VkFormatFeatureFlags fFormatFeatures = 0;
-};
-
 /*
  * When wrapping a GrBackendTexture or GrBackendRendenderTarget, the fCurrentQueueFamily should
  * either be VK_QUEUE_FAMILY_IGNORED, VK_QUEUE_FAMILY_EXTERNAL, or VK_QUEUE_FAMILY_FOREIGN_EXT. If
@@ -63,23 +19,22 @@ struct GrVkYcbcrConversionInfo {
  * queue index passed into Skia.
  */
 struct GrVkImageInfo {
-    VkImage                  fImage = VK_NULL_HANDLE;
-    skgpu::VulkanAlloc       fAlloc;
-    VkImageTiling            fImageTiling = VK_IMAGE_TILING_OPTIMAL;
-    VkImageLayout            fImageLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    VkFormat                 fFormat = VK_FORMAT_UNDEFINED;
-    VkImageUsageFlags        fImageUsageFlags = 0;
-    uint32_t                 fSampleCount = 1;
-    uint32_t                 fLevelCount = 0;
-    uint32_t                 fCurrentQueueFamily = VK_QUEUE_FAMILY_IGNORED;
-    skgpu::Protected         fProtected = skgpu::Protected::kNo;
-    GrVkYcbcrConversionInfo  fYcbcrConversionInfo;
-    VkSharingMode            fSharingMode = VK_SHARING_MODE_EXCLUSIVE;
+    VkImage                           fImage = VK_NULL_HANDLE;
+    skgpu::VulkanAlloc                fAlloc;
+    VkImageTiling                     fImageTiling = VK_IMAGE_TILING_OPTIMAL;
+    VkImageLayout                     fImageLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    VkFormat                          fFormat = VK_FORMAT_UNDEFINED;
+    VkImageUsageFlags                 fImageUsageFlags = 0;
+    uint32_t                          fSampleCount = 1;
+    uint32_t                          fLevelCount = 0;
+    uint32_t                          fCurrentQueueFamily = VK_QUEUE_FAMILY_IGNORED;
+    skgpu::Protected                  fProtected = skgpu::Protected::kNo;
+    skgpu::VulkanYcbcrConversionInfo  fYcbcrConversionInfo;
+    VkSharingMode                     fSharingMode = VK_SHARING_MODE_EXCLUSIVE;
 #ifdef SK_BUILD_FOR_ANDROID_FRAMEWORK
-    bool                     fPartOfSwapchainOrAndroidWindow = false;
+    bool                              fPartOfSwapchainOrAndroidWindow = false;
 #endif
 
-#if GR_TEST_UTILS
     bool operator==(const GrVkImageInfo& that) const {
         bool equal = fImage == that.fImage && fAlloc == that.fAlloc &&
                      fImageTiling == that.fImageTiling &&
@@ -97,10 +52,7 @@ struct GrVkImageInfo {
 #endif
         return equal;
     }
-#endif
 };
-
-using GrVkGetProc = skgpu::VulkanGetProc;
 
 /**
  * This object is wrapped in a GrBackendDrawableInfo and passed in as an argument to
@@ -142,7 +94,7 @@ struct GrVkSurfaceInfo {
     VkImageTiling fImageTiling = VK_IMAGE_TILING_OPTIMAL;
     VkFormat fFormat = VK_FORMAT_UNDEFINED;
     VkImageUsageFlags fImageUsageFlags = 0;
-    GrVkYcbcrConversionInfo fYcbcrConversionInfo;
+    skgpu::VulkanYcbcrConversionInfo fYcbcrConversionInfo;
     VkSharingMode fSharingMode = VK_SHARING_MODE_EXCLUSIVE;
 };
 
